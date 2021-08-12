@@ -10,7 +10,7 @@ Australian Centre for Robotic Vision
 from typing import Optional, List, Tuple
 
 import pocket.models as models
-from scg_interaction_head import InteractionHead, GraphHead
+from .scg_interaction_head import InteractionHead, GraphHead
 from torch import nn, Tensor
 from torchvision.models.detection import transform
 from torchvision.ops import MultiScaleRoIAlign

@@ -10,13 +10,23 @@ from torch.utils.data import Dataset
 from torchvision.ops.boxes import box_iou
 from torchvision.transforms.functional import hflip
 
-from vcoco import VCOCO
-from hicodet import HICODet
+from .vcoco import VCOCO
+from .hicodet import HICODet
 
 import pocket
 from pocket.core import DistributedLearningEngine
 from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_gather
 
+
+class CustomInput(object):
+    """Generates an input specific to the one required by official implementation of concerned model"""
+    def __init__(self, model_name):
+        self.func_map = {
+            'scg': self.scg,
+        }
+        self.converter = self.func_map[model_name]
+
+    # def scg(self, images, ):
 
 class DataFactory(Dataset):
     def __init__(self,
