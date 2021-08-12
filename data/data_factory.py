@@ -7,6 +7,7 @@ from tqdm import tqdm
 import torch.distributed as dist
 
 from torch.utils.data import Dataset
+from torchvision import transforms
 from torchvision.ops.boxes import box_iou
 from torchvision.transforms.functional import hflip
 
@@ -23,10 +24,40 @@ class CustomInput(object):
     def __init__(self, model_name):
         self.func_map = {
             'scg': self.scg,
+            'drg': self.drg,
+            'idn': self.idn,
+            'cascaded-hoi': self.cascaded_hoi,
         }
         self.converter = self.func_map[model_name]
 
-    # def scg(self, images, ):
+    def scg(self, image, boxes, labels, scores):
+        """Merges the arguments into a data point for the scg model
+
+        Args:
+            image (np.array)
+            boxes (list of list): detected box coords
+            labels (list): detected box labels
+            scores (list): detected box scores for selected class
+        """
+        data_point = list()
+        data_point.append([torch.from_numpy(image)])
+        detections = [{
+            'boxes': torch.from_numpy(boxes),
+            'labels': torch.from_numpy(labels),
+            'scores': torch.from_numpy(scores),
+        }]
+        data_point.append(detections)
+        return data_point
+
+    def drg(self):
+        raise NotImplementedError
+
+    def idn(self):
+        raise NotImplementedError
+
+    def cascaded_hoi(self):
+        raise NotImplementedError
+
 
 class DataFactory(Dataset):
     def __init__(self,

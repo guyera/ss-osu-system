@@ -6,11 +6,56 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader, DistributedSampler
 
+import pickle
 import pocket
+import numpy as np
 
 from models.scg import SpatiallyConditionedGraph as SCG
-from data.data_factory import DataFactory
+from data.data_factory import DataFactory, CustomInput
 from utils import custom_collate
+
+
+class Test(object):
+    def __init__(self, net, model_name):
+        self.net = net
+        self.func_map = {
+            'scg': self.scg,
+            'drg': self.drg,
+            'idn': self.idn,
+            'cascaded-hoi': self.cascaded_hoi,
+        }
+        self.test = self.func_map[model_name]
+
+    def scg(self, input_data, ov_interaction_map):
+        input_data = pocket.ops.relocate_to_cuda(input_data)
+        with torch.no_grad():
+            output = self.net(*input_data)
+            # Batch size is fixed as 1 for inference
+            assert len(output) == 1, "Batch size is not 1"
+            output = pocket.ops.relocate_to_cpu(output[0])
+            # Format detections
+            box_idx = output['index']
+            # boxes_h = output['boxes_h'][box_idx]
+            # boxes_o = output['boxes_o'][box_idx]
+            objects = output['object'][box_idx]
+            scores = output['scores']
+            verbs = output['prediction']
+            interactions = torch.tensor([
+                ov_interaction_map[o][v]
+                for o, v in zip(objects, verbs)
+            ])
+            # Associate detected pairs with ground truth pairs
+            labels = torch.zeros_like(scores)
+        return scores, interactions, labels
+
+    def drg(self, input_data):
+        raise NotImplementedError
+
+    def idn(self, input_data):
+        raise NotImplementedError
+
+    def cascaded_hoi(self, input_data):
+        raise NotImplementedError
 
 
 def main(rank, args):
@@ -60,18 +105,28 @@ def main(rank, args):
         distributed=True
     )
 
-    epoch = 0
     if os.path.exists(args.model_path):
         print("Loading model from ", args.model_path)
         checkpoint = torch.load(args.model_path, map_location="cpu")
         net.load_state_dict(checkpoint['model_state_dict'])
-        epoch = checkpoint["epoch"]
     elif len(args.model_path):
         print("\nWARNING: The given model path does not exist. "
               "Proceed to use a randomly initialised model.\n")
 
     net.cuda()
-    timer = pocket.utils.HandyTimer(maxlen=1)
+    net.eval()
+    # Sample input test
+    test_input = pickle.load(open('inputs.pkl', 'rb'))
+    image = np.array(test_input[0][0].cpu())
+    boxes = np.array(test_input[1][0]['boxes'].cpu())
+    labels = np.array(test_input[1][0]['labels'].cpu())
+    scores = np.array(test_input[1][0]['scores'].cpu())
+    # TODO: Pass model_name through args here, also implement conditional calling based on models
+    tester = Test(net, 'scg').test
+    converter = CustomInput('scg').converter
+    input_data = converter(image, boxes, labels, scores)
+    tester(input_data, val_loader.dataset.dataset.object_n_verb_to_interaction)
+    # timer = pocket.utils.HandyTimer(maxlen=1)
 
     # with timer:
     #     test_ap = test(net, dataloader)
