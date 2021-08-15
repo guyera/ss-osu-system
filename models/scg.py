@@ -9,7 +9,12 @@ Australian Centre for Robotic Vision
 
 from typing import Optional, List, Tuple
 
+import numpy as np
+import pocket
+import torch
 import pocket.models as models
+from pocket.core import DistributedLearningEngine
+from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_gather
 from .scg_interaction_head import InteractionHead, GraphHead
 from torch import nn, Tensor
 from torchvision.models.detection import transform
@@ -229,3 +234,102 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
                                         image_mean, image_std)
 
         super().__init__(backbone, interaction_head, transform, postprocess)
+
+
+class CustomisedDLE(DistributedLearningEngine):
+    def __init__(self, net, train_loader, val_loader, num_classes=117, **kwargs):
+        super().__init__(net, None, train_loader, **kwargs)
+        self.val_loader = val_loader
+        self.num_classes = num_classes
+
+    def _on_start(self):
+        self.meter = DetectionAPMeter(self.num_classes, algorithm='11P')
+        self.hoi_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
+        self.intr_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
+
+    def _on_each_iteration(self):
+        self._state.optimizer.zero_grad()
+        output = self._state.net(
+            *self._state.inputs, targets=self._state.targets)
+        loss_dict = output.pop()
+        if loss_dict['hoi_loss'].isnan():
+            raise ValueError(f"The HOI loss is NaN for rank {self._rank}")
+
+        self._state.loss = sum(loss for loss in loss_dict.values())
+        self._state.loss.backward()
+        self._state.optimizer.step()
+
+        self.hoi_loss.append(loss_dict['hoi_loss'])
+        self.intr_loss.append(loss_dict['interactiveness_loss'])
+
+        self._synchronise_and_log_results(output, self.meter)
+
+    def _on_end_epoch(self):
+        timer = HandyTimer(maxlen=2)
+        # Compute training mAP
+        if self._rank == 0:
+            with timer:
+                ap_train = self.meter.eval()
+        # Run validation and compute mAP
+        with timer:
+            ap_val = self.validate()
+        # Print performance and time
+        if self._rank == 0:
+            print("Epoch: {} | training mAP: {:.4f}, evaluation time: {:.2f}s |"
+                  "validation mAP: {:.4f}, total time: {:.2f}s\n".format(
+                self._state.epoch, ap_train.mean().item(), timer[0],
+                ap_val.mean().item(), timer[1]
+            ))
+            self.meter.reset()
+        super()._on_end_epoch()
+
+    def _print_statistics(self):
+        super()._print_statistics()
+        hoi_loss = self.hoi_loss.mean()
+        intr_loss = self.intr_loss.mean()
+        if self._rank == 0:
+            print(f"=> HOI classification loss: {hoi_loss:.4f},",
+                  f"interactiveness loss: {intr_loss:.4f}")
+        self.hoi_loss.reset()
+        self.intr_loss.reset()
+
+    def _synchronise_and_log_results(self, output, meter):
+        scores = [];
+        pred = [];
+        labels = []
+        # Collate results within the batch
+        for result in output:
+            scores.append(result['scores'].detach().cpu().numpy())
+            pred.append(result['prediction'].cpu().float().numpy())
+            labels.append(result["labels"].cpu().numpy())
+        # Sync across subprocesses
+        all_results = np.stack([
+            np.concatenate(scores),
+            np.concatenate(pred),
+            np.concatenate(labels)
+        ])
+        all_results_sync = all_gather(all_results)
+        # Collate and log results in master process
+        if self._rank == 0:
+            scores, pred, labels = torch.from_numpy(
+                np.concatenate(all_results_sync, axis=1)
+            ).unbind(0)
+            meter.append(scores, pred, labels)
+
+    @torch.no_grad()
+    def validate(self):
+        meter = DetectionAPMeter(self.num_classes, algorithm='11P')
+
+        self._state.net.eval()
+        for batch in self.val_loader:
+            inputs = pocket.ops.relocate_to_cuda(batch)
+            results = self._state.net(*inputs)
+
+            self._synchronise_and_log_results(results, meter)
+
+        # Evaluate mAP in master process
+        if self._rank == 0:
+            return meter.eval()
+        else:
+            return None
+

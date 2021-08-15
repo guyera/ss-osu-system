@@ -30,7 +30,7 @@ class CustomInput(object):
         }
         self.converter = self.func_map[model_name]
 
-    def scg(self, image, boxes, labels, scores):
+    def scg(self, image, boxes, labels, scores, targets=None):
         """Merges the arguments into a data point for the scg model
 
         Args:
@@ -38,6 +38,7 @@ class CustomInput(object):
             boxes (list of list): detected box coords
             labels (list): detected box labels
             scores (list): detected box scores for selected class
+            targets (list): target box labels
         """
         data_point = list()
         data_point.append([torch.from_numpy(image)])
@@ -47,6 +48,8 @@ class CustomInput(object):
             'scores': torch.from_numpy(scores),
         }]
         data_point.append(detections)
+        if targets is not None:
+            data_point.append([torch.from_numpy(targets)])
         return data_point
 
     def drg(self):
