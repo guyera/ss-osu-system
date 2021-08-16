@@ -11,13 +11,16 @@ import pocket
 import numpy as np
 
 from models.scg import SpatiallyConditionedGraph as SCG
+from models.scg import CustomisedDLE
 from data.data_factory import DataFactory, CustomInput
-from utils import custom_collate, CustomisedDLE
+from utils import custom_collate
 
 
 class Train(object):
-    def __init__(self, net, model_name):
+    def __init__(self, net, model_name, train_loader, val_loader):
         self.net = net
+        self.train_loader = train_loader
+        self.val_loader = val_loader
         self.func_map = {
             'scg': self.scg,
             'drg': self.drg,
@@ -26,11 +29,11 @@ class Train(object):
         }
         self.train = self.func_map[model_name]
 
-    def scg(self, input_data, ov_interaction_map, epoch, iteration):
+    def scg(self, num_classes, epoch, iteration, args):
         engine = CustomisedDLE(
-            net,
-            train_loader,
-            val_loader,
+            self.net,
+            self.train_loader,
+            self.val_loader,
             num_classes=num_classes,
             print_interval=args.print_interval,
             cache_dir=args.cache_dir
@@ -63,7 +66,6 @@ class Train(object):
         engine.update_state_key(epoch=epoch, iteration=iteration)
 
         engine(args.num_epochs)
-        return NotImplementedError
 
     def drg(self, input_data):
         raise NotImplementedError
@@ -76,8 +78,6 @@ class Train(object):
 
 
 def main(rank, args):
-    torch.cuda.set_device(0)
-    torch.backends.cudnn.benchmark = False
     dist.init_process_group(
         backend="nccl",
         init_method="env://",
@@ -86,10 +86,16 @@ def main(rank, args):
     )
 
     trainset = DataFactory(
-        name=args.dataset, partition=args.partitions[0],
+        name=args.dataset, partition=args.partitions[1],
         data_root=args.data_root,
         detection_root=args.train_detection_dir,
         flip=True
+    )
+
+    valset = DataFactory(
+        name=args.dataset, partition=args.partitions[1],
+        data_root=args.data_root,
+        detection_root=args.val_detection_dir
     )
 
     train_loader = DataLoader(
@@ -102,12 +108,6 @@ def main(rank, args):
             rank=rank)
     )
 
-    valset = DataFactory(
-        name=args.dataset, partition=args.partitions[1],
-        data_root=args.data_root,
-        detection_root=args.detection_dir
-    )
-
     val_loader = DataLoader(
         dataset=valset,
         collate_fn=custom_collate, batch_size=args.batch_size,
@@ -117,23 +117,18 @@ def main(rank, args):
             num_replicas=args.world_size,
             rank=rank)
     )
+
     # Fix random seed for model synchronisation
     torch.manual_seed(args.random_seed)
-    
+
     if args.dataset == 'hicodet':
-        object_to_target = val_loader.dataset.dataset.object_to_verb
+        object_to_target = train_loader.dataset.dataset.object_to_verb
         human_idx = 49
         num_classes = 117
     elif args.dataset == 'vcoco':
-        object_to_target = val_loader.dataset.dataset.object_to_action
+        object_to_target = train_loader.dataset.dataset.object_to_action
         human_idx = 1
         num_classes = 24
-
-    # num_anno = torch.tensor(HICODet(None, anno_file=os.path.join(
-    #     args.data_root, 'instances_train2015.json')).anno_interaction)
-    # rare = torch.nonzero(num_anno < 10).squeeze(1)
-    # non_rare = torch.nonzero(num_anno >= 10).squeeze(1)
-
     net = SCG(
         object_to_target, human_idx, num_classes=num_classes,
         num_iterations=args.num_iter, postprocess=False,
@@ -142,30 +137,33 @@ def main(rank, args):
         distributed=True
     )
 
-    if os.path.exists(args.model_path):
-        print("Loading model from ", args.model_path)
-        checkpoint = torch.load(args.model_path, map_location="cpu")
+    if os.path.exists(args.checkpoint_path):
+        print("=> Rank {}: continue from saved checkpoint".format(
+            rank), args.checkpoint_path)
+        checkpoint = torch.load(args.checkpoint_path, map_location='cpu')
         net.load_state_dict(checkpoint['model_state_dict'])
+        optim_state_dict = checkpoint['optim_state_dict']
+        sched_state_dict = checkpoint['scheduler_state_dict']
         epoch = checkpoint['epoch']
         iteration = checkpoint['iteration']
-    elif len(args.model_path):
-        print("\nWARNING: The given model path does not exist. "
-              "Proceed to use a randomly initialised model.\n")
-        epoch = 0
+    else:
+        print("=> Rank {}: start from a randomly initialised model".format(rank))
+        optim_state_dict = None
+        sched_state_dict = None
+        epoch = 0;
         iteration = 0
 
-    net.cuda()
     # Sample input test
-    train_input = pickle.load(open('inputs.pkl', 'rb'))
-    image = np.array(train_input[0][0].cpu())
-    boxes = np.array(train_input[1][0]['boxes'].cpu())
-    labels = np.array(train_input[1][0]['labels'].cpu())
-    scores = np.array(train_input[1][0]['scores'].cpu())
+    # train_input = pickle.load(open('inputs.pkl', 'rb'))
+    # image = np.array(train_input[0][0].cpu())
+    # boxes = np.array(train_input[1][0]['boxes'].cpu())
+    # labels = np.array(train_input[1][0]['labels'].cpu())
+    # scores = np.array(train_input[1][0]['scores'].cpu())
     # TODO: Pass model_name through args here, also implement conditional calling based on models
-    trainer = Train(net, 'scg').test
-    converter = CustomInput('scg').converter
-    input_data = converter(image, boxes, labels, scores)
-    trainer(input_data, train_loader.dataset.dataset.object_n_verb_to_interaction, epoch, iteration)
+    trainer = Train(net, 'scg', train_loader, val_loader).train
+    # converter = CustomInput('scg').converter
+    # input_data = converter(image, boxes, labels, scores)
+    trainer(num_classes, epoch, iteration, args)
     # timer = pocket.utils.HandyTimer(maxlen=1)
 
     # with timer:
@@ -184,18 +182,28 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', default='hicodet', type=str)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='hicodet', type=str)
-    parser.add_argument('--detection-dir', default='hicodet/detections/test2015',
-                        type=str, help="Directory where detection files are stored")
-    parser.add_argument('--partition', default='test2015', type=str)
+    parser.add_argument('--train-detection-dir', default='hicodet/detections/test2015', type=str)
+    parser.add_argument('--val-detection-dir', default='hicodet/detections/test2015', type=str)
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
+    parser.add_argument('--num-epochs', default=8, type=int)
+    parser.add_argument('--random-seed', default=1, type=int)
+    parser.add_argument('--learning-rate', default=0.0001, type=float)
+    parser.add_argument('--momentum', default=0.9, type=float)
+    parser.add_argument('--weight-decay', default=1e-4, type=float)
+    parser.add_argument('--batch-size', default=4, type=int,
+                        help="Batch size for each subprocess")
+    parser.add_argument('--lr-decay', default=0.1, type=float,
+                        help="The multiplier by which the learning rate is reduced")
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
     parser.add_argument('--max-human', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
-    parser.add_argument('--num-workers', default=2, type=int)
-    parser.add_argument('--model-path', default='', type=str)
-    parser.add_argument('--batch-size', default=1, type=int,
-                        help="Batch size for each subprocess")
+    parser.add_argument('--milestones', nargs='+', default=[6, ], type=int,
+                        help="The epoch number when learning rate is reduced")
+    parser.add_argument('--num-workers', default=4, type=int)
+    parser.add_argument('--print-interval', default=300, type=int)
+    parser.add_argument('--checkpoint-path', default='', type=str)
+    parser.add_argument('--cache-dir', type=str, default='./checkpoints')
 
     args = parser.parse_args()
     os.environ["MASTER_ADDR"] = "localhost"
