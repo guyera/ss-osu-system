@@ -18,7 +18,6 @@ from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_g
 from .scg_interaction_head import InteractionHead, GraphHead
 from torch import nn, Tensor
 from torchvision.models.detection import transform
-from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.ops import MultiScaleRoIAlign
 
 
@@ -161,36 +160,35 @@ class GenericHOINetwork(nn.Module):
 
 class SpatiallyConditionedGraph(GenericHOINetwork):
     def __init__(self,
-        object_to_action: List[list],
-        human_idx: int,
-        # Backbone parameters
-        backbone_name: str = "resnet50",
-        pretrained: bool = True,
-        # Pooler parameters
-        output_size: int = 7,
-        sampling_ratio: int = 2,
-        # Box pair head parameters
-        node_encoding_size: int = 1024,
-        representation_size: int = 1024,
-        num_classes: int = 117,
-        num_obj_classes: int = 80,
-        box_score_thresh: float = 0.2,
-        fg_iou_thresh: float = 0.5,
-        num_iterations: int = 2,
-        distributed: bool = False,
-        # Transformation parameters
-        min_size: int = 800, max_size: int = 1333,
-        image_mean: Optional[List[float]] = None,
-        image_std: Optional[List[float]] = None,
-        postprocess: bool = True,
-        # Preprocessing parameters
-        box_nms_thresh: float = 0.5,
-        max_human: int = 15,
-        max_object: int = 15
-    ) -> None:
+                 object_to_action: List[list],
+                 human_idx: int,
+                 # Backbone parameters
+                 backbone_name: str = "resnet50",
+                 pretrained: bool = True,
+                 # Pooler parameters
+                 output_size: int = 7,
+                 sampling_ratio: int = 2,
+                 # Box pair head parameters
+                 node_encoding_size: int = 1024,
+                 representation_size: int = 1024,
+                 num_classes: int = 117,
+                 box_score_thresh: float = 0.2,
+                 fg_iou_thresh: float = 0.5,
+                 num_iterations: int = 2,
+                 distributed: bool = False,
+                 # Transformation parameters
+                 min_size: int = 800, max_size: int = 1333,
+                 image_mean: Optional[List[float]] = None,
+                 image_std: Optional[List[float]] = None,
+                 postprocess: bool = True,
+                 # Preprocessing parameters
+                 box_nms_thresh: float = 0.5,
+                 max_human: int = 15,
+                 max_object: int = 15
+                 ) -> None:
 
         detector = models.fasterrcnn_resnet_fpn(backbone_name,
-            pretrained=pretrained)
+                                                pretrained=pretrained)
         backbone = detector.backbone
 
         box_roi_pool = MultiScaleRoIAlign(
@@ -214,14 +212,11 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
         box_pair_predictor = nn.Linear(representation_size * 2, num_classes)
         box_pair_suppressor = nn.Linear(representation_size * 2, 1)
 
-        custom_box_classifier = FastRCNNPredictor(backbone.out_channels, num_obj_classes)
-
         interaction_head = InteractionHead(
             box_roi_pool=box_roi_pool,
             box_pair_head=box_pair_head,
             box_pair_suppressor=box_pair_suppressor,
             box_pair_predictor=box_pair_predictor,
-            custom_box_classifier=custom_box_classifier,
             num_classes=num_classes,
             human_idx=human_idx,
             box_nms_thresh=box_nms_thresh,
@@ -236,9 +231,10 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
         if image_std is None:
             image_std = [0.229, 0.224, 0.225]
         transform = HOINetworkTransform(min_size, max_size,
-            image_mean, image_std)
+                                        image_mean, image_std)
 
         super().__init__(backbone, interaction_head, transform, postprocess)
+
 
 class CustomisedDLE(DistributedLearningEngine):
     def __init__(self, net, train_loader, val_loader, num_classes=117, **kwargs):
@@ -250,7 +246,6 @@ class CustomisedDLE(DistributedLearningEngine):
         self.meter = DetectionAPMeter(self.num_classes, algorithm='11P')
         self.hoi_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
         self.intr_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
-        self.obj_cls_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
 
     def _on_each_iteration(self):
         self._state.optimizer.zero_grad()
@@ -266,7 +261,6 @@ class CustomisedDLE(DistributedLearningEngine):
 
         self.hoi_loss.append(loss_dict['hoi_loss'])
         self.intr_loss.append(loss_dict['interactiveness_loss'])
-        self.obj_cls_loss.append(loss_dict['obj_classification_loss'])
 
         self._synchronise_and_log_results(output, self.meter)
 
@@ -293,14 +287,11 @@ class CustomisedDLE(DistributedLearningEngine):
         super()._print_statistics()
         hoi_loss = self.hoi_loss.mean()
         intr_loss = self.intr_loss.mean()
-        obj_cls_loss = self.obj_cls_loss.mean()
         if self._rank == 0:
             print(f"=> HOI classification loss: {hoi_loss:.4f},",
-                  f"interactiveness loss: {intr_loss:.4f},"
-                  f"object classification loss: {obj_cls_loss:.4f}")
+                  f"interactiveness loss: {intr_loss:.4f}")
         self.hoi_loss.reset()
         self.intr_loss.reset()
-        self.obj_cls_loss.reset()
 
     def _synchronise_and_log_results(self, output, meter):
         scores = [];

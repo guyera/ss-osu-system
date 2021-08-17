@@ -15,6 +15,37 @@ from models.scg import CustomisedDLE
 from data.data_factory import DataFactory, CustomInput
 from utils import custom_collate
 
+import torch.optim as optim
+from models.idn import AE, IDN
+from prefetch_generator import BackgroundGenerator
+from dataset_idn import HICO_train_set, HICO_test_set
+from utils_idn import Timer, HO_weight, AverageMeter, fac_i, fac_a, fac_d, nis_thresh
+import yaml
+import re
+from easydict import EasyDict as edict
+print("packages loaded")
+
+def get_config(args):
+    loader = yaml.FullLoader
+    loader.add_implicit_resolver(
+        u'tag:yaml.org,2002:float',
+        re.compile(u'''^(?:
+         [-+]?(?:[0-9][0-9_]*)\\.[0-9_]*(?:[eE][-+]?[0-9]+)?
+        |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)
+        |\\.[0-9_]+(?:[eE][-+][0-9]+)?
+        |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\\.[0-9_]*
+        |[-+]?\\.(?:inf|Inf|INF)
+        |\\.(?:nan|NaN|NAN))$''', re.X),
+        list(u'-+0123456789.'))
+    
+    config = edict(yaml.load(open(args.config_path, 'r'), Loader=loader))
+    return config
+
+class DataLoaderX(DataLoader):
+    def __iter__(self):
+        return BackgroundGenerator(super().__iter__())
+    
+train_timer = Timer()
 
 class Train(object):
     def __init__(self, net, model_name, train_loader, val_loader):
@@ -70,8 +101,60 @@ class Train(object):
     def drg(self, input_data):
         raise NotImplementedError
 
-    def idn(self, input_data):
-        raise NotImplementedError
+    def idn(self, num_classes, epoch, iteration, args):
+        print("Entered training function")
+
+        def idn_train(net, loader, optimizer, timer, epoch):
+            net.train()
+            global step
+            step = 0
+
+            timer.tic()
+            meters = {
+                'L_rec': AverageMeter(),
+                'L_cls': AverageMeter(),
+                'L_ae': AverageMeter(),
+                'loss': AverageMeter()
+            }
+            for i, batch in enumerate(loader):
+                n = batch['spatial'].shape[0]
+
+                batch['spatial']    = batch['spatial'].cuda(non_blocking=True)
+                batch['labels_s']   = batch['labels_s'].cuda(non_blocking=True)
+                batch['labels_r']   = batch['labels_r'].cuda(non_blocking=True)
+                batch['labels_ro']  = batch['labels_ro'].cuda(non_blocking=True)
+                batch['labels_sro'] = batch['labels_sro'].cuda(non_blocking=True)
+                batch['sub_vec']    = batch['sub_vec'].cuda(non_blocking=True)
+                batch['obj_vec']    = batch['obj_vec'].cuda(non_blocking=True)
+                batch['uni_vec']    = batch['uni_vec'].cuda(non_blocking=True)
+
+                output = net(batch)
+                loss   = torch.mean(output['loss'])
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                for key in output.keys():
+                    if key in meters:
+                        meters[key].update(torch.mean(output[key]).detach().cpu().data, n)
+
+                timer.toc()
+                timer.tic()
+                if i % 2000 == 0:
+                    print("%03d epoch, %05d iter, average time %.4f, loss %.4f" % (epoch, i, timer.average_time, loss.detach().cpu().data))
+                step += 1
+                
+            timer.toc()
+
+            return net, meters
+        config = get_config(args)
+        optimizer = optim.SGD(self.net.parameters(), lr=config.TRAIN.OPTIMIZER.lr, momentum=config.TRAIN.OPTIMIZER.momentum, weight_decay=config.TRAIN.OPTIMIZER.weight_decay)
+
+        for i in range(1): #config.TRAIN.MAX_EPOCH
+            train_str = "%03d epoch training" % i
+            net, train_meters = idn_train(self.net, self.train_loader, optimizer, train_timer, i)
+            for (key, value) in train_meters.items():
+                train_str += ", %s=%.4f" % (key, value.avg)
 
     def cascaded_hoi(self, input_data):
         raise NotImplementedError
@@ -85,59 +168,79 @@ def main(rank, args):
         rank=rank
     )
 
-    trainset = DataFactory(
-        name=args.dataset, partition=args.partitions[1],
-        data_root=args.data_root,
-        detection_root=args.train_detection_dir,
-        flip=True
-    )
+    if args.model_name=='scg':
+        trainset = DataFactory(
+            name=args.dataset, partition=args.partitions[1],
+            data_root=args.data_root,
+            detection_root=args.train_detection_dir,
+            flip=True
+        )
 
-    valset = DataFactory(
-        name=args.dataset, partition=args.partitions[1],
-        data_root=args.data_root,
-        detection_root=args.val_detection_dir
-    )
+        valset = DataFactory(
+            name=args.dataset, partition=args.partitions[1],
+            data_root=args.data_root,
+            detection_root=args.val_detection_dir
+        )
 
-    train_loader = DataLoader(
-        dataset=trainset,
-        collate_fn=custom_collate, batch_size=args.batch_size,
-        num_workers=args.num_workers, pin_memory=True,
-        sampler=DistributedSampler(
-            trainset,
-            num_replicas=args.world_size,
-            rank=rank)
-    )
+        train_loader = DataLoader(
+            dataset=trainset,
+            collate_fn=custom_collate, batch_size=args.batch_size,
+            num_workers=args.num_workers, pin_memory=True,
+            sampler=DistributedSampler(
+                trainset,
+                num_replicas=args.world_size,
+                rank=rank)
+        )
 
-    val_loader = DataLoader(
-        dataset=valset,
-        collate_fn=custom_collate, batch_size=args.batch_size,
-        num_workers=args.num_workers, pin_memory=True,
-        sampler=DistributedSampler(
-            valset,
-            num_replicas=args.world_size,
-            rank=rank)
-    )
-
+        val_loader = DataLoader(
+            dataset=valset,
+            collate_fn=custom_collate, batch_size=args.batch_size,
+            num_workers=args.num_workers, pin_memory=True,
+            sampler=DistributedSampler(
+                valset,
+                num_replicas=args.world_size,
+                rank=rank)
+        )
+        
+    elif args.model_name=='idn': 
+        args_idn = pickle.load(open('arguments.pkl', 'rb'))
+        HO_weight = torch.from_numpy(args_idn['HO_weight'])
+        config = get_config(args)
+        train_set    = HICO_train_set(config, split='trainval', train_mode=True)
+        train_loader = DataLoaderX(train_set, batch_size=config.TRAIN.DATASET.BATCH_SIZE, shuffle=True, collate_fn=train_set.collate_fn, pin_memory=False, drop_last=False)
+        
+        val_set    = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
+        val_loader = DataLoaderX(val_set, batch_size=2, shuffle=False, collate_fn=val_set.collate_fn, pin_memory=False, drop_last=False)
+#         train_loader = val_loader
     # Fix random seed for model synchronisation
     torch.manual_seed(args.random_seed)
 
+    
     if args.dataset == 'hicodet':
-        object_to_target = train_loader.dataset.dataset.object_to_verb
+        if args.model_name=='scg':
+            object_to_target = train_loader.dataset.dataset.object_to_verb
         human_idx = 49
         num_classes = 117
     elif args.dataset == 'vcoco':
-        object_to_target = train_loader.dataset.dataset.object_to_action
+        if args.model_name=='scg':
+            object_to_target = train_loader.dataset.dataset.object_to_action
         human_idx = 1
         num_classes = 24
-    num_obj_classes = train_loader.dataset.dataset.num_object_cls
-    net = SCG(
-        object_to_target, human_idx, num_classes=num_classes,
-        num_obj_classes=num_obj_classes,
-        num_iterations=args.num_iter, postprocess=False,
-        max_human=args.max_human, max_object=args.max_object,
-        box_score_thresh=args.box_score_thresh,
-        distributed=True
-    )
+
+        
+    if args.model_name=='scg':
+        net = SCG(
+            object_to_target, human_idx, num_classes=num_classes,
+            num_iterations=args.num_iter, postprocess=False,
+            max_human=args.max_human, max_object=args.max_object,
+            box_score_thresh=args.box_score_thresh,
+            distributed=True
+        )
+    
+    elif args.model_name=='idn': 
+        net = IDN(config.MODEL, HO_weight)
+        net.cuda()
+    
 
     if os.path.exists(args.checkpoint_path):
         print("=> Rank {}: continue from saved checkpoint".format(
@@ -154,6 +257,8 @@ def main(rank, args):
         sched_state_dict = None
         epoch = 0;
         iteration = 0
+        
+    print("Data and model loaded")
 
     # Sample input test
     # train_input = pickle.load(open('inputs.pkl', 'rb'))
@@ -162,7 +267,8 @@ def main(rank, args):
     # labels = np.array(train_input[1][0]['labels'].cpu())
     # scores = np.array(train_input[1][0]['scores'].cpu())
     # TODO: Pass model_name through args here, also implement conditional calling based on models
-    trainer = Train(net, 'scg', train_loader, val_loader).train
+#     trainer = Train(net, 'scg', train_loader, val_loader).train
+    trainer = Train(net, args.model_name, train_loader, val_loader).train
     # converter = CustomInput('scg').converter
     # input_data = converter(image, boxes, labels, scores)
     trainer(num_classes, epoch, iteration, args)
@@ -182,6 +288,7 @@ if __name__ == "__main__":
     parser.add_argument('--world-size', required=True, type=int,
                         help="Number of subprocesses/GPUs to use")
     parser.add_argument('--dataset', default='hicodet', type=str)
+    parser.add_argument('--model-name', default='scg', type=str)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='hicodet', type=str)
     parser.add_argument('--train-detection-dir', default='hicodet/detections/test2015', type=str)
@@ -206,6 +313,7 @@ if __name__ == "__main__":
     parser.add_argument('--print-interval', default=300, type=int)
     parser.add_argument('--checkpoint-path', default='', type=str)
     parser.add_argument('--cache-dir', type=str, default='./checkpoints')
+    parser.add_argument('--config_path', dest='config_path',help='Select config file', default='configs/IDN.yml', type=str)
 
     args = parser.parse_args()
     os.environ["MASTER_ADDR"] = "localhost"
