@@ -214,8 +214,7 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
         box_pair_predictor = nn.Linear(representation_size * 2, num_classes)
         box_pair_suppressor = nn.Linear(representation_size * 2, 1)
 
-        # TODO: Remove hard coding in
-        custom_box_classifier = FastRCNNPredictor(2048, num_obj_classes)
+        custom_box_classifier = FastRCNNPredictor(backbone.out_channels, num_obj_classes)
 
         interaction_head = InteractionHead(
             box_roi_pool=box_roi_pool,
