@@ -189,7 +189,12 @@ class InteractionHead(Module):
         return loss / n_p
 
     def compute_obj_classification_loss(self, results: List[dict]) -> Tensor:
-        return
+        labels = []
+        for result in results:
+            labels.append(result['box_labels'])
+        labels = torch.cat(labels, dim=0)
+        classification_loss = F.cross_entropy(results['box_class_logits'], labels)
+        return classification_loss
 
     def postprocess(self,
                     logits_p: Tensor,
@@ -198,7 +203,9 @@ class InteractionHead(Module):
                     boxes_h: List[Tensor],
                     boxes_o: List[Tensor],
                     object_class: List[Tensor],
-                    labels: List[Tensor]
+                    labels: List[Tensor],
+                    box_logits: List[Tensor],
+                    box_labels: List[Tensor],
                     ) -> List[dict]:
         """
         Parameters:
@@ -218,6 +225,10 @@ class InteractionHead(Module):
             Object indices for each pair organised by images (M,)
         labels: List[Tensor]
             Binary labels on each action organised by images (M, K)
+        box_logits: List[Tensor]
+            Class logits predicted for each box by the classification head (N, #object classes)
+        box_labels: List[Tensor]
+            GT labels for boxes
 
         Returns:
         --------
@@ -241,6 +252,10 @@ class InteractionHead(Module):
                 Binary labels on each action
             `unary_labels`: Tensor[M], optional
                 Labels for the unary weights
+            `box_class_logits`: Tensor[N]
+                Class logits given by the classification head
+            `box_label`: Tensor[N]
+                GT labels for boxes
         """
         num_boxes = [len(b) for b in boxes_h]
 
@@ -252,8 +267,8 @@ class InteractionHead(Module):
             labels = [None for _ in range(len(num_boxes))]
 
         results = []
-        for w, s, p, b_h, b_o, o, l in zip(
-                weights, scores, prior, boxes_h, boxes_o, object_class, labels
+        for w, s, p, b_h, b_o, o, l, box_scores, box_label in zip(
+                weights, scores, prior, boxes_h, boxes_o, object_class, labels, box_logits, box_labels
         ):
             # Keep valid classes
             x, y = torch.nonzero(p[0]).unbind(1)
@@ -262,7 +277,9 @@ class InteractionHead(Module):
                 boxes_h=b_h, boxes_o=b_o,
                 index=x, prediction=y,
                 scores=s[x, y] * p[:, x, y].prod(dim=0) * w[x].detach(),
-                object=o, prior=p[:, x, y], weights=w
+                object=o, prior=p[:, x, y], weights=w,
+                box_class_logits=box_scores,
+                box_label=box_label,
             )
             # If binary labels are provided
             if l is not None:
@@ -342,7 +359,7 @@ class InteractionHead(Module):
         results = self.postprocess(
             logits_p, logits_s, box_pair_prior,
             boxes_h, boxes_o,
-            object_class, box_pair_labels
+            object_class, box_pair_labels, box_scores, box_labels
         )
 
         if self.training:
