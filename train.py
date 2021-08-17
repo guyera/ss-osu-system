@@ -129,8 +129,10 @@ def main(rank, args):
         object_to_target = train_loader.dataset.dataset.object_to_action
         human_idx = 1
         num_classes = 24
+    num_obj_classes = train_loader.dataset.dataset.num_object_cls
     net = SCG(
         object_to_target, human_idx, num_classes=num_classes,
+        num_obj_classes=num_obj_classes,
         num_iterations=args.num_iter, postprocess=False,
         max_human=args.max_human, max_object=args.max_object,
         box_score_thresh=args.box_score_thresh,

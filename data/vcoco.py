@@ -43,7 +43,7 @@ class VCOCO(ImageDataset):
         with open(anno_file, 'r') as f:
             anno = json.load(f)
 
-        self.num_object_cls = None
+        self.num_object_cls = 81 # TODO: Change if remapping to 81 not being done
         self.num_action_cls = 24
 
         self._anno_file = anno_file
