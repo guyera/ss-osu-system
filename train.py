@@ -170,7 +170,7 @@ def get_net(args):
                 distributed=True
             )
     elif args.net=='idn':
-        net = IDN(config.MODEL, HO_weight)
+        net = IDN(config.MODEL, HO_weight, num_classes=args.num_classes)
     elif args.net=='idn':
         net = ''
     elif args.net=='cascaded-hoi':
@@ -227,12 +227,12 @@ def main(rank, args):
         args_idn = pickle.load(open('arguments.pkl', 'rb'))
         HO_weight = torch.from_numpy(args_idn['HO_weight'])
         config = get_config(args)
-#         train_set    = HICO_train_set(config, split='trainval', train_mode=True)
-#         train_loader = DataLoaderX(train_set, batch_size=config.TRAIN.DATASET.BATCH_SIZE, shuffle=True, collate_fn=train_set.collate_fn, pin_memory=False, drop_last=False)
+        train_set    = HICO_train_set(config, split='trainval', train_mode=True)
+        train_loader = DataLoaderX(train_set, batch_size=config.TRAIN.DATASET.BATCH_SIZE, shuffle=True, collate_fn=train_set.collate_fn, pin_memory=False, drop_last=False)
         
         val_set    = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
         val_loader = DataLoaderX(val_set, batch_size=2, shuffle=False, collate_fn=val_set.collate_fn, pin_memory=False, drop_last=False)
-        train_loader = val_loader
+#         train_loader = val_loader
     # Fix random seed for model synchronisation
     torch.manual_seed(args.random_seed)
 
@@ -285,7 +285,7 @@ if __name__ == "__main__":
     parser.add_argument('--world-size', required=True, type=int,
                         help="Number of subprocesses/GPUs to use")
     parser.add_argument('--dataset', default='hicodet', type=str)
-    parser.add_argument('--net', default='idn', type=str)
+    parser.add_argument('--net', default='scg', type=str)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='hicodet', type=str)
     parser.add_argument('--train-detection-dir', default='hicodet/detections/test2015', type=str)

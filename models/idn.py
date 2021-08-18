@@ -8,6 +8,28 @@ import math
 
 verb_mapping = pickle.load(open('verb_mapping.pkl', 'rb'), encoding='latin1')
 
+class CustomFastRCNNPredictor(nn.Module):
+    """
+    Standard classification + bounding box regression layers
+    for Fast R-CNN.
+
+    Arguments:
+        in_channels (int): number of input channels
+        num_classes (int): number of output classes (including background)
+    """
+
+    def __init__(self, in_channels, num_classes):
+        super(CustomFastRCNNPredictor, self).__init__()
+        self.cls_score = nn.Linear(in_channels, num_classes)
+
+    def forward(self, x):
+        if x.dim() == 4:
+            assert list(x.shape[2:]) == [1, 1]
+        x = x.flatten(start_dim=1)
+        scores = self.cls_score(x)
+
+        return scores
+
 class TLayer(nn.Module):
     def __init__(self, num, in_features, out_features, bias=True):
         super(TLayer, self).__init__()
@@ -205,15 +227,16 @@ diff_layers = {
 }
 
 class IDN(nn.Module):
-    def __init__(self, config, hoi_weight):
+    def __init__(self, config, hoi_weight, num_classes):
         super(IDN, self).__init__()
         self.config = config
-        
+        self.num_classes = num_classes
         if config.IDN.PROJ:
             self.proj = nn.Linear(2048, 4096)
         
         assert self.config.IDN.LAYER_SIZE[0] == self.config.AE.ENCODER.LAYER_SIZE[-1]
         self.AE = AE(config, hoi_weight)
+        self.box_classifier = CustomFastRCNNPredictor(2048,self.num_classes)
         
         self.diff  = diff_layers[self.config.IDN.NAME](self.config.IDN)
         
@@ -253,6 +276,15 @@ class IDN(nn.Module):
     def forward(self, batch):
     
         output_AE = self.AE(batch)
+        
+        box_features = torch.cat((batch['sub_vec'],batch['obj_vec']),0)
+        box_labels = torch.cat((batch['labels_s'],batch['labels_r']),0)
+        
+        box_logits = self.box_classifier(box_features)
+        box_scores = F.softmax(box_logits, -1)
+        
+        box_loss = F.cross_entropy(box_logits,torch.argmax(box_labels, dim=1))
+        
         if self.config.IDN.PROJ:
             batch['uni_vec'] = self.proj(batch['sub_vec'] + batch['obj_vec'])
         else:
@@ -263,7 +295,7 @@ class IDN(nn.Module):
         cat = output_DE['z']
         tran, score = self.diff(uni, cat)
         
-        L_cls = self.classification_fac * self.classification_loss(score, batch[self.key])
+        L_cls = self.classification_fac * self.classification_loss(score, batch[self.key])+box_loss
         
         output = {}
         output['s'] = score
