@@ -8,7 +8,7 @@ Australian Centre for Robotic Vision
 """
 
 from typing import Optional, List, Tuple
-
+import sys
 import numpy as np
 import pocket
 import torch
@@ -18,9 +18,31 @@ from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_g
 from .scg_interaction_head import InteractionHead, GraphHead
 from torch import nn, Tensor
 from torchvision.models.detection import transform
-from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
+from torchvision.models.detection.faster_rcnn import TwoMLPHead
 from torchvision.ops import MultiScaleRoIAlign
 
+
+class CustomFastRCNNPredictor(nn.Module):
+    """
+    Standard classification + bounding box regression layers
+    for Fast R-CNN.
+
+    Arguments:
+        in_channels (int): number of input channels
+        num_classes (int): number of output classes (including background)
+    """
+
+    def __init__(self, in_channels, num_classes):
+        super(CustomFastRCNNPredictor, self).__init__()
+        self.cls_score = nn.Linear(in_channels, num_classes)
+
+    def forward(self, x):
+        if x.dim() == 4:
+            assert list(x.shape[2:]) == [1, 1]
+        x = x.flatten(start_dim=1)
+        scores = self.cls_score(x)
+
+        return scores
 
 class HOINetworkTransform(transform.GeneralizedRCNNTransform):
     """
@@ -91,7 +113,6 @@ class GenericHOINetwork(nn.Module):
         postprocess: bool
             If True, rescale bounding boxes to original image size
     """
-
     def __init__(self,
                  backbone: nn.Module, interaction_head: nn.Module,
                  transform: nn.Module, postprocess: bool = True
@@ -188,7 +209,6 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
         max_human: int = 15,
         max_object: int = 15
     ) -> None:
-
         detector = models.fasterrcnn_resnet_fpn(backbone_name,
             pretrained=pretrained)
         backbone = detector.backbone
@@ -198,6 +218,10 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             output_size=output_size,
             sampling_ratio=sampling_ratio
         )
+        representation_size = 1024
+        box_head = TwoMLPHead(
+            backbone.out_channels * 7 ** 2,
+            representation_size)
 
         box_pair_head = GraphHead(
             out_channels=backbone.out_channels,
@@ -214,10 +238,12 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
         box_pair_predictor = nn.Linear(representation_size * 2, num_classes)
         box_pair_suppressor = nn.Linear(representation_size * 2, 1)
 
-        custom_box_classifier = FastRCNNPredictor(backbone.out_channels, num_obj_classes)
+        # TODO: Remove hardcoding
+        custom_box_classifier = CustomFastRCNNPredictor(1024, num_obj_classes)
 
         interaction_head = InteractionHead(
             box_roi_pool=box_roi_pool,
+            box_head=box_head,
             box_pair_head=box_pair_head,
             box_pair_suppressor=box_pair_suppressor,
             box_pair_predictor=box_pair_predictor,

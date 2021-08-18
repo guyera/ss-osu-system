@@ -130,6 +130,7 @@ def main(rank, args):
         human_idx = 1
         num_classes = 24
     num_obj_classes = train_loader.dataset.dataset.num_object_cls
+    print(f'Num obj clases: {num_obj_classes}')
     net = SCG(
         object_to_target, human_idx, num_classes=num_classes,
         num_obj_classes=num_obj_classes,

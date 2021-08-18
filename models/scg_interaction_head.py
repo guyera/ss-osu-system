@@ -9,7 +9,8 @@ Australian Centre for Robotic Vision
 
 from collections import OrderedDict
 from typing import Optional, List, Tuple
-
+import sys
+import pickle
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
@@ -53,6 +54,7 @@ class InteractionHead(Module):
     def __init__(self,
                  # Network components
                  box_roi_pool: Module,
+                 box_head: Module,
                  box_pair_head: Module,
                  box_pair_suppressor: Module,
                  box_pair_predictor: Module,
@@ -69,8 +71,8 @@ class InteractionHead(Module):
                  distributed: bool = False
                  ) -> None:
         super().__init__()
-
         self.box_roi_pool = box_roi_pool
+        self.box_head = box_head
         self.box_pair_head = box_pair_head
         self.box_pair_suppressor = box_pair_suppressor
         self.box_pair_predictor = box_pair_predictor
@@ -97,7 +99,6 @@ class InteractionHead(Module):
             boxes = detection['boxes']
             labels = detection['labels']
             scores = detection['scores']
-
             # Append ground truth during training
             if append_gt is None:
                 append_gt = self.training
@@ -141,8 +142,7 @@ class InteractionHead(Module):
             results.append(dict(
                 boxes=boxes[active_idx].view(-1, 4),
                 labels=labels[active_idx].view(-1),
-                scores=scores[active_idx].view(-1)
-
+                scores=scores[active_idx].view(-1),
             ))
 
         return results
@@ -188,12 +188,9 @@ class InteractionHead(Module):
         )
         return loss / n_p
 
-    def compute_obj_classification_loss(self, results: List[dict]) -> Tensor:
-        labels = []
-        for result in results:
-            labels.append(result['box_labels'])
+    def compute_obj_classification_loss(self, labels: List[Tensor], box_logits: List[Tensor]) -> Tensor:
         labels = torch.cat(labels, dim=0)
-        classification_loss = F.cross_entropy(results['box_class_logits'], labels)
+        classification_loss = F.cross_entropy(torch.cat(box_logits), labels)
         return classification_loss
 
     def postprocess(self,
@@ -204,8 +201,6 @@ class InteractionHead(Module):
                     boxes_o: List[Tensor],
                     object_class: List[Tensor],
                     labels: List[Tensor],
-                    box_logits: List[Tensor],
-                    box_labels: List[Tensor],
                     ) -> List[dict]:
         """
         Parameters:
@@ -225,10 +220,6 @@ class InteractionHead(Module):
             Object indices for each pair organised by images (M,)
         labels: List[Tensor]
             Binary labels on each action organised by images (M, K)
-        box_logits: List[Tensor]
-            Class logits predicted for each box by the classification head (N, #object classes)
-        box_labels: List[Tensor]
-            GT labels for boxes
 
         Returns:
         --------
@@ -252,10 +243,6 @@ class InteractionHead(Module):
                 Binary labels on each action
             `unary_labels`: Tensor[M], optional
                 Labels for the unary weights
-            `box_class_logits`: Tensor[N]
-                Class logits given by the classification head
-            `box_label`: Tensor[N]
-                GT labels for boxes
         """
         num_boxes = [len(b) for b in boxes_h]
 
@@ -267,19 +254,16 @@ class InteractionHead(Module):
             labels = [None for _ in range(len(num_boxes))]
 
         results = []
-        for w, s, p, b_h, b_o, o, l, box_scores, box_label in zip(
-                weights, scores, prior, boxes_h, boxes_o, object_class, labels, box_logits, box_labels
+        for w, s, p, b_h, b_o, o, l in zip(
+                weights, scores, prior, boxes_h, boxes_o, object_class, labels
         ):
             # Keep valid classes
             x, y = torch.nonzero(p[0]).unbind(1)
-
             result_dict = dict(
                 boxes_h=b_h, boxes_o=b_o,
                 index=x, prediction=y,
                 scores=s[x, y] * p[:, x, y].prod(dim=0) * w[x].detach(),
                 object=o, prior=p[:, x, y], weights=w,
-                box_class_logits=box_scores,
-                box_label=box_label,
             )
             # If binary labels are provided
             if l is not None:
@@ -335,10 +319,29 @@ class InteractionHead(Module):
         # Custom box classification head
         box_coords = [detection['boxes'] for detection in detections]
         box_features = self.box_roi_pool(features, box_coords, image_shapes)
-        detections = self.custom_box_classifier(box_features)
+        box_features = self.box_head(box_features)
+        box_logits = self.custom_box_classifier(box_features)
+        box_scores = F.softmax(box_logits, -1).split([len(elem) for elem in box_coords], 0)
+        box_logits = box_logits.split([len(elem) for elem in box_coords], 0)
+        pred_detections = list()
+        for i, box_coord in enumerate(box_coords):
+            scores, labels = torch.max(box_scores[i], dim=1)
+            detection = {
+                'boxes': box_coord,
+                'labels': labels,
+                'orig_labels': detections[i]['labels'],  # This will be used as GT labels for training classification head
+                'scores': scores,
+                'box_logits': box_logits[i],
+            }
+            pred_detections.append(detection)
 
+        # Computing classification head loss
+        if self.training:
+            box_orig_labels = [detection['orig_labels'] for detection in pred_detections]
+            box_logits = [detection['box_logits'] for detection in pred_detections]
+            obj_classification_loss = self.compute_obj_classification_loss(box_orig_labels, box_logits)
         # Original code resumes
-        detections = self.preprocess(detections, targets)
+        detections = self.preprocess(pred_detections, targets)
 
         box_coords = [detection['boxes'] for detection in detections]
         box_labels = [detection['labels'] for detection in detections]
@@ -347,10 +350,10 @@ class InteractionHead(Module):
         box_features = self.box_roi_pool(features, box_coords, image_shapes)
 
         box_pair_features, boxes_h, boxes_o, object_class, \
-        box_pair_labels, box_pair_prior = self.box_pair_head(
-            features, image_shapes, box_features,
-            box_coords, box_labels, box_scores, targets
-        )
+            box_pair_labels, box_pair_prior = self.box_pair_head(
+                features, image_shapes, box_features,
+                box_coords, box_labels, box_scores, targets
+            )
 
         box_pair_features = torch.cat(box_pair_features)
         logits_p = self.box_pair_predictor(box_pair_features)
@@ -359,14 +362,14 @@ class InteractionHead(Module):
         results = self.postprocess(
             logits_p, logits_s, box_pair_prior,
             boxes_h, boxes_o,
-            object_class, box_pair_labels, box_scores, box_labels
+            object_class, box_pair_labels
         )
 
         if self.training:
             loss_dict = dict(
                 hoi_loss=self.compute_interaction_classification_loss(results),
                 interactiveness_loss=self.compute_interactiveness_loss(results),
-                obj_classification_loss=self.compute_obj_classification_loss(results),
+                obj_classification_loss=obj_classification_loss,
             )
             results.append(loss_dict)
 
@@ -492,7 +495,7 @@ class GraphHead(Module):
     node_encoding_size: int
         Size of the node embeddings
     num_cls: int
-        Number of targe classes
+        Number of target classes
     human_idx: int
         The index of human/person class in all objects
     object_class_to_target_class: List[list]
@@ -515,7 +518,6 @@ class GraphHead(Module):
                  ) -> None:
 
         super().__init__()
-
         self.out_channels = out_channels
         self.roi_pool_size = roi_pool_size
         self.node_encoding_size = node_encoding_size
