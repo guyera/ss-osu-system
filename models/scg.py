@@ -1,12 +1,3 @@
-"""
-Models
-
-Fred Zhang <frederic.zhang@anu.edu.au>
-
-The Australian National University
-Australian Centre for Robotic Vision
-"""
-
 from typing import Optional, List, Tuple
 import numpy as np
 import pocket

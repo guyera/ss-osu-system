@@ -1,12 +1,3 @@
-"""
-Interaction head and its submodules
-
-Fred Zhang <frederic.zhang@anu.edu.au>
-
-The Australian National University
-Australian Centre for Robotic Vision
-"""
-
 from collections import OrderedDict
 from typing import Optional, List, Tuple
 import torch

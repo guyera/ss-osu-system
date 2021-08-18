@@ -1,0 +1,8 @@
+Most of the code in this repo has been built upon following repos. The authors do not claim ownership/authorship of any
+such code in this repo and the original license conditions of the following repos will take precedence over the
+LICENSE of this repo.
+
+1. https://github.com/fredzzhang/spatially-conditioned-graphs
+2. https://github.com/tfzhou/C-HOI
+3. https://github.com/vt-vl-lab/DRG
+4. https://github.com/DirtyHarryLYL/HAKE-Action-Torch/tree/IDN-(Integrating-Decomposing-Network)

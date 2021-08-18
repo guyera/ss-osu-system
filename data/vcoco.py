@@ -1,12 +1,3 @@
-"""
-V-COCO dataset in Python3
-
-Fred Zhang <frederic.zhang@anu.edu.au>
-
-The Australian National University
-Australian Centre for Robotic Vision
-"""
-
 import os
 import json
 import itertools
