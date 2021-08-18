@@ -1,0 +1,3 @@
+[submodule "hicodet"]
+	path = hicodet
+	url = git@github.com:pi-umd/hicodet.git
