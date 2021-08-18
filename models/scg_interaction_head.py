@@ -47,6 +47,7 @@ class InteractionHead(Module):
                  box_pair_head: Module,
                  box_pair_suppressor: Module,
                  box_pair_predictor: Module,
+                 custom_box_classifier: Module,
                  # Dataset properties
                  human_idx: int,
                  num_classes: int,
@@ -64,6 +65,7 @@ class InteractionHead(Module):
         self.box_pair_head = box_pair_head
         self.box_pair_suppressor = box_pair_suppressor
         self.box_pair_predictor = box_pair_predictor
+        self.custom_box_classifier = custom_box_classifier
 
         self.num_classes = num_classes
         self.human_idx = human_idx
@@ -175,7 +177,6 @@ class InteractionHead(Module):
         )
         return loss / n_p
 
-
     def compute_obj_classification_loss(self, labels: List[Tensor], box_logits: List[Tensor]) -> Tensor:
         labels = torch.cat(labels, dim=0)
         classification_loss = F.cross_entropy(torch.cat(box_logits), labels)
@@ -251,9 +252,7 @@ class InteractionHead(Module):
                 boxes_h=b_h, boxes_o=b_o,
                 index=x, prediction=y,
                 scores=s[x, y] * p[:, x, y].prod(dim=0) * w[x].detach(),
-
                 object=o, prior=p[:, x, y], weights=w,
-
             )
             # If binary labels are provided
             if l is not None:
@@ -333,7 +332,6 @@ class InteractionHead(Module):
         # Original code resumes
         detections = self.preprocess(pred_detections, targets)
 
-
         box_coords = [detection['boxes'] for detection in detections]
         box_labels = [detection['labels'] for detection in detections]
         box_scores = [detection['scores'] for detection in detections]
@@ -359,10 +357,8 @@ class InteractionHead(Module):
         if self.training:
             loss_dict = dict(
                 hoi_loss=self.compute_interaction_classification_loss(results),
-
                 interactiveness_loss=self.compute_interactiveness_loss(results),
                 obj_classification_loss=obj_classification_loss,
-
             )
             results.append(loss_dict)
 
