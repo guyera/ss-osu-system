@@ -8,7 +8,6 @@ Australian Centre for Robotic Vision
 """
 
 from typing import Optional, List, Tuple
-import sys
 import numpy as np
 import pocket
 import torch

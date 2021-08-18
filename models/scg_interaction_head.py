@@ -9,8 +9,6 @@ Australian Centre for Robotic Vision
 
 from collections import OrderedDict
 from typing import Optional, List, Tuple
-import sys
-import pickle
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
