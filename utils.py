@@ -1,12 +1,3 @@
-"""
-Opearations
-
-Fred Zhang <frederic.zhang@anu.edu.au>
-
-The Australian National University
-Australian Centre for Robotic Vision
-"""
-
 import torch
 import torchvision.ops.boxes as box_ops
 

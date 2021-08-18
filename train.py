@@ -1,18 +1,13 @@
 import os
 import torch
 import argparse
-import torchvision
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader, DistributedSampler
 
-import pickle
-import pocket
-import numpy as np
-
 from models.scg import SpatiallyConditionedGraph as SCG
 from models.scg import CustomisedDLE
-from data.data_factory import DataFactory, CustomInput
+from data.data_factory import DataFactory
 from utils import custom_collate
 
 import torch.optim as optim
@@ -60,12 +55,12 @@ class Train(object):
         }
         self.train = self.func_map[model_name]
 
-    def scg(self, num_classes, epoch, iteration, args):
+    def scg(self, epoch, iteration, args):
         engine = CustomisedDLE(
             self.net,
             self.train_loader,
             self.val_loader,
-            num_classes=num_classes,
+            num_classes=args.num_classes,
             print_interval=args.print_interval,
             cache_dir=args.cache_dir
         )
@@ -160,6 +155,25 @@ class Train(object):
         raise NotImplementedError
 
 
+def get_net(args):
+    nets = {
+        'scg': SCG(
+                args.object_to_target, args.human_idx, num_classes=args.num_classes,
+                num_obj_classes=args.num_obj_classes,
+                num_iterations=args.num_iter, postprocess=False,
+                max_human=args.max_human, max_object=args.max_object,
+                box_score_thresh=args.box_score_thresh,
+                distributed=True
+            ),
+        'idn': '',
+        'drg': '',
+        'cascaded-hoi': '',
+    }
+    if args.net not in nets:
+        raise NotImplementedError
+    return nets[args.net]
+
+
 def main(rank, args):
     dist.init_process_group(
         backend="nccl",
@@ -217,6 +231,7 @@ def main(rank, args):
 
     
     if args.dataset == 'hicodet':
+<<<<<<< HEAD
         if args.model_name=='scg':
             object_to_target = train_loader.dataset.dataset.object_to_verb
         human_idx = 49
@@ -241,6 +256,20 @@ def main(rank, args):
         net = IDN(config.MODEL, HO_weight)
         net.cuda()
     
+=======
+        args.object_to_target = train_loader.dataset.dataset.object_to_verb
+        args.human_idx = 49
+        args.num_classes = 117
+    elif args.dataset == 'vcoco':
+        args.object_to_target = train_loader.dataset.dataset.object_to_action
+        args.human_idx = 1
+        args.num_classes = 24
+    args.num_obj_classes = train_loader.dataset.dataset.num_object_cls
+
+    net = get_net(args)
+    if net == '':
+        raise NotImplementedError
+>>>>>>> origin
 
     if os.path.exists(args.checkpoint_path):
         print("=> Rank {}: continue from saved checkpoint".format(
@@ -255,18 +284,13 @@ def main(rank, args):
         print("=> Rank {}: start from a randomly initialised model".format(rank))
         optim_state_dict = None
         sched_state_dict = None
-        epoch = 0;
+        epoch = 0
         iteration = 0
         
     print("Data and model loaded")
 
-    # Sample input test
-    # train_input = pickle.load(open('inputs.pkl', 'rb'))
-    # image = np.array(train_input[0][0].cpu())
-    # boxes = np.array(train_input[1][0]['boxes'].cpu())
-    # labels = np.array(train_input[1][0]['labels'].cpu())
-    # scores = np.array(train_input[1][0]['scores'].cpu())
     # TODO: Pass model_name through args here, also implement conditional calling based on models
+<<<<<<< HEAD
 #     trainer = Train(net, 'scg', train_loader, val_loader).train
     trainer = Train(net, args.model_name, train_loader, val_loader).train
     # converter = CustomInput('scg').converter
@@ -281,6 +305,10 @@ def main(rank, args):
     #     epoch, timer[0], test_ap.mean(),
     #     test_ap[rare].mean(), test_ap[non_rare].mean()
     # ))
+=======
+    trainer = Train(net, args.net, train_loader, val_loader).train
+    trainer(epoch, iteration, args)
+>>>>>>> origin
 
 
 if __name__ == "__main__":
@@ -288,7 +316,11 @@ if __name__ == "__main__":
     parser.add_argument('--world-size', required=True, type=int,
                         help="Number of subprocesses/GPUs to use")
     parser.add_argument('--dataset', default='hicodet', type=str)
+<<<<<<< HEAD
     parser.add_argument('--model-name', default='scg', type=str)
+=======
+    parser.add_argument('--net', default='scg', type=str)
+>>>>>>> origin
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='hicodet', type=str)
     parser.add_argument('--train-detection-dir', default='hicodet/detections/test2015', type=str)

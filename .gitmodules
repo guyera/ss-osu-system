@@ -1,0 +1,6 @@
+[submodule "hicodet"]
+	path = hicodet
+	url = git@github.com:pi-umd/hicodet.git
+[submodule "vcoco"]
+	path = vcoco
+	url = git@github.com:pi-umd/vcoco.git
