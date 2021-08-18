@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-# sailon-hoi
-
-Please download the *data* folder needed for IDN [here](https://drive.google.com/file/d/1iHVHrIsJTT97Bmlb1yuLv76C-07YljeP/view?usp=sharing).
-=======
 DISCLAIMER: Most of these instructions are copied from repos mentioned in the `DISCLAIMER` file. We are declaring this
 explicitly here, again, to avoid any claims of plagiarism.
 
@@ -75,6 +70,9 @@ python generate_gt_detections.py --partition train2015
 cd /path/to/spatially-conditioned-graphs/download
 bash download_finetuned_detections.sh
 ```
+
+5. Download the *data* folder needed for IDN [here](https://drive.google.com/file/d/1iHVHrIsJTT97Bmlb1yuLv76C-07YljeP/view?usp=sharing).
+
 To attempt fine-tuning yourself, refer to the [instructions](https://github.com/pi-umd/hicodet/tree/main/detections#fine-tune-the-detector-on-hico-det) in the [HICO-DET repository](https://github.com/pi-umd/hicodet). The checkpoint of original author's fine-tuned detector can be found [here](https://drive.google.com/file/d/11lS2BQ_In-22Q-SRTRjRQaSLg9nSim9h/view?usp=sharing).
 
 ## Testing
@@ -95,4 +93,3 @@ Specify the number of GPUs to use with the argument `--world-size` and specify t
 ## Contact
 
 If you have any questions regarding this repo, please post them in [issues](https://github.com/pi-umd/sailon-hoi/issues). If you ran into issues related to the code, feel free to open an issue. Alternatively, you can contact us at anubhav@umd.edu or vinoj@umd.edu
->>>>>>> origin

@@ -231,7 +231,6 @@ def main(rank, args):
 
     
     if args.dataset == 'hicodet':
-<<<<<<< HEAD
         if args.model_name=='scg':
             object_to_target = train_loader.dataset.dataset.object_to_verb
         human_idx = 49
@@ -242,34 +241,11 @@ def main(rank, args):
         human_idx = 1
         num_classes = 24
 
-        
-    if args.model_name=='scg':
-        net = SCG(
-            object_to_target, human_idx, num_classes=num_classes,
-            num_iterations=args.num_iter, postprocess=False,
-            max_human=args.max_human, max_object=args.max_object,
-            box_score_thresh=args.box_score_thresh,
-            distributed=True
-        )
-    
-    elif args.model_name=='idn': 
-        net = IDN(config.MODEL, HO_weight)
-        net.cuda()
-    
-=======
-        args.object_to_target = train_loader.dataset.dataset.object_to_verb
-        args.human_idx = 49
-        args.num_classes = 117
-    elif args.dataset == 'vcoco':
-        args.object_to_target = train_loader.dataset.dataset.object_to_action
-        args.human_idx = 1
-        args.num_classes = 24
-    args.num_obj_classes = train_loader.dataset.dataset.num_object_cls
 
     net = get_net(args)
     if net == '':
         raise NotImplementedError
->>>>>>> origin
+
 
     if os.path.exists(args.checkpoint_path):
         print("=> Rank {}: continue from saved checkpoint".format(
@@ -290,25 +266,10 @@ def main(rank, args):
     print("Data and model loaded")
 
     # TODO: Pass model_name through args here, also implement conditional calling based on models
-<<<<<<< HEAD
-#     trainer = Train(net, 'scg', train_loader, val_loader).train
-    trainer = Train(net, args.model_name, train_loader, val_loader).train
-    # converter = CustomInput('scg').converter
-    # input_data = converter(image, boxes, labels, scores)
-    trainer(num_classes, epoch, iteration, args)
-    # timer = pocket.utils.HandyTimer(maxlen=1)
 
-    # with timer:
-    #     test_ap = test(net, dataloader)
-    # print("Model at epoch: {} | time elapsed: {:.2f}s\n"
-    #       "Full: {:.4f}, rare: {:.4f}, non-rare: {:.4f}".format(
-    #     epoch, timer[0], test_ap.mean(),
-    #     test_ap[rare].mean(), test_ap[non_rare].mean()
-    # ))
-=======
     trainer = Train(net, args.net, train_loader, val_loader).train
     trainer(epoch, iteration, args)
->>>>>>> origin
+
 
 
 if __name__ == "__main__":
@@ -316,11 +277,7 @@ if __name__ == "__main__":
     parser.add_argument('--world-size', required=True, type=int,
                         help="Number of subprocesses/GPUs to use")
     parser.add_argument('--dataset', default='hicodet', type=str)
-<<<<<<< HEAD
-    parser.add_argument('--model-name', default='scg', type=str)
-=======
     parser.add_argument('--net', default='scg', type=str)
->>>>>>> origin
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='hicodet', type=str)
     parser.add_argument('--train-detection-dir', default='hicodet/detections/test2015', type=str)
