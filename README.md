@@ -3,7 +3,7 @@ explicitly here, again, to avoid any claims of plagiarism.
 
 # sailon-hoi
 
-##Citations
+## Citations
 ```bibtex
 @article{zhang2020,
 	author = {Frederic Z. Zhang and Dylan Campbell and Stephen Gould},
@@ -89,4 +89,4 @@ Specify the number of GPUs to use with the argument `--world-size` and specify t
 
 ## Contact
 
-If you have any questions regarding our paper or the repo, please post them in [discussions](https://github.com/pi-umd/sailon-hoi/discussions). If you ran into issues related to the code, feel free to open an issue. Alternatively, you can contact us at anubhav@umd.edu or vinoj@umd.edu
+If you have any questions regarding this repo, please post them in [issues](https://github.com/pi-umd/sailon-hoi/issues). If you ran into issues related to the code, feel free to open an issue. Alternatively, you can contact us at anubhav@umd.edu or vinoj@umd.edu
