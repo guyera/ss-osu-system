@@ -10,6 +10,7 @@ from models.scg import CustomisedDLE
 from data.data_factory import DataFactory
 from utils import custom_collate
 
+import pickle
 import torch.optim as optim
 from models.idn import AE, IDN
 from prefetch_generator import BackgroundGenerator
@@ -96,11 +97,11 @@ class Train(object):
     def drg(self, input_data):
         raise NotImplementedError
 
-    def idn(self, num_classes, epoch, iteration, args):
-        print("Entered training function")
+    def idn(self, epoch, iteration, args):
 
         def idn_train(net, loader, optimizer, timer, epoch):
             net.train()
+            net.cuda()
             global step
             step = 0
 
@@ -156,22 +157,28 @@ class Train(object):
 
 
 def get_net(args):
-    nets = {
-        'scg': SCG(
+    args_idn = pickle.load(open('arguments.pkl', 'rb'))
+    HO_weight = torch.from_numpy(args_idn['HO_weight'])
+    config = get_config(args)
+    if args.net=='scg':
+        net = SCG(
                 args.object_to_target, args.human_idx, num_classes=args.num_classes,
                 num_obj_classes=args.num_obj_classes,
                 num_iterations=args.num_iter, postprocess=False,
                 max_human=args.max_human, max_object=args.max_object,
                 box_score_thresh=args.box_score_thresh,
                 distributed=True
-            ),
-        'idn': '',
-        'drg': '',
-        'cascaded-hoi': '',
-    }
-    if args.net not in nets:
+            )
+    elif args.net=='idn':
+        net = IDN(config.MODEL, HO_weight)
+    elif args.net=='idn':
+        net = ''
+    elif args.net=='cascaded-hoi':
+        net = ''
+
+    if net=='':
         raise NotImplementedError
-    return nets[args.net]
+    return net
 
 
 def main(rank, args):
@@ -182,7 +189,7 @@ def main(rank, args):
         rank=rank
     )
 
-    if args.model_name=='scg':
+    if args.net=='scg':
         trainset = DataFactory(
             name=args.dataset, partition=args.partitions[1],
             data_root=args.data_root,
@@ -216,31 +223,32 @@ def main(rank, args):
                 rank=rank)
         )
         
-    elif args.model_name=='idn': 
+    elif args.net=='idn': 
         args_idn = pickle.load(open('arguments.pkl', 'rb'))
         HO_weight = torch.from_numpy(args_idn['HO_weight'])
         config = get_config(args)
-        train_set    = HICO_train_set(config, split='trainval', train_mode=True)
-        train_loader = DataLoaderX(train_set, batch_size=config.TRAIN.DATASET.BATCH_SIZE, shuffle=True, collate_fn=train_set.collate_fn, pin_memory=False, drop_last=False)
+#         train_set    = HICO_train_set(config, split='trainval', train_mode=True)
+#         train_loader = DataLoaderX(train_set, batch_size=config.TRAIN.DATASET.BATCH_SIZE, shuffle=True, collate_fn=train_set.collate_fn, pin_memory=False, drop_last=False)
         
         val_set    = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
         val_loader = DataLoaderX(val_set, batch_size=2, shuffle=False, collate_fn=val_set.collate_fn, pin_memory=False, drop_last=False)
-#         train_loader = val_loader
+        train_loader = val_loader
     # Fix random seed for model synchronisation
     torch.manual_seed(args.random_seed)
 
     
     if args.dataset == 'hicodet':
-        if args.model_name=='scg':
-            object_to_target = train_loader.dataset.dataset.object_to_verb
-        human_idx = 49
-        num_classes = 117
+        if args.net=='scg':
+            args.object_to_target = train_loader.dataset.dataset.object_to_verb
+            args.num_obj_classes = train_loader.dataset.dataset.num_object_cls
+        args.human_idx = 49
+        args.num_classes = 117
     elif args.dataset == 'vcoco':
-        if args.model_name=='scg':
-            object_to_target = train_loader.dataset.dataset.object_to_action
-        human_idx = 1
-        num_classes = 24
-
+        if args.net=='scg':
+            args.object_to_target = train_loader.dataset.dataset.object_to_action
+            args.num_obj_classes = train_loader.dataset.dataset.num_object_cls
+        args.human_idx = 1
+        args.num_classes = 24
 
     net = get_net(args)
     if net == '':
@@ -277,7 +285,7 @@ if __name__ == "__main__":
     parser.add_argument('--world-size', required=True, type=int,
                         help="Number of subprocesses/GPUs to use")
     parser.add_argument('--dataset', default='hicodet', type=str)
-    parser.add_argument('--net', default='scg', type=str)
+    parser.add_argument('--net', default='idn', type=str)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='hicodet', type=str)
     parser.add_argument('--train-detection-dir', default='hicodet/detections/test2015', type=str)

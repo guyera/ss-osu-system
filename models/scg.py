@@ -8,10 +8,6 @@ from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_g
 from .scg_interaction_head import InteractionHead, GraphHead
 from torch import nn, Tensor
 from torchvision.models.detection import transform
-<<<<<<< HEAD
-=======
-from torchvision.models.detection.faster_rcnn import TwoMLPHead
->>>>>>> origin
 from torchvision.ops import MultiScaleRoIAlign
 
 
@@ -175,35 +171,6 @@ class GenericHOINetwork(nn.Module):
 
 class SpatiallyConditionedGraph(GenericHOINetwork):
     def __init__(self,
-<<<<<<< HEAD
-                 object_to_action: List[list],
-                 human_idx: int,
-                 # Backbone parameters
-                 backbone_name: str = "resnet50",
-                 pretrained: bool = True,
-                 # Pooler parameters
-                 output_size: int = 7,
-                 sampling_ratio: int = 2,
-                 # Box pair head parameters
-                 node_encoding_size: int = 1024,
-                 representation_size: int = 1024,
-                 num_classes: int = 117,
-                 box_score_thresh: float = 0.2,
-                 fg_iou_thresh: float = 0.5,
-                 num_iterations: int = 2,
-                 distributed: bool = False,
-                 # Transformation parameters
-                 min_size: int = 800, max_size: int = 1333,
-                 image_mean: Optional[List[float]] = None,
-                 image_std: Optional[List[float]] = None,
-                 postprocess: bool = True,
-                 # Preprocessing parameters
-                 box_nms_thresh: float = 0.5,
-                 max_human: int = 15,
-                 max_object: int = 15
-                 ) -> None:
-
-=======
         object_to_action: List[list],
         human_idx: int,
         # Backbone parameters
@@ -231,7 +198,7 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
         max_human: int = 15,
         max_object: int = 15
     ) -> None:
->>>>>>> origin
+
         detector = models.fasterrcnn_resnet_fpn(backbone_name,
                                                 pretrained=pretrained)
         backbone = detector.backbone
@@ -261,12 +228,6 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
         box_pair_predictor = nn.Linear(representation_size * 2, num_classes)
         box_pair_suppressor = nn.Linear(representation_size * 2, 1)
 
-<<<<<<< HEAD
-=======
-        # TODO: Remove hardcoding
-        custom_box_classifier = CustomFastRCNNPredictor(1024, num_obj_classes)
-
->>>>>>> origin
         interaction_head = InteractionHead(
             box_roi_pool=box_roi_pool,
             box_head=box_head,

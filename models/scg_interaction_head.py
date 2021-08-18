@@ -175,14 +175,12 @@ class InteractionHead(Module):
         )
         return loss / n_p
 
-<<<<<<< HEAD
-=======
+
     def compute_obj_classification_loss(self, labels: List[Tensor], box_logits: List[Tensor]) -> Tensor:
         labels = torch.cat(labels, dim=0)
         classification_loss = F.cross_entropy(torch.cat(box_logits), labels)
         return classification_loss
 
->>>>>>> origin
     def postprocess(self,
                     logits_p: Tensor,
                     logits_s: Tensor,
@@ -190,11 +188,7 @@ class InteractionHead(Module):
                     boxes_h: List[Tensor],
                     boxes_o: List[Tensor],
                     object_class: List[Tensor],
-<<<<<<< HEAD
-                    labels: List[Tensor]
-=======
                     labels: List[Tensor],
->>>>>>> origin
                     ) -> List[dict]:
         """
         Parameters:
@@ -257,11 +251,9 @@ class InteractionHead(Module):
                 boxes_h=b_h, boxes_o=b_o,
                 index=x, prediction=y,
                 scores=s[x, y] * p[:, x, y].prod(dim=0) * w[x].detach(),
-<<<<<<< HEAD
-                object=o, prior=p[:, x, y], weights=w
-=======
+
                 object=o, prior=p[:, x, y], weights=w,
->>>>>>> origin
+
             )
             # If binary labels are provided
             if l is not None:
@@ -313,9 +305,6 @@ class InteractionHead(Module):
         """
         if self.training:
             assert targets is not None, "Targets should be passed during training"
-<<<<<<< HEAD
-        detections = self.preprocess(detections, targets)
-=======
 
         # Custom box classification head
         box_coords = [detection['boxes'] for detection in detections]
@@ -343,7 +332,7 @@ class InteractionHead(Module):
             obj_classification_loss = self.compute_obj_classification_loss(box_orig_labels, box_logits)
         # Original code resumes
         detections = self.preprocess(pred_detections, targets)
->>>>>>> origin
+
 
         box_coords = [detection['boxes'] for detection in detections]
         box_labels = [detection['labels'] for detection in detections]
@@ -370,12 +359,10 @@ class InteractionHead(Module):
         if self.training:
             loss_dict = dict(
                 hoi_loss=self.compute_interaction_classification_loss(results),
-<<<<<<< HEAD
-                interactiveness_loss=self.compute_interactiveness_loss(results)
-=======
+
                 interactiveness_loss=self.compute_interactiveness_loss(results),
                 obj_classification_loss=obj_classification_loss,
->>>>>>> origin
+
             )
             results.append(loss_dict)
 
