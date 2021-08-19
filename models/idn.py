@@ -262,15 +262,16 @@ class IDN(nn.Module):
         if config.IDN.BINARY:
             self.binary_fac  = self.config.IDN.BINARY_FAC
 
-        if config.IDN.CHECKPOINT:
-            state = torch.load(config.IDN.CHECKPOINT)['state']
-            self.load_state_dict(state)
         if self.config.AE.NUM_CLASSES == 600:
             self.semihard_loss       = semihard_loss(pos_weight=hoi_weight)
         elif self.config.AE.NUM_CLASSES == 29:
             self.semihard_loss       = semihard_loss(pos_weight=hoi_weight)
         else:
             self.semihard_loss       = semihard_loss(pos_weight=verb_weight)
+            
+        if config.IDN.CHECKPOINT:
+            state = torch.load(config.IDN.CHECKPOINT)['state']
+            self.load_state_dict(state)
             
 
     def forward(self, batch):
@@ -295,7 +296,7 @@ class IDN(nn.Module):
         cat = output_DE['z']
         tran, score = self.diff(uni, cat)
         
-        L_cls = self.classification_fac * self.classification_loss(score, batch[self.key])+box_loss
+        L_cls = self.classification_fac * self.classification_loss(score, batch[self.key]) +box_loss
         
         output = {}
         output['s'] = score

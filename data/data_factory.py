@@ -20,33 +20,12 @@ from .hicodet import HICODet
 import pocket
 from pocket.core import DistributedLearningEngine
 from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_gather
-from utils import custom_collate
+from utils import custom_collate, get_config, DataLoaderX, verb_mapping
 import pickle
 
 import yaml
 import re
 from easydict import EasyDict as edict
-
-def get_config(args):
-    loader = yaml.FullLoader
-    loader.add_implicit_resolver(
-        u'tag:yaml.org,2002:float',
-        re.compile(u'''^(?:
-         [-+]?(?:[0-9][0-9_]*)\\.[0-9_]*(?:[eE][-+]?[0-9]+)?
-        |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)
-        |\\.[0-9_]+(?:[eE][-+][0-9]+)?
-        |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\\.[0-9_]*
-        |[-+]?\\.(?:inf|Inf|INF)
-        |\\.(?:nan|NaN|NAN))$''', re.X),
-        list(u'-+0123456789.'))
-    
-    config = edict(yaml.load(open('configs/IDN.yml', 'r'), Loader=loader))
-    return config
-
-verb_mapping = torch.from_numpy(pickle.load(open('verb_mapping.pkl', 'rb'), encoding='latin1')).float()
-class DataLoaderX(DataLoader):
-    def __iter__(self):
-        return BackgroundGenerator(super().__iter__())
 
 
 class CustomInput(object):
@@ -84,7 +63,7 @@ class CustomInput(object):
 
     def idn(self, image, boxes, labels, scores):
         args_idn = pickle.load(open('arguments.pkl', 'rb'))
-        config = get_config(args_idn)
+        config = get_config('configs/IDN.yml')
         test_set    = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
         test_loader = DataLoaderX(test_set, batch_size=1, shuffle=False, collate_fn=test_set.collate_fn, pin_memory=False, drop_last=False)
         verb_mapping = torch.from_numpy(pickle.load(open('verb_mapping.pkl', 'rb'), encoding='latin1')).float()
@@ -123,7 +102,7 @@ class DataFactory(Dataset):
             assert partition in ['train2015', 'test2015'], \
                 "Unknown HICO-DET partition " + partition
             self.dataset = HICODet(
-                root=os.path.join(data_root, '../datasets/hico_det', partition),
+                root=os.path.join(data_root, 'hico_20160224_det/images', partition),
                 anno_file=os.path.join(data_root, 'instances_{}.json'.format(partition)),
                 target_transform=pocket.ops.ToTensor(input_format='dict')
             )

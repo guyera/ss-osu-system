@@ -4,7 +4,7 @@ import h5py
 import os.path as osp
 import torch
 from torch.utils.data import Dataset
-verb_trans = pickle.load(open('verb_mapping.pkl', 'rb'), encoding='latin1')
+from utils import verb_mapping as verb_trans
 
 def clip_xyxy_to_image(x1, y1, x2, y2, height, width):
     x1 = np.minimum(width - 1., np.maximum(0., x1))

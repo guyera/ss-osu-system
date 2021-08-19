@@ -8,38 +8,16 @@ from torch.utils.data import DataLoader, DistributedSampler
 from models.scg import SpatiallyConditionedGraph as SCG
 from models.scg import CustomisedDLE
 from data.data_factory import DataFactory
-from utils import custom_collate
+from utils import custom_collate, Timer, HO_weight, AverageMeter, fac_i, fac_a, fac_d, nis_thresh, get_config, DataLoaderX, verb_mapping
 
 import pickle
 import torch.optim as optim
 from models.idn import AE, IDN
-from prefetch_generator import BackgroundGenerator
 from dataset_idn import HICO_train_set, HICO_test_set
-from utils_idn import Timer, HO_weight, AverageMeter, fac_i, fac_a, fac_d, nis_thresh
 import yaml
 import re
 from easydict import EasyDict as edict
 print("packages loaded")
-
-def get_config(args):
-    loader = yaml.FullLoader
-    loader.add_implicit_resolver(
-        u'tag:yaml.org,2002:float',
-        re.compile(u'''^(?:
-         [-+]?(?:[0-9][0-9_]*)\\.[0-9_]*(?:[eE][-+]?[0-9]+)?
-        |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)
-        |\\.[0-9_]+(?:[eE][-+][0-9]+)?
-        |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\\.[0-9_]*
-        |[-+]?\\.(?:inf|Inf|INF)
-        |\\.(?:nan|NaN|NAN))$''', re.X),
-        list(u'-+0123456789.'))
-    
-    config = edict(yaml.load(open(args.config_path, 'r'), Loader=loader))
-    return config
-
-class DataLoaderX(DataLoader):
-    def __iter__(self):
-        return BackgroundGenerator(super().__iter__())
     
 train_timer = Timer()
 
@@ -139,14 +117,14 @@ class Train(object):
                 if i % 2000 == 0:
                     print("%03d epoch, %05d iter, average time %.4f, loss %.4f" % (epoch, i, timer.average_time, loss.detach().cpu().data))
                 step += 1
-                
+#                 if (i==1100): break
             timer.toc()
 
             return net, meters
-        config = get_config(args)
+        config = get_config(args.config_path)
         optimizer = optim.SGD(self.net.parameters(), lr=config.TRAIN.OPTIMIZER.lr, momentum=config.TRAIN.OPTIMIZER.momentum, weight_decay=config.TRAIN.OPTIMIZER.weight_decay)
 
-        for i in range(1): #config.TRAIN.MAX_EPOCH
+        for i in range(args.num_epochs): #config.TRAIN.MAX_EPOCH
             train_str = "%03d epoch training" % i
             net, train_meters = idn_train(self.net, self.train_loader, optimizer, train_timer, i)
             for (key, value) in train_meters.items():
@@ -159,7 +137,7 @@ class Train(object):
 def get_net(args):
     args_idn = pickle.load(open('arguments.pkl', 'rb'))
     HO_weight = torch.from_numpy(args_idn['HO_weight'])
-    config = get_config(args)
+    config = get_config(args.config_path)
     if args.net=='scg':
         net = SCG(
                 args.object_to_target, args.human_idx, num_classes=args.num_classes,
@@ -226,12 +204,12 @@ def main(rank, args):
     elif args.net=='idn': 
         args_idn = pickle.load(open('arguments.pkl', 'rb'))
         HO_weight = torch.from_numpy(args_idn['HO_weight'])
-        config = get_config(args)
+        config = get_config(args.config_path)
         train_set    = HICO_train_set(config, split='trainval', train_mode=True)
         train_loader = DataLoaderX(train_set, batch_size=config.TRAIN.DATASET.BATCH_SIZE, shuffle=True, collate_fn=train_set.collate_fn, pin_memory=False, drop_last=False)
         
         val_set    = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
-        val_loader = DataLoaderX(val_set, batch_size=2, shuffle=False, collate_fn=val_set.collate_fn, pin_memory=False, drop_last=False)
+        val_loader = DataLoaderX(val_set, batch_size=args.batch_size, shuffle=False, collate_fn=val_set.collate_fn, pin_memory=False, drop_last=False)
 #         train_loader = val_loader
     # Fix random seed for model synchronisation
     torch.manual_seed(args.random_seed)

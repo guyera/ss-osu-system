@@ -34,7 +34,7 @@ class VCOCO(ImageDataset):
         with open(anno_file, 'r') as f:
             anno = json.load(f)
 
-        self.num_object_cls = None
+        self.num_object_cls = 81
         self.num_action_cls = 24
 
         self._anno_file = anno_file
