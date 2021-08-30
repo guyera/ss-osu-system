@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from models.scg import SpatiallyConditionedGraph as SCG
 from models.scg import CustomisedDLE
 from data.data_factory import DataFactory
-from utils import custom_collate, Timer, HO_weight, AverageMeter, fac_i, fac_a, fac_d, nis_thresh, get_config, DataLoaderX, verb_mapping
+from utils import custom_collate, Timer, AverageMeter, get_config, DataLoaderX
 
 import pickle
 import torch.optim as optim
@@ -17,7 +17,6 @@ from dataset_idn import HICO_train_set, HICO_test_set
 import yaml
 import re
 from easydict import EasyDict as edict
-print("packages loaded")
     
 train_timer = Timer()
 
@@ -117,7 +116,7 @@ class Train(object):
                 if i % 2000 == 0:
                     print("%03d epoch, %05d iter, average time %.4f, loss %.4f" % (epoch, i, timer.average_time, loss.detach().cpu().data))
                 step += 1
-#                 if (i==1100): break
+                
             timer.toc()
 
             return net, meters
@@ -135,9 +134,6 @@ class Train(object):
 
 
 def get_net(args):
-    args_idn = pickle.load(open('arguments.pkl', 'rb'))
-    HO_weight = torch.from_numpy(args_idn['HO_weight'])
-    config = get_config(args.config_path)
     if args.net=='scg':
         net = SCG(
                 args.object_to_target, args.human_idx, num_classes=args.num_classes,
@@ -148,9 +144,11 @@ def get_net(args):
                 distributed=True
             )
     elif args.net=='idn':
+        args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
+        HO_weight = torch.from_numpy(args_idn['HO_weight'])
+        config = get_config(args.config_path)
         net = IDN(config.MODEL, HO_weight, num_classes=args.num_classes)
-    elif args.net=='idn':
-        net = ''
+
     elif args.net=='cascaded-hoi':
         net = ''
 
@@ -202,7 +200,7 @@ def main(rank, args):
         )
         
     elif args.net=='idn': 
-        args_idn = pickle.load(open('arguments.pkl', 'rb'))
+        args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
         HO_weight = torch.from_numpy(args_idn['HO_weight'])
         config = get_config(args.config_path)
         train_set    = HICO_train_set(config, split='trainval', train_mode=True)

@@ -20,7 +20,7 @@ from .hicodet import HICODet
 import pocket
 from pocket.core import DistributedLearningEngine
 from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_gather
-from utils import custom_collate, get_config, DataLoaderX, verb_mapping
+from utils import custom_collate, get_config, DataLoaderX
 import pickle
 
 import yaml
@@ -62,11 +62,11 @@ class CustomInput(object):
         raise NotImplementedError
 
     def idn(self, image, boxes, labels, scores):
-        args_idn = pickle.load(open('arguments.pkl', 'rb'))
+        args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
         config = get_config('configs/IDN.yml')
         test_set    = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
         test_loader = DataLoaderX(test_set, batch_size=1, shuffle=False, collate_fn=test_set.collate_fn, pin_memory=False, drop_last=False)
-        verb_mapping = torch.from_numpy(pickle.load(open('verb_mapping.pkl', 'rb'), encoding='latin1')).float()
+        verb_mapping = torch.from_numpy(pickle.load(open('configs/verb_mapping.pkl', 'rb'), encoding='latin1')).float()
         for i, batch in enumerate(test_loader):
             n = batch['shape'].shape[0]
             batch['shape']   = batch['shape'].cuda(non_blocking=True)

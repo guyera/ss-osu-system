@@ -12,7 +12,7 @@ import numpy as np
 
 from models.scg import SpatiallyConditionedGraph as SCG
 from data.data_factory import DataFactory, CustomInput
-from utils import custom_collate, Timer, HO_weight, AverageMeter, fac_i, fac_a, fac_d, nis_thresh, get_config, DataLoaderX, verb_mapping, obj_range, hoi_no_inter_all
+from utils import custom_collate, Timer, AverageMeter, get_config, DataLoaderX
 
 from models.idn import AE, IDN
 from dataset_idn import HICO_train_set, HICO_test_set
@@ -21,9 +21,6 @@ import re
 from easydict import EasyDict as edict
 
 def get_net(args):
-    args_idn = pickle.load(open('arguments.pkl', 'rb'))
-    HO_weight = torch.from_numpy(args_idn['HO_weight'])
-    config = get_config(args.config_path)
     if args.net=='scg':
         net = SCG(
                 args.object_to_target, args.human_idx, num_classes=args.num_classes,
@@ -34,9 +31,10 @@ def get_net(args):
                 distributed=True
             )
     elif args.net=='idn':
+        args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
+        HO_weight = torch.from_numpy(args_idn['HO_weight'])
+        config = get_config(args.config_path)
         net = IDN(config.MODEL, HO_weight, num_classes=args.num_classes)
-    elif args.net=='idn':
-        net = ''
     elif args.net=='cascaded-hoi':
         net = ''
 
@@ -55,6 +53,7 @@ class Test(object):
             'cascaded-hoi': self.cascaded_hoi,
         }
         self.test = self.func_map[model_name]
+        self.converter = CustomInput(model_name).converter
 
     def scg(self, ov_interaction_map):
         results = list()
@@ -105,6 +104,14 @@ class Test(object):
             keys.append([])
             hdet.append([])
             odet.append([])
+        args      = pickle.load(open('configs/arguments.pkl', 'rb'))
+        verb_mapping = torch.from_numpy(pickle.load(open('configs/verb_mapping.pkl', 'rb'), encoding='latin1')).float()
+        HO_weight = torch.from_numpy(args['HO_weight'])
+        fac_i     = args['fac_i']
+        fac_a     = args['fac_a']
+        fac_d     = args['fac_d']
+        nis_thresh= args['nis_thresh']
+        obj_range = pickle.load(open('configs/idn_configs.pkl', 'rb'), encoding='latin1')['obj_range']
 
         timer.tic()
         for i, batch in enumerate(self.data_loader):
@@ -118,7 +125,6 @@ class Test(object):
             batch['labels_ro']  = batch['labels_ro'].cuda(non_blocking=True)
             batch['labels_r']   = batch['labels_r'].cuda(non_blocking=True)
             batch['labels_sro'] = batch['labels_sro'].cuda(non_blocking=True)
-            verb_mapping = torch.from_numpy(pickle.load(open('verb_mapping.pkl', 'rb'), encoding='latin1')).float()
             verb_mapping    = verb_mapping.cuda(non_blocking=True)
             output = self.net(batch)
 
@@ -171,6 +177,7 @@ class Test(object):
                 print("%05d iteration, average time %.4f" % (i, timer.average_time))
             timer.tic()
             
+           
         timer.toc()
 
         for i in range(80):
@@ -232,7 +239,7 @@ def main(rank, args):
         )
         
     elif args.net=='idn': 
-        args_idn = pickle.load(open('arguments.pkl', 'rb'))
+        args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
         HO_weight = torch.from_numpy(args_idn['HO_weight'])
         config = get_config(args.config_path)
         
