@@ -1,14 +1,13 @@
 import os
 import torch
 import argparse
-import torchvision
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader, DistributedSampler
 
-import pickle
 import pocket
 import numpy as np
+from tqdm import tqdm
 
 from models.scg import SpatiallyConditionedGraph as SCG
 from data.data_factory import DataFactory, CustomInput
@@ -41,6 +40,25 @@ def get_net(args):
     if net=='':
         raise NotImplementedError
     return net
+
+def get_net(args):
+    nets = {
+        'scg': SCG(
+                args.object_to_target, args.human_idx, num_classes=args.num_classes,
+                num_obj_classes=args.num_obj_classes,
+                num_iterations=args.num_iter, postprocess=False,
+                max_human=args.max_human, max_object=args.max_object,
+                box_score_thresh=args.box_score_thresh,
+                distributed=True
+            ),
+        'idn': '',
+        'drg': '',
+        'cascaded-hoi': '',
+    }
+    if args.net not in nets:
+        raise NotImplementedError
+    return nets[args.net]
+
 
 class Test(object):
     def __init__(self, net, model_name, data_loader):
@@ -225,7 +243,7 @@ def main(rank, args):
         valset = DataFactory(
             name=args.dataset, partition=args.partitions[1],
             data_root=args.data_root,
-            detection_root=args.val_detection_dir
+            detection_root=args.detection_dir
         )
 
         val_loader = DataLoader(
@@ -249,14 +267,14 @@ def main(rank, args):
     
     if args.dataset == 'hicodet':
         if args.net=='scg':
-            args.object_to_target = train_loader.dataset.dataset.object_to_verb
-            args.num_obj_classes = train_loader.dataset.dataset.num_object_cls
+            args.object_to_target = val_loader.dataset.dataset.object_to_verb
+            args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
         args.human_idx = 49
         args.num_classes = 117
     elif args.dataset == 'vcoco':
         if args.net=='scg':
-            args.object_to_target = train_loader.dataset.dataset.object_to_action
-            args.num_obj_classes = train_loader.dataset.dataset.num_object_cls
+            args.object_to_target = val_loader.dataset.dataset.object_to_action
+            args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
         args.human_idx = 1
         args.num_classes = 24
     net = get_net(args)
