@@ -6,7 +6,7 @@ import pickle
 from collections import OrderedDict
 import math
 
-verb_mapping = pickle.load(open('verb_mapping.pkl', 'rb'), encoding='latin1')
+verb_mapping = pickle.load(open('configs/verb_mapping.pkl', 'rb'), encoding='latin1')
 
 class CustomFastRCNNPredictor(nn.Module):
     """
