@@ -17,6 +17,7 @@ from models.idn import AE, IDN
 from dataset_idn import HICO_train_set, HICO_test_set
 import yaml
 import re
+import pickle
 from easydict import EasyDict as edict
 
 def get_net(args):
