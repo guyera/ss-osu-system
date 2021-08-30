@@ -70,6 +70,9 @@ python generate_gt_detections.py --partition train2015
 cd /path/to/spatially-conditioned-graphs/download
 bash download_finetuned_detections.sh
 ```
+
+5. Download the *data* folder needed for IDN [here](https://drive.google.com/file/d/1iHVHrIsJTT97Bmlb1yuLv76C-07YljeP/view?usp=sharing).
+
 To attempt fine-tuning yourself, refer to the [instructions](https://github.com/pi-umd/hicodet/tree/main/detections#fine-tune-the-detector-on-hico-det) in the [HICO-DET repository](https://github.com/pi-umd/hicodet). The checkpoint of original author's fine-tuned detector can be found [here](https://drive.google.com/file/d/11lS2BQ_In-22Q-SRTRjRQaSLg9nSim9h/view?usp=sharing).
 
 ## Testing

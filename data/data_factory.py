@@ -5,6 +5,9 @@ import torch
 import numpy as np
 from tqdm import tqdm
 import torch.distributed as dist
+from torch.utils.data import DataLoader
+from dataset_idn import HICO_test_set
+from prefetch_generator import BackgroundGenerator
 
 from torch.utils.data import Dataset
 from torchvision import transforms
@@ -17,6 +20,12 @@ from .hicodet import HICODet
 import pocket
 from pocket.core import DistributedLearningEngine
 from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_gather
+from utils import custom_collate, get_config, DataLoaderX
+import pickle
+
+import yaml
+import re
+from easydict import EasyDict as edict
 
 
 class CustomInput(object):
@@ -30,7 +39,7 @@ class CustomInput(object):
         }
         self.converter = self.func_map[model_name]
 
-    def scg(self, image, boxes, labels, scores, targets=None):
+    def scg(self, image, boxes, labels, scores):
         """Merges the arguments into a data point for the scg model
 
         Args:
@@ -38,7 +47,6 @@ class CustomInput(object):
             boxes (list of list): detected box coords
             labels (list): detected box labels
             scores (list): detected box scores for selected class
-            targets (list): target box labels
         """
         data_point = list()
         data_point.append([torch.from_numpy(image)])
@@ -48,15 +56,32 @@ class CustomInput(object):
             'scores': torch.from_numpy(scores),
         }]
         data_point.append(detections)
-        if targets is not None:
-            data_point.append([torch.from_numpy(targets)])
         return data_point
 
     def drg(self):
         raise NotImplementedError
 
-    def idn(self):
-        raise NotImplementedError
+    def idn(self, image, boxes, labels, scores):
+        args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
+        config = get_config('configs/IDN.yml')
+        test_set    = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
+        test_loader = DataLoaderX(test_set, batch_size=1, shuffle=False, collate_fn=test_set.collate_fn, pin_memory=False, drop_last=False)
+        verb_mapping = torch.from_numpy(pickle.load(open('configs/verb_mapping.pkl', 'rb'), encoding='latin1')).float()
+        for i, batch in enumerate(test_loader):
+            n = batch['shape'].shape[0]
+            batch['shape']   = batch['shape'].cuda(non_blocking=True)
+            batch['spatial'] = batch['spatial'].cuda(non_blocking=True)
+            batch['sub_vec'] = batch['sub_vec'].cuda(non_blocking=True)
+            batch['obj_vec'] = batch['obj_vec'].cuda(non_blocking=True)
+            batch['uni_vec'] = batch['uni_vec'].cuda(non_blocking=True)
+            batch['labels_s']   = batch['labels_s'].cuda(non_blocking=True)
+            batch['labels_ro']  = batch['labels_ro'].cuda(non_blocking=True)
+            batch['labels_r']   = batch['labels_r'].cuda(non_blocking=True)
+            batch['labels_sro'] = batch['labels_sro'].cuda(non_blocking=True)
+            verb_mapping    = verb_mapping.cuda(non_blocking=True)
+            break
+            
+        return batch
 
     def cascaded_hoi(self):
         raise NotImplementedError
