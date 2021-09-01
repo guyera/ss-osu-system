@@ -20,38 +20,40 @@ import re
 import pickle
 from easydict import EasyDict as edict
 
+
 def get_net(args):
-    if args.net=='scg':
+    if args.net == 'scg':
         net = SCG(
-                args.object_to_target, args.human_idx, num_classes=args.num_classes,
-                num_obj_classes=args.num_obj_classes,
-                num_iterations=args.num_iter, postprocess=False,
-                max_human=args.max_human, max_object=args.max_object,
-                box_score_thresh=args.box_score_thresh,
-                distributed=True
-            )
-    elif args.net=='idn':
+            args.object_to_target, args.human_idx, num_classes=args.num_classes,
+            num_obj_classes=args.num_obj_classes,
+            num_iterations=args.num_iter, postprocess=False,
+            max_human=args.max_human, max_object=args.max_object,
+            box_score_thresh=args.box_score_thresh,
+            distributed=True
+        )
+    elif args.net == 'idn':
         args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
         HO_weight = torch.from_numpy(args_idn['HO_weight'])
         config = get_config(args.config_path)
         net = IDN(config.MODEL, HO_weight, num_classes=args.num_classes)
-    elif args.net=='cascaded-hoi':
+    elif args.net == 'cascaded-hoi':
         net = ''
 
-    if net=='':
+    if net == '':
         raise NotImplementedError
     return net
+
 
 def get_net(args):
     nets = {
         'scg': SCG(
-                args.object_to_target, args.human_idx, num_classes=args.num_classes,
-                num_obj_classes=args.num_obj_classes,
-                num_iterations=args.num_iter, postprocess=False,
-                max_human=args.max_human, max_object=args.max_object,
-                box_score_thresh=args.box_score_thresh,
-                distributed=True
-            ),
+            args.object_to_target, args.human_idx, num_classes=args.num_classes,
+            num_obj_classes=args.num_obj_classes,
+            num_iterations=args.num_iter, postprocess=False,
+            max_human=args.max_human, max_object=args.max_object,
+            box_score_thresh=args.box_score_thresh,
+            distributed=True
+        ),
         'idn': '',
         'drg': '',
         'cascaded-hoi': '',
@@ -111,7 +113,7 @@ class Test(object):
 
     def drg(self, input_data):
         raise NotImplementedError
-        
+
     def idn(self):
         timer = Timer()
         bboxes, scores, scores_AE, scores_rev, keys, hdet, odet = [], [], [], [], [], [], []
@@ -123,28 +125,28 @@ class Test(object):
             keys.append([])
             hdet.append([])
             odet.append([])
-        args      = pickle.load(open('configs/arguments.pkl', 'rb'))
+        args = pickle.load(open('configs/arguments.pkl', 'rb'))
         verb_mapping = torch.from_numpy(pickle.load(open('configs/verb_mapping.pkl', 'rb'), encoding='latin1')).float()
         HO_weight = torch.from_numpy(args['HO_weight'])
-        fac_i     = args['fac_i']
-        fac_a     = args['fac_a']
-        fac_d     = args['fac_d']
-        nis_thresh= args['nis_thresh']
+        fac_i = args['fac_i']
+        fac_a = args['fac_a']
+        fac_d = args['fac_d']
+        nis_thresh = args['nis_thresh']
         obj_range = pickle.load(open('configs/idn_configs.pkl', 'rb'), encoding='latin1')['obj_range']
 
         timer.tic()
         for i, batch in enumerate(self.data_loader):
             n = batch['shape'].shape[0]
-            batch['shape']   = batch['shape'].cuda(non_blocking=True)
+            batch['shape'] = batch['shape'].cuda(non_blocking=True)
             batch['spatial'] = batch['spatial'].cuda(non_blocking=True)
             batch['sub_vec'] = batch['sub_vec'].cuda(non_blocking=True)
             batch['obj_vec'] = batch['obj_vec'].cuda(non_blocking=True)
             batch['uni_vec'] = batch['uni_vec'].cuda(non_blocking=True)
-            batch['labels_s']   = batch['labels_s'].cuda(non_blocking=True)
-            batch['labels_ro']  = batch['labels_ro'].cuda(non_blocking=True)
-            batch['labels_r']   = batch['labels_r'].cuda(non_blocking=True)
+            batch['labels_s'] = batch['labels_s'].cuda(non_blocking=True)
+            batch['labels_ro'] = batch['labels_ro'].cuda(non_blocking=True)
+            batch['labels_r'] = batch['labels_r'].cuda(non_blocking=True)
             batch['labels_sro'] = batch['labels_sro'].cuda(non_blocking=True)
-            verb_mapping    = verb_mapping.cuda(non_blocking=True)
+            verb_mapping = verb_mapping.cuda(non_blocking=True)
             output = self.net(batch)
 
             batch['spatial'][:, 0] *= batch['shape'][:, 0]
@@ -177,7 +179,7 @@ class Test(object):
 
             for j in range(bbox.shape[0]):
                 cls = obj_class[j]
-                x, y = obj_range[cls][0]-1, obj_range[cls][1]
+                x, y = obj_range[cls][0] - 1, obj_range[cls][1]
                 keys[cls].append(batch['key'][j])
                 bboxes[cls].append(bbox[j])
                 scores[cls].append(np.zeros(y - x))
@@ -195,16 +197,15 @@ class Test(object):
             if i % 1000 == 0:
                 print("%05d iteration, average time %.4f" % (i, timer.average_time))
             timer.tic()
-            
-           
+
         timer.toc()
 
         for i in range(80):
-            keys[i]       = np.array(keys[i])
-            bboxes[i]     = np.array(bboxes[i])
-            scores[i]     = np.array(scores[i])
-            hdet[i]       = np.array(hdet[i])
-            odet[i]       = np.array(odet[i])
+            keys[i] = np.array(keys[i])
+            bboxes[i] = np.array(bboxes[i])
+            scores[i] = np.array(scores[i])
+            hdet[i] = np.array(hdet[i])
+            odet[i] = np.array(odet[i])
 
         sel = []
         for i in range(600):
@@ -239,7 +240,7 @@ def main(rank, args):
         rank=rank
     )
 
-    if args.net=='scg':
+    if args.net == 'scg':
 
         valset = DataFactory(
             name=args.dataset, partition=args.partitions[1],
@@ -256,24 +257,24 @@ def main(rank, args):
                 num_replicas=args.world_size,
                 rank=rank)
         )
-        
-    elif args.net=='idn': 
+
+    elif args.net == 'idn':
         args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
         HO_weight = torch.from_numpy(args_idn['HO_weight'])
         config = get_config(args.config_path)
-        
-        val_set    = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
-        val_loader = DataLoaderX(val_set, batch_size=args.batch_size, shuffle=False, collate_fn=val_set.collate_fn, pin_memory=False, drop_last=False)
 
-    
+        val_set = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
+        val_loader = DataLoaderX(val_set, batch_size=args.batch_size, shuffle=False, collate_fn=val_set.collate_fn,
+                                 pin_memory=False, drop_last=False)
+
     if args.dataset == 'hicodet':
-        if args.net=='scg':
+        if args.net == 'scg':
             args.object_to_target = val_loader.dataset.dataset.object_to_verb
             args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
         args.human_idx = 49
         args.num_classes = 117
     elif args.dataset == 'vcoco':
-        if args.net=='scg':
+        if args.net == 'scg':
             args.object_to_target = val_loader.dataset.dataset.object_to_action
             args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
         args.human_idx = 1
@@ -293,12 +294,13 @@ def main(rank, args):
     net.cuda()
     net.eval()
     tester = Test(net, args.net, val_loader).test
-    if args.net=='scg':
+    if args.net == 'scg':
         tester(val_loader.dataset.dataset.object_n_verb_to_interaction)
-    elif args.net=='idn':
+    elif args.net == 'idn':
         tester()
     else:
         raise NotImplementedError
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train an interaction head")
@@ -320,7 +322,8 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint-path', default='', type=str)
     parser.add_argument('--batch-size', default=1, type=int,
                         help="Batch size for each subprocess")
-    parser.add_argument('--config_path', dest='config_path',help='Select config file', default='configs/IDN.yml', type=str)
+    parser.add_argument('--config_path', dest='config_path', help='Select config file', default='configs/IDN.yml',
+                        type=str)
 
     args = parser.parse_args()
     os.environ["MASTER_ADDR"] = "localhost"
