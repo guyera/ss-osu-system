@@ -1,13 +1,8 @@
 import os
 import json
-import time
 import torch
-import numpy as np
 from tqdm import tqdm
-import torch.distributed as dist
-from torch.utils.data import DataLoader
-from dataset_idn import HICO_test_set
-from prefetch_generator import BackgroundGenerator
+from data.dataset_idn import HICO_test_set
 
 from torch.utils.data import Dataset
 from torchvision import transforms
@@ -18,14 +13,10 @@ from .vcoco import VCOCO
 from .hicodet import HICODet
 
 import pocket
-from pocket.core import DistributedLearningEngine
-from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_gather
 from utils import custom_collate, get_config, DataLoaderX
 import pickle
 
-import yaml
 import re
-from easydict import EasyDict as edict
 
 
 class CustomInput(object):
@@ -109,6 +100,21 @@ class DataFactory(Dataset):
                 target_transform=pocket.ops.ToTensor(input_format='dict')
             )
             self.human_idx = 49
+        elif name == 'vcoco_sample':
+            assert partition in ['train', 'val', 'trainval', 'test'], \
+                "Unknown V-COCO partition " + partition
+            image_dir = dict(
+                train='vcoco_sample/',
+                val='mscoco2014/train2014',
+                trainval='mscoco2014/train2014',
+                test='mscoco2014/val2014'
+            )
+            self.dataset = VCOCO(
+                root=os.path.join(data_root, image_dir[partition]),
+                anno_file=os.path.join(data_root, 'instances_vcoco_{}.json'.format(partition)
+                                       ), target_transform=pocket.ops.ToTensor(input_format='dict')
+            )
+            self.human_idx = 1
         else:
             assert partition in ['train', 'val', 'trainval', 'test'], \
                 "Unknown V-COCO partition " + partition
