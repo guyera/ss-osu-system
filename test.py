@@ -14,7 +14,7 @@ from data.data_factory import DataFactory, CustomInput
 from utils import custom_collate, Timer, AverageMeter, get_config, DataLoaderX
 
 from models.idn import AE, IDN
-from dataset_idn import HICO_train_set, HICO_test_set
+from data.dataset_idn import HICO_train_set, HICO_test_set
 import yaml
 import re
 import pickle
@@ -275,8 +275,7 @@ def main(rank, args):
         args.num_classes = 117
     elif args.dataset == 'vcoco':
         if args.net == 'scg':
-            args.object_to_target = val_loader.dataset.dataset.object_to_action
-            args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
+            raise NotImplementedError
         args.human_idx = 1
         args.num_classes = 24
     net = get_net(args)

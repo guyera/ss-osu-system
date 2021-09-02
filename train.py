@@ -12,11 +12,8 @@ from utils import custom_collate, Timer, AverageMeter, get_config, DataLoaderX
 
 import pickle
 import torch.optim as optim
-from models.idn import AE, IDN
-from dataset_idn import HICO_train_set, HICO_test_set
-import yaml
-import re
-from easydict import EasyDict as edict
+from models.idn import IDN
+from data.dataset_idn import HICO_train_set, HICO_test_set
 
 train_timer = Timer()
 
