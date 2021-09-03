@@ -103,7 +103,7 @@ class HICO_test_set(Dataset):
         self.db = pickle.load(open(osp.join(data_dir, 'db_' + self.split + '_feat.pkl'), 'rb'))
         self.cand = pickle.load(open(osp.join(data_dir, 'candidates_' + self.split + '.pkl'), 'rb'))
         self.verb_trans = torch.from_numpy(
-            pickle.load(open('configs/verb_mapping.pkl', 'rb'), encoding='latin1')).float()
+            pickle.load(open('../configs/verb_mapping.pkl', 'rb'), encoding='latin1')).float()
 
         for key in self.db.keys():
             self.db[key]['H_mapping'], cnt = [], 0
@@ -196,7 +196,7 @@ class HICO_train_set(Dataset):
         self.cand_pos = pickle.load(open(osp.join(self.data_dir, 'cand_positives_' + self.split + '.pkl'), 'rb'))
         self.cand_neg = pickle.load(open(osp.join(self.data_dir, 'cand_negatives_' + self.split + '.pkl'), 'rb'))
         self.verb_trans = torch.from_numpy(
-            pickle.load(open('configs/verb_mapping.pkl', 'rb'), encoding='latin1')).float()
+            pickle.load(open('../configs/verb_mapping.pkl', 'rb'), encoding='latin1')).float()
         cand_cat = self.cand_neg[:, 3]
         self.idx_match_object_candneg = {}
         for obj_cat in range(1, 81):

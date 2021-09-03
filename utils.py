@@ -57,14 +57,14 @@ def compute_spatial_encodings(
     for b1, b2, shape in zip(boxes_1, boxes_2, shapes):
         h, w = shape
 
-        c1_x = (b1[:, 0] + b1[:, 2]) / 2;
+        c1_x = (b1[:, 0] + b1[:, 2]) / 2
         c1_y = (b1[:, 1] + b1[:, 3]) / 2
-        c2_x = (b2[:, 0] + b2[:, 2]) / 2;
+        c2_x = (b2[:, 0] + b2[:, 2]) / 2
         c2_y = (b2[:, 1] + b2[:, 3]) / 2
 
-        b1_w = b1[:, 2] - b1[:, 0];
+        b1_w = b1[:, 2] - b1[:, 0]
         b1_h = b1[:, 3] - b1[:, 1]
-        b2_w = b2[:, 2] - b2[:, 0];
+        b2_w = b2[:, 2] - b2[:, 0]
         b2_h = b2[:, 3] - b2[:, 1]
 
         d_x = torch.abs(c2_x - c1_x) / (b1_w + eps)

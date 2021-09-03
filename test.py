@@ -24,10 +24,10 @@ from easydict import EasyDict as edict
 def get_net(args):
     if args.net == 'scg':
         net = SCG(
-            args.object_to_target, args.human_idx, num_classes=args.num_classes,
+            args.object_to_target, num_classes=args.num_classes,
             num_obj_classes=args.num_obj_classes,
             num_iterations=args.num_iter, postprocess=False,
-            max_human=args.max_human, max_object=args.max_object,
+            max_subject=args.max_subject, max_object=args.max_object,
             box_score_thresh=args.box_score_thresh,
             distributed=True
         )
@@ -36,31 +36,12 @@ def get_net(args):
         HO_weight = torch.from_numpy(args_idn['HO_weight'])
         config = get_config(args.config_path)
         net = IDN(config.MODEL, HO_weight, num_classes=args.num_classes)
-    elif args.net == 'cascaded-hoi':
+    else:
         net = ''
 
     if net == '':
         raise NotImplementedError
     return net
-
-
-def get_net(args):
-    nets = {
-        'scg': SCG(
-            args.object_to_target, args.human_idx, num_classes=args.num_classes,
-            num_obj_classes=args.num_obj_classes,
-            num_iterations=args.num_iter, postprocess=False,
-            max_human=args.max_human, max_object=args.max_object,
-            box_score_thresh=args.box_score_thresh,
-            distributed=True
-        ),
-        'idn': '',
-        'drg': '',
-        'cascaded-hoi': '',
-    }
-    if args.net not in nets:
-        raise NotImplementedError
-    return nets[args.net]
 
 
 class Test(object):
@@ -79,13 +60,25 @@ class Test(object):
     def scg(self, ov_interaction_map):
         results = list()
         for batch in tqdm(self.data_loader):
-            inputs = pocket.ops.relocate_to_cuda(batch[:-1])
+            inputs = batch[:-1]
+            # print(inputs)
             # TODO: Optimize this
             inp_image = np.array(inputs[0][0].cpu())
-            inp_boxes = np.array(inputs[1][0]['boxes'].cpu())
-            inp_labels = np.array(inputs[1][0]['labels'].cpu())
-            inp_scores = np.array(inputs[1][0]['scores'].cpu())
-            input_data = self.converter(inp_image, inp_boxes, inp_labels, inp_scores)
+            # Now assuming that data loader will give us separate lists for objects and subjects
+            # inp_boxes = np.array(inputs[1][0]['boxes'].cpu())
+            # inp_labels = np.array(inputs[1][0]['labels'].cpu())
+            # inp_scores = np.array(inputs[1][0]['scores'].cpu())
+            # input_data = self.converter(inp_image, inp_boxes, inp_labels, inp_scores)
+            # input_data = pocket.ops.relocate_to_cuda(input_data)
+            # input_data = self.converter(inp_image, inp_boxes, inp_labels, inp_scores)
+            sub_inp_boxes = np.array(inputs[1][0]['subject_boxes'])
+            sub_inp_labels = np.array(inputs[1][0]['subject_labels'])
+            sub_inp_scores = np.array(inputs[1][0]['subject_scores'])
+            obj_inp_boxes = np.array(inputs[1][0]['object_boxes'])
+            obj_inp_labels = np.array(inputs[1][0]['object_labels'])
+            obj_inp_scores = np.array(inputs[1][0]['object_scores'])
+            input_data = self.converter(inp_image, sub_inp_boxes, sub_inp_labels, sub_inp_scores,
+                                        obj_inp_boxes, obj_inp_labels, obj_inp_scores)
             input_data = pocket.ops.relocate_to_cuda(input_data)
             with torch.no_grad():
                 output = self.net(*input_data)
@@ -107,6 +100,7 @@ class Test(object):
                     'scores': scores,
                     'interactions': interactions,
                     'labels': labels,
+                    'img_path': inputs[1][0]['img_path'],
                 }
                 results.append(result)
         return results
@@ -115,116 +109,117 @@ class Test(object):
         raise NotImplementedError
 
     def idn(self):
-        timer = Timer()
-        bboxes, scores, scores_AE, scores_rev, keys, hdet, odet = [], [], [], [], [], [], []
-        for i in range(80):
-            bboxes.append([])
-            scores.append([])
-            scores_AE.append([])
-            scores_rev.append([])
-            keys.append([])
-            hdet.append([])
-            odet.append([])
-        args = pickle.load(open('configs/arguments.pkl', 'rb'))
-        verb_mapping = torch.from_numpy(pickle.load(open('configs/verb_mapping.pkl', 'rb'), encoding='latin1')).float()
-        HO_weight = torch.from_numpy(args['HO_weight'])
-        fac_i = args['fac_i']
-        fac_a = args['fac_a']
-        fac_d = args['fac_d']
-        nis_thresh = args['nis_thresh']
-        obj_range = pickle.load(open('configs/idn_configs.pkl', 'rb'), encoding='latin1')['obj_range']
-
-        timer.tic()
-        for i, batch in enumerate(self.data_loader):
-            n = batch['shape'].shape[0]
-            batch['shape'] = batch['shape'].cuda(non_blocking=True)
-            batch['spatial'] = batch['spatial'].cuda(non_blocking=True)
-            batch['sub_vec'] = batch['sub_vec'].cuda(non_blocking=True)
-            batch['obj_vec'] = batch['obj_vec'].cuda(non_blocking=True)
-            batch['uni_vec'] = batch['uni_vec'].cuda(non_blocking=True)
-            batch['labels_s'] = batch['labels_s'].cuda(non_blocking=True)
-            batch['labels_ro'] = batch['labels_ro'].cuda(non_blocking=True)
-            batch['labels_r'] = batch['labels_r'].cuda(non_blocking=True)
-            batch['labels_sro'] = batch['labels_sro'].cuda(non_blocking=True)
-            verb_mapping = verb_mapping.cuda(non_blocking=True)
-            output = self.net(batch)
-
-            batch['spatial'][:, 0] *= batch['shape'][:, 0]
-            batch['spatial'][:, 1] *= batch['shape'][:, 1]
-            batch['spatial'][:, 2] *= batch['shape'][:, 0]
-            batch['spatial'][:, 3] *= batch['shape'][:, 1]
-            batch['spatial'][:, 4] *= batch['shape'][:, 0]
-            batch['spatial'][:, 5] *= batch['shape'][:, 1]
-            batch['spatial'][:, 6] *= batch['shape'][:, 0]
-            batch['spatial'][:, 7] *= batch['shape'][:, 1]
-            obj_class = batch['obj_class']
-            bbox = batch['spatial'].detach().cpu().numpy()
-
-            if 's' in output:
-                output['s'] = torch.matmul(output['s'], verb_mapping)
-                for j in range(600):
-                    output['s'][:, j] /= fac_i[j]
-                output['s'] = torch.exp(output['s']).detach().cpu().numpy()
-
-            if 's_AE' in output:
-                output['s_AE'] = torch.matmul(output['s_AE'], verb_mapping)
-                for j in range(600):
-                    output['s_AE'][:, j] /= fac_a[j]
-                output['s_AE'] = torch.sigmoid(output['s_AE']).detach().cpu().numpy()
-            if 's_rev' in output:
-                output['s_rev'] = torch.matmul(output['s_rev'], verb_mapping)
-                for j in range(600):
-                    output['s_rev'][:, j] /= fac_d[j]
-                output['s_rev'] = torch.exp(output['s_rev']).detach().cpu().numpy()
-
-            for j in range(bbox.shape[0]):
-                cls = obj_class[j]
-                x, y = obj_range[cls][0] - 1, obj_range[cls][1]
-                keys[cls].append(batch['key'][j])
-                bboxes[cls].append(bbox[j])
-                scores[cls].append(np.zeros(y - x))
-                if 's' in output:
-                    scores[cls][-1] += output['s'][j, x:y]
-                if 's_AE' in output:
-                    scores[cls][-1] += output['s_AE'][j, x:y]
-                if 's_rev' in output:
-                    scores[cls][-1] += output['s_rev'][j, x:y]
-                scores[cls][-1] *= batch['hdet'][j]
-                scores[cls][-1] *= batch['odet'][j]
-                hdet[cls].append(batch['hdet'][j])
-                odet[cls].append(batch['odet'][j])
-            timer.toc()
-            if i % 1000 == 0:
-                print("%05d iteration, average time %.4f" % (i, timer.average_time))
-            timer.tic()
-
-        timer.toc()
-
-        for i in range(80):
-            keys[i] = np.array(keys[i])
-            bboxes[i] = np.array(bboxes[i])
-            scores[i] = np.array(scores[i])
-            hdet[i] = np.array(hdet[i])
-            odet[i] = np.array(odet[i])
-
-        sel = []
-        for i in range(600):
-            sel.append(None)
-
-        for i in range(80):
-            x, y = obj_range[cls][0] - 1, obj_range[cls][1]
-            for hoi_id in range(x, y):
-                sel[hoi_id] = list(range(len(bboxes[i])))
-
-        res = {
-            'keys': keys,
-            'bboxes': bboxes,
-            'scores': scores,
-            'hdet': hdet,
-            'odet': odet,
-            'sel': sel,
-        }
-        return res
+        raise NotImplementedError
+        # timer = Timer()
+        # bboxes, scores, scores_AE, scores_rev, keys, hdet, odet = [], [], [], [], [], [], []
+        # for i in range(80):
+        #     bboxes.append([])
+        #     scores.append([])
+        #     scores_AE.append([])
+        #     scores_rev.append([])
+        #     keys.append([])
+        #     hdet.append([])
+        #     odet.append([])
+        # args = pickle.load(open('configs/arguments.pkl', 'rb'))
+        # verb_mapping = torch.from_numpy(pickle.load(open('configs/verb_mapping.pkl', 'rb'), encoding='latin1')).float()
+        # HO_weight = torch.from_numpy(args['HO_weight'])
+        # fac_i = args['fac_i']
+        # fac_a = args['fac_a']
+        # fac_d = args['fac_d']
+        # nis_thresh = args['nis_thresh']
+        # obj_range = pickle.load(open('configs/idn_configs.pkl', 'rb'), encoding='latin1')['obj_range']
+        #
+        # timer.tic()
+        # for i, batch in enumerate(self.data_loader):
+        #     n = batch['shape'].shape[0]
+        #     batch['shape'] = batch['shape'].cuda(non_blocking=True)
+        #     batch['spatial'] = batch['spatial'].cuda(non_blocking=True)
+        #     batch['sub_vec'] = batch['sub_vec'].cuda(non_blocking=True)
+        #     batch['obj_vec'] = batch['obj_vec'].cuda(non_blocking=True)
+        #     batch['uni_vec'] = batch['uni_vec'].cuda(non_blocking=True)
+        #     batch['labels_s'] = batch['labels_s'].cuda(non_blocking=True)
+        #     batch['labels_ro'] = batch['labels_ro'].cuda(non_blocking=True)
+        #     batch['labels_r'] = batch['labels_r'].cuda(non_blocking=True)
+        #     batch['labels_sro'] = batch['labels_sro'].cuda(non_blocking=True)
+        #     verb_mapping = verb_mapping.cuda(non_blocking=True)
+        #     output = self.net(batch)
+        #
+        #     batch['spatial'][:, 0] *= batch['shape'][:, 0]
+        #     batch['spatial'][:, 1] *= batch['shape'][:, 1]
+        #     batch['spatial'][:, 2] *= batch['shape'][:, 0]
+        #     batch['spatial'][:, 3] *= batch['shape'][:, 1]
+        #     batch['spatial'][:, 4] *= batch['shape'][:, 0]
+        #     batch['spatial'][:, 5] *= batch['shape'][:, 1]
+        #     batch['spatial'][:, 6] *= batch['shape'][:, 0]
+        #     batch['spatial'][:, 7] *= batch['shape'][:, 1]
+        #     obj_class = batch['obj_class']
+        #     bbox = batch['spatial'].detach().cpu().numpy()
+        #
+        #     if 's' in output:
+        #         output['s'] = torch.matmul(output['s'], verb_mapping)
+        #         for j in range(600):
+        #             output['s'][:, j] /= fac_i[j]
+        #         output['s'] = torch.exp(output['s']).detach().cpu().numpy()
+        #
+        #     if 's_AE' in output:
+        #         output['s_AE'] = torch.matmul(output['s_AE'], verb_mapping)
+        #         for j in range(600):
+        #             output['s_AE'][:, j] /= fac_a[j]
+        #         output['s_AE'] = torch.sigmoid(output['s_AE']).detach().cpu().numpy()
+        #     if 's_rev' in output:
+        #         output['s_rev'] = torch.matmul(output['s_rev'], verb_mapping)
+        #         for j in range(600):
+        #             output['s_rev'][:, j] /= fac_d[j]
+        #         output['s_rev'] = torch.exp(output['s_rev']).detach().cpu().numpy()
+        #
+        #     for j in range(bbox.shape[0]):
+        #         cls = obj_class[j]
+        #         x, y = obj_range[cls][0] - 1, obj_range[cls][1]
+        #         keys[cls].append(batch['key'][j])
+        #         bboxes[cls].append(bbox[j])
+        #         scores[cls].append(np.zeros(y - x))
+        #         if 's' in output:
+        #             scores[cls][-1] += output['s'][j, x:y]
+        #         if 's_AE' in output:
+        #             scores[cls][-1] += output['s_AE'][j, x:y]
+        #         if 's_rev' in output:
+        #             scores[cls][-1] += output['s_rev'][j, x:y]
+        #         scores[cls][-1] *= batch['hdet'][j]
+        #         scores[cls][-1] *= batch['odet'][j]
+        #         hdet[cls].append(batch['hdet'][j])
+        #         odet[cls].append(batch['odet'][j])
+        #     timer.toc()
+        #     if i % 1000 == 0:
+        #         print("%05d iteration, average time %.4f" % (i, timer.average_time))
+        #     timer.tic()
+        #
+        # timer.toc()
+        #
+        # for i in range(80):
+        #     keys[i] = np.array(keys[i])
+        #     bboxes[i] = np.array(bboxes[i])
+        #     scores[i] = np.array(scores[i])
+        #     hdet[i] = np.array(hdet[i])
+        #     odet[i] = np.array(odet[i])
+        #
+        # sel = []
+        # for i in range(600):
+        #     sel.append(None)
+        #
+        # for i in range(80):
+        #     x, y = obj_range[cls][0] - 1, obj_range[cls][1]
+        #     for hoi_id in range(x, y):
+        #         sel[hoi_id] = list(range(len(bboxes[i])))
+        #
+        # res = {
+        #     'keys': keys,
+        #     'bboxes': bboxes,
+        #     'scores': scores,
+        #     'hdet': hdet,
+        #     'odet': odet,
+        #     'sel': sel,
+        # }
+        # return res
 
     def cascaded_hoi(self, input_data):
         raise NotImplementedError
@@ -245,7 +240,8 @@ def main(rank, args):
         valset = DataFactory(
             name=args.dataset, partition=args.partitions[1],
             data_root=args.data_root,
-            detection_root=args.detection_dir
+            detection_root=args.detection_dir,
+            training=False,
         )
 
         val_loader = DataLoader(
@@ -315,7 +311,7 @@ if __name__ == "__main__":
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
-    parser.add_argument('--max-human', default=15, type=int)
+    parser.add_argument('--max-subject', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
     parser.add_argument('--num-workers', default=2, type=int)
     parser.add_argument('--checkpoint-path', default='', type=str)

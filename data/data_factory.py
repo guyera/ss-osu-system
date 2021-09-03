@@ -1,13 +1,8 @@
 import os
 import json
-import time
 import torch
-import numpy as np
 from tqdm import tqdm
-import torch.distributed as dist
-from torch.utils.data import DataLoader
-from dataset_idn import HICO_test_set
-from prefetch_generator import BackgroundGenerator
+from data.dataset_idn import HICO_test_set
 
 from torch.utils.data import Dataset
 from torchvision import transforms
@@ -18,14 +13,10 @@ from .vcoco import VCOCO
 from .hicodet import HICODet
 
 import pocket
-from pocket.core import DistributedLearningEngine
-from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_gather
 from utils import custom_collate, get_config, DataLoaderX
 import pickle
 
-import yaml
 import re
-from easydict import EasyDict as edict
 
 
 class CustomInput(object):
@@ -40,21 +31,27 @@ class CustomInput(object):
         }
         self.converter = self.func_map[model_name]
 
-    def scg(self, image, boxes, labels, scores):
+    def scg(self, image, subject_boxes, subject_labels, subject_scores, object_boxes, object_labels, object_scores):
         """Merges the arguments into a data point for the scg model
 
         Args:
             image (np.array)
-            boxes (list of list): detected box coords
-            labels (list): detected box labels
-            scores (list): detected box scores for selected class
+            subject_boxes (list of list): detected box coords for subjects
+            subject_labels (list): detected box labels for subjects
+            subject_scores (list): detected box scores for selected class for subjects
+            object_boxes (list of list): detected box coords for objects
+            object_labels (list): detected box labels for objects
+            object_scores (list): detected box scores for selected class for objects
         """
         data_point = list()
         data_point.append([torch.from_numpy(image)])
         detections = [{
-            'boxes': torch.from_numpy(boxes),
-            'labels': torch.from_numpy(labels),
-            'scores': torch.from_numpy(scores),
+            'subject_boxes': torch.from_numpy(subject_boxes),
+            'subject_labels': torch.from_numpy(subject_labels),
+            'subject_scores': torch.from_numpy(subject_scores),
+            'object_boxes': torch.from_numpy(object_boxes),
+            'object_labels': torch.from_numpy(object_labels),
+            'object_scores': torch.from_numpy(object_scores),
         }]
         data_point.append(detections)
         return data_point
@@ -95,8 +92,10 @@ class DataFactory(Dataset):
                  data_root, detection_root,
                  flip=False,
                  box_score_thresh_h=0.2,
-                 box_score_thresh_o=0.2
+                 box_score_thresh_o=0.2,
+                 training=True,
                  ):
+        self.training = training
         if name not in ['hicodet', 'vcoco']:
             raise ValueError("Unknown dataset ", name)
 
@@ -108,7 +107,23 @@ class DataFactory(Dataset):
                 anno_file=os.path.join(data_root, 'instances_{}.json'.format(partition)),
                 target_transform=pocket.ops.ToTensor(input_format='dict')
             )
-            self.human_idx = 49
+
+            self.subject_idx = 49
+        elif name == 'vcoco_sample':
+            assert partition in ['train', 'val', 'trainval', 'test'], \
+                "Unknown V-COCO partition " + partition
+            image_dir = dict(
+                train='vcoco_sample/',
+                val='mscoco2014/train2014',
+                trainval='mscoco2014/train2014',
+                test='mscoco2014/val2014'
+            )
+            self.dataset = VCOCO(
+                root=os.path.join(data_root, image_dir[partition]),
+                anno_file=os.path.join(data_root, 'instances_vcoco_{}.json'.format(partition)
+                                       ), target_transform=pocket.ops.ToTensor(input_format='dict')
+            )
+            self.human_idx = 1
         else:
             assert partition in ['train', 'val', 'trainval', 'test'], \
                 "Unknown V-COCO partition " + partition
@@ -123,7 +138,7 @@ class DataFactory(Dataset):
                 anno_file=os.path.join(data_root, 'instances_vcoco_{}.json'.format(partition)
                                        ), target_transform=pocket.ops.ToTensor(input_format='dict')
             )
-            self.human_idx = 1
+            self.subject_idx = 1
 
         self.name = name
         self.detection_root = detection_root
@@ -144,39 +159,46 @@ class DataFactory(Dataset):
         scores = torch.as_tensor(detection['scores'])
 
         # Filter out low scoring human boxes
-        idx = torch.nonzero(labels == self.human_idx).squeeze(1)
-        keep_idx = idx[torch.nonzero(scores[idx] >= self.box_score_thresh_h).squeeze(1)]
+        subject_idxs = torch.nonzero(labels == self.subject_idx).squeeze(1)
+        object_idxs = torch.nonzero(labels != self.subject_idx).squeeze(1)
 
-        # Filter out low scoring object boxes
-        idx = torch.nonzero(labels != self.human_idx).squeeze(1)
-        keep_idx = torch.cat([
-            keep_idx,
-            idx[torch.nonzero(scores[idx] >= self.box_score_thresh_o).squeeze(1)]
-        ])
+        subject_boxes = boxes[subject_idxs].view(-1, 4)
+        subject_scores = scores[subject_idxs].view(-1)
+        subject_labels = labels[subject_idxs].view(-1)
 
-        boxes = boxes[keep_idx].view(-1, 4)
-        scores = scores[keep_idx].view(-1)
-        labels = labels[keep_idx].view(-1)
-
-        return dict(boxes=boxes, labels=labels, scores=scores)
+        object_boxes = boxes[object_idxs].view(-1, 4)
+        object_scores = scores[object_idxs].view(-1)
+        object_labels = labels[object_idxs].view(-1)
+        if self.training:
+            return dict(subject_boxes=subject_boxes, subject_labels=subject_labels, subject_scores=subject_scores,
+                        object_boxes=object_boxes, object_labels=object_labels, object_scores=object_scores)
+        else:
+            return dict(subject_boxes=subject_boxes, subject_labels=subject_labels, subject_scores=subject_scores,
+                        object_boxes=object_boxes, object_labels=object_labels, object_scores=object_scores,
+                        img_path=detection['img_path'])
 
     def flip_boxes(self, detection, target, w):
         detection['boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['boxes'])
-        target['boxes_h'] = pocket.ops.horizontal_flip_boxes(w, target['boxes_h'])
+        target['boxes_s'] = pocket.ops.horizontal_flip_boxes(w, target['boxes_s'])
         target['boxes_o'] = pocket.ops.horizontal_flip_boxes(w, target['boxes_o'])
 
     def __getitem__(self, i):
         image, target = self.dataset[i]
+        if "boxes_h" in target:
+            target['boxes_s'] = target['boxes_h']
+            del target['boxes_h']
         if self.name == 'hicodet':
             target['labels'] = target['verb']
             # Convert ground truth boxes to zero-based index and the
             # representation from pixel indices to coordinates
-            target['boxes_h'][:, :2] -= 1
+            target['boxes_s'][:, :2] -= 1
             target['boxes_o'][:, :2] -= 1
         else:
             target['labels'] = target['actions']
             target['object'] = target.pop('objects')
 
+        target["subject"] = torch.tensor([self.subject_idx]).repeat(1, len(target['boxes_s']))[
+            0]  # will be changed later, only for human for now
         detection_path = os.path.join(
             self.detection_root,
             self.dataset.filename(i).replace('jpg', 'json')
@@ -190,5 +212,9 @@ class DataFactory(Dataset):
             w, _ = image.size
             self.flip_boxes(detection, target, w)
         image = pocket.ops.to_tensor(image, 'pil')
+        # print(detection)
+        if not self.training:
+            detection['img_path'] = self.dataset.filename(i)
+        detection = self.filter_detections(detection)
 
         return image, detection, target

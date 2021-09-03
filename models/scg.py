@@ -71,7 +71,7 @@ class HOINetworkTransform(transform.GeneralizedRCNNTransform):
         if target is None:
             return image, target
 
-        target['boxes_h'] = transform.resize_boxes(target['boxes_h'],
+        target['boxes_s'] = transform.resize_boxes(target['boxes_s'],
                                                    (h, w), image.shape[-2:])
         target['boxes_o'] = transform.resize_boxes(target['boxes_o'],
                                                    (h, w), image.shape[-2:])
@@ -83,10 +83,10 @@ class HOINetworkTransform(transform.GeneralizedRCNNTransform):
             loss = results.pop()
 
         for pred, im_s, o_im_s in zip(results, image_shapes, original_image_sizes):
-            boxes_h, boxes_o = pred['boxes_h'], pred['boxes_o']
-            boxes_h = transform.resize_boxes(boxes_h, im_s, o_im_s)
+            boxes_s, boxes_o = pred['boxes_s'], pred['boxes_o']
+            boxes_s = transform.resize_boxes(boxes_s, im_s, o_im_s)
             boxes_o = transform.resize_boxes(boxes_o, im_s, o_im_s)
-            pred['boxes_h'], pred['boxes_o'] = boxes_h, boxes_o
+            pred['boxes_s'], pred['boxes_o'] = boxes_s, boxes_o
 
         if self.training:
             results.append(loss)
@@ -131,9 +131,16 @@ class GenericHOINetwork(nn.Module):
         for det, o_im_s, im_s in zip(
                 detections, original_image_sizes, images.image_sizes
         ):
-            boxes = det['boxes']
-            boxes = transform.resize_boxes(boxes, o_im_s, im_s)
-            det['boxes'] = boxes
+            # Now separating object and subject boxes
+            # boxes = det['boxes']
+            # boxes = transform.resize_boxes(boxes, o_im_s, im_s)
+            # det['boxes'] = boxes
+            sub_boxes = det['subject_boxes']
+            sub_boxes = transform.resize_boxes(sub_boxes, o_im_s, im_s)
+            det['subject_boxes'] = sub_boxes
+            obj_boxes = det['object_boxes']
+            obj_boxes = transform.resize_boxes(obj_boxes, o_im_s, im_s)
+            det['object_boxes'] = obj_boxes
 
         return images, detections, targets, original_image_sizes
 
@@ -176,7 +183,6 @@ class GenericHOINetwork(nn.Module):
 class SpatiallyConditionedGraph(GenericHOINetwork):
     def __init__(self,
                  object_to_action: List[list],
-                 human_idx: int,
                  # Backbone parameters
                  backbone_name: str = "resnet50",
                  pretrained: bool = True,
@@ -199,7 +205,7 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
                  postprocess: bool = True,
                  # Preprocessing parameters
                  box_nms_thresh: float = 0.5,
-                 max_human: int = 15,
+                 max_subject: int = 15,
                  max_object: int = 15
                  ) -> None:
         detector = models.fasterrcnn_resnet_fpn(backbone_name,
@@ -222,7 +228,6 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             node_encoding_size=node_encoding_size,
             representation_size=representation_size,
             num_cls=num_classes,
-            human_idx=human_idx,
             object_class_to_target_class=object_to_action,
             fg_iou_thresh=fg_iou_thresh,
             num_iter=num_iterations
@@ -242,10 +247,9 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             box_pair_predictor=box_pair_predictor,
             custom_box_classifier=custom_box_classifier,
             num_classes=num_classes,
-            human_idx=human_idx,
             box_nms_thresh=box_nms_thresh,
             box_score_thresh=box_score_thresh,
-            max_human=max_human,
+            max_subject=max_subject,
             max_object=max_object,
             distributed=distributed
         )
@@ -323,8 +327,8 @@ class CustomisedDLE(DistributedLearningEngine):
         self.obj_cls_loss.reset()
 
     def _synchronise_and_log_results(self, output, meter):
-        scores = [];
-        pred = [];
+        scores = []
+        pred = []
         labels = []
         # Collate results within the batch
         for result in output:

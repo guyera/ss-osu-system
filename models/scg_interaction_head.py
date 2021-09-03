@@ -1,5 +1,6 @@
 from collections import OrderedDict
 from typing import Optional, List, Tuple
+import pocket
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
@@ -23,18 +24,16 @@ class InteractionHead(Module):
         Module that computes unary weights for each box pair
     box_pair_predictor: Module
         Module that classifies box pairs
-    human_idx: int
-        The index of human/person class in all objects
     num_classes: int
         Number of target classes
     box_nms_thresh: float, default: 0.5
         Threshold used for non-maximum suppression
     box_score_thresh: float, default: 0.2
         Threshold used to filter out low-quality boxes
-    max_human: int, default: 15
-        Number of human detections to keep in each image
+    max_subject: int, default: 15
+        Number of subject detections to keep in each image
     max_object: int, default: 15
-        Number of object (excluding human) detections to keep in each image
+        Number of object (excluding subjects) detections to keep in each image
     distributed: bool, default: False
         Whether the model is trained under distributed data parallel. If True,
         the number of positive logits will be averaged across all subprocesses
@@ -49,12 +48,11 @@ class InteractionHead(Module):
                  box_pair_predictor: Module,
                  custom_box_classifier: Module,
                  # Dataset properties
-                 human_idx: int,
                  num_classes: int,
                  # Hyperparameters
                  box_nms_thresh: float = 0.5,
                  box_score_thresh: float = 0.2,
-                 max_human: int = 15,
+                 max_subject: int = 15,
                  max_object: int = 15,
                  # Misc
                  distributed: bool = False
@@ -68,11 +66,10 @@ class InteractionHead(Module):
         self.custom_box_classifier = custom_box_classifier
 
         self.num_classes = num_classes
-        self.human_idx = human_idx
 
         self.box_nms_thresh = box_nms_thresh
         self.box_score_thresh = box_score_thresh
-        self.max_human = max_human
+        self.max_subject = max_subject
         self.max_object = max_object
 
         self.distributed = distributed
@@ -93,20 +90,30 @@ class InteractionHead(Module):
                 append_gt = self.training
             if append_gt:
                 target = targets[b_idx]
-                n = target["boxes_h"].shape[0]
-                boxes = torch.cat([target["boxes_h"], target["boxes_o"], boxes])
-                scores = torch.cat([torch.ones(2 * n, device=scores.device), scores])
+                n_s = target["boxes_s"].shape[0]
+                n_o = target["boxes_o"].shape[0]
+                # print(f'n_s: {n_s}, n_o: {n_o}, target_sibject: {len(target["subject"])}, target_object: {len(target["object"])}')
+                boxes = torch.cat([target["boxes_s"], target["boxes_o"], boxes])
+                scores = torch.cat([torch.ones(n_s, device=scores.device), torch.ones(n_o, device=scores.device), scores])
                 labels = torch.cat([
-                    self.human_idx * torch.ones(n, device=labels.device).long(),
+                    target["subject"],
                     target["object"],
                     labels
                 ])
+                sub_idx = list(range(n_s)) + list(range(n_s + n_o, n_s + n_o + detection['num_subjects']))
+                obj_idx = list(range(n_s, n_s + n_o)) + list(range(n_s + n_o + detection['num_subjects'], len(scores)))
+            else:
+                sub_idx = list(range(detection['num_subjects']))
+                obj_idx = list(range(detection['num_subjects'], len(scores)))
 
             # Remove low scoring examples
+            sub_idx = pocket.ops.relocate_to_cuda(torch.IntTensor(sub_idx))
+            obj_idx = pocket.ops.relocate_to_cuda(torch.IntTensor(obj_idx))
             active_idx = torch.nonzero(
                 scores >= self.box_score_thresh
             ).squeeze(1)
             # Class-wise non-maximum suppression
+            # print(f'boxes: {len(boxes)}, scores: {len(scores)}, labels: {len(labels)}')
             keep_idx = box_ops.batched_nms(
                 boxes[active_idx],
                 scores[active_idx],
@@ -118,26 +125,27 @@ class InteractionHead(Module):
             sorted_idx = torch.argsort(scores[active_idx], descending=True)
             active_idx = active_idx[sorted_idx]
             # Keep a fixed number of detections
-            h_idx = torch.nonzero(labels[active_idx] == self.human_idx).squeeze(1)
-            o_idx = torch.nonzero(labels[active_idx] != self.human_idx).squeeze(1)
-            if len(h_idx) > self.max_human:
-                h_idx = h_idx[:self.max_human]
+            s_idx = torch.nonzero((active_idx[..., None] == sub_idx).any(-1)).squeeze(1)
+            o_idx = torch.nonzero((active_idx[..., None] == obj_idx).any(-1)).squeeze(1)
+            if len(s_idx) > self.max_subject:
+                s_idx = s_idx[:self.max_subject]
             if len(o_idx) > self.max_object:
                 o_idx = o_idx[:self.max_object]
-            # Permute humans to the top
-            keep_idx = torch.cat([h_idx, o_idx])
+            # Permute subjects to the top
+            keep_idx = torch.cat([s_idx, o_idx])
             active_idx = active_idx[keep_idx]
 
             results.append(dict(
                 boxes=boxes[active_idx].view(-1, 4),
                 labels=labels[active_idx].view(-1),
                 scores=scores[active_idx].view(-1),
+                num_subjects=len(s_idx),
             ))
 
         return results
 
     def compute_interaction_classification_loss(self, results: List[dict]) -> Tensor:
-        scores = [];
+        scores = []
         labels = []
         for result in results:
             scores.append(result['scores'])
@@ -157,7 +165,7 @@ class InteractionHead(Module):
         return loss / n_p
 
     def compute_interactiveness_loss(self, results: List[dict]) -> Tensor:
-        weights = [];
+        weights = []
         labels = []
         for result in results:
             weights.append(result['weights'])
@@ -186,7 +194,7 @@ class InteractionHead(Module):
                     logits_p: Tensor,
                     logits_s: Tensor,
                     prior: List[Tensor],
-                    boxes_h: List[Tensor],
+                    boxes_s: List[Tensor],
                     boxes_o: List[Tensor],
                     object_class: List[Tensor],
                     labels: List[Tensor],
@@ -201,8 +209,8 @@ class InteractionHead(Module):
         prior: List[Tensor]
             Prior scores organised by images. Each tensor has shape (2, M, K).
             M could be different for different images
-        boxes_h: List[Tensor]
-            Human bounding box coordinates organised by images (M, 4)
+        boxes_s: List[Tensor]
+            Subject bounding box coordinates organised by images (M, 4)
         boxes_o: List[Tensor]
             Object bounding box coordinates organised by images (M, 4)
         object_classes: List[Tensor]
@@ -214,7 +222,7 @@ class InteractionHead(Module):
         --------
         results: List[dict]
             Results organised by images, with keys as below
-            `boxes_h`: Tensor[M, 4]
+            `boxes_s`: Tensor[M, 4]
             `boxes_o`: Tensor[M, 4]
             `index`: Tensor[L]
                 Expanded indices of box pairs for each predicted action
@@ -233,7 +241,7 @@ class InteractionHead(Module):
             `unary_labels`: Tensor[M], optional
                 Labels for the unary weights
         """
-        num_boxes = [len(b) for b in boxes_h]
+        num_boxes = [len(b) for b in boxes_s]
 
         weights = torch.sigmoid(logits_s).squeeze(1)
         scores = torch.sigmoid(logits_p)
@@ -243,13 +251,13 @@ class InteractionHead(Module):
             labels = [None for _ in range(len(num_boxes))]
 
         results = []
-        for w, s, p, b_h, b_o, o, l in zip(
-                weights, scores, prior, boxes_h, boxes_o, object_class, labels
+        for w, s, p, b_s, b_o, o, l in zip(
+                weights, scores, prior, boxes_s, boxes_o, object_class, labels
         ):
             # Keep valid classes
             x, y = torch.nonzero(p[0]).unbind(1)
             result_dict = dict(
-                boxes_h=b_h, boxes_o=b_o,
+                boxes_s=b_s, boxes_o=b_o,
                 index=x, prediction=y,
                 scores=s[x, y] * p[:, x, y].prod(dim=0) * w[x].detach(),
                 object=o, prior=p[:, x, y], weights=w,
@@ -283,7 +291,7 @@ class InteractionHead(Module):
             Image shapes, heights followed by widths
         targets: List[dict], optional
             Interaction targets with the following keys
-            `boxes_h`: Tensor[G, 4]
+            `boxes_s`: Tensor[G, 4]
             `boxes_o`: Tensor[G, 4]
             `object`: Tensor[G]
                 Object class indices for each pair
@@ -306,7 +314,13 @@ class InteractionHead(Module):
             assert targets is not None, "Targets should be passed during training"
 
         # Custom box classification head
-        box_coords = [detection['boxes'] for detection in detections]
+        box_coords = list()
+        orig_labels = list()
+        num_subjects = list()
+        for detection in detections:
+            box_coords.append(torch.cat([detection['subject_boxes'], detection['object_boxes']]))
+            orig_labels.append(torch.cat([detection['subject_labels'], detection['object_labels']]))
+            num_subjects.append(len(detection['subject_boxes']))
         box_features = self.box_roi_pool(features, box_coords, image_shapes)
         box_features = self.box_head(box_features)
         box_logits = self.custom_box_classifier(box_features)
@@ -318,10 +332,11 @@ class InteractionHead(Module):
             detection = {
                 'boxes': box_coord,
                 'labels': labels,
-                'orig_labels': detections[i]['labels'],
+                'orig_labels': orig_labels[i],
                 # This will be used as GT labels for training classification head
                 'scores': scores,
                 'box_logits': box_logits[i],
+                'num_subjects': num_subjects[i],
             }
             pred_detections.append(detection)
 
@@ -336,13 +351,14 @@ class InteractionHead(Module):
         box_coords = [detection['boxes'] for detection in detections]
         box_labels = [detection['labels'] for detection in detections]
         box_scores = [detection['scores'] for detection in detections]
+        num_subjects = [detection['num_subjects'] for detection in detections]
 
         box_features = self.box_roi_pool(features, box_coords, image_shapes)
 
-        box_pair_features, boxes_h, boxes_o, object_class, \
+        box_pair_features, boxes_s, boxes_o, object_class, \
         box_pair_labels, box_pair_prior = self.box_pair_head(
             features, image_shapes, box_features,
-            box_coords, box_labels, box_scores, targets
+            box_coords, box_labels, box_scores, num_subjects, targets
         )
 
         box_pair_features = torch.cat(box_pair_features)
@@ -351,7 +367,7 @@ class InteractionHead(Module):
 
         results = self.postprocess(
             logits_p, logits_s, box_pair_prior,
-            boxes_h, boxes_o,
+            boxes_s, boxes_o,
             object_class, box_pair_labels
         )
 
@@ -427,7 +443,7 @@ class MessageMBF(MultiBranchFusion):
     representation_size: int
         Size of the intermediate representations
     node_type: str
-        Nature of the sending node. Choose between `human` amd `object`
+        Nature of the sending node. Choose between `subject` amd `object`
     cardinality: int
         The number of homogeneous branches
     """
@@ -441,16 +457,16 @@ class MessageMBF(MultiBranchFusion):
                  ) -> None:
         super().__init__(appearance_size, spatial_size, representation_size, cardinality)
 
-        if node_type == 'human':
-            self._forward_method = self._forward_human_nodes
+        if node_type == 'subject':
+            self._forward_method = self._forward_subject_nodes
         elif node_type == 'object':
             self._forward_method = self._forward_object_nodes
         else:
             raise ValueError("Unknown node type \"{}\"".format(node_type))
 
-    def _forward_human_nodes(self, appearance: Tensor, spatial: Tensor) -> Tensor:
-        n_h, n = spatial.shape[:2]
-        assert len(appearance) == n_h, "Incorrect size of dim0 for appearance features"
+    def _forward_subject_nodes(self, appearance: Tensor, spatial: Tensor) -> Tensor:
+        n_s, n = spatial.shape[:2]
+        assert len(appearance) == n_s, "Incorrect size of dim0 for appearance features"
         return torch.stack([
             fc_3(F.relu(
                 fc_1(appearance).repeat(n, 1, 1)
@@ -459,11 +475,11 @@ class MessageMBF(MultiBranchFusion):
         ]).sum(dim=0)
 
     def _forward_object_nodes(self, appearance: Tensor, spatial: Tensor) -> Tensor:
-        n_h, n = spatial.shape[:2]
+        n_s, n = spatial.shape[:2]
         assert len(appearance) == n, "Incorrect size of dim0 for appearance features"
         return torch.stack([
             fc_3(F.relu(
-                fc_1(appearance).repeat(n_h, 1, 1)
+                fc_1(appearance).repeat(n_s, 1, 1)
                 * fc_2(spatial)
             )) for fc_1, fc_2, fc_3 in zip(self.fc_1, self.fc_2, self.fc_3)
         ]).sum(dim=0)
@@ -486,8 +502,6 @@ class GraphHead(Module):
         Size of the node embeddings
     num_cls: int
         Number of target classes
-    human_idx: int
-        The index of human/person class in all objects
     object_class_to_target_class: List[list]
         The mapping (potentially one-to-many) from objects to target classes
     fg_iou_thresh: float, default: 0.5
@@ -501,7 +515,7 @@ class GraphHead(Module):
                  roi_pool_size: int,
                  node_encoding_size: int,
                  representation_size: int,
-                 num_cls: int, human_idx: int,
+                 num_cls: int,
                  object_class_to_target_class: List[list],
                  fg_iou_thresh: float = 0.5,
                  num_iter: int = 2
@@ -514,7 +528,6 @@ class GraphHead(Module):
         self.representation_size = representation_size
 
         self.num_cls = num_cls
-        self.human_idx = human_idx
         self.object_class_to_target_class = object_class_to_target_class
 
         self.fg_iou_thresh = fg_iou_thresh
@@ -535,7 +548,7 @@ class GraphHead(Module):
         # Compute messages
         self.sub_to_obj = MessageMBF(
             node_encoding_size, 1024,
-            representation_size, node_type='human',
+            representation_size, node_type='subject',
             cardinality=16
         )
         self.obj_to_sub = MessageMBF(
@@ -544,7 +557,7 @@ class GraphHead(Module):
             cardinality=16
         )
 
-        self.norm_h = nn.LayerNorm(node_encoding_size)
+        self.norm_s = nn.LayerNorm(node_encoding_size)
         self.norm_o = nn.LayerNorm(node_encoding_size)
 
         # Map spatial encodings to the same dimension as appearance features
@@ -572,15 +585,15 @@ class GraphHead(Module):
         )
 
     def associate_with_ground_truth(self,
-                                    boxes_h: Tensor,
+                                    boxes_s: Tensor,
                                     boxes_o: Tensor,
                                     targets: List[dict]
                                     ) -> Tensor:
-        n = boxes_h.shape[0]
-        labels = torch.zeros(n, self.num_cls, device=boxes_h.device)
+        n = boxes_s.shape[0]
+        labels = torch.zeros(n, self.num_cls, device=boxes_s.device)
 
         x, y = torch.nonzero(torch.min(
-            box_ops.box_iou(boxes_h, targets["boxes_h"]),
+            box_ops.box_iou(boxes_s, targets["boxes_s"]),
             box_ops.box_iou(boxes_o, targets["boxes_o"])
         ) >= self.fg_iou_thresh).unbind(1)
 
@@ -597,7 +610,7 @@ class GraphHead(Module):
         Parameters:
         -----------
             x: Tensor[M]
-                Indices of human boxes (paired)
+                Indices of subject boxes (paired)
             y: Tensor[M]
                 Indices of object boxes (paired)
             scores: Tensor[N]
@@ -605,12 +618,12 @@ class GraphHead(Module):
             object_class: Tensor[N]
                 Object class indices (before pairing)
         """
-        prior_h = torch.zeros(len(x), self.num_cls, device=scores.device)
-        prior_o = torch.zeros_like(prior_h)
+        prior_s = torch.zeros(len(x), self.num_cls, device=scores.device)
+        prior_o = torch.zeros_like(prior_s)
 
         # Raise the power of object detection scores during inference
         p = 1.0 if self.training else 2.8
-        s_h = scores[x].pow(p)
+        s_s = scores[x].pow(p)
         s_o = scores[y].pow(p)
 
         # Map object class index to target class index
@@ -622,15 +635,16 @@ class GraphHead(Module):
         # Flatten mapped target indices
         flat_target_idx = [t for tar in target_cls_idx for t in tar]
 
-        prior_h[pair_idx, flat_target_idx] = s_h[pair_idx]
+        prior_s[pair_idx, flat_target_idx] = s_s[pair_idx]
         prior_o[pair_idx, flat_target_idx] = s_o[pair_idx]
 
-        return torch.stack([prior_h, prior_o])
+        return torch.stack([prior_s, prior_o])
 
     def forward(self,
                 features: OrderedDict, image_shapes: List[Tuple[int, int]],
                 box_features: Tensor, box_coords: List[Tensor],
                 box_labels: List[Tensor], box_scores: List[Tensor],
+                num_subjects: List[Tensor],
                 targets: Optional[List[dict]] = None
                 ) -> Tuple[
         List[Tensor], List[Tensor], List[Tensor],
@@ -653,14 +667,14 @@ class GraphHead(Module):
                 Bounding box scores organised by images
             targets: List[dict]
                 Interaction targets with the following keys
-                `boxes_h`: Tensor[G, 4]
+                `boxes_s`: Tensor[G, 4]
                 `boxes_o`: Tensor[G, 4]
                 `labels`: Tensor[G]
 
         Returns:
         --------
             all_box_pair_features: List[Tensor]
-            all_boxes_h: List[Tensor]
+            all_boxes_s: List[Tensor]
             all_boxes_o: List[Tensor]
             all_object_class: List[Tensor]
             all_labels: List[Tensor]
@@ -675,49 +689,49 @@ class GraphHead(Module):
         num_boxes = [len(boxes_per_image) for boxes_per_image in box_coords]
 
         counter = 0
-        all_boxes_h = [];
-        all_boxes_o = [];
+        all_boxes_s = []
+        all_boxes_o = []
         all_object_class = []
-        all_labels = [];
+        all_labels = []
         all_prior = []
         all_box_pair_features = []
-        for b_idx, (coords, labels, scores) in enumerate(zip(box_coords, box_labels, box_scores)):
+        for b_idx, (coords, labels, scores, num_subject) in enumerate(zip(box_coords, box_labels, box_scores, num_subjects)):
             n = num_boxes[b_idx]
             device = box_features.device
 
-            n_h = torch.sum(labels == self.human_idx).item()
-            # Skip image when there are no detected human or object instances
+            # Skip image when there are no detected subject or object instances
             # and when there is only one detected instance
-            if n_h == 0 or n <= 1:
+            if num_subject == 0 or n <= 1:
                 all_box_pair_features.append(torch.zeros(
                     0, 2 * self.representation_size,
                     device=device)
                 )
-                all_boxes_h.append(torch.zeros(0, 4, device=device))
+                all_boxes_s.append(torch.zeros(0, 4, device=device))
                 all_boxes_o.append(torch.zeros(0, 4, device=device))
                 all_object_class.append(torch.zeros(0, device=device, dtype=torch.int64))
                 all_prior.append(torch.zeros(2, 0, self.num_cls, device=device))
                 all_labels.append(torch.zeros(0, self.num_cls, device=device))
                 continue
-            if not torch.all(labels[:n_h] == self.human_idx):
-                raise ValueError("Human detections are not permuted to the top")
+            # TODO: Reimplement this check
+            # if not torch.all(labels[:num_subjects] == self.human_idx):
+            #     raise ValueError("Subject detections are not permuted to the top")
 
             node_encodings = box_features[counter: counter + n]
-            # Duplicate human nodes
-            h_node_encodings = node_encodings[:n_h]
-            # Get the pairwise index between every human and object instance
+            # Duplicate subject nodes
+            s_node_encodings = node_encodings[:num_subject]
+            # Get the pairwise index between every subject and object instance
             x, y = torch.meshgrid(
-                torch.arange(n_h, device=device),
+                torch.arange(num_subject, device=device),
                 torch.arange(n, device=device)
             )
-            # Remove pairs consisting of the same human instance
+            # Remove pairs consisting of the same subject instance
             x_keep, y_keep = torch.nonzero(x != y).unbind(1)
             if len(x_keep) == 0:
                 # Should never happen, just to be safe
-                raise ValueError("There are no valid human-object pairs")
-            # Human nodes have been duplicated and will be treated independently
-            # of the humans included amongst object nodes
-            x = x.flatten();
+                raise ValueError("There are no valid subject-object pairs")
+            # subject nodes have been duplicated and will be treated independently
+            # of the subjects included amongst object nodes
+            x = x.flatten()
             y = y.flatten()
 
             # Compute spatial features
@@ -726,37 +740,37 @@ class GraphHead(Module):
             )
             box_pair_spatial = self.spatial_head(box_pair_spatial)
             # Reshape the spatial features
-            box_pair_spatial_reshaped = box_pair_spatial.reshape(n_h, n, -1)
+            box_pair_spatial_reshaped = box_pair_spatial.reshape(num_subject, n, -1)
 
-            adjacency_matrix = torch.ones(n_h, n, device=device)
+            adjacency_matrix = torch.ones(num_subject, n, device=device)
             for _ in range(self.num_iter):
                 # Compute weights of each edge
                 weights = self.attention_head(
                     torch.cat([
-                        h_node_encodings[x],
+                        s_node_encodings[x],
                         node_encodings[y]
                     ], 1),
                     box_pair_spatial
                 )
-                adjacency_matrix = self.adjacency(weights).reshape(n_h, n)
+                adjacency_matrix = self.adjacency(weights).reshape(num_subject, n)
 
-                # Update human nodes
-                messages_to_h = F.relu(torch.sum(
+                # Update subject nodes
+                messages_to_s = F.relu(torch.sum(
                     adjacency_matrix.softmax(dim=1)[..., None] *
                     self.obj_to_sub(
                         node_encodings,
                         box_pair_spatial_reshaped
                     ), dim=1)
                 )
-                h_node_encodings = self.norm_h(
-                    h_node_encodings + messages_to_h
+                s_node_encodings = self.norm_s(
+                    s_node_encodings + messages_to_s
                 )
 
-                # Update object nodes (including human nodes)
+                # Update object nodes (including subject nodes)
                 messages_to_o = F.relu(torch.sum(
                     adjacency_matrix.t().softmax(dim=1)[..., None] *
                     self.sub_to_obj(
-                        h_node_encodings,
+                        s_node_encodings,
                         box_pair_spatial_reshaped
                     ), dim=1)
                 )
@@ -772,7 +786,7 @@ class GraphHead(Module):
             all_box_pair_features.append(torch.cat([
                 self.attention_head(
                     torch.cat([
-                        h_node_encodings[x_keep],
+                        s_node_encodings[x_keep],
                         node_encodings[y_keep]
                     ], 1),
                     box_pair_spatial_reshaped[x_keep, y_keep]
@@ -780,7 +794,7 @@ class GraphHead(Module):
                     global_features[b_idx, None],
                     box_pair_spatial_reshaped[x_keep, y_keep])
             ], dim=1))
-            all_boxes_h.append(coords[x_keep])
+            all_boxes_s.append(coords[x_keep])
             all_boxes_o.append(coords[y_keep])
             all_object_class.append(labels[y_keep])
             # The prior score is the product of the object detection scores
@@ -790,5 +804,5 @@ class GraphHead(Module):
 
             counter += n
 
-        return all_box_pair_features, all_boxes_h, all_boxes_o, \
+        return all_box_pair_features, all_boxes_s, all_boxes_o, \
                all_object_class, all_labels, all_prior
