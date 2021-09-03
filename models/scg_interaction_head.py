@@ -191,7 +191,7 @@ class InteractionHead(Module):
                     logits_p: Tensor,
                     logits_s: Tensor,
                     prior: List[Tensor],
-                    boxes_h: List[Tensor],
+                    boxes_s: List[Tensor],
                     boxes_o: List[Tensor],
                     object_class: List[Tensor],
                     labels: List[Tensor],
@@ -206,8 +206,8 @@ class InteractionHead(Module):
         prior: List[Tensor]
             Prior scores organised by images. Each tensor has shape (2, M, K).
             M could be different for different images
-        boxes_h: List[Tensor]
-            Human bounding box coordinates organised by images (M, 4)
+        boxes_s: List[Tensor]
+            Subject bounding box coordinates organised by images (M, 4)
         boxes_o: List[Tensor]
             Object bounding box coordinates organised by images (M, 4)
         object_classes: List[Tensor]
@@ -219,7 +219,7 @@ class InteractionHead(Module):
         --------
         results: List[dict]
             Results organised by images, with keys as below
-            `boxes_h`: Tensor[M, 4]
+            `boxes_s`: Tensor[M, 4]
             `boxes_o`: Tensor[M, 4]
             `index`: Tensor[L]
                 Expanded indices of box pairs for each predicted action
@@ -238,7 +238,7 @@ class InteractionHead(Module):
             `unary_labels`: Tensor[M], optional
                 Labels for the unary weights
         """
-        num_boxes = [len(b) for b in boxes_h]
+        num_boxes = [len(b) for b in boxes_s]
 
         weights = torch.sigmoid(logits_s).squeeze(1)
         scores = torch.sigmoid(logits_p)
@@ -248,13 +248,13 @@ class InteractionHead(Module):
             labels = [None for _ in range(len(num_boxes))]
 
         results = []
-        for w, s, p, b_h, b_o, o, l in zip(
-                weights, scores, prior, boxes_h, boxes_o, object_class, labels
+        for w, s, p, b_s, b_o, o, l in zip(
+                weights, scores, prior, boxes_s, boxes_o, object_class, labels
         ):
             # Keep valid classes
             x, y = torch.nonzero(p[0]).unbind(1)
             result_dict = dict(
-                boxes_h=b_h, boxes_o=b_o,
+                boxes_s=b_s, boxes_o=b_o,
                 index=x, prediction=y,
                 scores=s[x, y] * p[:, x, y].prod(dim=0) * w[x].detach(),
                 object=o, prior=p[:, x, y], weights=w,
@@ -288,7 +288,7 @@ class InteractionHead(Module):
             Image shapes, heights followed by widths
         targets: List[dict], optional
             Interaction targets with the following keys
-            `boxes_h`: Tensor[G, 4]
+            `boxes_s`: Tensor[G, 4]
             `boxes_o`: Tensor[G, 4]
             `object`: Tensor[G]
                 Object class indices for each pair
@@ -365,7 +365,7 @@ class InteractionHead(Module):
 
         results = self.postprocess(
             logits_p, logits_s, box_pair_prior,
-            boxes_h, boxes_o,
+            boxes_s, boxes_o,
             object_class, box_pair_labels
         )
 
@@ -463,8 +463,8 @@ class MessageMBF(MultiBranchFusion):
             raise ValueError("Unknown node type \"{}\"".format(node_type))
 
     def _forward_subject_nodes(self, appearance: Tensor, spatial: Tensor) -> Tensor:
-        n_h, n = spatial.shape[:2]
-        assert len(appearance) == n_h, "Incorrect size of dim0 for appearance features"
+        n_s, n = spatial.shape[:2]
+        assert len(appearance) == n_s, "Incorrect size of dim0 for appearance features"
         return torch.stack([
             fc_3(F.relu(
                 fc_1(appearance).repeat(n, 1, 1)
@@ -473,11 +473,11 @@ class MessageMBF(MultiBranchFusion):
         ]).sum(dim=0)
 
     def _forward_object_nodes(self, appearance: Tensor, spatial: Tensor) -> Tensor:
-        n_h, n = spatial.shape[:2]
+        n_s, n = spatial.shape[:2]
         assert len(appearance) == n, "Incorrect size of dim0 for appearance features"
         return torch.stack([
             fc_3(F.relu(
-                fc_1(appearance).repeat(n_h, 1, 1)
+                fc_1(appearance).repeat(n_s, 1, 1)
                 * fc_2(spatial)
             )) for fc_1, fc_2, fc_3 in zip(self.fc_1, self.fc_2, self.fc_3)
         ]).sum(dim=0)
@@ -555,7 +555,7 @@ class GraphHead(Module):
             cardinality=16
         )
 
-        self.norm_h = nn.LayerNorm(node_encoding_size)
+        self.norm_s = nn.LayerNorm(node_encoding_size)
         self.norm_o = nn.LayerNorm(node_encoding_size)
 
         # Map spatial encodings to the same dimension as appearance features
@@ -583,15 +583,15 @@ class GraphHead(Module):
         )
 
     def associate_with_ground_truth(self,
-                                    boxes_h: Tensor,
+                                    boxes_s: Tensor,
                                     boxes_o: Tensor,
                                     targets: List[dict]
                                     ) -> Tensor:
-        n = boxes_h.shape[0]
-        labels = torch.zeros(n, self.num_cls, device=boxes_h.device)
+        n = boxes_s.shape[0]
+        labels = torch.zeros(n, self.num_cls, device=boxes_s.device)
 
         x, y = torch.nonzero(torch.min(
-            box_ops.box_iou(boxes_h, targets["boxes_h"]),
+            box_ops.box_iou(boxes_s, targets["boxes_s"]),
             box_ops.box_iou(boxes_o, targets["boxes_o"])
         ) >= self.fg_iou_thresh).unbind(1)
 
@@ -616,12 +616,12 @@ class GraphHead(Module):
             object_class: Tensor[N]
                 Object class indices (before pairing)
         """
-        prior_h = torch.zeros(len(x), self.num_cls, device=scores.device)
-        prior_o = torch.zeros_like(prior_h)
+        prior_s = torch.zeros(len(x), self.num_cls, device=scores.device)
+        prior_o = torch.zeros_like(prior_s)
 
         # Raise the power of object detection scores during inference
         p = 1.0 if self.training else 2.8
-        s_h = scores[x].pow(p)
+        s_s = scores[x].pow(p)
         s_o = scores[y].pow(p)
 
         # Map object class index to target class index
@@ -633,10 +633,10 @@ class GraphHead(Module):
         # Flatten mapped target indices
         flat_target_idx = [t for tar in target_cls_idx for t in tar]
 
-        prior_h[pair_idx, flat_target_idx] = s_h[pair_idx]
+        prior_s[pair_idx, flat_target_idx] = s_s[pair_idx]
         prior_o[pair_idx, flat_target_idx] = s_o[pair_idx]
 
-        return torch.stack([prior_h, prior_o])
+        return torch.stack([prior_s, prior_o])
 
     def forward(self,
                 features: OrderedDict, image_shapes: List[Tuple[int, int]],
@@ -665,14 +665,14 @@ class GraphHead(Module):
                 Bounding box scores organised by images
             targets: List[dict]
                 Interaction targets with the following keys
-                `boxes_h`: Tensor[G, 4]
+                `boxes_s`: Tensor[G, 4]
                 `boxes_o`: Tensor[G, 4]
                 `labels`: Tensor[G]
 
         Returns:
         --------
             all_box_pair_features: List[Tensor]
-            all_boxes_h: List[Tensor]
+            all_boxes_s: List[Tensor]
             all_boxes_o: List[Tensor]
             all_object_class: List[Tensor]
             all_labels: List[Tensor]
@@ -760,7 +760,7 @@ class GraphHead(Module):
                         box_pair_spatial_reshaped
                     ), dim=1)
                 )
-                s_node_encodings = self.norm_h(
+                s_node_encodings = self.norm_s(
                     s_node_encodings + messages_to_s
                 )
 
