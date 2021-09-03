@@ -73,63 +73,63 @@ class Train(object):
         raise NotImplementedError
 
     def idn(self, epoch, iteration, args):
-
-        def idn_train(net, loader, optimizer, timer, epoch):
-            net.train()
-            net.cuda()
-            global step
-            step = 0
-
-            timer.tic()
-            meters = {
-                'L_rec': AverageMeter(),
-                'L_cls': AverageMeter(),
-                'L_ae': AverageMeter(),
-                'loss': AverageMeter()
-            }
-            for i, batch in enumerate(loader):
-                n = batch['spatial'].shape[0]
-
-                batch['spatial'] = batch['spatial'].cuda(non_blocking=True)
-                batch['labels_s'] = batch['labels_s'].cuda(non_blocking=True)
-                batch['labels_r'] = batch['labels_r'].cuda(non_blocking=True)
-                batch['labels_ro'] = batch['labels_ro'].cuda(non_blocking=True)
-                batch['labels_sro'] = batch['labels_sro'].cuda(non_blocking=True)
-                batch['sub_vec'] = batch['sub_vec'].cuda(non_blocking=True)
-                batch['obj_vec'] = batch['obj_vec'].cuda(non_blocking=True)
-                batch['uni_vec'] = batch['uni_vec'].cuda(non_blocking=True)
-
-                output = net(batch)
-                loss = torch.mean(output['loss'])
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-
-                for key in output.keys():
-                    if key in meters:
-                        meters[key].update(torch.mean(output[key]).detach().cpu().data, n)
-
-                timer.toc()
-                timer.tic()
-                if i % 2000 == 0:
-                    print("%03d epoch, %05d iter, average time %.4f, loss %.4f" % (
-                    epoch, i, timer.average_time, loss.detach().cpu().data))
-                step += 1
-
-            timer.toc()
-
-            return net, meters
-
-        config = get_config(args.config_path)
-        optimizer = optim.SGD(self.net.parameters(), lr=config.TRAIN.OPTIMIZER.lr,
-                              momentum=config.TRAIN.OPTIMIZER.momentum,
-                              weight_decay=config.TRAIN.OPTIMIZER.weight_decay)
-
-        for i in range(args.num_epochs):  # config.TRAIN.MAX_EPOCH
-            train_str = "%03d epoch training" % i
-            net, train_meters = idn_train(self.net, self.train_loader, optimizer, train_timer, i)
-            for (key, value) in train_meters.items():
-                train_str += ", %s=%.4f" % (key, value.avg)
+        raise NotImplementedError
+        # def idn_train(net, loader, optimizer, timer, epoch):
+        #     net.train()
+        #     net.cuda()
+        #     global step
+        #     step = 0
+        #
+        #     timer.tic()
+        #     meters = {
+        #         'L_rec': AverageMeter(),
+        #         'L_cls': AverageMeter(),
+        #         'L_ae': AverageMeter(),
+        #         'loss': AverageMeter()
+        #     }
+        #     for i, batch in enumerate(loader):
+        #         n = batch['spatial'].shape[0]
+        #
+        #         batch['spatial'] = batch['spatial'].cuda(non_blocking=True)
+        #         batch['labels_s'] = batch['labels_s'].cuda(non_blocking=True)
+        #         batch['labels_r'] = batch['labels_r'].cuda(non_blocking=True)
+        #         batch['labels_ro'] = batch['labels_ro'].cuda(non_blocking=True)
+        #         batch['labels_sro'] = batch['labels_sro'].cuda(non_blocking=True)
+        #         batch['sub_vec'] = batch['sub_vec'].cuda(non_blocking=True)
+        #         batch['obj_vec'] = batch['obj_vec'].cuda(non_blocking=True)
+        #         batch['uni_vec'] = batch['uni_vec'].cuda(non_blocking=True)
+        #
+        #         output = net(batch)
+        #         loss = torch.mean(output['loss'])
+        #         optimizer.zero_grad()
+        #         loss.backward()
+        #         optimizer.step()
+        #
+        #         for key in output.keys():
+        #             if key in meters:
+        #                 meters[key].update(torch.mean(output[key]).detach().cpu().data, n)
+        #
+        #         timer.toc()
+        #         timer.tic()
+        #         if i % 2000 == 0:
+        #             print("%03d epoch, %05d iter, average time %.4f, loss %.4f" % (
+        #             epoch, i, timer.average_time, loss.detach().cpu().data))
+        #         step += 1
+        #
+        #     timer.toc()
+        #
+        #     return net, meters
+        #
+        # config = get_config(args.config_path)
+        # optimizer = optim.SGD(self.net.parameters(), lr=config.TRAIN.OPTIMIZER.lr,
+        #                       momentum=config.TRAIN.OPTIMIZER.momentum,
+        #                       weight_decay=config.TRAIN.OPTIMIZER.weight_decay)
+        #
+        # for i in range(args.num_epochs):  # config.TRAIN.MAX_EPOCH
+        #     train_str = "%03d epoch training" % i
+        #     net, train_meters = idn_train(self.net, self.train_loader, optimizer, train_timer, i)
+        #     for (key, value) in train_meters.items():
+        #         train_str += ", %s=%.4f" % (key, value.avg)
 
     def cascaded_hoi(self, input_data):
         raise NotImplementedError
@@ -141,7 +141,7 @@ def get_net(args):
             args.object_to_target, args.human_idx, num_classes=args.num_classes,
             num_obj_classes=args.num_obj_classes,
             num_iterations=args.num_iter, postprocess=False,
-            max_human=args.max_human, max_object=args.max_object,
+            max_subject=args.max_subject, max_object=args.max_object,
             box_score_thresh=args.box_score_thresh,
             distributed=True
         )
@@ -279,7 +279,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr-decay', default=0.1, type=float,
                         help="The multiplier by which the learning rate is reduced")
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
-    parser.add_argument('--max-human', default=15, type=int)
+    parser.add_argument('--max-subject', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
     parser.add_argument('--milestones', nargs='+', default=[6, ], type=int,
                         help="The epoch number when learning rate is reduced")

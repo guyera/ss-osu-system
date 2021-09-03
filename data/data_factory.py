@@ -31,21 +31,27 @@ class CustomInput(object):
         }
         self.converter = self.func_map[model_name]
 
-    def scg(self, image, boxes, labels, scores):
+    def scg(self, image, subject_boxes, subject_labels, subject_scores, object_boxes, object_labels, object_scores):
         """Merges the arguments into a data point for the scg model
 
         Args:
             image (np.array)
-            boxes (list of list): detected box coords
-            labels (list): detected box labels
-            scores (list): detected box scores for selected class
+            subject_boxes (list of list): detected box coords for subjects
+            subject_labels (list): detected box labels for subjects
+            subject_scores (list): detected box scores for selected class for subjects
+            object_boxes (list of list): detected box coords for objects
+            object_labels (list): detected box labels for objects
+            object_scores (list): detected box scores for selected class for objects
         """
         data_point = list()
         data_point.append([torch.from_numpy(image)])
         detections = [{
-            'boxes': torch.from_numpy(boxes),
-            'labels': torch.from_numpy(labels),
-            'scores': torch.from_numpy(scores),
+            'sub_boxes': torch.from_numpy(subject_boxes),
+            'sub_labels': torch.from_numpy(subject_labels),
+            'sub_scores': torch.from_numpy(subject_scores),
+            'obj_boxes': torch.from_numpy(object_boxes),
+            'obj_labels': torch.from_numpy(object_labels),
+            'obj_scores': torch.from_numpy(object_scores),
         }]
         data_point.append(detections)
         return data_point

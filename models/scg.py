@@ -131,9 +131,16 @@ class GenericHOINetwork(nn.Module):
         for det, o_im_s, im_s in zip(
                 detections, original_image_sizes, images.image_sizes
         ):
-            boxes = det['boxes']
-            boxes = transform.resize_boxes(boxes, o_im_s, im_s)
-            det['boxes'] = boxes
+            # Now separating object and subject boxes
+            # boxes = det['boxes']
+            # boxes = transform.resize_boxes(boxes, o_im_s, im_s)
+            # det['boxes'] = boxes
+            sub_boxes = det['sub_boxes']
+            sub_boxes = transform.resize_boxes(sub_boxes, o_im_s, im_s)
+            det['sub_boxes'] = sub_boxes
+            obj_boxes = det['obj_boxes']
+            obj_boxes = transform.resize_boxes(obj_boxes, o_im_s, im_s)
+            det['obj_boxes'] = obj_boxes
 
         return images, detections, targets, original_image_sizes
 
@@ -176,7 +183,6 @@ class GenericHOINetwork(nn.Module):
 class SpatiallyConditionedGraph(GenericHOINetwork):
     def __init__(self,
                  object_to_action: List[list],
-                 human_idx: int,
                  # Backbone parameters
                  backbone_name: str = "resnet50",
                  pretrained: bool = True,
@@ -199,7 +205,7 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
                  postprocess: bool = True,
                  # Preprocessing parameters
                  box_nms_thresh: float = 0.5,
-                 max_human: int = 15,
+                 max_subject: int = 15,
                  max_object: int = 15
                  ) -> None:
         detector = models.fasterrcnn_resnet_fpn(backbone_name,
@@ -222,7 +228,6 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             node_encoding_size=node_encoding_size,
             representation_size=representation_size,
             num_cls=num_classes,
-            human_idx=human_idx,
             object_class_to_target_class=object_to_action,
             fg_iou_thresh=fg_iou_thresh,
             num_iter=num_iterations
@@ -242,10 +247,9 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             box_pair_predictor=box_pair_predictor,
             custom_box_classifier=custom_box_classifier,
             num_classes=num_classes,
-            human_idx=human_idx,
             box_nms_thresh=box_nms_thresh,
             box_score_thresh=box_score_thresh,
-            max_human=max_human,
+            max_subject=max_subject,
             max_object=max_object,
             distributed=distributed
         )
