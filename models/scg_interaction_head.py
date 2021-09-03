@@ -1,5 +1,6 @@
 from collections import OrderedDict
 from typing import Optional, List, Tuple
+import pocket
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
@@ -91,6 +92,7 @@ class InteractionHead(Module):
                 target = targets[b_idx]
                 n_s = target["boxes_s"].shape[0]
                 n_o = target["boxes_o"].shape[0]
+                # print(f'n_s: {n_s}, n_o: {n_o}, target_sibject: {len(target["subject"])}, target_object: {len(target["object"])}')
                 boxes = torch.cat([target["boxes_s"], target["boxes_o"], boxes])
                 scores = torch.cat([torch.ones(n_s, device=scores.device), torch.ones(n_o, device=scores.device), scores])
                 labels = torch.cat([
@@ -105,12 +107,13 @@ class InteractionHead(Module):
                 obj_idx = list(range(detection['num_subjects'], len(scores)))
 
             # Remove low scoring examples
-            sub_idx = torch.IntTensor(sub_idx)
-            obj_idx = torch.FloatTensor(obj_idx)
+            sub_idx = pocket.ops.relocate_to_cuda(torch.IntTensor(sub_idx))
+            obj_idx = pocket.ops.relocate_to_cuda(torch.IntTensor(obj_idx))
             active_idx = torch.nonzero(
                 scores >= self.box_score_thresh
             ).squeeze(1)
             # Class-wise non-maximum suppression
+            # print(f'boxes: {len(boxes)}, scores: {len(scores)}, labels: {len(labels)}')
             keep_idx = box_ops.batched_nms(
                 boxes[active_idx],
                 scores[active_idx],
@@ -142,7 +145,7 @@ class InteractionHead(Module):
         return results
 
     def compute_interaction_classification_loss(self, results: List[dict]) -> Tensor:
-        scores = [];
+        scores = []
         labels = []
         for result in results:
             scores.append(result['scores'])
@@ -162,7 +165,7 @@ class InteractionHead(Module):
         return loss / n_p
 
     def compute_interactiveness_loss(self, results: List[dict]) -> Tensor:
-        weights = [];
+        weights = []
         labels = []
         for result in results:
             weights.append(result['weights'])
@@ -315,10 +318,9 @@ class InteractionHead(Module):
         orig_labels = list()
         num_subjects = list()
         for detection in detections:
-            box_coords.append(detection['sub_boxes'] + detection['obj_boxes'])
-            orig_labels.append(detection['sub_labels'] + detection['obj_labels'])
-            num_subjects.append(len(detection['sub_boxes']))
-
+            box_coords.append(torch.cat([detection['subject_boxes'], detection['object_boxes']]))
+            orig_labels.append(torch.cat([detection['subject_labels'], detection['object_labels']]))
+            num_subjects.append(len(detection['subject_boxes']))
         box_features = self.box_roi_pool(features, box_coords, image_shapes)
         box_features = self.box_head(box_features)
         box_logits = self.custom_box_classifier(box_features)

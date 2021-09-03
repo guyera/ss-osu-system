@@ -138,7 +138,7 @@ class Train(object):
 def get_net(args):
     if args.net == 'scg':
         net = SCG(
-            args.object_to_target, args.human_idx, num_classes=args.num_classes,
+            args.object_to_target, num_classes=args.num_classes,
             num_obj_classes=args.num_obj_classes,
             num_iterations=args.num_iter, postprocess=False,
             max_subject=args.max_subject, max_object=args.max_object,

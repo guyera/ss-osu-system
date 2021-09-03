@@ -71,7 +71,7 @@ class HOINetworkTransform(transform.GeneralizedRCNNTransform):
         if target is None:
             return image, target
 
-        target['boxes_h'] = transform.resize_boxes(target['boxes_h'],
+        target['boxes_s'] = transform.resize_boxes(target['boxes_s'],
                                                    (h, w), image.shape[-2:])
         target['boxes_o'] = transform.resize_boxes(target['boxes_o'],
                                                    (h, w), image.shape[-2:])
@@ -83,10 +83,10 @@ class HOINetworkTransform(transform.GeneralizedRCNNTransform):
             loss = results.pop()
 
         for pred, im_s, o_im_s in zip(results, image_shapes, original_image_sizes):
-            boxes_h, boxes_o = pred['boxes_h'], pred['boxes_o']
-            boxes_h = transform.resize_boxes(boxes_h, im_s, o_im_s)
+            boxes_s, boxes_o = pred['boxes_s'], pred['boxes_o']
+            boxes_s = transform.resize_boxes(boxes_s, im_s, o_im_s)
             boxes_o = transform.resize_boxes(boxes_o, im_s, o_im_s)
-            pred['boxes_h'], pred['boxes_o'] = boxes_h, boxes_o
+            pred['boxes_s'], pred['boxes_o'] = boxes_s, boxes_o
 
         if self.training:
             results.append(loss)
@@ -135,12 +135,12 @@ class GenericHOINetwork(nn.Module):
             # boxes = det['boxes']
             # boxes = transform.resize_boxes(boxes, o_im_s, im_s)
             # det['boxes'] = boxes
-            sub_boxes = det['sub_boxes']
+            sub_boxes = det['subject_boxes']
             sub_boxes = transform.resize_boxes(sub_boxes, o_im_s, im_s)
-            det['sub_boxes'] = sub_boxes
-            obj_boxes = det['obj_boxes']
+            det['subject_boxes'] = sub_boxes
+            obj_boxes = det['object_boxes']
             obj_boxes = transform.resize_boxes(obj_boxes, o_im_s, im_s)
-            det['obj_boxes'] = obj_boxes
+            det['object_boxes'] = obj_boxes
 
         return images, detections, targets, original_image_sizes
 
@@ -327,8 +327,8 @@ class CustomisedDLE(DistributedLearningEngine):
         self.obj_cls_loss.reset()
 
     def _synchronise_and_log_results(self, output, meter):
-        scores = [];
-        pred = [];
+        scores = []
+        pred = []
         labels = []
         # Collate results within the batch
         for result in output:

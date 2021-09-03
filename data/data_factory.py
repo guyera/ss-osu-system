@@ -191,7 +191,7 @@ class DataFactory(Dataset):
             target['labels'] = target['actions']
             target['object'] = target.pop('objects')
 
-        target["subject"] = torch.tensor([self.subject_idx]) #will be changed later, only for human for now
+        target["subject"] = torch.tensor([self.subject_idx]).repeat(1, len(target['boxes_s']))[0] #will be changed later, only for human for now
         detection_path = os.path.join(
             self.detection_root,
             self.dataset.filename(i).replace('jpg', 'json')
