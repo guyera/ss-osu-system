@@ -92,8 +92,10 @@ class DataFactory(Dataset):
                  data_root, detection_root,
                  flip=False,
                  box_score_thresh_h=0.2,
-                 box_score_thresh_o=0.2
+                 box_score_thresh_o=0.2,
+                 training=True,
                  ):
+        self.training = training
         if name not in ['hicodet', 'vcoco']:
             raise ValueError("Unknown dataset ", name)
 
@@ -167,10 +169,13 @@ class DataFactory(Dataset):
         object_boxes = boxes[object_idxs].view(-1, 4)
         object_scores = scores[object_idxs].view(-1)
         object_labels = labels[object_idxs].view(-1)
-
-        return dict(subject_boxes=subject_boxes, subject_labels=subject_labels, subject_scores=subject_scores,
-                    object_boxes=object_boxes, object_labels=object_labels, object_scores=object_scores,
-                    img_path=detection['img_path'])
+        if self.training:
+            return dict(subject_boxes=subject_boxes, subject_labels=subject_labels, subject_scores=subject_scores,
+                        object_boxes=object_boxes, object_labels=object_labels, object_scores=object_scores)
+        else:
+            return dict(subject_boxes=subject_boxes, subject_labels=subject_labels, subject_scores=subject_scores,
+                        object_boxes=object_boxes, object_labels=object_labels, object_scores=object_scores,
+                        img_path=detection['img_path'])
 
     def flip_boxes(self, detection, target, w):
         detection['boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['boxes'])
@@ -208,7 +213,8 @@ class DataFactory(Dataset):
             self.flip_boxes(detection, target, w)
         image = pocket.ops.to_tensor(image, 'pil')
         # print(detection)
-        detection['img_path'] = self.dataset.filename(i)
+        if not self.training:
+            detection['img_path'] = self.dataset.filename(i)
         detection = self.filter_detections(detection)
 
         return image, detection, target

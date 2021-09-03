@@ -240,7 +240,8 @@ def main(rank, args):
         valset = DataFactory(
             name=args.dataset, partition=args.partitions[1],
             data_root=args.data_root,
-            detection_root=args.detection_dir
+            detection_root=args.detection_dir,
+            training=False,
         )
 
         val_loader = DataLoader(
