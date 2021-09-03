@@ -60,7 +60,8 @@ class Test(object):
     def scg(self, ov_interaction_map):
         results = list()
         for batch in tqdm(self.data_loader):
-            inputs = pocket.ops.relocate_to_cuda(batch[:-1])
+            inputs = batch[:-1]
+            # print(inputs)
             # TODO: Optimize this
             inp_image = np.array(inputs[0][0].cpu())
             # Now assuming that data loader will give us separate lists for objects and subjects
@@ -70,12 +71,12 @@ class Test(object):
             # input_data = self.converter(inp_image, inp_boxes, inp_labels, inp_scores)
             # input_data = pocket.ops.relocate_to_cuda(input_data)
             # input_data = self.converter(inp_image, inp_boxes, inp_labels, inp_scores)
-            sub_inp_boxes = np.array(inputs[1][0]['subject_boxes'].cpu())
-            sub_inp_labels = np.array(inputs[1][0]['subject_labels'].cpu())
-            sub_inp_scores = np.array(inputs[1][0]['subject_scores'].cpu())
-            obj_inp_boxes = np.array(inputs[1][0]['object_boxes'].cpu())
-            obj_inp_labels = np.array(inputs[1][0]['object_labels'].cpu())
-            obj_inp_scores = np.array(inputs[1][0]['object_scores'].cpu())
+            sub_inp_boxes = np.array(inputs[1][0]['subject_boxes'])
+            sub_inp_labels = np.array(inputs[1][0]['subject_labels'])
+            sub_inp_scores = np.array(inputs[1][0]['subject_scores'])
+            obj_inp_boxes = np.array(inputs[1][0]['object_boxes'])
+            obj_inp_labels = np.array(inputs[1][0]['object_labels'])
+            obj_inp_scores = np.array(inputs[1][0]['object_scores'])
             input_data = self.converter(inp_image, sub_inp_boxes, sub_inp_labels, sub_inp_scores,
                                         obj_inp_boxes, obj_inp_labels, obj_inp_scores)
             input_data = pocket.ops.relocate_to_cuda(input_data)
@@ -99,6 +100,7 @@ class Test(object):
                     'scores': scores,
                     'interactions': interactions,
                     'labels': labels,
+                    'img_path': inputs[1][0]['img_path'],
                 }
                 results.append(result)
         return results

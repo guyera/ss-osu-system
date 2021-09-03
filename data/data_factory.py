@@ -46,12 +46,12 @@ class CustomInput(object):
         data_point = list()
         data_point.append([torch.from_numpy(image)])
         detections = [{
-            'sub_boxes': torch.from_numpy(subject_boxes),
-            'sub_labels': torch.from_numpy(subject_labels),
-            'sub_scores': torch.from_numpy(subject_scores),
-            'obj_boxes': torch.from_numpy(object_boxes),
-            'obj_labels': torch.from_numpy(object_labels),
-            'obj_scores': torch.from_numpy(object_scores),
+            'subject_boxes': torch.from_numpy(subject_boxes),
+            'subject_labels': torch.from_numpy(subject_labels),
+            'subject_scores': torch.from_numpy(subject_scores),
+            'object_boxes': torch.from_numpy(object_boxes),
+            'object_labels': torch.from_numpy(object_labels),
+            'object_scores': torch.from_numpy(object_scores),
         }]
         data_point.append(detections)
         return data_point
@@ -168,8 +168,9 @@ class DataFactory(Dataset):
         object_scores = scores[object_idxs].view(-1)
         object_labels = labels[object_idxs].view(-1)
 
-        return dict(subject_boxes=subject_boxes, subject_labels=subject_labels, subject_scores=subject_scores, object_boxes=object_boxes, object_labels=object_labels, object_scores=object_scores)
-    
+        return dict(subject_boxes=subject_boxes, subject_labels=subject_labels, subject_scores=subject_scores,
+                    object_boxes=object_boxes, object_labels=object_labels, object_scores=object_scores,
+                    img_path=detection['img_path'])
 
     def flip_boxes(self, detection, target, w):
         detection['boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['boxes'])
@@ -191,7 +192,8 @@ class DataFactory(Dataset):
             target['labels'] = target['actions']
             target['object'] = target.pop('objects')
 
-        target["subject"] = torch.tensor([self.subject_idx]).repeat(1, len(target['boxes_s']))[0] #will be changed later, only for human for now
+        target["subject"] = torch.tensor([self.subject_idx]).repeat(1, len(target['boxes_s']))[
+            0]  # will be changed later, only for human for now
         detection_path = os.path.join(
             self.detection_root,
             self.dataset.filename(i).replace('jpg', 'json')
@@ -206,6 +208,7 @@ class DataFactory(Dataset):
             self.flip_boxes(detection, target, w)
         image = pocket.ops.to_tensor(image, 'pil')
         # print(detection)
+        detection['img_path'] = self.dataset.filename(i)
         detection = self.filter_detections(detection)
 
         return image, detection, target
