@@ -318,7 +318,8 @@ class InteractionHead(Module):
             detection = {
                 'boxes': box_coord,
                 'labels': labels,
-                'orig_labels': detections[i]['labels'],  # This will be used as GT labels for training classification head
+                'orig_labels': detections[i]['labels'],
+                # This will be used as GT labels for training classification head
                 'scores': scores,
                 'box_logits': box_logits[i],
             }
@@ -339,10 +340,10 @@ class InteractionHead(Module):
         box_features = self.box_roi_pool(features, box_coords, image_shapes)
 
         box_pair_features, boxes_h, boxes_o, object_class, \
-            box_pair_labels, box_pair_prior = self.box_pair_head(
-                features, image_shapes, box_features,
-                box_coords, box_labels, box_scores, targets
-            )
+        box_pair_labels, box_pair_prior = self.box_pair_head(
+            features, image_shapes, box_features,
+            box_coords, box_labels, box_scores, targets
+        )
 
         box_pair_features = torch.cat(box_pair_features)
         logits_p = self.box_pair_predictor(box_pair_features)

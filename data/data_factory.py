@@ -30,6 +30,7 @@ from easydict import EasyDict as edict
 
 class CustomInput(object):
     """Generates an input specific to the one required by official implementation of concerned model"""
+
     def __init__(self, model_name):
         self.func_map = {
             'scg': self.scg,
@@ -64,23 +65,24 @@ class CustomInput(object):
     def idn(self, image, boxes, labels, scores):
         args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
         config = get_config('configs/IDN.yml')
-        test_set    = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
-        test_loader = DataLoaderX(test_set, batch_size=1, shuffle=False, collate_fn=test_set.collate_fn, pin_memory=False, drop_last=False)
+        test_set = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
+        test_loader = DataLoaderX(test_set, batch_size=1, shuffle=False, collate_fn=test_set.collate_fn,
+                                  pin_memory=False, drop_last=False)
         verb_mapping = torch.from_numpy(pickle.load(open('configs/verb_mapping.pkl', 'rb'), encoding='latin1')).float()
         for i, batch in enumerate(test_loader):
             n = batch['shape'].shape[0]
-            batch['shape']   = batch['shape'].cuda(non_blocking=True)
+            batch['shape'] = batch['shape'].cuda(non_blocking=True)
             batch['spatial'] = batch['spatial'].cuda(non_blocking=True)
             batch['sub_vec'] = batch['sub_vec'].cuda(non_blocking=True)
             batch['obj_vec'] = batch['obj_vec'].cuda(non_blocking=True)
             batch['uni_vec'] = batch['uni_vec'].cuda(non_blocking=True)
-            batch['labels_s']   = batch['labels_s'].cuda(non_blocking=True)
-            batch['labels_ro']  = batch['labels_ro'].cuda(non_blocking=True)
-            batch['labels_r']   = batch['labels_r'].cuda(non_blocking=True)
+            batch['labels_s'] = batch['labels_s'].cuda(non_blocking=True)
+            batch['labels_ro'] = batch['labels_ro'].cuda(non_blocking=True)
+            batch['labels_r'] = batch['labels_r'].cuda(non_blocking=True)
             batch['labels_sro'] = batch['labels_sro'].cuda(non_blocking=True)
-            verb_mapping    = verb_mapping.cuda(non_blocking=True)
+            verb_mapping = verb_mapping.cuda(non_blocking=True)
             break
-            
+
         return batch
 
     def cascaded_hoi(self):
@@ -89,12 +91,12 @@ class CustomInput(object):
 
 class DataFactory(Dataset):
     def __init__(self,
-            name, partition,
-            data_root, detection_root,
-            flip=False,
-            box_score_thresh_h=0.2,
-            box_score_thresh_o=0.2
-            ):
+                 name, partition,
+                 data_root, detection_root,
+                 flip=False,
+                 box_score_thresh_h=0.2,
+                 box_score_thresh_o=0.2
+                 ):
         if name not in ['hicodet', 'vcoco']:
             raise ValueError("Unknown dataset ", name)
 
@@ -119,7 +121,7 @@ class DataFactory(Dataset):
             self.dataset = VCOCO(
                 root=os.path.join(data_root, image_dir[partition]),
                 anno_file=os.path.join(data_root, 'instances_vcoco_{}.json'.format(partition)
-                ), target_transform=pocket.ops.ToTensor(input_format='dict')
+                                       ), target_transform=pocket.ops.ToTensor(input_format='dict')
             )
             self.human_idx = 1
 
@@ -181,7 +183,7 @@ class DataFactory(Dataset):
         )
         with open(detection_path, 'r') as f:
             detection = pocket.ops.to_tensor(json.load(f),
-                input_format='dict')
+                                             input_format='dict')
 
         if self._flip[i]:
             image = hflip(image)

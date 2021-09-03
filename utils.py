@@ -15,9 +15,11 @@ from easydict import EasyDict as edict
 from prefetch_generator import BackgroundGenerator
 from torch.utils.data import DataLoader
 
+
 class DataLoaderX(DataLoader):
     def __iter__(self):
         return BackgroundGenerator(super().__iter__())
+
 
 def custom_collate(batch):
     images = []
@@ -31,8 +33,8 @@ def custom_collate(batch):
 
 
 def compute_spatial_encodings(
-    boxes_1: List[Tensor], boxes_2: List[Tensor],
-    shapes: List[Tuple[int, int]], eps: float = 1e-10
+        boxes_1: List[Tensor], boxes_2: List[Tensor],
+        shapes: List[Tuple[int, int]], eps: float = 1e-10
 ) -> Tensor:
     """
     Parameters:
@@ -55,11 +57,15 @@ def compute_spatial_encodings(
     for b1, b2, shape in zip(boxes_1, boxes_2, shapes):
         h, w = shape
 
-        c1_x = (b1[:, 0] + b1[:, 2]) / 2; c1_y = (b1[:, 1] + b1[:, 3]) / 2
-        c2_x = (b2[:, 0] + b2[:, 2]) / 2; c2_y = (b2[:, 1] + b2[:, 3]) / 2
+        c1_x = (b1[:, 0] + b1[:, 2]) / 2;
+        c1_y = (b1[:, 1] + b1[:, 3]) / 2
+        c2_x = (b2[:, 0] + b2[:, 2]) / 2;
+        c2_y = (b2[:, 1] + b2[:, 3]) / 2
 
-        b1_w = b1[:, 2] - b1[:, 0]; b1_h = b1[:, 3] - b1[:, 1]
-        b2_w = b2[:, 2] - b2[:, 0]; b2_h = b2[:, 3] - b2[:, 1]
+        b1_w = b1[:, 2] - b1[:, 0];
+        b1_h = b1[:, 3] - b1[:, 1]
+        b2_w = b2[:, 2] - b2[:, 0];
+        b2_h = b2[:, 3] - b2[:, 1]
 
         d_x = torch.abs(c2_x - c1_x) / (b1_w + eps)
         d_y = torch.abs(c2_y - c1_y) / (b1_h + eps)
@@ -91,12 +97,13 @@ def compute_spatial_encodings(
         )
     return torch.cat(features)
 
+
 def binary_focal_loss(
-    x: Tensor, y: Tensor,
-    alpha: float = 0.5,
-    gamma: float = 2.0,
-    reduction: str = 'mean',
-    eps: float = 1e-6
+        x: Tensor, y: Tensor,
+        alpha: float = 0.5,
+        gamma: float = 2.0,
+        reduction: str = 'mean',
+        eps: float = 1e-6
 ) -> Tensor:
     """
     Focal loss by Lin et al.
@@ -124,10 +131,10 @@ def binary_focal_loss(
         loss: Tensor
             Computed loss tensor
     """
-    loss = (1 - y - alpha).abs() * ((y-x).abs() + eps) ** gamma * \
-        torch.nn.functional.binary_cross_entropy(
-            x, y, reduction='none'
-        )
+    loss = (1 - y - alpha).abs() * ((y - x).abs() + eps) ** gamma * \
+           torch.nn.functional.binary_cross_entropy(
+               x, y, reduction='none'
+           )
     if reduction == 'mean':
         return loss.mean()
     elif reduction == 'sum':
@@ -136,6 +143,7 @@ def binary_focal_loss(
         return loss
     else:
         raise ValueError("Unsupported reduction method {}".format(reduction))
+
 
 class Timer(object):
     def __init__(self):
@@ -174,7 +182,8 @@ class AverageMeter(object):
 
     def __str__(self):
         return '%.4f' % self.avg
-    
+
+
 def get_config(config_path):
     loader = yaml.FullLoader
     loader.add_implicit_resolver(
@@ -187,32 +196,31 @@ def get_config(config_path):
         |[-+]?\\.(?:inf|Inf|INF)
         |\\.(?:nan|NaN|NAN))$''', re.X),
         list(u'-+0123456789.'))
-    
+
     config = edict(yaml.load(open(config_path, 'r'), Loader=loader))
     return config
 
 
-def getSigmoid(b,c,d,x,a=6):
+def getSigmoid(b, c, d, x, a=6):
     e = 2.718281828459
-    return a/(1+e**(b-c*x))+d
+    return a / (1 + e ** (b - c * x)) + d
 
-def iou(bb1, bb2, debug = False):
+
+def iou(bb1, bb2, debug=False):
     x1 = bb1[2] - bb1[0]
     y1 = bb1[3] - bb1[1]
     if x1 < 0:
         x1 = 0
     if y1 < 0:
         y1 = 0
-    
-    
+
     x2 = bb2[1] - bb2[0]
     y2 = bb2[3] - bb2[2]
     if x2 < 0:
         x2 = 0
     if y2 < 0:
         y2 = 0
-    
-    
+
     xiou = min(bb1[2], bb2[1]) - max(bb1[0], bb2[0])
     yiou = min(bb1[3], bb2[3]) - max(bb1[1], bb2[2])
     if xiou < 0:
@@ -228,11 +236,13 @@ def iou(bb1, bb2, debug = False):
     else:
         return xiou * yiou / (x1 * y1 + x2 * y2 - xiou * yiou)
 
+
 def calc_hit(det, gtbox):
     gtbox = gtbox.astype(np.float64)
     hiou = iou(det[:4], gtbox[:4])
     oiou = iou(det[4:], gtbox[4:])
     return min(hiou, oiou)
+
 
 def calc_ap(scores, bboxes, keys, hoi_id, begin):
     if len(keys) == 0:
@@ -243,7 +253,7 @@ def calc_ap(scores, bboxes, keys, hoi_id, begin):
     gt_bbox = pickle.load(open('gt_hoi_py2/hoi_%d.pkl' % hoi_id, 'rb'), encoding='latin1')
     npos = 0
     used = {}
-    
+
     for key in gt_bbox.keys():
         npos += gt_bbox[key].shape[0]
         used[key] = set()
@@ -252,15 +262,15 @@ def calc_ap(scores, bboxes, keys, hoi_id, begin):
     for i in range(min(len(idx), 19999)):
         pair_id = idx[i]
         bbox = bboxes[pair_id, :]
-        key  = keys[pair_id]
+        key = keys[pair_id]
         if key in gt_bbox:
             maxi = 0.0
-            k    = -1
+            k = -1
             for i in range(gt_bbox[key].shape[0]):
                 tmp = calc_hit(bbox, gt_bbox[key][i, :])
                 if maxi < tmp:
                     maxi = tmp
-                    k    = i
+                    k = i
             if k in used[key] or maxi < 0.5:
                 hit.append(0)
             else:
@@ -269,15 +279,15 @@ def calc_ap(scores, bboxes, keys, hoi_id, begin):
         else:
             hit.append(0)
     bottom = np.array(range(len(hit))) + 1
-    hit    = np.cumsum(hit)
-    rec    = hit / npos
-    prec   = hit / bottom
-    ap     = 0.0
+    hit = np.cumsum(hit)
+    rec = hit / npos
+    prec = hit / bottom
+    ap = 0.0
     for i in range(11):
         mask = rec >= (i / 10.0)
         if np.sum(mask) > 0:
             ap += np.max(prec[mask]) / 11.0
-    
+
     return ap, np.max(rec)
 
 
@@ -288,27 +298,27 @@ def calc_ap_ko(scores, bboxes, keys, hoi_id, begin, ko_mask):
     gt_bbox = pickle.load(open('gt_hoi_py2/hoi_%d.pkl' % hoi_id, 'rb'))
     npos = 0
     used = {}
-    
+
     for key in gt_bbox.keys():
         npos += gt_bbox[key].shape[0]
         used[key] = set()
     if len(idx) == 0:
         output = {
-            'ap' : 0, 'rec': 0, 'ap_ko': 0, 'rec_ko': 0
+            'ap': 0, 'rec': 0, 'ap_ko': 0, 'rec_ko': 0
         }
         return output
     for i in range(min(len(idx), 19999)):
         pair_id = idx[i]
         bbox = bboxes[pair_id, :]
-        key  = keys[pair_id]
+        key = keys[pair_id]
         if key in gt_bbox:
             maxi = 0.0
-            k    = -1
+            k = -1
             for i in range(gt_bbox[key].shape[0]):
                 tmp = calc_hit(bbox, gt_bbox[key][i, :])
                 if maxi < tmp:
                     maxi = tmp
-                    k    = i
+                    k = i
             if k in used[key] or maxi < 0.5:
                 hit.append(0)
                 hit_ko.append(0)
@@ -321,42 +331,43 @@ def calc_ap_ko(scores, bboxes, keys, hoi_id, begin, ko_mask):
             if key in ko_mask:
                 hit_ko.append(0)
     bottom = np.array(range(len(hit))) + 1
-    hit    = np.cumsum(hit)
-    rec    = hit / npos
-    prec   = hit / bottom
-    ap     = 0.0
+    hit = np.cumsum(hit)
+    rec = hit / npos
+    prec = hit / bottom
+    ap = 0.0
     for i in range(11):
         mask = rec >= (i / 10.0)
         if np.sum(mask) > 0:
             ap += np.max(prec[mask]) / 11.0
     if len(hit_ko) == 0:
         output = {
-            'ap' : ap, 'rec': np.max(rec), 'ap_ko': 0, 'rec_ko': 0
+            'ap': ap, 'rec': np.max(rec), 'ap_ko': 0, 'rec_ko': 0
         }
         return output
     bottom_ko = np.array(range(len(hit_ko))) + 1
-    hit_ko    = np.cumsum(hit_ko)
-    rec_ko    = hit_ko / npos
-    prec_ko   = hit_ko / bottom_ko
-    ap_ko     = 0.0
+    hit_ko = np.cumsum(hit_ko)
+    rec_ko = hit_ko / npos
+    prec_ko = hit_ko / bottom_ko
+    ap_ko = 0.0
     for i in range(11):
         mask = rec_ko >= (i / 10.)
         if np.sum(mask) > 0:
             ap_ko += np.max(prec_ko[mask]) / 11.
     output = {
-        'ap' : ap, 'rec': np.max(rec), 'ap_ko': ap_ko, 'rec_ko': np.max(rec_ko)
+        'ap': ap, 'rec': np.max(rec), 'ap_ko': ap_ko, 'rec_ko': np.max(rec_ko)
     }
     return output
 
+
 def get_map(keys, scores, bboxes):
-    map  = np.zeros(600)
+    map = np.zeros(600)
     mrec = np.zeros(600)
     for i in range(80):
         begin = obj_range[i][0] - 1
-        end   = obj_range[i][1]
+        end = obj_range[i][1]
         for hoi_id in range(begin, end):
             score = scores[i]
-            bbox  = bboxes[i]
-            key   = keys[i]
+            bbox = bboxes[i]
+            key = keys[i]
             map[hoi_id], mrec[hoi_id] = calc_ap(score, bbox, key, hoi_id, begin)
     return map, mrec
