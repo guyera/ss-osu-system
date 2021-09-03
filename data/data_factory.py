@@ -92,8 +92,10 @@ class DataFactory(Dataset):
                  data_root, detection_root,
                  flip=False,
                  box_score_thresh_h=0.2,
-                 box_score_thresh_o=0.2
+                 box_score_thresh_o=0.2,
+                 training=True,
                  ):
+        self.training = training
         if name not in ['hicodet', 'vcoco']:
             raise ValueError("Unknown dataset ", name)
 
@@ -208,7 +210,8 @@ class DataFactory(Dataset):
             self.flip_boxes(detection, target, w)
         image = pocket.ops.to_tensor(image, 'pil')
         # print(detection)
-        detection['img_path'] = self.dataset.filename(i)
+        if not self.training:
+            detection['img_path'] = self.dataset.filename(i)
         detection = self.filter_detections(detection)
 
         return image, detection, target
