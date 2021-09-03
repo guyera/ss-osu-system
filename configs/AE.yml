@@ -12,13 +12,13 @@ TRAIN:
   MAX_EPOCH: 4
   OPTIMIZER:
     TYPE: SGD
-    lr: 
-        0.1
+    lr:
+      0.1
     momentum: 0.9
     weight_decay: 1e-7
     alpha: 0.99
     eps: 1e-8
-  
+
 TEST:
   BATCH_SIZE: 135
   NUM_WORKERS: 8
@@ -28,13 +28,13 @@ MODEL:
     BIN: True
     BIN_LOSS_MODE: 2
     BIN_FAC: 0.2
-    CHECKPOINT: 
+    CHECKPOINT:
     BN: True
     DROPOUT:
     SPATIAL:
-      LAYER_SIZE: [8, 256, 512]
+      LAYER_SIZE: [ 8, 256, 512 ]
     ENCODER:
-      LAYER_SIZE: [4608, 4096, 1024]
+      LAYER_SIZE: [ 4608, 4096, 1024 ]
     LOSS:
       RECONSTRUCTION_FAC: 0.4
       CLASSIFICATION_FAC: 1.0

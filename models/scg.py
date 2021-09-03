@@ -34,6 +34,7 @@ class CustomFastRCNNPredictor(nn.Module):
 
         return scores
 
+
 class HOINetworkTransform(transform.GeneralizedRCNNTransform):
     """
     Transformations for input image and target (box pairs)
@@ -46,6 +47,7 @@ class HOINetworkTransform(transform.GeneralizedRCNNTransform):
 
     Refer to torchvision.models.detection for more details
     """
+
     def __init__(self, *args):
         super().__init__(*args)
 
@@ -70,9 +72,9 @@ class HOINetworkTransform(transform.GeneralizedRCNNTransform):
             return image, target
 
         target['boxes_h'] = transform.resize_boxes(target['boxes_h'],
-            (h, w), image.shape[-2:])
+                                                   (h, w), image.shape[-2:])
         target['boxes_o'] = transform.resize_boxes(target['boxes_o'],
-            (h, w), image.shape[-2:])
+                                                   (h, w), image.shape[-2:])
 
         return image, target
 
@@ -103,6 +105,7 @@ class GenericHOINetwork(nn.Module):
         postprocess: bool
             If True, rescale bounding boxes to original image size
     """
+
     def __init__(self,
                  backbone: nn.Module, interaction_head: nn.Module,
                  transform: nn.Module, postprocess: bool = True
@@ -128,9 +131,16 @@ class GenericHOINetwork(nn.Module):
         for det, o_im_s, im_s in zip(
                 detections, original_image_sizes, images.image_sizes
         ):
-            boxes = det['boxes']
-            boxes = transform.resize_boxes(boxes, o_im_s, im_s)
-            det['boxes'] = boxes
+            # Now separating object and subject boxes
+            # boxes = det['boxes']
+            # boxes = transform.resize_boxes(boxes, o_im_s, im_s)
+            # det['boxes'] = boxes
+            sub_boxes = det['sub_boxes']
+            sub_boxes = transform.resize_boxes(sub_boxes, o_im_s, im_s)
+            det['sub_boxes'] = sub_boxes
+            obj_boxes = det['obj_boxes']
+            obj_boxes = transform.resize_boxes(obj_boxes, o_im_s, im_s)
+            det['obj_boxes'] = obj_boxes
 
         return images, detections, targets, original_image_sizes
 
@@ -172,35 +182,34 @@ class GenericHOINetwork(nn.Module):
 
 class SpatiallyConditionedGraph(GenericHOINetwork):
     def __init__(self,
-        object_to_action: List[list],
-        human_idx: int,
-        # Backbone parameters
-        backbone_name: str = "resnet50",
-        pretrained: bool = True,
-        # Pooler parameters
-        output_size: int = 7,
-        sampling_ratio: int = 2,
-        # Box pair head parameters
-        node_encoding_size: int = 1024,
-        representation_size: int = 1024,
-        num_classes: int = 117,
-        num_obj_classes: int = 80,
-        box_score_thresh: float = 0.2,
-        fg_iou_thresh: float = 0.5,
-        num_iterations: int = 2,
-        distributed: bool = False,
-        # Transformation parameters
-        min_size: int = 800, max_size: int = 1333,
-        image_mean: Optional[List[float]] = None,
-        image_std: Optional[List[float]] = None,
-        postprocess: bool = True,
-        # Preprocessing parameters
-        box_nms_thresh: float = 0.5,
-        max_human: int = 15,
-        max_object: int = 15
-    ) -> None:
+                 object_to_action: List[list],
+                 # Backbone parameters
+                 backbone_name: str = "resnet50",
+                 pretrained: bool = True,
+                 # Pooler parameters
+                 output_size: int = 7,
+                 sampling_ratio: int = 2,
+                 # Box pair head parameters
+                 node_encoding_size: int = 1024,
+                 representation_size: int = 1024,
+                 num_classes: int = 117,
+                 num_obj_classes: int = 80,
+                 box_score_thresh: float = 0.2,
+                 fg_iou_thresh: float = 0.5,
+                 num_iterations: int = 2,
+                 distributed: bool = False,
+                 # Transformation parameters
+                 min_size: int = 800, max_size: int = 1333,
+                 image_mean: Optional[List[float]] = None,
+                 image_std: Optional[List[float]] = None,
+                 postprocess: bool = True,
+                 # Preprocessing parameters
+                 box_nms_thresh: float = 0.5,
+                 max_subject: int = 15,
+                 max_object: int = 15
+                 ) -> None:
         detector = models.fasterrcnn_resnet_fpn(backbone_name,
-            pretrained=pretrained)
+                                                pretrained=pretrained)
         backbone = detector.backbone
 
         box_roi_pool = MultiScaleRoIAlign(
@@ -219,7 +228,6 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             node_encoding_size=node_encoding_size,
             representation_size=representation_size,
             num_cls=num_classes,
-            human_idx=human_idx,
             object_class_to_target_class=object_to_action,
             fg_iou_thresh=fg_iou_thresh,
             num_iter=num_iterations
@@ -239,10 +247,9 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             box_pair_predictor=box_pair_predictor,
             custom_box_classifier=custom_box_classifier,
             num_classes=num_classes,
-            human_idx=human_idx,
             box_nms_thresh=box_nms_thresh,
             box_score_thresh=box_score_thresh,
-            max_human=max_human,
+            max_subject=max_subject,
             max_object=max_object,
             distributed=distributed
         )
@@ -252,9 +259,10 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
         if image_std is None:
             image_std = [0.229, 0.224, 0.225]
         transform = HOINetworkTransform(min_size, max_size,
-            image_mean, image_std)
+                                        image_mean, image_std)
 
         super().__init__(backbone, interaction_head, transform, postprocess)
+
 
 class CustomisedDLE(DistributedLearningEngine):
     def __init__(self, net, train_loader, val_loader, num_classes=117, **kwargs):
