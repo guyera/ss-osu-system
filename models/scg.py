@@ -179,6 +179,20 @@ class GenericHOINetwork(nn.Module):
         else:
             return results
 
+    def get_box_features(self,
+                         images: List[Tensor],
+                         detections: List[dict],
+                         ) -> List[Tensor]:
+        """Returns box features used in the network"""
+        images, detections, _, _ = self.preprocess(
+            images, detections)
+
+        features = self.backbone(images.tensors)
+        box_coords = [torch.cat([detection['subject_boxes'], detection['object_boxes']]) for detection in detections]
+        box_features = self.interaction_head.box_roi_pool(features, box_coords, images.image_sizes)
+        box_features = self.interaction_head.box_head(box_features)
+        return box_features
+
 
 class SpatiallyConditionedGraph(GenericHOINetwork):
     def __init__(self,
