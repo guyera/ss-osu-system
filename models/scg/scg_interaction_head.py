@@ -1,5 +1,8 @@
 from collections import OrderedDict
 from typing import Optional, List, Tuple
+
+import numpy as np
+
 import pocket
 import torch
 import torch.distributed as dist
@@ -759,8 +762,8 @@ class GraphHead(Module):
             print(f'n_o: {n_o}')
             print(f'subject_box_features: {subject_box_features.size()}')
             print(f'object_box_features: {object_box_features.size()}')
-            node_encodings = subject_box_features[subject_counter: subject_counter + n_s] + \
-                             object_box_features[object_counter: object_counter + n_o]
+            node_encodings = torch.cat([subject_box_features[subject_counter: subject_counter + n_s],
+                             object_box_features[object_counter: object_counter + n_o]])
             # Duplicate subject nodes
             s_node_encodings = subject_box_features[subject_counter: subject_counter + n_s]
             # Get the pairwise index between every subject and object instance
@@ -771,6 +774,8 @@ class GraphHead(Module):
             print(f'x: {x}')
             print(f'y: {y}')
             # Remove pairs consisting of the same subject instance
+            # NOTE: We are only removing self relations. In the current state a subject can very well become an object
+            # TODO: Resolve the above conundrum if required
             x_keep, y_keep = torch.nonzero(x != y).unbind(1)
             if len(x_keep) == 0:
                 # Should never happen, just to be safe
@@ -781,6 +786,8 @@ class GraphHead(Module):
             y = y.flatten()
 
             # Compute spatial features
+            # print(f'type: {type(subject_box_coords)}')
+            coords = pocket.ops.relocate_to_cuda(np.asarray(subject_box_coords + object_box_coords))
             box_pair_spatial = compute_spatial_encodings(
                 [coords[x]], [coords[y]], [image_shapes[b_idx]]
             )
