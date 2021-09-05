@@ -182,16 +182,18 @@ class GenericHOINetwork(nn.Module):
     def get_box_features(self,
                          images: List[Tensor],
                          detections: List[dict],
-                         ) -> List[Tensor]:
+                         ) -> (List[Tensor], List[Tensor]):
         """Returns box features used in the network"""
         images, detections, _, _ = self.preprocess(
             images, detections)
 
         features = self.backbone(images.tensors)
-        box_coords = [torch.cat([detection['subject_boxes'], detection['object_boxes']]) for detection in detections]
-        box_features = self.interaction_head.box_roi_pool(features, box_coords, images.image_sizes)
-        box_features = self.interaction_head.box_head(box_features)
-        return box_features
+        subject_box_coords = [detection['subject_boxes'] for detection in detections]
+        object_box_coords = [detection['object_boxes'] for detection in detections]
+        subject_box_features = self.interaction_head.box_roi_pool(features, subject_box_coords, images.image_sizes)
+        object_box_features = self.interaction_head.box_roi_pool(features, object_box_coords, images.image_sizes)
+        # box_features = self.interaction_head.box_head(box_features)
+        return subject_box_features, object_box_features
 
 
 class SpatiallyConditionedGraph(GenericHOINetwork):
@@ -304,7 +306,7 @@ class CustomisedDLE(DistributedLearningEngine):
 
         self.hoi_loss.append(loss_dict['hoi_loss'])
         self.intr_loss.append(loss_dict['interactiveness_loss'])
-        self.obj_cls_loss.append(loss_dict['obj_classification_loss'])
+        self.obj_cls_loss.append(loss_dict['box_classification_loss'])
 
         self._synchronise_and_log_results(output, self.meter)
 

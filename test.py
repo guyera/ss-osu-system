@@ -61,16 +61,9 @@ class Test(object):
         results = list()
         for batch in tqdm(self.data_loader):
             inputs = batch[:-1]
-            # print(inputs)
             # TODO: Optimize this
             inp_image = np.array(inputs[0][0].cpu())
             # Now assuming that data loader will give us separate lists for objects and subjects
-            # inp_boxes = np.array(inputs[1][0]['boxes'].cpu())
-            # inp_labels = np.array(inputs[1][0]['labels'].cpu())
-            # inp_scores = np.array(inputs[1][0]['scores'].cpu())
-            # input_data = self.converter(inp_image, inp_boxes, inp_labels, inp_scores)
-            # input_data = pocket.ops.relocate_to_cuda(input_data)
-            # input_data = self.converter(inp_image, inp_boxes, inp_labels, inp_scores)
             sub_inp_boxes = np.array(inputs[1][0]['subject_boxes'])
             sub_inp_labels = np.array(inputs[1][0]['subject_labels'])
             sub_inp_scores = np.array(inputs[1][0]['subject_scores'])
@@ -87,19 +80,18 @@ class Test(object):
                 output = pocket.ops.relocate_to_cpu(output[0])
                 # Format detections
                 box_idx = output['index']
-                objects = output['object'][box_idx]
-                scores = output['scores']
-                verbs = output['prediction']
                 interactions = torch.tensor([
                     ov_interaction_map[o][v]
-                    for o, v in zip(objects, verbs)
+                    for o, v in zip(output['subject'][box_idx], output['prediction'], output['object'][box_idx])
                 ])
-                # Associate detected pairs with ground truth pairs
-                labels = torch.zeros_like(scores)
+                object_labels = torch.zeros_like(output['object_scores'])
+                subject_labels = torch.zeros_like(output['subject_scores'])
                 result = {
-                    'scores': scores,
+                    'object_scores': output['object_scores'],
+                    'subject_scores': output['subject_scores'],
                     'interactions': interactions,
-                    'labels': labels,
+                    'object_labels': object_labels,
+                    'subject_labels': subject_labels,
                     'img_path': inputs[1][0]['img_path'],
                 }
                 results.append(result)
