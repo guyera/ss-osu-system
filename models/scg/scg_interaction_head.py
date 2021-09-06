@@ -372,7 +372,7 @@ class InteractionHead(Module):
         # Computing classification head loss
         if self.training:
             subject_box_logits = [detection['box_logits'] for detection in subject_pred_detections]
-            object_box_logits = [detection['orig_labels'] for detection in object_pred_detections]
+            object_box_logits = [detection['box_logits'] for detection in object_pred_detections]
             subject_cls_loss = self.compute_box_classification_loss(subject_orig_labels, subject_box_logits)
             object_cls_loss = self.compute_box_classification_loss(object_orig_labels, object_box_logits)
             box_cls_loss = subject_cls_loss + object_cls_loss
