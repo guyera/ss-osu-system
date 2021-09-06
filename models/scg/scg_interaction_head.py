@@ -787,15 +787,14 @@ class GraphHead(Module):
 
             # Compute spatial features
             # NOTE: only 1 element batch supported
-            coords = torch.cat([subject_box_coords[0], object_box_coords[0]])
-            all_scores = torch.cat([subject_box_all_scores[0], object_box_all_scores[0]])
+            coords = torch.cat([subject_box_coords[b_idx], object_box_coords[b_idx]])
+            all_scores = torch.cat([subject_box_all_scores[b_idx], object_box_all_scores[b_idx]])
             box_pair_spatial = compute_spatial_encodings(
                 [coords[x]], [coords[y]], [image_shapes[b_idx]]
             )
             box_pair_spatial = self.spatial_head(box_pair_spatial)
             # Reshape the spatial features
             box_pair_spatial_reshaped = box_pair_spatial.reshape(n_s, n_s + n_o, -1)
-
             adjacency_matrix = torch.ones(n_s, n_s + n_o, device=device)
             for _ in range(self.num_iter):
                 # Compute weights of each edge
