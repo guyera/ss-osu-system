@@ -80,18 +80,14 @@ class Test(object):
                 output = pocket.ops.relocate_to_cpu(output[0])
                 # Format detections
                 box_idx = output['index']
-                interactions = torch.tensor([
-                    ov_interaction_map[o][v]
-                    for o, v in zip(output['subject'][box_idx], output['prediction'], output['object'][box_idx])
-                ])
-                object_labels = torch.zeros_like(output['object_scores'])
-                subject_labels = torch.zeros_like(output['subject_scores'])
+                # interactions = torch.tensor([
+                #     ov_interaction_map[o][v]
+                #     for s, v, o in zip(output['subject'][box_idx], output['prediction'], output['object'][box_idx])
+                # ])
                 result = {
                     'object_scores': output['object_scores'],
                     'subject_scores': output['subject_scores'],
-                    'interactions': interactions,
-                    'object_labels': object_labels,
-                    'subject_labels': subject_labels,
+                    # 'interactions': interactions,
                     'img_path': inputs[1][0]['img_path'],
                 }
                 results.append(result)
