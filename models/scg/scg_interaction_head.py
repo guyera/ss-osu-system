@@ -180,6 +180,10 @@ class InteractionHead(Module):
             dist.barrier()
             dist.all_reduce(n_p)
             n_p = (n_p / world_size).item()
+        # TODO: How to handle this?
+        # print(f'n_p: {n_p}')
+        if n_p == 0:
+            n_p = 1.0
         loss = binary_focal_loss(
             torch.cat(scores), labels, reduction='sum', gamma=0.2
         )
@@ -389,6 +393,7 @@ class InteractionHead(Module):
             object_box_coords.append(detection['boxes'][detection['num_subjects']:])
             object_box_all_scores.append(detection['box_all_scores'][detection['num_subjects']:])
 
+        # print(f'features: {features}')
         subject_box_features = self.box_roi_pool(features, subject_box_coords, image_shapes)
         object_box_features = self.box_roi_pool(features, object_box_coords, image_shapes)
 
@@ -413,6 +418,7 @@ class InteractionHead(Module):
                 interactiveness_loss=self.compute_interactiveness_loss(results),
                 box_classification_loss=box_cls_loss,
             )
+            # print(f'loss: {loss_dict}')
             results.append(loss_dict)
 
         return results
@@ -768,6 +774,8 @@ class GraphHead(Module):
                                         object_box_features[object_counter: object_counter + n_o]])
             # Duplicate subject nodes
             s_node_encodings = subject_box_features[subject_counter: subject_counter + n_s]
+            # print(f's_node_encodings: {s_node_encodings}')
+            # print(f'node_encodings: {node_encodings}')
             # Get the pairwise index between every subject and object instance
             x, y = torch.meshgrid(
                 torch.arange(n_s, device=device),
@@ -805,6 +813,7 @@ class GraphHead(Module):
                     ], 1),
                     box_pair_spatial
                 )
+                # print('I am here 5')
                 adjacency_matrix = self.adjacency(weights).reshape(n_s, n_s + n_o)
 
                 # Update subject nodes
@@ -835,7 +844,8 @@ class GraphHead(Module):
                 all_labels.append(self.associate_with_ground_truth(
                     coords[x_keep], coords[y_keep], targets[b_idx])
                 )
-
+            # print(f's_node_encodings: {s_node_encodings}')
+            # print(f'node_encodings: {node_encodings}')
             all_box_verb_features.append(torch.cat([
                 self.attention_head(
                     torch.cat([
@@ -847,6 +857,7 @@ class GraphHead(Module):
                     global_features[b_idx, None],
                     box_pair_spatial_reshaped[x_keep, y_keep])
             ], dim=1))
+            # print(f'all_box_verb_features: {all_box_verb_features}')
             all_boxes_s.append(coords[x_keep])
             all_boxes_o.append(coords[y_keep])
             all_subject_scores.append(all_scores[x_keep])

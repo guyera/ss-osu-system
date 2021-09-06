@@ -127,7 +127,7 @@ class GenericHOINetwork(nn.Module):
     ]:
         original_image_sizes = [img.shape[-2:] for img in images]
         images, targets = self.transform(images, targets)
-
+        # print(f'images: {images}')
         for det, o_im_s, im_s in zip(
                 detections, original_image_sizes, images.image_sizes
         ):
@@ -165,8 +165,9 @@ class GenericHOINetwork(nn.Module):
 
         images, detections, targets, original_image_sizes = self.preprocess(
             images, detections, targets)
-
+        # print(f'images: {images.tensors}')
         features = self.backbone(images.tensors)
+        # print(f'features in generic HOI: {features}')
         results = self.interaction_head(features, detections,
                                         images.image_sizes, targets)
 
