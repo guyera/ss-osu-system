@@ -250,8 +250,8 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             num_iter=num_iterations
         )
 
-        box_pair_predictor = nn.Linear(representation_size * 2, num_classes)
-        box_pair_suppressor = nn.Linear(representation_size * 2, 1)
+        box_verb_predictor = nn.Linear(representation_size * 2, num_classes)
+        box_verb_suppressor = nn.Linear(representation_size * 2, 1)
 
         # TODO: Remove hardcoding
         custom_box_classifier = CustomFastRCNNPredictor(1024, num_obj_classes)
@@ -260,8 +260,8 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             box_roi_pool=box_roi_pool,
             box_head=box_head,
             box_pair_head=box_pair_head,
-            box_pair_suppressor=box_pair_suppressor,
-            box_pair_predictor=box_pair_predictor,
+            box_verb_suppressor=box_verb_suppressor,
+            box_verb_predictor=box_verb_predictor,
             custom_box_classifier=custom_box_classifier,
             num_classes=num_classes,
             box_nms_thresh=box_nms_thresh,

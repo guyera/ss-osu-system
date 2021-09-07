@@ -24,9 +24,9 @@ class InteractionHead(Module):
         Module that performs RoI pooling or its variants
     box_pair_head: Module
         Module that constructs and computes box pair features
-    box_pair_suppressor: Module
+    box_verb_suppressor: Module
         Module that computes unary weights for each box pair
-    box_pair_predictor: Module
+    box_verb_predictor: Module
         Module that classifies box pairs
     num_classes: int
         Number of target classes
@@ -48,8 +48,8 @@ class InteractionHead(Module):
                  box_roi_pool: Module,
                  box_head: Module,
                  box_pair_head: Module,
-                 box_pair_suppressor: Module,
-                 box_pair_predictor: Module,
+                 box_verb_suppressor: Module,
+                 box_verb_predictor: Module,
                  custom_box_classifier: Module,
                  # Dataset properties
                  num_classes: int,
@@ -65,8 +65,8 @@ class InteractionHead(Module):
         self.box_roi_pool = box_roi_pool
         self.box_head = box_head
         self.box_pair_head = box_pair_head
-        self.box_pair_suppressor = box_pair_suppressor
-        self.box_pair_predictor = box_pair_predictor
+        self.box_verb_suppressor = box_verb_suppressor
+        self.box_verb_predictor = box_verb_predictor
         self.custom_box_classifier = custom_box_classifier
 
         self.num_classes = num_classes
@@ -181,7 +181,6 @@ class InteractionHead(Module):
             dist.all_reduce(n_p)
             n_p = (n_p / world_size).item()
         # TODO: How to handle this?
-        # print(f'n_p: {n_p}')
         if n_p == 0:
             n_p = 1.0
         loss = binary_focal_loss(
@@ -256,8 +255,10 @@ class InteractionHead(Module):
                 Expanded indices of predicted actions
             `scores`: Tensor[L]
                 Scores for each predicted action
-            `object`: Tensor[M]
-                Object indices for each pair
+            `object_scores`: Tensor[Num objects x Num obj class]
+                box classification scores for objects
+            `subject_scores`: Tensor[NUm subjects x Num subj class]
+                box classification scores for subjects
             `prior`: Tensor[2, L]
                 Prior scores for expanded pairs
             `weights`: Tensor[M]
@@ -339,6 +340,8 @@ class InteractionHead(Module):
             `boxes_o`: Tensor[G, 4]
             `object`: Tensor[G]
                 Object class indices for each pair
+            `subject`: Tensor[G]
+                Subject class indices for each pair
             `labels`: Tensor[G]
                 Target class indices for each pair
 
@@ -392,8 +395,6 @@ class InteractionHead(Module):
             subject_box_all_scores.append(detection['box_all_scores'][:detection['num_subjects']])
             object_box_coords.append(detection['boxes'][detection['num_subjects']:])
             object_box_all_scores.append(detection['box_all_scores'][detection['num_subjects']:])
-
-        # print(f'features: {features}')
         subject_box_features = self.box_roi_pool(features, subject_box_coords, image_shapes)
         object_box_features = self.box_roi_pool(features, object_box_coords, image_shapes)
 
@@ -403,8 +404,8 @@ class InteractionHead(Module):
                                object_box_all_scores, targets)
 
         box_verb_features = torch.cat(box_verb_features)
-        logits_p = self.box_pair_predictor(box_verb_features)
-        logits_s = self.box_pair_suppressor(box_verb_features)
+        logits_p = self.box_verb_predictor(box_verb_features)
+        logits_s = self.box_verb_suppressor(box_verb_features)
 
         results = self.postprocess(
             logits_p, logits_s, box_pair_prior,
@@ -418,7 +419,6 @@ class InteractionHead(Module):
                 interactiveness_loss=self.compute_interactiveness_loss(results),
                 box_classification_loss=box_cls_loss,
             )
-            # print(f'loss: {loss_dict}')
             results.append(loss_dict)
 
         return results
@@ -774,8 +774,6 @@ class GraphHead(Module):
                                         object_box_features[object_counter: object_counter + n_o]])
             # Duplicate subject nodes
             s_node_encodings = subject_box_features[subject_counter: subject_counter + n_s]
-            # print(f's_node_encodings: {s_node_encodings}')
-            # print(f'node_encodings: {node_encodings}')
             # Get the pairwise index between every subject and object instance
             x, y = torch.meshgrid(
                 torch.arange(n_s, device=device),
@@ -813,7 +811,6 @@ class GraphHead(Module):
                     ], 1),
                     box_pair_spatial
                 )
-                # print('I am here 5')
                 adjacency_matrix = self.adjacency(weights).reshape(n_s, n_s + n_o)
 
                 # Update subject nodes
@@ -844,8 +841,6 @@ class GraphHead(Module):
                 all_labels.append(self.associate_with_ground_truth(
                     coords[x_keep], coords[y_keep], targets[b_idx])
                 )
-            # print(f's_node_encodings: {s_node_encodings}')
-            # print(f'node_encodings: {node_encodings}')
             all_box_verb_features.append(torch.cat([
                 self.attention_head(
                     torch.cat([
@@ -857,7 +852,6 @@ class GraphHead(Module):
                     global_features[b_idx, None],
                     box_pair_spatial_reshaped[x_keep, y_keep])
             ], dim=1))
-            # print(f'all_box_verb_features: {all_box_verb_features}')
             all_boxes_s.append(coords[x_keep])
             all_boxes_o.append(coords[y_keep])
             all_subject_scores.append(all_scores[x_keep])
