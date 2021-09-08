@@ -211,6 +211,7 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
                  representation_size: int = 1024,
                  num_classes: int = 117,
                  num_obj_classes: int = 80,
+                 num_subject_classes: int = 80,
                  box_score_thresh: float = 0.2,
                  fg_iou_thresh: float = 0.5,
                  num_iterations: int = 2,
@@ -254,7 +255,7 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
         box_verb_suppressor = nn.Linear(representation_size * 2, 1)
 
         # TODO: Remove hardcoding
-        custom_box_classifier = CustomFastRCNNPredictor(1024, num_obj_classes)
+        custom_box_classifier_dict = nn.ModuleDict({"object":CustomFastRCNNPredictor(1024, num_obj_classes), "subject": CustomFastRCNNPredictor(1024, num_subject_classes)})
 
         interaction_head = InteractionHead(
             box_roi_pool=box_roi_pool,
@@ -262,7 +263,7 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             box_pair_head=box_pair_head,
             box_verb_suppressor=box_verb_suppressor,
             box_verb_predictor=box_verb_predictor,
-            custom_box_classifier=custom_box_classifier,
+            custom_box_classifier=custom_box_classifier_dict,
             num_classes=num_classes,
             box_nms_thresh=box_nms_thresh,
             box_score_thresh=box_score_thresh,

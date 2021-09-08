@@ -297,9 +297,9 @@ class InteractionHead(Module):
 
         return results
     
-    def classify_boxes(self, box_features, box_coords):
+    def classify_boxes(self, box_features, box_coords, box_type):
         box_features = self.box_head(box_features)
-        box_logits = self.custom_box_classifier(box_features)
+        box_logits = self.custom_box_classifier[box_type](box_features)
         box_scores = F.softmax(box_logits, -1).split([len(elem) for elem in box_coords], 0)
         box_logits = box_logits.split([len(elem) for elem in box_coords], 0)
         pred_detections = list()
@@ -373,8 +373,8 @@ class InteractionHead(Module):
 
         subject_box_features = self.box_roi_pool(features, subject_box_coords, image_shapes)
         object_box_features = self.box_roi_pool(features, object_box_coords, image_shapes)
-        subject_pred_detections = self.classify_boxes(subject_box_features, subject_box_coords)
-        object_pred_detections = self.classify_boxes(object_box_features, object_box_coords)
+        subject_pred_detections = self.classify_boxes(subject_box_features, subject_box_coords, box_type="subject")
+        object_pred_detections = self.classify_boxes(object_box_features, object_box_coords, box_type="object")
 
         # Computing classification head loss
         if self.training:
