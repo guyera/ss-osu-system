@@ -140,6 +140,7 @@ def get_net(args):
         net = SCG(
             args.object_to_target, num_classes=args.num_classes,
             num_obj_classes=args.num_obj_classes,
+            num_subject_classes=args.num_subject_classes,
             num_iterations=args.num_iter, postprocess=False,
             max_subject=args.max_subject, max_object=args.max_object,
             box_score_thresh=args.box_score_thresh,
@@ -226,6 +227,7 @@ def main(rank, args):
         if args.net == 'scg':
             args.object_to_target = train_loader.dataset.dataset.object_to_verb
             args.num_obj_classes = train_loader.dataset.dataset.num_object_cls
+            args.num_subject_classes = train_loader.dataset.dataset.num_subject_cls
         args.human_idx = 1 # Not sure added thisjust for code testing
         args.num_classes = 63
     elif args.dataset == 'vcoco':
@@ -298,6 +300,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "8888"
+    os.environ["MASTER_PORT"] = "8889"
 
     mp.spawn(main, nprocs=args.world_size, args=(args,))

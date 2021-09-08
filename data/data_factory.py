@@ -125,6 +125,8 @@ class DataFactory(Dataset):
         elif name == 'VRD':
             self.dataset = VRDDet(root="/cmlscratch/sonaalk/vrd/train_vrd_060921.csv", 
                                 target_transform=pocket.ops.ToTensor(input_format='dict'))
+            # TODO : not sure about the subject index please check
+            self.subject_idx = 1
 
         else:
             assert partition in ['train', 'val', 'trainval', 'test'], \
@@ -168,6 +170,9 @@ class DataFactory(Dataset):
 
         object_boxes = boxes[object_idxs].view(-1, 4)
         object_labels = labels[object_idxs].view(-1)
+
+        print(subject_boxes.shape, object_boxes.shape)
+        
         if self.training:
             return dict(subject_boxes=subject_boxes, subject_labels=subject_labels,
                         object_boxes=object_boxes, object_labels=object_labels)
@@ -177,12 +182,12 @@ class DataFactory(Dataset):
                         img_id=detection['img_id'])
 
     def flip_boxes(self, detection, target, w):
-        detection['boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['boxes'])
+        detection['subject_boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['subject_boxes'])
+        detection['object_boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['object_boxes'])
         target['boxes_s'] = pocket.ops.horizontal_flip_boxes(w, target['boxes_s'])
         target['boxes_o'] = pocket.ops.horizontal_flip_boxes(w, target['boxes_o'])
 
     def __getitem__(self, i):
-        print(i)
         image, target = self.dataset[i]
         if "boxes_h" in target:
             target['boxes_s'] = target['boxes_h']
@@ -202,22 +207,30 @@ class DataFactory(Dataset):
         if self.name in {'hicodet', 'vcoco'}:
             target["subject"] = torch.tensor([self.subject_idx]).repeat(1, len(target['boxes_s']))[0]
         # Else: this needs to come from dataset
-        detection_path = os.path.join(
-            self.detection_root,
-            self.dataset.filename(i).replace('jpg', 'json')
-        )
-        with open(detection_path, 'r') as f:
-            detection = pocket.ops.to_tensor(json.load(f),
-                                             input_format='dict')
 
+        if self.name == "VRD":
+            detections = self.dataset.get_detections(i)
+            detection = pocket.ops.to_tensor(detections, input_format='dict')
+        else:
+            detection_path = os.path.join(
+                self.detection_root,
+                self.dataset.filename(i).replace('jpg', 'json')
+            )
+            with open(detection_path, 'r') as f:
+                detection = pocket.ops.to_tensor(json.load(f),
+                                                input_format='dict')
+
+        # print(detection)
+        if not self.training:
+            detection['img_id'] = self.dataset.filename(i)
+        
+        if self.name in {'hicodet', 'vcoco'}:
+            detection = self.filter_detections(detection)
+        
         if self._flip[i]:
             image = hflip(image)
             w, _ = image.size
             self.flip_boxes(detection, target, w)
         image = pocket.ops.to_tensor(image, 'pil')
-        # print(detection)
-        if not self.training:
-            detection['img_id'] = self.dataset.filename(i)
-        detection = self.filter_detections(detection)
-
+        
         return image, detection, target
