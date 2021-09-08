@@ -65,7 +65,7 @@ class Test(object):
             # Now getting the indices of object boxes which were not passed as subjects in input
             keep_obj_idx = np.argwhere(
                 np.fromiter(map(lambda x: not (any([(x == par_elem).all() for par_elem in detections['subject_boxes']])),
-                                [elem for elem in orig_result['object_boxes']]), dtype=np.bool))
+                                [elem for elem in orig_result['object_boxes']]), dtype=np.bool_))
             keep_obj_idx = torch.from_numpy(keep_obj_idx).squeeze(1)
             # Filtering the pairs based on these indices
             new_result = {
@@ -77,19 +77,21 @@ class Test(object):
             }
             # Initialising the verb matrix with zero values
             verb_matrix = torch.zeros((len(keep_obj_idx), num_verb_cls))
+            # Getting the verb prediction only on selected pairs
             keep_verb_idx = np.argwhere(
                 np.fromiter(map(lambda x: any([(x == par_elem).all() for par_elem in keep_obj_idx]),
-                                [elem for elem in orig_result['index']]), dtype=np.bool))
+                                [elem for elem in orig_result['index']]), dtype=np.bool_))
             keep_verb_idx = torch.from_numpy(keep_verb_idx).squeeze(1)
             orig_pair_idx = torch.index_select(orig_result['index'], 0, keep_verb_idx)
-            new_pair_idx = torch.from_numpy(np.searchsorted(keep_obj_idx, orig_pair_idx))
+            # Getting the new pair indexes for selected verbs
+            new_pair_idx = np.searchsorted(keep_obj_idx, orig_pair_idx)
             verbs = torch.index_select(orig_result['verbs'], 0, keep_verb_idx)
             verb_scores = torch.index_select(orig_result['verb_scores'], 0, keep_verb_idx)
+            # getting the location in 2d matrix
             matrix_idx = torch.cat([new_pair_idx.unsqueeze(1), verbs.unsqueeze(1)], dim=1)
             verb_matrix[matrix_idx[:, 0], matrix_idx[:, 1]] = verb_scores
             new_result['verb_matrix'] = verb_matrix
             return new_result
-        
 
         results = list()
         for batch in tqdm(self.data_loader):

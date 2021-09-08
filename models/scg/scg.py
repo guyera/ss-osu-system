@@ -291,7 +291,6 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
         box_verb_predictor = nn.Linear(representation_size * 2, num_classes)
         box_verb_suppressor = nn.Linear(representation_size * 2, 1)
 
-        # TODO: Remove hardcoding
         custom_box_classifier_dict = nn.ModuleDict({"object": CustomFastRCNNPredictor(1024, num_obj_classes),
                                                     "subject": CustomFastRCNNPredictor(1024, num_subject_classes)})
 
