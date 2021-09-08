@@ -102,11 +102,10 @@ class Test(object):
             inputs_copy = copy.deepcopy(inputs)
             input_data_copy = pocket.ops.relocate_to_cuda(inputs_copy)
             _, mod_detections, _, _ = self.net.preprocess(*input_data_copy)  # This is needed to do box matching and remove
-            mod_detections = pocket.ops.relocate_to_cpu(mod_detections)
-            # torch.save(mod_detections, 'mod_dets.pt')
-            input_data = pocket.ops.relocate_to_cuda(inputs)
             # the results where subjects have been made objects. This piece of logic might get moved inside the
             # model class in future releases
+            mod_detections = pocket.ops.relocate_to_cpu(mod_detections)
+            input_data = pocket.ops.relocate_to_cuda(inputs)
             with torch.no_grad():
                 output = self.net(*input_data)
                 # Batch size is fixed as 1 for inference
@@ -123,7 +122,6 @@ class Test(object):
                     'verb_scores': output['scores'],
                     'img_id': img_id,
                 }
-                # torch.save(result, 'results.pt')
                 result = clean_result(self.net, result, mod_detections[0])
                 results.append(result)
         return results
