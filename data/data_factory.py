@@ -11,7 +11,7 @@ from torchvision.transforms.functional import hflip
 
 from .vcoco import VCOCO
 from .hicodet import HICODet
-from .vrd import 
+from .vrd import VRDDet
 
 import pocket
 from utils import custom_collate, get_config, DataLoaderX
@@ -123,7 +123,7 @@ class DataFactory(Dataset):
             self.human_idx = 1
         
         elif name == 'VRD':
-            self.dataset = VRDDet(root="/cmlscratch/sonaalk/sailon-svo/test_vrd_060921.csv", 
+            self.dataset = VRDDet(root="/cmlscratch/sonaalk/vrd/train_vrd_060921.csv", 
                                 target_transform=pocket.ops.ToTensor(input_format='dict'))
 
         else:
@@ -182,6 +182,7 @@ class DataFactory(Dataset):
         target['boxes_o'] = pocket.ops.horizontal_flip_boxes(w, target['boxes_o'])
 
     def __getitem__(self, i):
+        print(i)
         image, target = self.dataset[i]
         if "boxes_h" in target:
             target['boxes_s'] = target['boxes_h']

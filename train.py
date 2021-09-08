@@ -222,6 +222,12 @@ def main(rank, args):
             args.num_obj_classes = train_loader.dataset.dataset.num_object_cls
         args.human_idx = 49
         args.num_classes = 117
+    elif args.dataset == 'VRD':
+        if args.net == 'scg':
+            args.object_to_target = train_loader.dataset.dataset.object_to_verb
+            args.num_obj_classes = train_loader.dataset.dataset.num_object_cls
+        args.human_idx = 1 # Not sure added thisjust for code testing
+        args.num_classes = 63
     elif args.dataset == 'vcoco':
         if args.net == 'scg':
             args.object_to_target = train_loader.dataset.dataset.object_to_action

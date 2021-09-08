@@ -2,11 +2,43 @@ import os
 import json
 import numpy as np
 import pandas as pd
+from PIL import Image
+import pocket
+import random
 
-from typing import Optional, List, Callable, Tuple
-from pocket.data import ImageDataset, DataSubset, StandardTransform
+from typing import Any, Optional, List, Callable, Tuple
+from pocket.data import ImageDataset, DataSubset
 from torch.utils.data import Dataset
 
+class StandardTransform:
+    """https://github.com/pytorch/vision/blob/master/torchvision/datasets/vision.py"""
+
+    def __init__(self, transform: Optional[Callable] = None, target_transform: Optional[Callable] = None) -> None:
+        self.transform = transform
+        self.target_transform = target_transform
+
+    def __call__(self, inputs: Any, target: Any) -> Tuple[Any, Any]:
+        if self.transform is not None:
+            inputs = self.transform(inputs)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+        return inputs, target
+
+    def _format_transform_repr(self, transform: Callable, head: str) -> List[str]:
+        lines = transform.__repr__().splitlines()
+        return (["{}{}".format(head, lines[0])] +
+                ["{}{}".format(" " * len(head), line) for line in lines[1:]])
+
+    def __repr__(self) -> str:
+        body = [self.__class__.__name__]
+        if self.transform is not None:
+            body += self._format_transform_repr(self.transform,
+                                                "Transform: ")
+        if self.target_transform is not None:
+            body += self._format_transform_repr(self.target_transform,
+                                                "Target transform: ")
+
+        return '\n'.join(body)
 
 class VRDDetSubset(DataSubset):
     def __init__(self, *args) -> None:
@@ -65,7 +97,7 @@ class VRDDet(Dataset):
                  transform: Optional[Callable] = None,
                  target_transform: Optional[Callable] = None,
                  transforms: Optional[Callable] = None) -> None:
-        super(CustomDet, self).__init__()
+        super(VRDDet, self).__init__()
         
         if transforms is None:
             self._transforms = StandardTransform(transform, target_transform)
@@ -101,6 +133,10 @@ class VRDDet(Dataset):
             self.load_image(self._filenames[intra_idx]),
             self._anno[intra_idx]
         )
+    
+    def load_image(self, path: str) -> Image: 
+        """Load an image as PIL.Image"""
+        return Image.open(path)
 
     def __repr__(self) -> str:
         """Return the executable string representation"""
@@ -274,13 +310,13 @@ class VRDDet(Dataset):
             f(str): path for csv 
         """
 
-        self.df = pd.read_csv(f)
+        df = pd.read_csv(f)
         
         self._filenames = list(df['new_image_path'].unique())
-        self._anno = self.create_annotation(df, self._filenames)
-    
         self._objects = list(df['object_name'].unique())
-        self._verbs = list(df['verb_name'].unique()) 
+        self._verbs = list(df['verb_name'].unique())
+
+        self._anno = self.create_annotation(df, self._filenames)
         
         self._class_corr = self.create_correspondence(df, self._objects, self._verbs)
         self._image_sizes = self.create_sizes(df)
@@ -318,34 +354,49 @@ class VRDDet(Dataset):
             objects = list()
             subjects = list()
             verbs = list()
-            for row in temp.iterrows():
+            for i, row in temp.iterrows():
                 boxes_h.append([row["subject_xmin"], row["subject_ymin"], row["subject_xmax"], row["subject_ymax"]])
                 boxes_o.append([row["object_xmin"], row["object_ymin"], row["object_xmax"], row["object_ymax"]])
-                objects.append(row["object_name"])
-                subjects.append(row["subject_name"])
-                verbs.append(row["verb_name"])
+                # objects.append(row["object_id"])
+                # subjects.append(row["subject_id"])
+                # verbs.append(row["verb_id"])
+                objects.append(random.randint(0,50))
+                subjects.append(random.randint(0,50))
+                verbs.append(random.randint(0,70))
 
             annot["boxes_h"] = boxes_h
             annot["boxes_o"] = boxes_o
             annot["object"] = objects
             annot["verb"] = verbs
 
-        annots.append(annot)
+            annots.append(annot)
 
         return annots
     
     def create_correspondence(self, df, objects, verbs):
         corr = df.groupby(['object_name','verb_name']).size().reset_index().rename(columns={0:'count'})
-        corr["object_id"] = corr['object_name'].apply(lambda x : objects.index[x])
-        corr["verb_id"] = corr['verb_name'].apply(lambda x : verbs.index[x])
+        corr["object_id"] = corr['object_name'].apply(lambda x : objects.index(x))
+        corr["verb_id"] = corr['verb_name'].apply(lambda x : verbs.index(x))
 
         corr['idx'] = range(len(corr))
 
-        return corr[['idx', 'object_id', 'verb_id']].values.to_list()
+        return corr[['idx', 'object_id', 'verb_id']].values.tolist()
     
     def create_sizes(self, df):
         sizes = df.groupby(['new_image_path','image_width', 'image_height']).size().reset_index().rename(columns={0:'count'})
         return sizes[['image_width', 'image_height']].values.tolist()
 
 
+if __name__ == '__main__':
 
+    dataset = VRDDet(root="/cmlscratch/sonaalk/vrd/train_vrd_060921.csv", 
+                                target_transform=pocket.ops.ToTensor(input_format='dict'))
+    
+    print(len(dataset))
+    for i in range(len(dataset)):
+        print(i)
+        try:
+            img, taget = dataset[i]
+        except:
+            import pdb;pdb.set_trace()
+    
