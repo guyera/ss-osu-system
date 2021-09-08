@@ -165,9 +165,7 @@ class GenericHOINetwork(nn.Module):
 
         images, detections, targets, original_image_sizes = self.preprocess(
             images, detections, targets)
-        # print(f'images: {images.tensors}')
         features = self.backbone(images.tensors)
-        # print(f'features in generic HOI: {features}')
         results = self.interaction_head(features, detections,
                                         images.image_sizes, targets)
 

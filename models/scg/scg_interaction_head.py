@@ -781,6 +781,7 @@ class GraphHead(Module):
             )
             # Remove pairs consisting of the same subject instance
             # NOTE: We are only removing self relations. In the current state a subject can very well become an object
+            # and vice-versa
             # TODO: Resolve the above conundrum if required
             x_keep, y_keep = torch.nonzero(x != y).unbind(1)
             if len(x_keep) == 0:
