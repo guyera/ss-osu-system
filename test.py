@@ -126,7 +126,6 @@ class Test(object):
                 # torch.save(result, 'results.pt')
                 result = clean_result(self.net, result, mod_detections[0])
                 results.append(result)
-                break
         return results
 
     def drg(self, input_data):
