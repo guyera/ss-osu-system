@@ -235,6 +235,7 @@ class GenericHOINetwork(nn.Module):
                                                      object_box_all_scores)
         return result[0]
 
+
 class SpatiallyConditionedGraph(GenericHOINetwork):
     def __init__(self,
                  object_to_action: List[list],
@@ -293,7 +294,8 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
         box_verb_suppressor = nn.Linear(representation_size * 2, 1)
 
         # TODO: Remove hardcoding
-        custom_box_classifier_dict = nn.ModuleDict({"object":CustomFastRCNNPredictor(1024, num_obj_classes), "subject": CustomFastRCNNPredictor(1024, num_subject_classes)})
+        custom_box_classifier_dict = nn.ModuleDict({"object": CustomFastRCNNPredictor(1024, num_obj_classes),
+                                                    "subject": CustomFastRCNNPredictor(1024, num_subject_classes)})
 
         interaction_head = InteractionHead(
             box_roi_pool=box_roi_pool,

@@ -367,9 +367,9 @@ class InteractionHead(Module):
         object_orig_labels = list()
         for detection in detections:
             subject_box_coords.append(detection['subject_boxes'])
-            subject_orig_labels.append(detection['subject_labels'])
+            subject_orig_labels.append(detection['subject_labels'])  # GT for these boxes, used only in training
             object_box_coords.append(detection['object_boxes'])
-            object_orig_labels.append(detection['object_labels'])
+            object_orig_labels.append(detection['object_labels'])  # GT for these boxes, used only in training
 
         subject_box_features = self.box_roi_pool(features, subject_box_coords, image_shapes)
         object_box_features = self.box_roi_pool(features, object_box_coords, image_shapes)

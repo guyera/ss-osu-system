@@ -31,17 +31,15 @@ class CustomInput(object):
         }
         self.converter = self.func_map[model_name]
 
-    def scg(self, image, subject_boxes, subject_labels, subject_scores, object_boxes, object_labels, object_scores):
+    def scg(self, image, subject_boxes, subject_labels, object_boxes, object_labels):
         """Merges the arguments into a data point for the scg model
 
         Args:
             image (np.array)
             subject_boxes (list of list): detected box coords for subjects
             subject_labels (list): detected box labels for subjects
-            subject_scores (list): detected box scores for selected class for subjects
             object_boxes (list of list): detected box coords for objects
             object_labels (list): detected box labels for objects
-            object_scores (list): detected box scores for selected class for objects
         """
         data_point = list()
         data_point.append([torch.from_numpy(image)])
@@ -154,7 +152,6 @@ class DataFactory(Dataset):
 
         boxes = torch.as_tensor(detection['boxes'])
         labels = torch.as_tensor(detection['labels'])
-        scores = torch.as_tensor(detection['scores'])
 
         # Filter out low scoring human boxes
         subject_idxs = torch.nonzero(labels == self.subject_idx).squeeze(1)
@@ -171,7 +168,7 @@ class DataFactory(Dataset):
         else:
             return dict(subject_boxes=subject_boxes, subject_labels=subject_labels,
                         object_boxes=object_boxes, object_labels=object_labels,
-                        img_path=detection['img_path'])
+                        img_id=detection['img_id'])
 
     def flip_boxes(self, detection, target, w):
         detection['boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['boxes'])
@@ -193,8 +190,9 @@ class DataFactory(Dataset):
             target['labels'] = target['actions']
             target['object'] = target.pop('objects')
 
-        target["subject"] = torch.tensor([self.subject_idx]).repeat(1, len(target['boxes_s']))[
-            0]  # will be changed later, only for human for now
+        if self.name in {'hicodet', 'vcoco'}:
+            target["subject"] = torch.tensor([self.subject_idx]).repeat(1, len(target['boxes_s']))[0]
+        # Else: this needs to come from dataset
         detection_path = os.path.join(
             self.detection_root,
             self.dataset.filename(i).replace('jpg', 'json')
@@ -210,7 +208,7 @@ class DataFactory(Dataset):
         image = pocket.ops.to_tensor(image, 'pil')
         # print(detection)
         if not self.training:
-            detection['img_path'] = self.dataset.filename(i)
+            detection['img_id'] = self.dataset.filename(i)
         detection = self.filter_detections(detection)
 
         return image, detection, target
