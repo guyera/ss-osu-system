@@ -183,12 +183,22 @@ class GenericHOINetwork(nn.Module):
     def get_box_features(self,
                          images: List[Tensor],
                          detections: List[dict],
+                         features=None,
                          ) -> (List[Tensor], List[Tensor]):
-        """Returns box features used in the network"""
+        """Returns box features used in the network
+
+        This will return the features on all the boxes but SCG might only use some of these boxes, for verb
+        prediction, based on nms and threshold on number of boxes per image. Relevant code and variables to look at:
+                - models.scg.scg_interaction_head.InteractionHead.preprocess
+                - models.scg.scg_interaction_head.InteractionHead.max_subject
+                - models.scg.scg_interaction_head.InteractionHead.max_object
+
+        # TODO: Add format
+        """
         images, detections, _, _ = self.preprocess(
             images, detections)
-
-        features = self.backbone(images.tensors)
+        if features is not None:
+            features = self.backbone(images.tensors)
         subject_box_coords = [detection['subject_boxes'] for detection in detections]
         object_box_coords = [detection['object_boxes'] for detection in detections]
         subject_box_features = self.interaction_head.box_roi_pool(features, subject_box_coords, images.image_sizes)
@@ -196,6 +206,34 @@ class GenericHOINetwork(nn.Module):
         # box_features = self.interaction_head.box_head(box_features)
         return subject_box_features, object_box_features
 
+    def get_verb_features(self,
+                          images: List[Tensor],
+                          detections: List[dict],
+                          ) -> List[Tensor]:
+        """"""
+        features = self.backbone(images.tensors)
+        subject_box_features, object_box_features = self.get_box_features(images, detections, features)
+        subject_box_coords = [detection['subject_boxes'] for detection in detections]
+        object_box_coords = [detection['object_boxes'] for detection in detections]
+        subject_pred_detections = self.interaction_head.classify_boxes(subject_box_features, subject_box_coords)
+        object_pred_detections = self.interaction_head.classify_boxes(object_box_features, object_box_coords)
+        detections = self.interaction_head.preprocess(subject_pred_detections, object_pred_detections)
+        subject_box_coords = list()
+        subject_box_all_scores = list()
+        object_box_coords = list()
+        object_box_all_scores = list()
+        for detection in detections:
+            subject_box_coords.append(detection['boxes'][:detection['num_subjects']])
+            subject_box_all_scores.append(detection['box_all_scores'][:detection['num_subjects']])
+            object_box_coords.append(detection['boxes'][detection['num_subjects']:])
+            object_box_all_scores.append(detection['box_all_scores'][detection['num_subjects']:])
+        subject_box_features = self.interaction_head.box_roi_pool(features, subject_box_coords, images.image_sizes)
+        object_box_features = self.interaction_head.box_roi_pool(features, object_box_coords, images.image_sizes)
+        result = self.interaction_head.box_pair_head(features, images.image_sizes,
+                                                     subject_box_features, subject_box_coords,
+                                                     subject_box_all_scores, object_box_features, object_box_coords,
+                                                     object_box_all_scores)
+        return result[0]
 
 class SpatiallyConditionedGraph(GenericHOINetwork):
     def __init__(self,
