@@ -25,11 +25,11 @@ def get_net(args):
     if args.net == 'scg':
         net = SCG(
             args.object_to_target, num_classes=args.num_classes,
-            num_obj_classes=args.num_obj_classes,
+            num_obj_classes=args.num_obj_classes, num_subject_classes=args.num_subject_classes,
             num_iterations=args.num_iter, postprocess=False,
             max_subject=args.max_subject, max_object=args.max_object,
             box_score_thresh=args.box_score_thresh,
-            distributed=True
+            distributed=args.multiporcessing
         )
     elif args.net == 'idn':
         args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
@@ -216,12 +216,13 @@ class Test(object):
 def main(rank, args):
     torch.cuda.set_device(0)
     torch.backends.cudnn.benchmark = False
-    dist.init_process_group(
-        backend="nccl",
-        init_method="env://",
-        world_size=args.world_size,
-        rank=rank
-    )
+    if args.multiporcessing:
+        dist.init_process_group(
+            backend="nccl",
+            init_method="env://",
+            world_size=args.world_size,
+            rank=rank
+        )
 
     if args.net == 'scg':
 
@@ -239,7 +240,7 @@ def main(rank, args):
             sampler=DistributedSampler(
                 valset,
                 num_replicas=args.world_size,
-                rank=rank)
+                rank=rank) if args.multiporcessing else None
         )
 
     elif args.net == 'idn':
@@ -255,6 +256,8 @@ def main(rank, args):
         if args.net == 'scg':
             args.object_to_target = val_loader.dataset.dataset.object_to_verb
             args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
+            args.num_subject_classes = 1
+
         args.human_idx = 49
         args.num_classes = 117
     elif args.dataset == 'vcoco':
@@ -287,7 +290,7 @@ def main(rank, args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train an interaction head")
-    parser.add_argument('--world-size', required=True, type=int,
+    parser.add_argument('--world-size', default=1, type=int,
                         help="Number of subprocesses/GPUs to use")
     parser.add_argument('--dataset', default='hicodet', type=str)
     parser.add_argument('--net', default='scg', type=str)
@@ -298,7 +301,7 @@ if __name__ == "__main__":
     parser.add_argument('--partition', default='test2015', type=str)
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
-    parser.add_argument('--box-score-thresh', default=0.2, type=float)
+    parser.add_argument('--box-score-thresh', default=0.0, type=float)
     parser.add_argument('--max-subject', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
     parser.add_argument('--num-workers', default=2, type=int)
@@ -307,10 +310,14 @@ if __name__ == "__main__":
                         help="Batch size for each subprocess")
     parser.add_argument('--config_path', dest='config_path', help='Select config file', default='configs/IDN.yml',
                         type=str)
+    parser.add_argument('--multiporcessing', action='store_true',help= "Enable multiporcessing")
+    
 
     args = parser.parse_args()
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "8888"
-
-    mp.spawn(main, nprocs=args.world_size, args=(args,))
+    if args.multiporcessing:
+        mp.spawn(main, nprocs=args.world_size, args=(args,))
+    else:
+        main(1, args)
     print("testing complete!")
