@@ -11,6 +11,7 @@ from torchvision.transforms.functional import hflip
 
 from .vcoco import VCOCO
 from .hicodet import HICODet
+from .vrd import 
 
 import pocket
 from utils import custom_collate, get_config, DataLoaderX
@@ -92,7 +93,7 @@ class DataFactory(Dataset):
                  training=True,
                  ):
         self.training = training
-        if name not in ['hicodet', 'vcoco']:
+        if name not in ['hicodet', 'vcoco', 'VRD']:
             raise ValueError("Unknown dataset ", name)
 
         if name == 'hicodet':
@@ -120,6 +121,11 @@ class DataFactory(Dataset):
                                        ), target_transform=pocket.ops.ToTensor(input_format='dict')
             )
             self.human_idx = 1
+        
+        elif name == 'VRD':
+            self.dataset = VRDDet(root="/cmlscratch/sonaalk/sailon-svo/test_vrd_060921.csv", 
+                                target_transform=pocket.ops.ToTensor(input_format='dict'))
+
         else:
             assert partition in ['train', 'val', 'trainval', 'test'], \
                 "Unknown V-COCO partition " + partition
@@ -186,6 +192,8 @@ class DataFactory(Dataset):
             # representation from pixel indices to coordinates
             target['boxes_s'][:, :2] -= 1
             target['boxes_o'][:, :2] -= 1
+        elif self.name == 'VRD':
+            target["labels"] = target['verb']
         else:
             target['labels'] = target['actions']
             target['object'] = target.pop('objects')
