@@ -165,9 +165,7 @@ class GenericHOINetwork(nn.Module):
 
         images, detections, targets, original_image_sizes = self.preprocess(
             images, detections, targets)
-        # print(f'images: {images.tensors}')
         features = self.backbone(images.tensors)
-        # print(f'features in generic HOI: {features}')
         results = self.interaction_head(features, detections,
                                         images.image_sizes, targets)
 
@@ -293,7 +291,6 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
         box_verb_predictor = nn.Linear(representation_size * 2, num_classes)
         box_verb_suppressor = nn.Linear(representation_size * 2, 1)
 
-        # TODO: Remove hardcoding
         custom_box_classifier_dict = nn.ModuleDict({"object": CustomFastRCNNPredictor(1024, num_obj_classes),
                                                     "subject": CustomFastRCNNPredictor(1024, num_subject_classes)})
 

@@ -287,7 +287,7 @@ class InteractionHead(Module):
                 boxes_s=b_s, boxes_o=b_o,
                 index=x, prediction=y,
                 scores=sc[x, y] * p[:, x, y].prod(dim=0) * w[x].detach(),
-                object_scores=o_sc, subject_scores=s_sc, prior=p[:, x, y], weights=w,
+                object_scores=o_sc, subject_scores=s_sc, weights=w,
             )
             # If binary labels are provided
             if l is not None:
@@ -661,25 +661,24 @@ class GraphHead(Module):
                 Object detection scores (before pairing)
         """
         scores, object_class = torch.max(all_scores, dim=1)
-        prior_s = torch.zeros(len(x), self.num_cls, device=scores.device)
-        prior_o = torch.zeros_like(prior_s)
+        prior_s = torch.ones(len(x), self.num_cls, device=scores.device)
+        prior_o = torch.ones_like(prior_s)
 
         # Raise the power of object detection scores during inference
-        p = 1.0 if self.training else 2.8
-        s_s = scores[x].pow(p)
-        s_o = scores[y].pow(p)
-
-        # Map object class index to target class index
-        # Object class index to target class index is a one-to-many mapping
-        target_cls_idx = [self.object_class_to_target_class[obj.item()]
-                          for obj in object_class[y]]
-        # Duplicate box pair indices for each target class
-        pair_idx = [i for i, tar in enumerate(target_cls_idx) for _ in tar]
-        # Flatten mapped target indices
-        flat_target_idx = [t for tar in target_cls_idx for t in tar]
-
-        prior_s[pair_idx, flat_target_idx] = s_s[pair_idx]
-        prior_o[pair_idx, flat_target_idx] = s_o[pair_idx]
+        # p = 1.0 if self.training else 2.8
+        # s_s = scores[x].pow(p)
+        # s_o = scores[y].pow(p)
+        # # Map object class index to target class index
+        # # Object class index to target class index is a one-to-many mapping
+        # target_cls_idx = [self.object_class_to_target_class[obj.item()]
+        #                   for obj in object_class[y]]
+        # # Duplicate box pair indices for each target class
+        # pair_idx = [i for i, tar in enumerate(target_cls_idx) for _ in tar]
+        # # Flatten mapped target indices
+        # flat_target_idx = [t for tar in target_cls_idx for t in tar]
+        #
+        # prior_s[pair_idx, flat_target_idx] = s_s[pair_idx]
+        # prior_o[pair_idx, flat_target_idx] = s_o[pair_idx]
 
         return torch.stack([prior_s, prior_o])
 
@@ -781,7 +780,8 @@ class GraphHead(Module):
             )
             # Remove pairs consisting of the same subject instance
             # NOTE: We are only removing self relations. In the current state a subject can very well become an object
-            # TODO: Resolve the above conundrum if required
+            # TODO: Resolve the above conundrum if required. This has been handled on the output side where we filter
+            #  out results where subject has become an object
             x_keep, y_keep = torch.nonzero(x != y).unbind(1)
             if len(x_keep) == 0:
                 # Should never happen, just to be safe
