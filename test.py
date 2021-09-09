@@ -25,7 +25,7 @@ from easydict import EasyDict as edict
 def get_net(args):
     if args.net == 'scg':
         net = SCG(
-            args.object_to_target, num_classes=args.num_classes,
+            num_classes=args.num_classes,
             num_obj_classes=args.num_obj_classes, num_subject_classes=args.num_subject_classes,
             num_iterations=args.num_iter, postprocess=False,
             max_subject=args.max_subject, max_object=args.max_object,
@@ -280,37 +280,23 @@ def main(rank, args):
 
     elif args.net == 'idn':
         raise NotImplementedError
-        # args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
-        # HO_weight = torch.from_numpy(args_idn['HO_weight'])
-        # config = get_config(args.config_path)
-        #
-        # val_set = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
-        # val_loader = DataLoaderX(val_set, batch_size=args.batch_size, shuffle=False, collate_fn=val_set.collate_fn,
-        #                          pin_memory=False, drop_last=False)
 
     if args.dataset == 'hicodet':
         if args.net == 'scg':
-            args.object_to_target = val_loader.dataset.dataset.object_to_verb
             args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
             args.num_subject_classes = 80
-
-        args.human_idx = 49
+            
         args.num_classes = 117
     
     elif args.dataset == 'Custom':
         if args.net == 'scg':
-            args.object_to_target = val_loader.dataset.dataset.object_to_verb
             args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
             args.num_subject_classes = val_loader.dataset.dataset.num_subject_cls
         args.num_classes = 63
 
     else:
         raise NotImplementedError
-    # elif args.dataset == 'vcoco':
-    #     if args.net == 'scg':
-    #         raise NotImplementedError
-    #     args.human_idx = 1
-    #     args.num_classes = 24
+
     net = get_net(args)
     if net == '':
         raise NotImplementedError

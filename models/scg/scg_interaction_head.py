@@ -544,8 +544,6 @@ class GraphHead(Module):
         Size of the node embeddings
     num_cls: int
         Number of target classes
-    object_class_to_target_class: List[list]
-        The mapping (potentially one-to-many) from objects to target classes
     fg_iou_thresh: float, default: 0.5
         The IoU threshold to identify a positive example
     num_iter: int, default 2
@@ -558,7 +556,6 @@ class GraphHead(Module):
                  node_encoding_size: int,
                  representation_size: int,
                  num_cls: int,
-                 object_class_to_target_class: List[list],
                  fg_iou_thresh: float = 0.5,
                  num_iter: int = 2
                  ) -> None:
@@ -573,7 +570,6 @@ class GraphHead(Module):
         # TODO: Remove hardcoding
         self.num_subject_cls = 100
         self.num_object_cls = 100
-        self.object_class_to_target_class = object_class_to_target_class
 
         self.fg_iou_thresh = fg_iou_thresh
         self.num_iter = num_iter
