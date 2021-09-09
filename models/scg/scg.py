@@ -236,7 +236,6 @@ class GenericHOINetwork(nn.Module):
 
 class SpatiallyConditionedGraph(GenericHOINetwork):
     def __init__(self,
-                 object_to_action: List[list],
                  # Backbone parameters
                  backbone_name: str = "resnet50",
                  pretrained: bool = True,
@@ -283,7 +282,6 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             node_encoding_size=node_encoding_size,
             representation_size=representation_size,
             num_cls=num_classes,
-            object_class_to_target_class=object_to_action,
             fg_iou_thresh=fg_iou_thresh,
             num_iter=num_iterations
         )

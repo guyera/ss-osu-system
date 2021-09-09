@@ -11,6 +11,7 @@ from torchvision.transforms.functional import hflip
 
 from .vcoco import VCOCO
 from .hicodet import HICODet
+from .custom import CustomDet
 
 import pocket
 from utils import custom_collate, get_config, DataLoaderX
@@ -92,7 +93,7 @@ class DataFactory(Dataset):
                  training=True,
                  ):
         self.training = training
-        if name not in ['hicodet', 'vcoco']:
+        if name not in ['hicodet', 'vcoco', 'Custom']:
             raise ValueError("Unknown dataset ", name)
 
         if name == 'hicodet':
@@ -120,6 +121,11 @@ class DataFactory(Dataset):
                                        ), target_transform=pocket.ops.ToTensor(input_format='dict')
             )
             self.human_idx = 1
+        
+        elif name == 'Custom':
+            self.dataset = CustomDet(root=data_root, 
+                                target_transform=pocket.ops.ToTensor(input_format='dict'))
+
         else:
             assert partition in ['train', 'val', 'trainval', 'test'], \
                 "Unknown V-COCO partition " + partition
@@ -162,6 +168,7 @@ class DataFactory(Dataset):
 
         object_boxes = boxes[object_idxs].view(-1, 4)
         object_labels = labels[object_idxs].view(-1)
+        
         if self.training:
             return dict(subject_boxes=subject_boxes, subject_labels=subject_labels,
                         object_boxes=object_boxes, object_labels=object_labels)
@@ -171,7 +178,8 @@ class DataFactory(Dataset):
                         img_id=detection['img_id'])
 
     def flip_boxes(self, detection, target, w):
-        detection['boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['boxes'])
+        detection['subject_boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['subject_boxes'])
+        detection['object_boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['object_boxes'])
         target['boxes_s'] = pocket.ops.horizontal_flip_boxes(w, target['boxes_s'])
         target['boxes_o'] = pocket.ops.horizontal_flip_boxes(w, target['boxes_o'])
 
@@ -186,6 +194,8 @@ class DataFactory(Dataset):
             # representation from pixel indices to coordinates
             target['boxes_s'][:, :2] -= 1
             target['boxes_o'][:, :2] -= 1
+        elif self.name == 'Custom':
+            target["labels"] = target['verb']
         else:
             target['labels'] = target['actions']
             target['object'] = target.pop('objects')
@@ -193,22 +203,30 @@ class DataFactory(Dataset):
         if self.name in {'hicodet', 'vcoco'}:
             target["subject"] = torch.tensor([self.subject_idx]).repeat(1, len(target['boxes_s']))[0]
         # Else: this needs to come from dataset
-        detection_path = os.path.join(
-            self.detection_root,
-            self.dataset.filename(i).replace('jpg', 'json')
-        )
-        with open(detection_path, 'r') as f:
-            detection = pocket.ops.to_tensor(json.load(f),
-                                             input_format='dict')
 
+        if self.name == "Custom":
+            detections = self.dataset.get_detections(i)
+            detection = pocket.ops.to_tensor(detections, input_format='dict')
+        else:
+            detection_path = os.path.join(
+                self.detection_root,
+                self.dataset.filename(i).replace('jpg', 'json')
+            )
+            with open(detection_path, 'r') as f:
+                detection = pocket.ops.to_tensor(json.load(f),
+                                                input_format='dict')
+
+        # print(detection)
+        if not self.training:
+            detection['img_id'] = self.dataset.filename(i)
+        
+        if self.name in {'hicodet', 'vcoco'}:
+            detection = self.filter_detections(detection)
+        
         if self._flip[i]:
             image = hflip(image)
             w, _ = image.size
             self.flip_boxes(detection, target, w)
         image = pocket.ops.to_tensor(image, 'pil')
-        # print(detection)
-        if not self.training:
-            detection['img_id'] = self.dataset.filename(i)
-        detection = self.filter_detections(detection)
-
+        
         return image, detection, target

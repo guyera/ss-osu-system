@@ -71,8 +71,8 @@ class InteractionHead(Module):
 
         self.num_classes = num_classes
         # TODO: Remove hardcoding
-        self.num_subject_cls = 80
-        self.num_object_cls = 80
+        self.num_subject_cls = 100
+        self.num_object_cls = 100
 
         self.box_nms_thresh = box_nms_thresh
         self.box_score_thresh = box_score_thresh
@@ -544,8 +544,6 @@ class GraphHead(Module):
         Size of the node embeddings
     num_cls: int
         Number of target classes
-    object_class_to_target_class: List[list]
-        The mapping (potentially one-to-many) from objects to target classes
     fg_iou_thresh: float, default: 0.5
         The IoU threshold to identify a positive example
     num_iter: int, default 2
@@ -558,7 +556,6 @@ class GraphHead(Module):
                  node_encoding_size: int,
                  representation_size: int,
                  num_cls: int,
-                 object_class_to_target_class: List[list],
                  fg_iou_thresh: float = 0.5,
                  num_iter: int = 2
                  ) -> None:
@@ -571,9 +568,8 @@ class GraphHead(Module):
 
         self.num_cls = num_cls
         # TODO: Remove hardcoding
-        self.num_subject_cls = 80
-        self.num_object_cls = 80
-        self.object_class_to_target_class = object_class_to_target_class
+        self.num_subject_cls = 100
+        self.num_object_cls = 100
 
         self.fg_iou_thresh = fg_iou_thresh
         self.num_iter = num_iter
@@ -663,22 +659,6 @@ class GraphHead(Module):
         scores, object_class = torch.max(all_scores, dim=1)
         prior_s = torch.ones(len(x), self.num_cls, device=scores.device)
         prior_o = torch.ones_like(prior_s)
-
-        # Raise the power of object detection scores during inference
-        # p = 1.0 if self.training else 2.8
-        # s_s = scores[x].pow(p)
-        # s_o = scores[y].pow(p)
-        # # Map object class index to target class index
-        # # Object class index to target class index is a one-to-many mapping
-        # target_cls_idx = [self.object_class_to_target_class[obj.item()]
-        #                   for obj in object_class[y]]
-        # # Duplicate box pair indices for each target class
-        # pair_idx = [i for i, tar in enumerate(target_cls_idx) for _ in tar]
-        # # Flatten mapped target indices
-        # flat_target_idx = [t for tar in target_cls_idx for t in tar]
-        #
-        # prior_s[pair_idx, flat_target_idx] = s_s[pair_idx]
-        # prior_o[pair_idx, flat_target_idx] = s_o[pair_idx]
 
         return torch.stack([prior_s, prior_o])
 
