@@ -11,7 +11,7 @@ from torchvision.transforms.functional import hflip
 
 from .vcoco import VCOCO
 from .hicodet import HICODet
-from .vrd import VRDDet
+from .custom import CustomDet
 
 import pocket
 from utils import custom_collate, get_config, DataLoaderX
@@ -93,7 +93,7 @@ class DataFactory(Dataset):
                  training=True,
                  ):
         self.training = training
-        if name not in ['hicodet', 'vcoco', 'VRD']:
+        if name not in ['hicodet', 'vcoco', 'Custom']:
             raise ValueError("Unknown dataset ", name)
 
         if name == 'hicodet':
@@ -122,8 +122,8 @@ class DataFactory(Dataset):
             )
             self.human_idx = 1
         
-        elif name == 'VRD':
-            self.dataset = VRDDet(root="/cmlscratch/sonaalk/vrd/train_vrd_060921.csv", 
+        elif name == 'Custom':
+            self.dataset = CustomDet(root=data_root, 
                                 target_transform=pocket.ops.ToTensor(input_format='dict'))
             # TODO : not sure about the subject index please check
             self.subject_idx = 1
@@ -170,8 +170,6 @@ class DataFactory(Dataset):
 
         object_boxes = boxes[object_idxs].view(-1, 4)
         object_labels = labels[object_idxs].view(-1)
-
-        print(subject_boxes.shape, object_boxes.shape)
         
         if self.training:
             return dict(subject_boxes=subject_boxes, subject_labels=subject_labels,
@@ -198,7 +196,7 @@ class DataFactory(Dataset):
             # representation from pixel indices to coordinates
             target['boxes_s'][:, :2] -= 1
             target['boxes_o'][:, :2] -= 1
-        elif self.name == 'VRD':
+        elif self.name == 'Custom':
             target["labels"] = target['verb']
         else:
             target['labels'] = target['actions']
@@ -208,7 +206,7 @@ class DataFactory(Dataset):
             target["subject"] = torch.tensor([self.subject_idx]).repeat(1, len(target['boxes_s']))[0]
         # Else: this needs to come from dataset
 
-        if self.name == "VRD":
+        if self.name == "Custom":
             detections = self.dataset.get_detections(i)
             detection = pocket.ops.to_tensor(detections, input_format='dict')
         else:

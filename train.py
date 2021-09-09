@@ -223,7 +223,7 @@ def main(rank, args):
             args.num_obj_classes = train_loader.dataset.dataset.num_object_cls
         args.human_idx = 49
         args.num_classes = 117
-    elif args.dataset == 'VRD':
+    elif args.dataset == 'Custom':
         if args.net == 'scg':
             args.object_to_target = train_loader.dataset.dataset.object_to_verb
             args.num_obj_classes = train_loader.dataset.dataset.num_object_cls
@@ -269,10 +269,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train an interaction head")
     parser.add_argument('--world-size', required=True, type=int,
                         help="Number of subprocesses/GPUs to use")
-    parser.add_argument('--dataset', default='hicodet', type=str)
+    parser.add_argument('--dataset', default='Custom', type=str)
     parser.add_argument('--net', default='scg', type=str)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
-    parser.add_argument('--data-root', default='hicodet', type=str)
+    parser.add_argument('--data-root', default='hicodet', type=str, help="Give full csv path for Custom dataset")
     parser.add_argument('--train-detection-dir', default='hicodet/detections/test2015', type=str)
     parser.add_argument('--val-detection-dir', default='hicodet/detections/test2015', type=str)
     parser.add_argument('--num-iter', default=2, type=int,
@@ -300,6 +300,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "8889"
+    os.environ["MASTER_PORT"] = "8888"
 
     mp.spawn(main, nprocs=args.world_size, args=(args,))

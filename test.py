@@ -126,7 +126,6 @@ class Test(object):
                 # torch.save(result, 'results.pt')
                 result = clean_result(self.net, result, mod_detections[0])
                 results.append(result)
-                break
         return results
 
     def drg(self, input_data):
@@ -298,7 +297,7 @@ def main(rank, args):
         args.human_idx = 49
         args.num_classes = 117
     
-    elif args.dataset == 'VRD':
+    elif args.dataset == 'Custom':
         if args.net == 'scg':
             args.object_to_target = val_loader.dataset.dataset.object_to_verb
             args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
@@ -340,7 +339,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train an interaction head")
     parser.add_argument('--world-size', default=1, type=int,
                         help="Number of subprocesses/GPUs to use")
-    parser.add_argument('--dataset', default='hicodet', type=str)
+    parser.add_argument('--dataset', default='Custom', type=str)
     parser.add_argument('--net', default='scg', type=str)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='hicodet', type=str)

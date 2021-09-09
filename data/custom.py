@@ -189,7 +189,7 @@ class CustomDet(Dataset):
         """
         The interaction classes corresponding to an object-verb pair
 
-        HICODet.object_n_verb_to_interaction[obj_idx][verb_idx] gives interaction class
+        CustomDet.object_n_verb_to_interaction[obj_idx][verb_idx] gives interaction class
         index if the pair is valid, None otherwise
 
         Returns:
@@ -339,22 +339,8 @@ class CustomDet(Dataset):
         self.num_action_cls = len(self._verbs)
 
         idx = list(range(len(self._filenames)))
-        
-        # num_anno = [0 for _ in range(self.num_interation_cls)]
-        # for anno in f['annotation']:
-        #     for hoi in anno['hoi']:
-        #         num_anno[hoi] += 1
-
+    
         self._idx = idx
-        # self._num_anno = num_anno
-
-        # self._anno = f['annotation']
-        # self._filenames = f['filenames']
-        # self._image_sizes = f['size']
-        # self._class_corr = f['correspondence']
-        # self._empty_idx = f['empty']
-        # self._objects = f['objects']
-        # self._verbs = f['verbs']
 
     def create_annotation(self, df, imnames):
         annots = list()
@@ -398,16 +384,5 @@ class CustomDet(Dataset):
         return sizes[['image_width', 'image_height']].values.tolist()
 
 
-if __name__ == '__main__':
 
-    dataset = VRDDet(root="/cmlscratch/sonaalk/vrd/train_vrd_060921.csv", 
-                                target_transform=pocket.ops.ToTensor(input_format='dict'))
-    
-    print(len(dataset))
-    for i in range(len(dataset)):
-        print(i)
-        try:
-            img, taget = dataset[i]
-        except:
-            import pdb;pdb.set_trace()
     
