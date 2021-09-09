@@ -302,7 +302,6 @@ def main(rank, args):
             args.object_to_target = val_loader.dataset.dataset.object_to_verb
             args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
             args.num_subject_classes = val_loader.dataset.dataset.num_subject_cls
-        args.human_idx = 1 # Not sure added thisjust for code testing
         args.num_classes = 63
 
     else:
