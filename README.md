@@ -112,3 +112,16 @@ Specify the number of GPUs to use with the argument `--world-size` and specify t
 If you have any questions regarding this repo, please post them in [issues](https://github.com/pi-umd/sailon-hoi/issues)
 . If you ran into issues related to the code, feel free to open an issue. Alternatively, you can contact us at
 anubhav@umd.edu or vinoj@umd.edu
+
+
+Release information for code merged on 9/9/2021
+
+    Separate model folders for model files
+    Separate box_coords, box_scores for subjects and objects
+    Expose verb features
+    Remove reference to pair and rename as verb
+    Restructure the output dictionary
+    Separate classification heads for subject and object
+        NOTE: Will work only with same backbone and same no. of classes for now.
+    Data loader for custom datasets
+

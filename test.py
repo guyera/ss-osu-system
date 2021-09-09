@@ -1,4 +1,5 @@
 import os
+import copy
 import torch
 import argparse
 import torch.distributed as dist
@@ -24,12 +25,12 @@ from easydict import EasyDict as edict
 def get_net(args):
     if args.net == 'scg':
         net = SCG(
-            args.object_to_target, num_classes=args.num_classes,
-            num_obj_classes=args.num_obj_classes,
+            num_classes=args.num_classes,
+            num_obj_classes=args.num_obj_classes, num_subject_classes=args.num_subject_classes,
             num_iterations=args.num_iter, postprocess=False,
             max_subject=args.max_subject, max_object=args.max_object,
             box_score_thresh=args.box_score_thresh,
-            distributed=True
+            distributed=args.multiporcessing
         )
     elif args.net == 'idn':
         args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
@@ -57,51 +58,71 @@ class Test(object):
         self.test = self.func_map[model_name]
         self.converter = CustomInput(model_name).converter
 
-    def scg(self, ov_interaction_map):
+    def scg(self):
+
+        def clean_result(my_net, orig_result, detections):
+            num_verb_cls = my_net.interaction_head.num_classes
+            # Now getting the indices of object boxes which were not passed as subjects in input
+            keep_obj_idx = np.argwhere(
+                np.fromiter(map(lambda x: not (any([(x == par_elem).all() for par_elem in detections['subject_boxes']])),
+                                [elem for elem in orig_result['object_boxes']]), dtype=np.bool_))
+            keep_obj_idx = torch.from_numpy(keep_obj_idx).squeeze(1)
+            # Filtering the pairs based on these indices
+            new_result = {
+                'object_boxes': torch.index_select(orig_result['object_boxes'], 0, keep_obj_idx),
+                'subject_boxes': torch.index_select(orig_result['subject_boxes'], 0, keep_obj_idx),
+                'object_scores': torch.index_select(orig_result['object_scores'], 0, keep_obj_idx),
+                'subject_scores': torch.index_select(orig_result['subject_scores'], 0, keep_obj_idx),
+                'img_id': orig_result['img_id'],
+            }
+            # Initialising the verb matrix with zero values
+            verb_matrix = torch.zeros((len(keep_obj_idx), num_verb_cls))
+            # Getting the verb prediction only on selected pairs
+            keep_verb_idx = np.argwhere(
+                np.fromiter(map(lambda x: any([(x == par_elem).all() for par_elem in keep_obj_idx]),
+                                [elem for elem in orig_result['index']]), dtype=np.bool_))
+            keep_verb_idx = torch.from_numpy(keep_verb_idx).squeeze(1)
+            orig_pair_idx = torch.index_select(orig_result['index'], 0, keep_verb_idx)
+            # Getting the new pair indexes for selected verbs
+            new_pair_idx = np.searchsorted(keep_obj_idx, orig_pair_idx)
+            verbs = torch.index_select(orig_result['verbs'], 0, keep_verb_idx)
+            verb_scores = torch.index_select(orig_result['verb_scores'], 0, keep_verb_idx)
+            # getting the location in 2d matrix
+            matrix_idx = torch.cat([new_pair_idx.unsqueeze(1), verbs.unsqueeze(1)], dim=1)
+            verb_matrix[matrix_idx[:, 0], matrix_idx[:, 1]] = verb_scores
+            new_result['verb_matrix'] = verb_matrix
+            return new_result
+
         results = list()
         for batch in tqdm(self.data_loader):
             inputs = batch[:-1]
-            # print(inputs)
-            # TODO: Optimize this
-            inp_image = np.array(inputs[0][0].cpu())
-            # Now assuming that data loader will give us separate lists for objects and subjects
-            # inp_boxes = np.array(inputs[1][0]['boxes'].cpu())
-            # inp_labels = np.array(inputs[1][0]['labels'].cpu())
-            # inp_scores = np.array(inputs[1][0]['scores'].cpu())
-            # input_data = self.converter(inp_image, inp_boxes, inp_labels, inp_scores)
-            # input_data = pocket.ops.relocate_to_cuda(input_data)
-            # input_data = self.converter(inp_image, inp_boxes, inp_labels, inp_scores)
-            sub_inp_boxes = np.array(inputs[1][0]['subject_boxes'])
-            sub_inp_labels = np.array(inputs[1][0]['subject_labels'])
-            sub_inp_scores = np.array(inputs[1][0]['subject_scores'])
-            obj_inp_boxes = np.array(inputs[1][0]['object_boxes'])
-            obj_inp_labels = np.array(inputs[1][0]['object_labels'])
-            obj_inp_scores = np.array(inputs[1][0]['object_scores'])
-            input_data = self.converter(inp_image, sub_inp_boxes, sub_inp_labels, sub_inp_scores,
-                                        obj_inp_boxes, obj_inp_labels, obj_inp_scores)
-            input_data = pocket.ops.relocate_to_cuda(input_data)
+            img_id = inputs[1][0]['img_id']
+            inputs[1][0].pop('img_id', None)
+
+            inputs_copy = copy.deepcopy(inputs)
+            input_data_copy = pocket.ops.relocate_to_cuda(inputs_copy)
+            _, mod_detections, _, _ = self.net.preprocess(*input_data_copy)  # This is needed to do box matching and remove
+            # the results where subjects have been made objects. This piece of logic might get moved inside the
+            # model class in future releases
+            mod_detections = pocket.ops.relocate_to_cpu(mod_detections)
+            input_data = pocket.ops.relocate_to_cuda(inputs)
             with torch.no_grad():
                 output = self.net(*input_data)
                 # Batch size is fixed as 1 for inference
                 assert len(output) == 1, "Batch size is not 1"
                 output = pocket.ops.relocate_to_cpu(output[0])
-                # Format detections
-                box_idx = output['index']
-                objects = output['object'][box_idx]
-                scores = output['scores']
-                verbs = output['prediction']
-                interactions = torch.tensor([
-                    ov_interaction_map[o][v]
-                    for o, v in zip(objects, verbs)
-                ])
-                # Associate detected pairs with ground truth pairs
-                labels = torch.zeros_like(scores)
                 result = {
-                    'scores': scores,
-                    'interactions': interactions,
-                    'labels': labels,
-                    'img_path': inputs[1][0]['img_path'],
+                    'object_boxes': output['boxes_o'],
+                    'subject_boxes': output['boxes_s'],
+                    'object_scores': output['object_scores'],
+                    'subject_scores': output['subject_scores'],
+                    'index': output['index'], # index of the box pair. Same
+                    'verbs': output['prediction'],  # verbs are predicted considering the max score class on objects
+                    #                                 and subjects
+                    'verb_scores': output['scores'],
+                    'img_id': img_id,
                 }
+                result = clean_result(self.net, result, mod_detections[0])
                 results.append(result)
         return results
 
@@ -228,12 +249,13 @@ class Test(object):
 def main(rank, args):
     torch.cuda.set_device(0)
     torch.backends.cudnn.benchmark = False
-    dist.init_process_group(
-        backend="nccl",
-        init_method="env://",
-        world_size=args.world_size,
-        rank=rank
-    )
+    if args.multiporcessing:
+        dist.init_process_group(
+            backend="nccl",
+            init_method="env://",
+            world_size=args.world_size,
+            rank=rank
+        )
 
     if args.net == 'scg':
 
@@ -251,29 +273,28 @@ def main(rank, args):
             sampler=DistributedSampler(
                 valset,
                 num_replicas=args.world_size,
-                rank=rank)
+                rank=rank) if args.multiporcessing else None
         )
 
     elif args.net == 'idn':
-        args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
-        HO_weight = torch.from_numpy(args_idn['HO_weight'])
-        config = get_config(args.config_path)
-
-        val_set = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
-        val_loader = DataLoaderX(val_set, batch_size=args.batch_size, shuffle=False, collate_fn=val_set.collate_fn,
-                                 pin_memory=False, drop_last=False)
+        raise NotImplementedError
 
     if args.dataset == 'hicodet':
         if args.net == 'scg':
-            args.object_to_target = val_loader.dataset.dataset.object_to_verb
             args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
-        args.human_idx = 49
+            args.num_subject_classes = 80
+            
         args.num_classes = 117
-    elif args.dataset == 'vcoco':
+    
+    elif args.dataset == 'Custom':
         if args.net == 'scg':
-            raise NotImplementedError
-        args.human_idx = 1
-        args.num_classes = 24
+            args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
+            args.num_subject_classes = val_loader.dataset.dataset.num_subject_cls
+        args.num_classes = 63
+
+    else:
+        raise NotImplementedError
+
     net = get_net(args)
     if net == '':
         raise NotImplementedError
@@ -290,7 +311,7 @@ def main(rank, args):
     net.eval()
     tester = Test(net, args.net, val_loader).test
     if args.net == 'scg':
-        tester(val_loader.dataset.dataset.object_n_verb_to_interaction)
+        tester()
     elif args.net == 'idn':
         tester()
     else:
@@ -299,9 +320,9 @@ def main(rank, args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train an interaction head")
-    parser.add_argument('--world-size', required=True, type=int,
+    parser.add_argument('--world-size', default=1, type=int,
                         help="Number of subprocesses/GPUs to use")
-    parser.add_argument('--dataset', default='hicodet', type=str)
+    parser.add_argument('--dataset', default='Custom', type=str)
     parser.add_argument('--net', default='scg', type=str)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='hicodet', type=str)
@@ -310,7 +331,7 @@ if __name__ == "__main__":
     parser.add_argument('--partition', default='test2015', type=str)
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
-    parser.add_argument('--box-score-thresh', default=0.2, type=float)
+    parser.add_argument('--box-score-thresh', default=0.0, type=float)
     parser.add_argument('--max-subject', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
     parser.add_argument('--num-workers', default=2, type=int)
@@ -319,10 +340,14 @@ if __name__ == "__main__":
                         help="Batch size for each subprocess")
     parser.add_argument('--config_path', dest='config_path', help='Select config file', default='configs/IDN.yml',
                         type=str)
+    parser.add_argument('--multiporcessing', action='store_true', help="Enable multiporcessing")
+    
 
     args = parser.parse_args()
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "8888"
-
-    mp.spawn(main, nprocs=args.world_size, args=(args,))
+    if args.multiporcessing:
+        mp.spawn(main, nprocs=args.world_size, args=(args,))
+    else:
+        main(1, args)
     print("testing complete!")

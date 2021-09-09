@@ -127,7 +127,6 @@ class GenericHOINetwork(nn.Module):
     ]:
         original_image_sizes = [img.shape[-2:] for img in images]
         images, targets = self.transform(images, targets)
-
         for det, o_im_s, im_s in zip(
                 detections, original_image_sizes, images.image_sizes
         ):
@@ -165,7 +164,6 @@ class GenericHOINetwork(nn.Module):
 
         images, detections, targets, original_image_sizes = self.preprocess(
             images, detections, targets)
-
         features = self.backbone(images.tensors)
         results = self.interaction_head(features, detections,
                                         images.image_sizes, targets)
@@ -182,21 +180,59 @@ class GenericHOINetwork(nn.Module):
     def get_box_features(self,
                          images: List[Tensor],
                          detections: List[dict],
-                         ) -> List[Tensor]:
-        """Returns box features used in the network"""
+                         features=None,
+                         ) -> (List[Tensor], List[Tensor]):
+        """Returns box features used in the network
+
+        This will return the features on all the boxes but SCG might only use some of these boxes, for verb
+        prediction, based on nms and threshold on number of boxes per image. Relevant code and variables to look at:
+                - models.scg.scg_interaction_head.InteractionHead.preprocess
+                - models.scg.scg_interaction_head.InteractionHead.max_subject
+                - models.scg.scg_interaction_head.InteractionHead.max_object
+        """
         images, detections, _, _ = self.preprocess(
             images, detections)
+        if features is not None:
+            features = self.backbone(images.tensors)
+        subject_box_coords = [detection['subject_boxes'] for detection in detections]
+        object_box_coords = [detection['object_boxes'] for detection in detections]
+        subject_box_features = self.interaction_head.box_roi_pool(features, subject_box_coords, images.image_sizes)
+        object_box_features = self.interaction_head.box_roi_pool(features, object_box_coords, images.image_sizes)
+        # box_features = self.interaction_head.box_head(box_features)
+        return subject_box_features, object_box_features
 
+    def get_verb_features(self,
+                          images: List[Tensor],
+                          detections: List[dict],
+                          ) -> List[Tensor]:
+        """"""
         features = self.backbone(images.tensors)
-        box_coords = [torch.cat([detection['subject_boxes'], detection['object_boxes']]) for detection in detections]
-        box_features = self.interaction_head.box_roi_pool(features, box_coords, images.image_sizes)
-        box_features = self.interaction_head.box_head(box_features)
-        return box_features
+        subject_box_features, object_box_features = self.get_box_features(images, detections, features)
+        subject_box_coords = [detection['subject_boxes'] for detection in detections]
+        object_box_coords = [detection['object_boxes'] for detection in detections]
+        subject_pred_detections = self.interaction_head.classify_boxes(subject_box_features, subject_box_coords)
+        object_pred_detections = self.interaction_head.classify_boxes(object_box_features, object_box_coords)
+        detections = self.interaction_head.preprocess(subject_pred_detections, object_pred_detections)
+        subject_box_coords = list()
+        subject_box_all_scores = list()
+        object_box_coords = list()
+        object_box_all_scores = list()
+        for detection in detections:
+            subject_box_coords.append(detection['boxes'][:detection['num_subjects']])
+            subject_box_all_scores.append(detection['box_all_scores'][:detection['num_subjects']])
+            object_box_coords.append(detection['boxes'][detection['num_subjects']:])
+            object_box_all_scores.append(detection['box_all_scores'][detection['num_subjects']:])
+        subject_box_features = self.interaction_head.box_roi_pool(features, subject_box_coords, images.image_sizes)
+        object_box_features = self.interaction_head.box_roi_pool(features, object_box_coords, images.image_sizes)
+        result = self.interaction_head.box_pair_head(features, images.image_sizes,
+                                                     subject_box_features, subject_box_coords,
+                                                     subject_box_all_scores, object_box_features, object_box_coords,
+                                                     object_box_all_scores)
+        return result[0]
 
 
 class SpatiallyConditionedGraph(GenericHOINetwork):
     def __init__(self,
-                 object_to_action: List[list],
                  # Backbone parameters
                  backbone_name: str = "resnet50",
                  pretrained: bool = True,
@@ -208,6 +244,7 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
                  representation_size: int = 1024,
                  num_classes: int = 117,
                  num_obj_classes: int = 80,
+                 num_subject_classes: int = 80,
                  box_score_thresh: float = 0.2,
                  fg_iou_thresh: float = 0.5,
                  num_iterations: int = 2,
@@ -242,24 +279,23 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             node_encoding_size=node_encoding_size,
             representation_size=representation_size,
             num_cls=num_classes,
-            object_class_to_target_class=object_to_action,
             fg_iou_thresh=fg_iou_thresh,
             num_iter=num_iterations
         )
 
-        box_pair_predictor = nn.Linear(representation_size * 2, num_classes)
-        box_pair_suppressor = nn.Linear(representation_size * 2, 1)
+        box_verb_predictor = nn.Linear(representation_size * 2, num_classes)
+        box_verb_suppressor = nn.Linear(representation_size * 2, 1)
 
-        # TODO: Remove hardcoding
-        custom_box_classifier = CustomFastRCNNPredictor(1024, num_obj_classes)
+        custom_box_classifier_dict = nn.ModuleDict({"object": CustomFastRCNNPredictor(1024, num_obj_classes),
+                                                    "subject": CustomFastRCNNPredictor(1024, num_subject_classes)})
 
         interaction_head = InteractionHead(
             box_roi_pool=box_roi_pool,
             box_head=box_head,
             box_pair_head=box_pair_head,
-            box_pair_suppressor=box_pair_suppressor,
-            box_pair_predictor=box_pair_predictor,
-            custom_box_classifier=custom_box_classifier,
+            box_verb_suppressor=box_verb_suppressor,
+            box_verb_predictor=box_verb_predictor,
+            custom_box_classifier=custom_box_classifier_dict,
             num_classes=num_classes,
             box_nms_thresh=box_nms_thresh,
             box_score_thresh=box_score_thresh,
@@ -304,7 +340,7 @@ class CustomisedDLE(DistributedLearningEngine):
 
         self.hoi_loss.append(loss_dict['hoi_loss'])
         self.intr_loss.append(loss_dict['interactiveness_loss'])
-        self.obj_cls_loss.append(loss_dict['obj_classification_loss'])
+        self.obj_cls_loss.append(loss_dict['box_classification_loss'])
 
         self._synchronise_and_log_results(output, self.meter)
 
