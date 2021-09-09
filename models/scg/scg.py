@@ -127,7 +127,6 @@ class GenericHOINetwork(nn.Module):
     ]:
         original_image_sizes = [img.shape[-2:] for img in images]
         images, targets = self.transform(images, targets)
-        # print(f'images: {images}')
         for det, o_im_s, im_s in zip(
                 detections, original_image_sizes, images.image_sizes
         ):
@@ -190,8 +189,6 @@ class GenericHOINetwork(nn.Module):
                 - models.scg.scg_interaction_head.InteractionHead.preprocess
                 - models.scg.scg_interaction_head.InteractionHead.max_subject
                 - models.scg.scg_interaction_head.InteractionHead.max_object
-
-        # TODO: Add format
         """
         images, detections, _, _ = self.preprocess(
             images, detections)
