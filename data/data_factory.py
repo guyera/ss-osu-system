@@ -125,8 +125,6 @@ class DataFactory(Dataset):
         elif name == 'Custom':
             self.dataset = CustomDet(root=data_root, 
                                 target_transform=pocket.ops.ToTensor(input_format='dict'))
-            # TODO : not sure about the subject index please check
-            self.subject_idx = 1
 
         else:
             assert partition in ['train', 'val', 'trainval', 'test'], \
