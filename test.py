@@ -12,14 +12,10 @@ from tqdm import tqdm
 
 from models.scg import SpatiallyConditionedGraph as SCG
 from data.data_factory import DataFactory, CustomInput
-from utils import custom_collate, Timer, AverageMeter, get_config, DataLoaderX
+from utils import custom_collate, get_config
 
-from models.idn import AE, IDN
-from data.dataset_idn import HICO_train_set, HICO_test_set
-import yaml
-import re
+from models.idn import IDN
 import pickle
-from easydict import EasyDict as edict
 
 
 def get_net(args):

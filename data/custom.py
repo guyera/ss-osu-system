@@ -172,8 +172,8 @@ class CustomDet(Dataset):
         
         self._image_sizes = self.create_sizes(df)
 
-        self.num_object_cls = len(self._objects)
-        self.num_subject_cls = len(self._subjects)
+        self.num_object_cls = max(len(self._objects), len(self._subjects))
+        self.num_subject_cls = self.num_object_cls
         # self.num_interation_cls = len(self._class_corr)
         self.num_action_cls = len(self._verbs)
 
@@ -222,7 +222,3 @@ class CustomDet(Dataset):
     def create_sizes(self, df):
         sizes = df.groupby(['new_image_path','image_width', 'image_height']).size().reset_index().rename(columns={0:'count'})
         return sizes[['image_width', 'image_height']].values.tolist()
-
-
-
-    

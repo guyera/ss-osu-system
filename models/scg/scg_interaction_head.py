@@ -53,6 +53,8 @@ class InteractionHead(Module):
                  custom_box_classifier: Module,
                  # Dataset properties
                  num_classes: int,
+                 num_obj_cls: int,
+                 num_subj_cls: int,
                  # Hyperparameters
                  box_nms_thresh: float = 0.5,
                  box_score_thresh: float = 0.2,
@@ -70,9 +72,8 @@ class InteractionHead(Module):
         self.custom_box_classifier = custom_box_classifier
 
         self.num_classes = num_classes
-        # TODO: Remove hardcoding
-        self.num_subject_cls = 100
-        self.num_object_cls = 100
+        self.num_subject_cls = num_subj_cls
+        self.num_object_cls = num_obj_cls
 
         self.box_nms_thresh = box_nms_thresh
         self.box_score_thresh = box_score_thresh
@@ -556,6 +557,8 @@ class GraphHead(Module):
                  node_encoding_size: int,
                  representation_size: int,
                  num_cls: int,
+                 num_subject_cls: int,
+                 num_object_cls: int,
                  fg_iou_thresh: float = 0.5,
                  num_iter: int = 2
                  ) -> None:
@@ -567,9 +570,8 @@ class GraphHead(Module):
         self.representation_size = representation_size
 
         self.num_cls = num_cls
-        # TODO: Remove hardcoding
-        self.num_subject_cls = 100
-        self.num_object_cls = 100
+        self.num_subject_cls = num_subject_cls
+        self.num_object_cls = num_object_cls
 
         self.fg_iou_thresh = fg_iou_thresh
         self.num_iter = num_iter
