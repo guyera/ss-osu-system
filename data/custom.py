@@ -174,7 +174,7 @@ class CustomDet(Dataset):
 
         self.num_object_cls = len(self._objects)
         self.num_subject_cls = len(self._subjects)
-        self.num_interation_cls = len(self._class_corr)
+        # self.num_interation_cls = len(self._class_corr)
         self.num_action_cls = len(self._verbs)
 
         idx = list(range(len(self._filenames)))
