@@ -1,5 +1,7 @@
+import math
 import os
 import copy
+import itertools
 import torch
 import argparse
 import torch.distributed as dist
@@ -42,8 +44,9 @@ def get_net(args):
 
 
 class Test(object):
-    def __init__(self, net, model_name, data_loader):
+    def __init__(self, net, model_name, data_loader, top_k):
         self.net = net
+        self.top_k = top_k
         self.data_loader = data_loader
         self.func_map = {
             'scg': self.scg,
@@ -55,6 +58,27 @@ class Test(object):
         self.converter = CustomInput(model_name).converter
 
     def scg(self):
+        # method can be [math.product, sum]
+        def select_topk(result, top_k, method=sum):
+            obj_val, obj_inds = result['object_scores'].topk(top_k, dim=1)
+            subj_val, subj_inds = result['subject_scores'].topk(top_k, dim=1)
+            verb_vals, verb_inds = result['verb_matrix'].topk(top_k, dim=2)
+            object_combinations = itertools.product(range(len(result['object_boxes'])), range(top_k))
+            subject_combinations = itertools.product(range(len(result['subject_boxes'])), range(top_k))
+            verb_combinations = range(top_k)
+            total_combs = list(itertools.product(subject_combinations, verb_combinations, object_combinations))
+            probs = list(map(lambda x: (x, method([subj_val[x[0][0]][x[0][1]],
+                                                   obj_val[x[2][0]][x[2][1]],
+                                                   verb_vals[x[0][0]][x[2][0]][x[1]]])), total_combs))
+            probs = sorted(probs, key=lambda x: x[1], reverse=True)
+            probs = probs[:top_k]
+            # Getting the triplets for top-k predictions in the image
+            top_k = list(map(lambda x: (x, (subj_inds[x[0][0][0]][x[0][0][1]],
+                                        verb_inds[x[0][0][0]][x[0][2][0]][x[0][1]],
+                                        obj_inds[x[0][2][0]][x[0][2][1]])), probs))
+            result['top_k'] = top_k
+            return result
+
         def clean_result(my_net, orig_result, detections):
             num_verb_cls = my_net.interaction_head.num_classes
             # Now getting the indices of object boxes which were not passed as subjects in input
@@ -63,10 +87,9 @@ class Test(object):
                     map(lambda x: not (any([(x == par_elem).all() for par_elem in detections['subject_boxes']])),
                         [elem for elem in orig_result['object_boxes']]), dtype=np.bool_))
             keep_obj_idx = torch.from_numpy(keep_obj_idx).squeeze(1)
-            # Filtering the pairs based on these indices
             # Initialising the verb matrix with zero values
             verb_matrix = torch.zeros((len(keep_obj_idx), num_verb_cls))
-            # Getting the verb prediction only on selected pairs
+            # Filtering the pairs based on these indices
             keep_pair_idx = np.argwhere(
                 np.fromiter(map(lambda x: x in keep_obj_idx,
                                 [elem for elem in orig_result['index']]), dtype=np.bool_))
@@ -74,6 +97,7 @@ class Test(object):
             orig_pair_idx = torch.index_select(orig_result['index'], 0, keep_pair_idx)
             # Getting the new pair indexes for selected pairs
             new_pair_idx = np.searchsorted(keep_obj_idx, orig_pair_idx)
+            # Getting the verb prediction only on selected pairs
             verbs = torch.index_select(orig_result['verbs'], 0, keep_pair_idx)
             verb_scores = torch.index_select(orig_result['verb_scores'], 0, keep_pair_idx)
             # getting the location in 2d matrix. Can comment not needed
@@ -139,6 +163,7 @@ class Test(object):
                     'img_id': img_id,
                 }
                 result = clean_result(self.net, result, mod_detections[0])
+                result = select_topk(result, self.top_k)
                 results.append(result)
         return results
 
@@ -325,7 +350,7 @@ def main(rank, args):
 
     net.cuda()
     net.eval()
-    tester = Test(net, args.net, val_loader).test
+    tester = Test(net, args.net, val_loader, args.top_k).test
     if args.net == 'scg':
         tester()
     elif args.net == 'idn':
@@ -340,6 +365,7 @@ if __name__ == "__main__":
                         help="Number of subprocesses/GPUs to use")
     parser.add_argument('--dataset', default='Custom', type=str)
     parser.add_argument('--net', default='scg', type=str)
+    parser.add_argument('--top-k', default=5, type=int)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='hicodet', type=str)
     parser.add_argument('--detection-dir', default='hicodet/detections/test2015',
