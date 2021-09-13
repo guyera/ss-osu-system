@@ -121,9 +121,9 @@ class InteractionHead(Module):
                 boxes = torch.cat([subject_detections[b_idx]['boxes'],
                                    object_detections[b_idx]['boxes']])
                 scores = torch.cat([subject_detections[b_idx]['scores'],
-                                   object_detections[b_idx]['scores']])
+                                    object_detections[b_idx]['scores']])
                 labels = torch.cat([subject_detections[b_idx]['labels'],
-                                   object_detections[b_idx]['labels']])
+                                    object_detections[b_idx]['labels']])
                 box_all_scores = torch.cat([subject_detections[b_idx]['box_all_scores'],
                                             object_detections[b_idx]['box_all_scores']])
                 sub_idx = list(range(len(subject_detections[b_idx]["boxes"])))
@@ -297,7 +297,7 @@ class InteractionHead(Module):
             results.append(result_dict)
 
         return results
-    
+
     def classify_boxes(self, box_features, box_coords, box_type):
         box_features = self.box_head(box_features)
         box_logits = self.custom_box_classifier[box_type](box_features)
@@ -846,5 +846,5 @@ class GraphHead(Module):
             subject_counter += n_s
             object_counter += n_o
 
-        return all_box_verb_features, all_boxes_s, all_boxes_o, all_object_scores, all_subject_scores, all_labels,\
+        return all_box_verb_features, all_boxes_s, all_boxes_o, all_object_scores, all_subject_scores, all_labels, \
                all_prior

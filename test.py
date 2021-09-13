@@ -58,24 +58,24 @@ class Test(object):
         self.converter = CustomInput(model_name).converter
 
     def scg(self):
-        # method can be [math.product, sum]
+        # method can be an element of set {math.product, sum}
         def select_topk(result, top_k, method=sum):
-            obj_val, obj_inds = result['object_scores'].topk(top_k, dim=1)
-            subj_val, subj_inds = result['subject_scores'].topk(top_k, dim=1)
-            verb_vals, verb_inds = result['verb_matrix'].topk(top_k, dim=2)
+            obj_val, obj_ind = result['object_scores'].topk(top_k, dim=1)
+            subj_val, subj_ind = result['subject_scores'].topk(top_k, dim=1)
+            verb_val, verb_ind = result['verb_matrix'].topk(top_k, dim=2)
             object_combinations = itertools.product(range(len(result['object_boxes'])), range(top_k))
             subject_combinations = itertools.product(range(len(result['subject_boxes'])), range(top_k))
             verb_combinations = range(top_k)
             total_combs = list(itertools.product(subject_combinations, verb_combinations, object_combinations))
             probs = list(map(lambda x: (x, method([subj_val[x[0][0]][x[0][1]],
                                                    obj_val[x[2][0]][x[2][1]],
-                                                   verb_vals[x[0][0]][x[2][0]][x[1]]])), total_combs))
+                                                   verb_val[x[0][0]][x[2][0]][x[1]]])), total_combs))
             probs = sorted(probs, key=lambda x: x[1], reverse=True)
             probs = probs[:top_k]
             # Getting the triplets for top-k predictions in the image
-            top_k = list(map(lambda x: (x, (subj_inds[x[0][0][0]][x[0][0][1]],
-                                        verb_inds[x[0][0][0]][x[0][2][0]][x[0][1]],
-                                        obj_inds[x[0][2][0]][x[0][2][1]])), probs))
+            top_k = list(map(lambda x: (x, (subj_ind[x[0][0][0]][x[0][0][1]],
+                                            verb_ind[x[0][0][0]][x[0][2][0]][x[0][1]],
+                                            obj_ind[x[0][2][0]][x[0][2][1]])), probs))
             result['top_k'] = top_k
             return result
 

@@ -121,10 +121,10 @@ class DataFactory(Dataset):
                                        ), target_transform=pocket.ops.ToTensor(input_format='dict')
             )
             self.human_idx = 1
-        
+
         elif name == 'Custom':
-            self.dataset = CustomDet(root=data_root, 
-                                target_transform=pocket.ops.ToTensor(input_format='dict'))
+            self.dataset = CustomDet(root=data_root,
+                                     target_transform=pocket.ops.ToTensor(input_format='dict'))
 
         else:
             assert partition in ['train', 'val', 'trainval', 'test'], \
@@ -168,7 +168,7 @@ class DataFactory(Dataset):
 
         object_boxes = boxes[object_idxs].view(-1, 4)
         object_labels = labels[object_idxs].view(-1)
-        
+
         if self.training:
             return dict(subject_boxes=subject_boxes, subject_labels=subject_labels,
                         object_boxes=object_boxes, object_labels=object_labels)
@@ -214,19 +214,19 @@ class DataFactory(Dataset):
             )
             with open(detection_path, 'r') as f:
                 detection = pocket.ops.to_tensor(json.load(f),
-                                                input_format='dict')
+                                                 input_format='dict')
 
         # print(detection)
         if not self.training:
             detection['img_id'] = self.dataset.filename(i)
-        
+
         if self.name in {'hicodet', 'vcoco'}:
             detection = self.filter_detections(detection)
-        
+
         if self._flip[i]:
             image = hflip(image)
             w, _ = image.size
             self.flip_boxes(detection, target, w)
         image = pocket.ops.to_tensor(image, 'pil')
-        
+
         return image, detection, target

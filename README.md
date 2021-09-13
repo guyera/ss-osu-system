@@ -113,7 +113,6 @@ If you have any questions regarding this repo, please post them in [issues](http
 . If you ran into issues related to the code, feel free to open an issue. Alternatively, you can contact us at
 anubhav@umd.edu or vinoj@umd.edu
 
-
 Release information for code merged on 9/9/2021
 
     Separate model folders for model files
