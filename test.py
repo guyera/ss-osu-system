@@ -64,13 +64,6 @@ class Test(object):
                         [elem for elem in orig_result['object_boxes']]), dtype=np.bool_))
             keep_obj_idx = torch.from_numpy(keep_obj_idx).squeeze(1)
             # Filtering the pairs based on these indices
-            new_result = {
-                'object_boxes': torch.index_select(orig_result['object_boxes'], 0, keep_obj_idx),
-                'subject_boxes': torch.index_select(orig_result['subject_boxes'], 0, keep_obj_idx),
-                'object_scores': torch.index_select(orig_result['object_scores'], 0, keep_obj_idx),
-                'subject_scores': torch.index_select(orig_result['subject_scores'], 0, keep_obj_idx),
-                'img_id': orig_result['img_id'],
-            }
             # Initialising the verb matrix with zero values
             verb_matrix = torch.zeros((len(keep_obj_idx), num_verb_cls))
             # Getting the verb prediction only on selected pairs
@@ -83,7 +76,7 @@ class Test(object):
             new_pair_idx = np.searchsorted(keep_obj_idx, orig_pair_idx)
             verbs = torch.index_select(orig_result['verbs'], 0, keep_pair_idx)
             verb_scores = torch.index_select(orig_result['verb_scores'], 0, keep_pair_idx)
-            # getting the location in 2d matrix
+            # getting the location in 2d matrix. Can comment not needed
             matrix_idx = torch.cat([new_pair_idx.unsqueeze(1), verbs.unsqueeze(1)], dim=1)
             verb_matrix[matrix_idx[:, 0], matrix_idx[:, 1]] = verb_scores
 
@@ -96,12 +89,22 @@ class Test(object):
             res_to_det_subj = torch.from_numpy(np.asarray(list(
                 map(lambda x: np.argwhere([(x == par_elem).all() for par_elem in detections['subject_boxes']])[0][0],
                     [elem for elem in kept_result_subjs]))))
-            new_verb_matrix = torch.zeros((len(detections['subject_boxes']), len(detections['object_boxes']), num_verb_cls))
+            new_verb_matrix = torch.zeros(
+                (len(detections['subject_boxes']), len(detections['object_boxes']), num_verb_cls))
             matrix_idx = torch.cat([res_to_det_subj[new_pair_idx].unsqueeze(1),
                                     res_to_det_obj[new_pair_idx].unsqueeze(1),
                                     verbs.unsqueeze(1)], dim=1)
             new_verb_matrix[matrix_idx[:, 0], matrix_idx[:, 1], matrix_idx[:, 2]] = verb_scores
-            new_result['verb_matrix'] = new_verb_matrix
+            new_result = {
+                'object_boxes': detections['object_boxes'],
+                'subject_boxes': detections['subject_boxes'],
+                'object_scores': torch.index_select(orig_result['object_scores'], 0, torch.IntTensor(list(
+                    (map(lambda x: np.where(res_to_det_obj == x)[0][0], range(len(detections['object_boxes']))))))),
+                'subject_scores': torch.index_select(orig_result['subject_scores'], 0, torch.IntTensor(list(
+                    (map(lambda x: np.where(res_to_det_subj == x)[0][0], range(len(detections['subject_boxes']))))))),
+                'img_id': orig_result['img_id'],
+                'verb_matrix': new_verb_matrix,
+            }
 
             return new_result
 
