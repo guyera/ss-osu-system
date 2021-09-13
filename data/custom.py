@@ -163,12 +163,12 @@ class CustomDet(Dataset):
 
         df = pd.read_csv(f)
 
-        self._filenames = list(df['new_image_path'].unique())
+        self._filenames = list(df['new_image_path'])
         self._objects = list(df['object_name'].unique())
         self._subjects = list(df['subject_name'].unique())
         self._verbs = list(df['verb_name'].unique())
 
-        self._anno = self.create_annotation(df, self._filenames)
+        self._anno = self.create_annotation(df)
 
         self._image_sizes = self.create_sizes(df)
 
@@ -177,28 +177,28 @@ class CustomDet(Dataset):
         # self.num_interation_cls = len(self._class_corr)
         self.num_action_cls = len(self._verbs)
 
-        idx = list(range(len(self._filenames)))
+        idx = list(range(len(df)))
 
         self._idx = idx
 
-    def create_annotation(self, df, imnames):
+    def create_annotation(self, df):
         # TODO : Make This Faster
         annots = list()
-        for imname in imnames:
+        
+        for i, row in df.iterrows():
             annot = dict()
-            temp = df[df["new_image_path"] == imname]
 
             boxes_h = list()
             boxes_o = list()
             objects = list()
             subjects = list()
             verbs = list()
-            for i, row in temp.iterrows():
-                boxes_h.append([row["subject_xmin"], row["subject_ymin"], row["subject_xmax"], row["subject_ymax"]])
-                boxes_o.append([row["object_xmin"], row["object_ymin"], row["object_xmax"], row["object_ymax"]])
-                objects.append(row["object_id"])
-                subjects.append(row["subject_id"])
-                verbs.append(row["verb_id"])
+            
+            boxes_h.append([row["subject_xmin"], row["subject_ymin"], row["subject_xmax"], row["subject_ymax"]])
+            boxes_o.append([row["object_xmin"], row["object_ymin"], row["object_xmax"], row["object_ymax"]])
+            objects.append(row["object_id"])
+            subjects.append(row["subject_id"])
+            verbs.append(row["verb_id"])
 
             annot["boxes_h"] = boxes_h
             annot["boxes_o"] = boxes_o
@@ -220,6 +220,14 @@ class CustomDet(Dataset):
         return corr[['idx', 'object_id', 'verb_id']].values.tolist()
 
     def create_sizes(self, df):
-        sizes = df.groupby(['new_image_path', 'image_width', 'image_height']).size().reset_index().rename(
+        df['rowidx'] = range(len(df))
+        sizes = df.groupby(['rowidx', 'image_width', 'image_height']).size().reset_index().rename(
             columns={0: 'count'})
         return sizes[['image_width', 'image_height']].values.tolist()
+
+if __name__ == '__main__' :
+
+    dataset = CustomDet(root='../final_valset - final_valset.csv',
+                                     target_transform=pocket.ops.ToTensor(input_format='dict'))
+
+    import pdb;pdb.set_trace()
