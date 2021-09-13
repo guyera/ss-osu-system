@@ -10,6 +10,7 @@ from typing import Any, Optional, List, Callable, Tuple
 from pocket.data import ImageDataset, DataSubset
 from torch.utils.data import Dataset
 
+
 class StandardTransform:
     """https://github.com/pytorch/vision/blob/master/torchvision/datasets/vision.py"""
 
@@ -58,7 +59,7 @@ class CustomDet(Dataset):
                  target_transform: Optional[Callable] = None,
                  transforms: Optional[Callable] = None) -> None:
         super(CustomDet, self).__init__()
-        
+
         if transforms is None:
             self._transforms = StandardTransform(transform, target_transform)
         elif transform is not None or target_transform is not None:
@@ -94,18 +95,18 @@ class CustomDet(Dataset):
             self.load_image(self._filenames[intra_idx]),
             self._anno[intra_idx]
         )
-    
+
     def get_detections(self, idx: int):
         det = dict()
-        
+
         det["object_boxes"] = self._anno[idx]['boxes_o']
         det["subject_boxes"] = self._anno[idx]['boxes_h']
         det["object_labels"] = self._anno[idx]["object"]
         det["subject_labels"] = self._anno[idx]["subject"]
-        
+
         return det
 
-    def load_image(self, path: str) -> Image: 
+    def load_image(self, path: str) -> Image:
         """Load an image as PIL.Image"""
         return Image.open(path)
 
@@ -146,7 +147,6 @@ class CustomDet(Dataset):
         """
         return self._verbs.copy()
 
-
     def filename(self, idx: int) -> str:
         """Return the image file name given the index"""
         return self._filenames[self._idx[idx]]
@@ -162,23 +162,23 @@ class CustomDet(Dataset):
         """
 
         df = pd.read_csv(f)
-        
+
         self._filenames = list(df['new_image_path'].unique())
         self._objects = list(df['object_name'].unique())
-        self._subjects= list(df['subject_name'].unique())
+        self._subjects = list(df['subject_name'].unique())
         self._verbs = list(df['verb_name'].unique())
 
         self._anno = self.create_annotation(df, self._filenames)
-        
+
         self._image_sizes = self.create_sizes(df)
 
-        self.num_object_cls = len(self._objects)
-        self.num_subject_cls = len(self._subjects)
+        self.num_object_cls = max(len(self._objects), len(self._subjects))
+        self.num_subject_cls = self.num_object_cls
         # self.num_interation_cls = len(self._class_corr)
         self.num_action_cls = len(self._verbs)
 
         idx = list(range(len(self._filenames)))
-    
+
         self._idx = idx
 
     def create_annotation(self, df, imnames):
@@ -199,7 +199,7 @@ class CustomDet(Dataset):
                 objects.append(row["object_id"])
                 subjects.append(row["subject_id"])
                 verbs.append(row["verb_id"])
-                
+
             annot["boxes_h"] = boxes_h
             annot["boxes_o"] = boxes_o
             annot["object"] = objects
@@ -209,20 +209,17 @@ class CustomDet(Dataset):
             annots.append(annot)
 
         return annots
-    
+
     def create_correspondence(self, df, objects, verbs):
-        corr = df.groupby(['object_name','verb_name']).size().reset_index().rename(columns={0:'count'})
-        corr["object_id"] = corr['object_name'].apply(lambda x : objects.index(x))
-        corr["verb_id"] = corr['verb_name'].apply(lambda x : verbs.index(x))
+        corr = df.groupby(['object_name', 'verb_name']).size().reset_index().rename(columns={0: 'count'})
+        corr["object_id"] = corr['object_name'].apply(lambda x: objects.index(x))
+        corr["verb_id"] = corr['verb_name'].apply(lambda x: verbs.index(x))
 
         corr['idx'] = range(len(corr))
 
         return corr[['idx', 'object_id', 'verb_id']].values.tolist()
-    
+
     def create_sizes(self, df):
-        sizes = df.groupby(['new_image_path','image_width', 'image_height']).size().reset_index().rename(columns={0:'count'})
+        sizes = df.groupby(['new_image_path', 'image_width', 'image_height']).size().reset_index().rename(
+            columns={0: 'count'})
         return sizes[['image_width', 'image_height']].values.tolist()
-
-
-
-    

@@ -279,6 +279,8 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             node_encoding_size=node_encoding_size,
             representation_size=representation_size,
             num_cls=num_classes,
+            num_object_cls=num_obj_classes,
+            num_subject_cls=num_subject_classes,
             fg_iou_thresh=fg_iou_thresh,
             num_iter=num_iterations
         )
@@ -297,6 +299,8 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             box_verb_predictor=box_verb_predictor,
             custom_box_classifier=custom_box_classifier_dict,
             num_classes=num_classes,
+            num_obj_cls=num_obj_classes,
+            num_subj_cls=num_subject_classes,
             box_nms_thresh=box_nms_thresh,
             box_score_thresh=box_score_thresh,
             max_subject=max_subject,

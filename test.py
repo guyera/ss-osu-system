@@ -1,5 +1,7 @@
+import math
 import os
 import copy
+import itertools
 import torch
 import argparse
 import torch.distributed as dist
@@ -12,14 +14,10 @@ from tqdm import tqdm
 
 from models.scg import SpatiallyConditionedGraph as SCG
 from data.data_factory import DataFactory, CustomInput
-from utils import custom_collate, Timer, AverageMeter, get_config, DataLoaderX
+from utils import custom_collate, get_config
 
-from models.idn import AE, IDN
-from data.dataset_idn import HICO_train_set, HICO_test_set
-import yaml
-import re
+from models.idn import IDN
 import pickle
-from easydict import EasyDict as edict
 
 
 def get_net(args):
@@ -46,8 +44,9 @@ def get_net(args):
 
 
 class Test(object):
-    def __init__(self, net, model_name, data_loader):
+    def __init__(self, net, model_name, data_loader, top_k):
         self.net = net
+        self.top_k = top_k
         self.data_loader = data_loader
         self.func_map = {
             'scg': self.scg,
@@ -59,38 +58,78 @@ class Test(object):
         self.converter = CustomInput(model_name).converter
 
     def scg(self):
+        # method can be an element of set {math.product, sum}
+        def select_topk(result, top_k, method=sum):
+            obj_val, obj_ind = result['object_scores'].topk(top_k, dim=1)
+            subj_val, subj_ind = result['subject_scores'].topk(top_k, dim=1)
+            verb_val, verb_ind = result['verb_matrix'].topk(top_k, dim=2)
+            object_combinations = itertools.product(range(len(result['object_boxes'])), range(top_k))
+            subject_combinations = itertools.product(range(len(result['subject_boxes'])), range(top_k))
+            verb_combinations = range(top_k)
+            total_combs = list(itertools.product(subject_combinations, verb_combinations, object_combinations))
+            probs = list(map(lambda x: (x, method([subj_val[x[0][0]][x[0][1]],
+                                                   obj_val[x[2][0]][x[2][1]],
+                                                   verb_val[x[0][0]][x[2][0]][x[1]]])), total_combs))
+            probs = sorted(probs, key=lambda x: x[1], reverse=True)
+            probs = probs[:top_k]
+            # Getting the triplets for top-k predictions in the image
+            top_k = list(map(lambda x: (x, (subj_ind[x[0][0][0]][x[0][0][1]],
+                                            verb_ind[x[0][0][0]][x[0][2][0]][x[0][1]],
+                                            obj_ind[x[0][2][0]][x[0][2][1]])), probs))
+            result['top_k'] = top_k
+            return result
 
         def clean_result(my_net, orig_result, detections):
             num_verb_cls = my_net.interaction_head.num_classes
             # Now getting the indices of object boxes which were not passed as subjects in input
             keep_obj_idx = np.argwhere(
-                np.fromiter(map(lambda x: not (any([(x == par_elem).all() for par_elem in detections['subject_boxes']])),
-                                [elem for elem in orig_result['object_boxes']]), dtype=np.bool_))
+                np.fromiter(
+                    map(lambda x: not (any([(x == par_elem).all() for par_elem in detections['subject_boxes']])),
+                        [elem for elem in orig_result['object_boxes']]), dtype=np.bool_))
             keep_obj_idx = torch.from_numpy(keep_obj_idx).squeeze(1)
-            # Filtering the pairs based on these indices
-            new_result = {
-                'object_boxes': torch.index_select(orig_result['object_boxes'], 0, keep_obj_idx),
-                'subject_boxes': torch.index_select(orig_result['subject_boxes'], 0, keep_obj_idx),
-                'object_scores': torch.index_select(orig_result['object_scores'], 0, keep_obj_idx),
-                'subject_scores': torch.index_select(orig_result['subject_scores'], 0, keep_obj_idx),
-                'img_id': orig_result['img_id'],
-            }
             # Initialising the verb matrix with zero values
             verb_matrix = torch.zeros((len(keep_obj_idx), num_verb_cls))
-            # Getting the verb prediction only on selected pairs
-            keep_verb_idx = np.argwhere(
-                np.fromiter(map(lambda x: any([(x == par_elem).all() for par_elem in keep_obj_idx]),
+            # Filtering the pairs based on these indices
+            keep_pair_idx = np.argwhere(
+                np.fromiter(map(lambda x: x in keep_obj_idx,
                                 [elem for elem in orig_result['index']]), dtype=np.bool_))
-            keep_verb_idx = torch.from_numpy(keep_verb_idx).squeeze(1)
-            orig_pair_idx = torch.index_select(orig_result['index'], 0, keep_verb_idx)
-            # Getting the new pair indexes for selected verbs
+            keep_pair_idx = torch.from_numpy(keep_pair_idx).squeeze(1)
+            orig_pair_idx = torch.index_select(orig_result['index'], 0, keep_pair_idx)
+            # Getting the new pair indexes for selected pairs
             new_pair_idx = np.searchsorted(keep_obj_idx, orig_pair_idx)
-            verbs = torch.index_select(orig_result['verbs'], 0, keep_verb_idx)
-            verb_scores = torch.index_select(orig_result['verb_scores'], 0, keep_verb_idx)
-            # getting the location in 2d matrix
+            # Getting the verb prediction only on selected pairs
+            verbs = torch.index_select(orig_result['verbs'], 0, keep_pair_idx)
+            verb_scores = torch.index_select(orig_result['verb_scores'], 0, keep_pair_idx)
+            # getting the location in 2d matrix. Can comment not needed
             matrix_idx = torch.cat([new_pair_idx.unsqueeze(1), verbs.unsqueeze(1)], dim=1)
             verb_matrix[matrix_idx[:, 0], matrix_idx[:, 1]] = verb_scores
-            new_result['verb_matrix'] = verb_matrix
+
+            # Now re-mapping this 2d matrix (sub-obj pair X verb)  to a 3d matrix (subj X obj X verb)
+            kept_result_objs = orig_result['object_boxes'][keep_obj_idx]
+            kept_result_subjs = orig_result['subject_boxes'][keep_obj_idx]
+            res_to_det_obj = torch.from_numpy(np.asarray(list(
+                map(lambda x: np.argwhere([(x == par_elem).all() for par_elem in detections['object_boxes']])[0][0],
+                    [elem for elem in kept_result_objs]))))
+            res_to_det_subj = torch.from_numpy(np.asarray(list(
+                map(lambda x: np.argwhere([(x == par_elem).all() for par_elem in detections['subject_boxes']])[0][0],
+                    [elem for elem in kept_result_subjs]))))
+            new_verb_matrix = torch.zeros(
+                (len(detections['subject_boxes']), len(detections['object_boxes']), num_verb_cls))
+            matrix_idx = torch.cat([res_to_det_subj[new_pair_idx].unsqueeze(1),
+                                    res_to_det_obj[new_pair_idx].unsqueeze(1),
+                                    verbs.unsqueeze(1)], dim=1)
+            new_verb_matrix[matrix_idx[:, 0], matrix_idx[:, 1], matrix_idx[:, 2]] = verb_scores
+            new_result = {
+                'object_boxes': detections['object_boxes'],
+                'subject_boxes': detections['subject_boxes'],
+                'object_scores': torch.index_select(orig_result['object_scores'], 0, torch.IntTensor(list(
+                    (map(lambda x: np.where(res_to_det_obj == x)[0][0], range(len(detections['object_boxes']))))))),
+                'subject_scores': torch.index_select(orig_result['subject_scores'], 0, torch.IntTensor(list(
+                    (map(lambda x: np.where(res_to_det_subj == x)[0][0], range(len(detections['subject_boxes']))))))),
+                'img_id': orig_result['img_id'],
+                'verb_matrix': new_verb_matrix,
+            }
+
             return new_result
 
         results = list()
@@ -101,7 +140,8 @@ class Test(object):
 
             inputs_copy = copy.deepcopy(inputs)
             input_data_copy = pocket.ops.relocate_to_cuda(inputs_copy)
-            _, mod_detections, _, _ = self.net.preprocess(*input_data_copy)  # This is needed to do box matching and remove
+            _, mod_detections, _, _ = self.net.preprocess(
+                *input_data_copy)  # This is needed to do box matching and remove
             # the results where subjects have been made objects. This piece of logic might get moved inside the
             # model class in future releases
             mod_detections = pocket.ops.relocate_to_cpu(mod_detections)
@@ -116,13 +156,14 @@ class Test(object):
                     'subject_boxes': output['boxes_s'],
                     'object_scores': output['object_scores'],
                     'subject_scores': output['subject_scores'],
-                    'index': output['index'], # index of the box pair. Same
+                    'index': output['index'],  # index of the box pair. Same
                     'verbs': output['prediction'],  # verbs are predicted considering the max score class on objects
                     #                                 and subjects
                     'verb_scores': output['scores'],
                     'img_id': img_id,
                 }
                 result = clean_result(self.net, result, mod_detections[0])
+                result = select_topk(result, self.top_k)
                 results.append(result)
         return results
 
@@ -283,9 +324,9 @@ def main(rank, args):
         if args.net == 'scg':
             args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
             args.num_subject_classes = 80
-            
+
         args.num_classes = 117
-    
+
     elif args.dataset == 'Custom':
         if args.net == 'scg':
             args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
@@ -309,7 +350,7 @@ def main(rank, args):
 
     net.cuda()
     net.eval()
-    tester = Test(net, args.net, val_loader).test
+    tester = Test(net, args.net, val_loader, args.top_k).test
     if args.net == 'scg':
         tester()
     elif args.net == 'idn':
@@ -324,6 +365,7 @@ if __name__ == "__main__":
                         help="Number of subprocesses/GPUs to use")
     parser.add_argument('--dataset', default='Custom', type=str)
     parser.add_argument('--net', default='scg', type=str)
+    parser.add_argument('--top-k', default=5, type=int)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='hicodet', type=str)
     parser.add_argument('--detection-dir', default='hicodet/detections/test2015',
@@ -341,7 +383,6 @@ if __name__ == "__main__":
     parser.add_argument('--config_path', dest='config_path', help='Select config file', default='configs/IDN.yml',
                         type=str)
     parser.add_argument('--multiporcessing', action='store_true', help="Enable multiporcessing")
-    
 
     args = parser.parse_args()
     os.environ["MASTER_ADDR"] = "localhost"

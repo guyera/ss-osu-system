@@ -53,6 +53,8 @@ class InteractionHead(Module):
                  custom_box_classifier: Module,
                  # Dataset properties
                  num_classes: int,
+                 num_obj_cls: int,
+                 num_subj_cls: int,
                  # Hyperparameters
                  box_nms_thresh: float = 0.5,
                  box_score_thresh: float = 0.2,
@@ -70,9 +72,8 @@ class InteractionHead(Module):
         self.custom_box_classifier = custom_box_classifier
 
         self.num_classes = num_classes
-        # TODO: Remove hardcoding
-        self.num_subject_cls = 100
-        self.num_object_cls = 100
+        self.num_subject_cls = num_subj_cls
+        self.num_object_cls = num_obj_cls
 
         self.box_nms_thresh = box_nms_thresh
         self.box_score_thresh = box_score_thresh
@@ -120,9 +121,9 @@ class InteractionHead(Module):
                 boxes = torch.cat([subject_detections[b_idx]['boxes'],
                                    object_detections[b_idx]['boxes']])
                 scores = torch.cat([subject_detections[b_idx]['scores'],
-                                   object_detections[b_idx]['scores']])
+                                    object_detections[b_idx]['scores']])
                 labels = torch.cat([subject_detections[b_idx]['labels'],
-                                   object_detections[b_idx]['labels']])
+                                    object_detections[b_idx]['labels']])
                 box_all_scores = torch.cat([subject_detections[b_idx]['box_all_scores'],
                                             object_detections[b_idx]['box_all_scores']])
                 sub_idx = list(range(len(subject_detections[b_idx]["boxes"])))
@@ -296,7 +297,7 @@ class InteractionHead(Module):
             results.append(result_dict)
 
         return results
-    
+
     def classify_boxes(self, box_features, box_coords, box_type):
         box_features = self.box_head(box_features)
         box_logits = self.custom_box_classifier[box_type](box_features)
@@ -556,6 +557,8 @@ class GraphHead(Module):
                  node_encoding_size: int,
                  representation_size: int,
                  num_cls: int,
+                 num_subject_cls: int,
+                 num_object_cls: int,
                  fg_iou_thresh: float = 0.5,
                  num_iter: int = 2
                  ) -> None:
@@ -567,9 +570,8 @@ class GraphHead(Module):
         self.representation_size = representation_size
 
         self.num_cls = num_cls
-        # TODO: Remove hardcoding
-        self.num_subject_cls = 100
-        self.num_object_cls = 100
+        self.num_subject_cls = num_subject_cls
+        self.num_object_cls = num_object_cls
 
         self.fg_iou_thresh = fg_iou_thresh
         self.num_iter = num_iter
@@ -844,5 +846,5 @@ class GraphHead(Module):
             subject_counter += n_s
             object_counter += n_o
 
-        return all_box_verb_features, all_boxes_s, all_boxes_o, all_object_scores, all_subject_scores, all_labels,\
+        return all_box_verb_features, all_boxes_s, all_boxes_o, all_object_scores, all_subject_scores, all_labels, \
                all_prior
