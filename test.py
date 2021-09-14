@@ -170,6 +170,7 @@ class Test(object):
                 result = select_topk(result, self.top_k)
                 results.append(result)
                 
+                # gt_triplet expects only one box as the input and will fail otherwise                
                 gt_triplet = [batch[-1][0]["subject"].item(), batch[-1][0]["verb"].item(), batch[-1][0]["object"].item()]
                 pred_triplets = [np.array(x[-1]).tolist() for x in result['top_k']]
 
