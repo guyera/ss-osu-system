@@ -136,6 +136,7 @@ class Test(object):
         results = list()
         correct = 0.
         incorrect = 0.
+        triplet_accuracy = dict()
         for i, batch in tqdm(enumerate(self.data_loader)):
             inputs = batch[:-1]
             img_id = inputs[1][0]['img_id']
@@ -174,13 +175,25 @@ class Test(object):
                 gt_triplet = [batch[-1][0]["subject"].item(), batch[-1][0]["verb"].item(), batch[-1][0]["object"].item()]
                 pred_triplets = [np.array(x[-1]).tolist() for x in result['top_k']]
 
+                # This creates the accuracy of all the triplets
+                if tuple(gt_triplet) not in triplet_accuracy:
+                    triplet_accuracy[tuple(gt_triplet)] = {'correct' : 0, 'incorrect' : 0}
+                
                 if gt_triplet in pred_triplets:
                     correct += 1
+                    triplet_accuracy[tuple(gt_triplet)]["correct"] += 1
                 else:
-                    incorrect +=1 
+                    incorrect +=1
+                    triplet_accuracy[tuple(gt_triplet)]["incorrect"] += 1
+                    
                 
         print(f"Correct : {correct}, Incorrect :  {incorrect}, Total : {correct+incorrect}")
         print(f"Accuracy :  {correct / (correct + incorrect)}")
+
+        print("Triplet level Accuracy")
+        for key in triplet_accuracy:
+            gt = triplet_accuracy[key]
+            print(f"GT : {key}, Correct : {gt['correct']}, Incorrect : {gt['incorrect']}, Accuracy : {gt['correct'] / (gt['correct'] + gt['incorrect'])}")
 
         return results
 
