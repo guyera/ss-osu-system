@@ -110,6 +110,8 @@ class Test(object):
             res_to_det_obj = torch.from_numpy(np.asarray(list(
                 map(lambda x: np.argwhere([(x == par_elem).all() for par_elem in detections['object_boxes']])[0][0],
                     [elem for elem in kept_result_objs]))))
+            # Duplicate boxes are not acceptable in either subject or object list. There can be same box in both the
+            # lists though
             res_to_det_subj = torch.from_numpy(np.asarray(list(
                 map(lambda x: np.argwhere([(x == par_elem).all() for par_elem in detections['subject_boxes']])[0][0],
                     [elem for elem in kept_result_subjs]))))

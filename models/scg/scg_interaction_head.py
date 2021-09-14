@@ -135,14 +135,14 @@ class InteractionHead(Module):
             active_idx = torch.nonzero(
                 scores >= self.box_score_thresh
             ).squeeze(1)
-            # Class-wise non-maximum suppression
-            keep_idx = box_ops.batched_nms(
-                boxes[active_idx],
-                scores[active_idx],
-                labels[active_idx],
-                self.box_nms_thresh
-            )
-            active_idx = active_idx[keep_idx]
+            # # Class-wise non-maximum suppression
+            # keep_idx = box_ops.batched_nms(
+            #     boxes[active_idx],
+            #     scores[active_idx],
+            #     labels[active_idx],
+            #     self.box_nms_thresh
+            # )
+            # active_idx = active_idx[keep_idx]
             # Sort detections by scores
             sorted_idx = torch.argsort(scores[active_idx], descending=True)
             active_idx = active_idx[sorted_idx]
@@ -299,6 +299,7 @@ class InteractionHead(Module):
         return results
 
     def classify_boxes(self, box_features, box_coords, box_type):
+        # TODO: Add support for different number of classes for objects and subjects
         box_features = self.box_head(box_features)
         box_logits = self.custom_box_classifier[box_type](box_features)
         box_scores = F.softmax(box_logits, -1).split([len(elem) for elem in box_coords], 0)
