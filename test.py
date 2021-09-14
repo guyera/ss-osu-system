@@ -179,7 +179,7 @@ class Test(object):
                     incorrect +=1 
                 
         print(f"Correct : {correct}, Incorrect :  {incorrect}, Total : {correct+incorrect}")
-        print("Accuracy : " , correct/ (correct + incorrect))
+        print(f"Accuracy :  {correct / (correct + incorrect)}")
 
         return results
 
