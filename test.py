@@ -107,7 +107,9 @@ class Test(object):
             # Now re-mapping this 2d matrix (sub-obj pair X verb)  to a 3d matrix (subj X obj X verb)
             kept_result_objs = orig_result['object_boxes'][keep_obj_idx]
             kept_result_subjs = orig_result['subject_boxes'][keep_obj_idx]
-            res_to_det_obj = torch.from_numpy(np.asarray(list(map(lambda x: np.argwhere([(x == par_elem).all() for par_elem in detections['object_boxes']])[0][0],[elem for elem in kept_result_objs]))))
+            res_to_det_obj = torch.from_numpy(np.asarray(list(
+                map(lambda x: np.argwhere([(x == par_elem).all() for par_elem in detections['object_boxes']])[0][0],
+                    [elem for elem in kept_result_objs]))))
             res_to_det_subj = torch.from_numpy(np.asarray(list(
                 map(lambda x: np.argwhere([(x == par_elem).all() for par_elem in detections['subject_boxes']])[0][0],
                     [elem for elem in kept_result_subjs]))))
@@ -121,7 +123,8 @@ class Test(object):
             new_result = {
                 'object_boxes': detections['object_boxes'],
                 'subject_boxes': detections['subject_boxes'],
-                'object_scores': torch.index_select(orig_result['object_scores'], 0, torch.IntTensor(list((map(lambda x: np.where(res_to_det_obj == x)[0][0], range(len(detections['object_boxes']))))))),
+                'object_scores': torch.index_select(orig_result['object_scores'], 0, torch.IntTensor(list(
+                    (map(lambda x: np.where(res_to_det_obj == x)[0][0], range(len(detections['object_boxes']))))))),
                 'subject_scores': torch.index_select(orig_result['subject_scores'], 0, torch.IntTensor(list(
                     (map(lambda x: np.where(res_to_det_subj == x)[0][0], range(len(detections['subject_boxes']))))))),
                 'img_id': orig_result['img_id'],

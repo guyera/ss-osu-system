@@ -220,14 +220,4 @@ class CustomDet(Dataset):
         return corr[['idx', 'object_id', 'verb_id']].values.tolist()
 
     def create_sizes(self, df):
-        df['rowidx'] = range(len(df))
-        sizes = df.groupby(['rowidx', 'image_width', 'image_height']).size().reset_index().rename(
-            columns={0: 'count'})
-        return sizes[['image_width', 'image_height']].values.tolist()
-
-if __name__ == '__main__' :
-
-    dataset = CustomDet(root='../final_valset - final_valset.csv',
-                                     target_transform=pocket.ops.ToTensor(input_format='dict'))
-
-    import pdb;pdb.set_trace()
+        return df[['image_width', 'image_height']].values.tolist()
