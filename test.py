@@ -6,6 +6,7 @@ import torch
 import argparse
 import torch.distributed as dist
 import torch.multiprocessing as mp
+import pandas as pd
 from torch.utils.data import DataLoader, DistributedSampler
 
 import pocket
@@ -107,9 +108,7 @@ class Test(object):
             # Now re-mapping this 2d matrix (sub-obj pair X verb)  to a 3d matrix (subj X obj X verb)
             kept_result_objs = orig_result['object_boxes'][keep_obj_idx]
             kept_result_subjs = orig_result['subject_boxes'][keep_obj_idx]
-            res_to_det_obj = torch.from_numpy(np.asarray(list(
-                map(lambda x: np.argwhere([(x == par_elem).all() for par_elem in detections['object_boxes']])[0][0],
-                    [elem for elem in kept_result_objs]))))
+            res_to_det_obj = torch.from_numpy(np.asarray(list(map(lambda x: np.argwhere([(x == par_elem).all() for par_elem in detections['object_boxes']])[0][0],[elem for elem in kept_result_objs]))))
             res_to_det_subj = torch.from_numpy(np.asarray(list(
                 map(lambda x: np.argwhere([(x == par_elem).all() for par_elem in detections['subject_boxes']])[0][0],
                     [elem for elem in kept_result_subjs]))))
@@ -118,12 +117,15 @@ class Test(object):
             matrix_idx = torch.cat([res_to_det_subj[new_pair_idx].unsqueeze(1),
                                     res_to_det_obj[new_pair_idx].unsqueeze(1),
                                     verbs.unsqueeze(1)], dim=1)
-            new_verb_matrix[matrix_idx[:, 0], matrix_idx[:, 1], matrix_idx[:, 2]] = verb_scores
+            try:
+                new_verb_matrix[matrix_idx[:, 0], matrix_idx[:, 1], matrix_idx[:, 2]] = verb_scores
+            except:
+                import pdb;pdb.set_trace()
+            
             new_result = {
                 'object_boxes': detections['object_boxes'],
                 'subject_boxes': detections['subject_boxes'],
-                'object_scores': torch.index_select(orig_result['object_scores'], 0, torch.IntTensor(list(
-                    (map(lambda x: np.where(res_to_det_obj == x)[0][0], range(len(detections['object_boxes']))))))),
+                'object_scores': torch.index_select(orig_result['object_scores'], 0, torch.IntTensor(list((map(lambda x: np.where(res_to_det_obj == x)[0][0], range(len(detections['object_boxes']))))))),
                 'subject_scores': torch.index_select(orig_result['subject_scores'], 0, torch.IntTensor(list(
                     (map(lambda x: np.where(res_to_det_subj == x)[0][0], range(len(detections['subject_boxes']))))))),
                 'img_id': orig_result['img_id'],
@@ -133,12 +135,18 @@ class Test(object):
             return new_result
 
         results = list()
-        for batch in tqdm(self.data_loader):
+        correct = 0.
+        incorrect = 0.
+        for i, batch in tqdm(enumerate(self.data_loader)):
+            if i in [154, 183]:
+                continue
             inputs = batch[:-1]
             img_id = inputs[1][0]['img_id']
+            # print(img_id)
             inputs[1][0].pop('img_id', None)
 
             inputs_copy = copy.deepcopy(inputs)
+            # import pdb;pdb.set_trace()
             input_data_copy = pocket.ops.relocate_to_cuda(inputs_copy)
             _, mod_detections, _, _ = self.net.preprocess(
                 *input_data_copy)  # This is needed to do box matching and remove
@@ -162,9 +170,24 @@ class Test(object):
                     'verb_scores': output['scores'],
                     'img_id': img_id,
                 }
+                # import pdb;pdb.set_trace()
                 result = clean_result(self.net, result, mod_detections[0])
                 result = select_topk(result, self.top_k)
                 results.append(result)
+                
+                gt_triplet = [batch[-1][0]["subject"].item(), batch[-1][0]["verb"].item(), batch[-1][0]["object"].item()]
+                pred_triplets = [np.array(x[-1]).tolist() for x in result['top_k']]
+
+                import pdb;pdb.set_trace()
+
+                if gt_triplet in pred_triplets:
+                    correct += 1
+                else:
+                    incorrect +=1 
+                
+        print(correct, incorrect, correct+incorrect)
+        print(correct/ (correct + incorrect))
+
         return results
 
     def drg(self, input_data):
@@ -285,7 +308,7 @@ class Test(object):
 
     def cascaded_hoi(self, input_data):
         raise NotImplementedError
-
+        
 
 def main(rank, args):
     torch.cuda.set_device(0)
@@ -352,7 +375,8 @@ def main(rank, args):
     net.eval()
     tester = Test(net, args.net, val_loader, args.top_k).test
     if args.net == 'scg':
-        tester()
+        results = tester()
+        # print(evaluate_accuracy(results, args.data_root))
     elif args.net == 'idn':
         tester()
     else:
