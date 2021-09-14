@@ -121,6 +121,7 @@ class Test(object):
                                     res_to_det_obj[new_pair_idx].unsqueeze(1),
                                     verbs.unsqueeze(1)], dim=1)
             new_verb_matrix[matrix_idx[:, 0], matrix_idx[:, 1], matrix_idx[:, 2]] = verb_scores
+            
             new_result = {
                 'object_boxes': detections['object_boxes'],
                 'subject_boxes': detections['subject_boxes'],
@@ -135,7 +136,9 @@ class Test(object):
             return new_result
 
         results = list()
-        for batch in tqdm(self.data_loader):
+        correct = 0.
+        incorrect = 0.
+        for i, batch in tqdm(enumerate(self.data_loader)):
             inputs = batch[:-1]
             img_id = inputs[1][0]['img_id']
             inputs[1][0].pop('img_id', None)
@@ -164,9 +167,23 @@ class Test(object):
                     'verb_scores': output['scores'],
                     'img_id': img_id,
                 }
+                
                 result = clean_result(self.net, result, mod_detections[0])
                 result = select_topk(result, self.top_k)
                 results.append(result)
+                
+                # gt_triplet expects only one box as the input and will fail otherwise                
+                gt_triplet = [batch[-1][0]["subject"].item(), batch[-1][0]["verb"].item(), batch[-1][0]["object"].item()]
+                pred_triplets = [np.array(x[-1]).tolist() for x in result['top_k']]
+
+                if gt_triplet in pred_triplets:
+                    correct += 1
+                else:
+                    incorrect +=1 
+                
+        print(f"Correct : {correct}, Incorrect :  {incorrect}, Total : {correct+incorrect}")
+        print(f"Accuracy :  {correct / (correct + incorrect)}")
+
         return results
 
     def drg(self, input_data):
@@ -287,7 +304,7 @@ class Test(object):
 
     def cascaded_hoi(self, input_data):
         raise NotImplementedError
-
+        
 
 def main(rank, args):
     torch.cuda.set_device(0)
