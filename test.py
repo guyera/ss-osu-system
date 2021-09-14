@@ -6,7 +6,6 @@ import torch
 import argparse
 import torch.distributed as dist
 import torch.multiprocessing as mp
-import pandas as pd
 from torch.utils.data import DataLoader, DistributedSampler
 
 import pocket
@@ -117,10 +116,7 @@ class Test(object):
             matrix_idx = torch.cat([res_to_det_subj[new_pair_idx].unsqueeze(1),
                                     res_to_det_obj[new_pair_idx].unsqueeze(1),
                                     verbs.unsqueeze(1)], dim=1)
-            try:
-                new_verb_matrix[matrix_idx[:, 0], matrix_idx[:, 1], matrix_idx[:, 2]] = verb_scores
-            except:
-                import pdb;pdb.set_trace()
+            new_verb_matrix[matrix_idx[:, 0], matrix_idx[:, 1], matrix_idx[:, 2]] = verb_scores
             
             new_result = {
                 'object_boxes': detections['object_boxes'],
@@ -138,15 +134,11 @@ class Test(object):
         correct = 0.
         incorrect = 0.
         for i, batch in tqdm(enumerate(self.data_loader)):
-            if i in [154, 183]:
-                continue
             inputs = batch[:-1]
             img_id = inputs[1][0]['img_id']
-            # print(img_id)
             inputs[1][0].pop('img_id', None)
 
             inputs_copy = copy.deepcopy(inputs)
-            # import pdb;pdb.set_trace()
             input_data_copy = pocket.ops.relocate_to_cuda(inputs_copy)
             _, mod_detections, _, _ = self.net.preprocess(
                 *input_data_copy)  # This is needed to do box matching and remove
@@ -170,7 +162,7 @@ class Test(object):
                     'verb_scores': output['scores'],
                     'img_id': img_id,
                 }
-                # import pdb;pdb.set_trace()
+                
                 result = clean_result(self.net, result, mod_detections[0])
                 result = select_topk(result, self.top_k)
                 results.append(result)
@@ -178,15 +170,13 @@ class Test(object):
                 gt_triplet = [batch[-1][0]["subject"].item(), batch[-1][0]["verb"].item(), batch[-1][0]["object"].item()]
                 pred_triplets = [np.array(x[-1]).tolist() for x in result['top_k']]
 
-                import pdb;pdb.set_trace()
-
                 if gt_triplet in pred_triplets:
                     correct += 1
                 else:
                     incorrect +=1 
                 
-        print(correct, incorrect, correct+incorrect)
-        print(correct/ (correct + incorrect))
+        print(f"Correct : {correct}, Incorrect :  {incorrect}, Total : {correct+incorrect}")
+        print("Accuracy : " , correct/ (correct + incorrect))
 
         return results
 
@@ -375,8 +365,7 @@ def main(rank, args):
     net.eval()
     tester = Test(net, args.net, val_loader, args.top_k).test
     if args.net == 'scg':
-        results = tester()
-        # print(evaluate_accuracy(results, args.data_root))
+        tester()
     elif args.net == 'idn':
         tester()
     else:
