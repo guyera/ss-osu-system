@@ -110,6 +110,8 @@ class Test(object):
             res_to_det_obj = torch.from_numpy(np.asarray(list(
                 map(lambda x: np.argwhere([(x == par_elem).all() for par_elem in detections['object_boxes']])[0][0],
                     [elem for elem in kept_result_objs]))))
+            # Duplicate boxes are not acceptable in either subject or object list. There can be same box in both the
+            # lists though
             res_to_det_subj = torch.from_numpy(np.asarray(list(
                 map(lambda x: np.argwhere([(x == par_elem).all() for par_elem in detections['subject_boxes']])[0][0],
                     [elem for elem in kept_result_subjs]))))
@@ -335,6 +337,9 @@ def main(rank, args):
             data_root=args.data_root,
             detection_root=args.detection_dir,
             training=False,
+            num_subj_cls=args.num_subj_cls,
+            num_obj_cls=args.num_obj_cls,
+            num_action_cls=args.num_action_cls
         )
 
         val_loader = DataLoader(
@@ -404,6 +409,9 @@ if __name__ == "__main__":
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
     parser.add_argument('--box-score-thresh', default=0.0, type=float)
+    parser.add_argument('--num-subj-cls', default=8, type=int)
+    parser.add_argument('--num-obj-cls', default=8, type=int)
+    parser.add_argument('--num-action-cls', default=7, type=int)
     parser.add_argument('--max-subject', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
     parser.add_argument('--num-workers', default=2, type=int)
