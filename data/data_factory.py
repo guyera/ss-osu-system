@@ -91,6 +91,9 @@ class DataFactory(Dataset):
                  box_score_thresh_h=0.2,
                  box_score_thresh_o=0.2,
                  training=True,
+                 num_subj_cls=0,
+                 num_obj_cls=0,
+                 num_action_cls=0
                  ):
         self.training = training
         if name not in ['hicodet', 'vcoco', 'Custom']:
@@ -124,7 +127,10 @@ class DataFactory(Dataset):
 
         elif name == 'Custom':
             self.dataset = CustomDet(root=data_root,
-                                     target_transform=pocket.ops.ToTensor(input_format='dict'))
+                                     target_transform=pocket.ops.ToTensor(input_format='dict'),
+                                     num_subj_cls=num_subj_cls,
+                                     num_obj_cls=num_obj_cls,
+                                     num_action_cls=num_action_cls)
 
         else:
             assert partition in ['train', 'val', 'trainval', 'test'], \
