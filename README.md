@@ -21,7 +21,7 @@ This is the repo for the SAIL-ON SVO. Spatially Conditioned Graphs (SCG) is the 
 - [Prerequisites](#prerequisites)
 - [Data Utilities](#data-utilities)
     * [HICO-DET](#hico-det)
-    * [SAIL-ON Custom Data](#sailon-custom-data)
+    * [SAIL-ON Custom Data](#custom-sailon-data)
 - [Testing](#testing)
 - [Training](#training)
 - [Contact](#contact)
@@ -44,7 +44,7 @@ git submodule init
 git submodule update
 ```
 ### Custom Sailon Data
-[sailon-custom-data]
+
 1. Images, annotations and pretrained model is available [here](https://drive.google.com/drive/u/1/folders/18sp-dXGFyIfOH2K3ZZVfDLAna_rCEcn9)
 
 
@@ -92,7 +92,7 @@ If you have any questions regarding this repo, please post them in [issues](http
 . If you ran into issues related to the code, feel free to open an issue. Alternatively, you can contact us at
 anubhav@umd.edu or vinoj@umd.edu
 
-## Release information for code merged on 9/9/2021
+## Release information for code merged on 9/15/2021
 
     Separate model folders for model files
     Separate box_coords, box_scores for subjects and objects
@@ -102,9 +102,14 @@ anubhav@umd.edu or vinoj@umd.edu
     Separate classification heads for subject and object
         NOTE: Will work only with same backbone and same no. of classes for now.
     Data loader for custom dataset
+    3D Matrix for SVO probability calculation
+    README updated for custom data
+    Environment file included for easy installation
+
 
 ## TODO
     Support “unknown”/“null” classes. 
     Support missing subject/object boxes (-1s as input). 
     Support for different number of subjects and objects. 
     Integrate with SAIL-ON API.
+    Remove HICO-DET and V-COCO sub modules
