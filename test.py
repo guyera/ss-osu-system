@@ -336,6 +336,7 @@ def main(rank, args):
             name=args.dataset, partition=args.partitions[1],
             data_root=args.data_root,
             detection_root=args.detection_dir,
+            csv_path=args.csv_path,
             training=False,
             num_subj_cls=args.num_subj_cls,
             num_obj_cls=args.num_obj_cls,
@@ -403,6 +404,7 @@ if __name__ == "__main__":
     parser.add_argument('--top-k', default=5, type=int)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='hicodet', type=str)
+    parser.add_argument('--csv-path', default=None, type=str, help="Csv Path is required only for Custom dataset")
     parser.add_argument('--detection-dir', default='hicodet/detections/test2015',
                         type=str, help="Directory where detection files are stored")
     parser.add_argument('--partition', default='test2015', type=str)
