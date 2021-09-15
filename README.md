@@ -39,6 +39,9 @@ cd /path/to/sailon-hoi
 git submodule init
 git submodule update
 ```
+### Custom Sailon Data
+
+1. The data is available [here](https://drive.google.com/drive/u/1/folders/18sp-dXGFyIfOH2K3ZZVfDLAna_rCEcn9)
 
 ### HICO-DET
 
