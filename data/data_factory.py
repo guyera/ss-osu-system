@@ -87,6 +87,7 @@ class DataFactory(Dataset):
     def __init__(self,
                  name, partition,
                  data_root, detection_root,
+                 csv_path=None,
                  flip=False,
                  box_score_thresh_h=0.2,
                  box_score_thresh_o=0.2,
@@ -126,7 +127,7 @@ class DataFactory(Dataset):
             self.human_idx = 1
 
         elif name == 'Custom':
-            self.dataset = CustomDet(root=data_root,
+            self.dataset = CustomDet(root=data_root,csv_path=csv_path,
                                      target_transform=pocket.ops.ToTensor(input_format='dict'),
                                      num_subj_cls=num_subj_cls,
                                      num_obj_cls=num_obj_cls,

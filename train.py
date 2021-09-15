@@ -172,14 +172,22 @@ def main(rank, args):
         trainset = DataFactory(
             name=args.dataset, partition=args.partitions[1],
             data_root=args.data_root,
+            csv_path=args.csv_path,
             detection_root=args.train_detection_dir,
+            num_subj_cls=args.num_subj_cls,
+            num_obj_cls=args.num_obj_cls,
+            num_action_cls=args.num_action_cls,
             flip=True
         )
 
         valset = DataFactory(
             name=args.dataset, partition=args.partitions[1],
             data_root=args.data_root,
-            detection_root=args.val_detection_dir
+            csv_path=args.csv_path,
+            detection_root=args.val_detection_dir,
+            num_subj_cls=args.num_subj_cls,
+            num_obj_cls=args.num_obj_cls,
+            num_action_cls=args.num_action_cls
         )
 
         train_loader = DataLoader(
@@ -267,6 +275,7 @@ if __name__ == "__main__":
     parser.add_argument('--net', default='scg', type=str)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='hicodet', type=str, help="Give full csv path for Custom dataset")
+    parser.add_argument('--csv-path', default=None, type=str, help="Csv Path is required only for Custom dataset")
     parser.add_argument('--train-detection-dir', default='hicodet/detections/test2015', type=str)
     parser.add_argument('--val-detection-dir', default='hicodet/detections/test2015', type=str)
     parser.add_argument('--num-iter', default=2, type=int,
@@ -281,6 +290,9 @@ if __name__ == "__main__":
     parser.add_argument('--lr-decay', default=0.1, type=float,
                         help="The multiplier by which the learning rate is reduced")
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
+    parser.add_argument('--num-subj-cls', default=8, type=int)
+    parser.add_argument('--num-obj-cls', default=8, type=int)
+    parser.add_argument('--num-action-cls', default=7, type=int)
     parser.add_argument('--max-subject', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
     parser.add_argument('--milestones', nargs='+', default=[6, ], type=int,

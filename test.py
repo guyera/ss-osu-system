@@ -138,6 +138,7 @@ class Test(object):
         results = list()
         correct = 0.
         incorrect = 0.
+        triplet_accuracy = dict()
         for i, batch in tqdm(enumerate(self.data_loader)):
             inputs = batch[:-1]
             img_id = inputs[1][0]['img_id']
@@ -176,13 +177,25 @@ class Test(object):
                 gt_triplet = [batch[-1][0]["subject"].item(), batch[-1][0]["verb"].item(), batch[-1][0]["object"].item()]
                 pred_triplets = [np.array(x[-1]).tolist() for x in result['top_k']]
 
+                # This creates the accuracy of all the triplets
+                if tuple(gt_triplet) not in triplet_accuracy:
+                    triplet_accuracy[tuple(gt_triplet)] = {'correct' : 0, 'incorrect' : 0}
+                
                 if gt_triplet in pred_triplets:
                     correct += 1
+                    triplet_accuracy[tuple(gt_triplet)]["correct"] += 1
                 else:
-                    incorrect +=1 
+                    incorrect +=1
+                    triplet_accuracy[tuple(gt_triplet)]["incorrect"] += 1
+                    
                 
         print(f"Correct : {correct}, Incorrect :  {incorrect}, Total : {correct+incorrect}")
         print(f"Accuracy :  {correct / (correct + incorrect)}")
+
+        print("Triplet level Accuracy")
+        for key in triplet_accuracy:
+            gt = triplet_accuracy[key]
+            print(f"GT : {key}, Correct : {gt['correct']}, Incorrect : {gt['incorrect']}, Accuracy : {gt['correct'] / (gt['correct'] + gt['incorrect'])}")
 
         return results
 
@@ -323,6 +336,7 @@ def main(rank, args):
             name=args.dataset, partition=args.partitions[1],
             data_root=args.data_root,
             detection_root=args.detection_dir,
+            csv_path=args.csv_path,
             training=False,
             num_subj_cls=args.num_subj_cls,
             num_obj_cls=args.num_obj_cls,
@@ -390,6 +404,7 @@ if __name__ == "__main__":
     parser.add_argument('--top-k', default=5, type=int)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='hicodet', type=str)
+    parser.add_argument('--csv-path', default=None, type=str, help="Csv Path is required only for Custom dataset")
     parser.add_argument('--detection-dir', default='hicodet/detections/test2015',
                         type=str, help="Directory where detection files are stored")
     parser.add_argument('--partition', default='test2015', type=str)

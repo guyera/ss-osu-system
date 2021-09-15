@@ -54,7 +54,7 @@ class CustomDet(Dataset):
             and its target as entry and returns a transformed version.
     """
 
-    def __init__(self, root: str,
+    def __init__(self, root: str, csv_path: str,
                  transform: Optional[Callable] = None,
                  target_transform: Optional[Callable] = None,
                  transforms: Optional[Callable] = None,
@@ -70,12 +70,15 @@ class CustomDet(Dataset):
             self._transforms = transforms
         else:
             self._transforms = transforms
+        
+
+        self.root = root
 
         # Load annotations
         self.num_object_cls = num_obj_cls
         self.num_subject_cls = num_subj_cls
         self.num_action_cls = num_action_cls
-        self._load_annotation_and_metadata(root)
+        self._load_annotation_and_metadata(csv_path)
 
     def __len__(self) -> int:
         """Return the number of images"""
@@ -98,7 +101,7 @@ class CustomDet(Dataset):
         """
         intra_idx = self._idx[i]
         return self._transforms(
-            self.load_image(self._filenames[intra_idx]),
+            self.load_image(os.path.join(self.root, self._filenames[intra_idx])),
             self._anno[intra_idx]
         )
 
@@ -155,13 +158,13 @@ class CustomDet(Dataset):
 
     def filename(self, idx: int) -> str:
         """Return the image file name given the index"""
-        return self._filenames[self._idx[idx]]
+        return os.path.join(self.root, self._filenames[self._idx[idx]])
 
     def image_size(self, idx: int) -> Tuple[int, int]:
         """Return the size (width, height) of an image"""
         return self._image_sizes[self._idx[idx]]
 
-    def _load_annotation_and_metadata(self, f: dict) -> None:
+    def _load_annotation_and_metadata(self, f: str) -> None:
         """
         Arguments:
             f(str): path for csv 
