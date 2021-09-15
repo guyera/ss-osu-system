@@ -1,7 +1,9 @@
 DISCLAIMER: Most of these instructions are copied from repos mentioned in the `DISCLAIMER` file. We are declaring this
 explicitly here, again, to avoid any claims of plagiarism.
 
-# sailon-hoi
+# sailon-svo
+
+This is the repo for the SAIL-ON SVO. Spatially Conditioned Graphs (SCG) is the baseline. 
 
 ## Citations
 
@@ -19,6 +21,7 @@ explicitly here, again, to avoid any claims of plagiarism.
 - [Prerequisites](#prerequisites)
 - [Data Utilities](#data-utilities)
     * [HICO-DET](#hico-det)
+    * [SAIL-ON Custom Data](#sailon-custom-data)
 - [Testing](#testing)
 - [Training](#training)
 - [Contact](#contact)
@@ -28,6 +31,7 @@ explicitly here, again, to avoid any claims of plagiarism.
 1. Download the repository with `git clone https://github.com/pi-umd/sailon-hoi`
 2. Install the lightweight deep learning library [Pocket](https://github.com/fredzzhang/pocket)
 3. Make sure the environment you created for Pocket is activated. You are good to go!
+4. A conda environment file `svo.yml` is provided for easy installation of other prerequisites.
 
 ## Data Utilities
 
@@ -40,66 +44,9 @@ git submodule init
 git submodule update
 ```
 ### Custom Sailon Data
+[sailon-custom-data]
+1. Images, annotations and pretrained model is available [here](https://drive.google.com/drive/u/1/folders/18sp-dXGFyIfOH2K3ZZVfDLAna_rCEcn9)
 
-1. The data is available [here](https://drive.google.com/drive/u/1/folders/18sp-dXGFyIfOH2K3ZZVfDLAna_rCEcn9)
-
-### HICO-DET
-
-1. Download the [HICO-DET dataset](https://drive.google.com/open?id=1QZcJmGVlF9f4h-XLWe9Gkmnmj2z1gSnk)
-    1. If you have not downloaded the dataset before, run the following script
-    ```bash
-    cd /path/to/sailon-hoi/hicodet
-    bash download.sh
-    ```
-    2. If you have previously downloaded the dataset, simply create a soft link
-    ```bash
-    cd /path/to/sailon-hoi/hicodet
-    ln -s /path/to/hico_20160224_det ./hico_20160224_det
-    ```
-2. Run a Faster R-CNN pre-trained on MS COCO to generate detections
-
-```bash
-cd /path/to/sailon-hoi/hicodet/detections
-python preprocessing.py --partition train2015
-python preprocessing.py --partition test2015
-```
-
-```
-The labels in these detections will be used as GT for training the box classification heads. If you want to use GT
-boxes and labels for this purpose, please edit the output files of these scrips accordingly.
-```
-
-3. Generate ground truth detections (optional)
-
-```bash
-cd /path/to/spatially-conditioned-graphs/hicodet/detections
-python generate_gt_detections.py --partition test2015 
-python generate_gt_detections.py --partition train2015 
-```
-
-4. Download fine-tuned detections (optional)
-
-```bash
-cd /path/to/spatially-conditioned-graphs/download
-bash download_finetuned_detections.sh
-```
-
-5. Download the *data* folder needed for
-   IDN [here](https://drive.google.com/file/d/1iHVHrIsJTT97Bmlb1yuLv76C-07YljeP/view?usp=sharing).
-
-To attempt fine-tuning yourself, refer to
-the [instructions](https://github.com/pi-umd/hicodet/tree/main/detections#fine-tune-the-detector-on-hico-det) in
-the [HICO-DET repository](https://github.com/pi-umd/hicodet). The checkpoint of original author's fine-tuned detector
-can be found [here](https://drive.google.com/file/d/11lS2BQ_In-22Q-SRTRjRQaSLg9nSim9h/view?usp=sharing).
-
-## Testing
-
-```bash
-cd /path/to/sailon-hoi
-python test.py --net scg --world-size 8 &>log &
-```
-
-Specify the number of GPUs to use with the argument `--world-size` and specify the model you want to use with `--net`
 
 ## Training
 
@@ -110,13 +57,35 @@ python train.py --net scg --world-size 8 &>log &
 
 Specify the number of GPUs to use with the argument `--world-size` and specify the model you want to use with `--net`
 
+## Testing
+
+```bash
+cd /path/to/sailon-hoi
+python test.py --net scg --world-size 8 &>log &
+```
+
+Specify the number of GPUs to use with the argument `--world-size` and specify the model you want to use with `--net`
+
+## Baseline performance
+
+Top-k performance of the SCG model on the custom SAIL-ON data
+
+|         |       | Train | Validation | Novel Validation |
+|---------|-------|-------|------------|------------------|
+| Triplet | Top-1 | 0.992 | 0.952      | 0.264            |
+|         | Top-3 | 0.998 | 0.976      | 0.540            |
+| Subject | Top-1 | 0.999 |            | 0.736            |
+|         | Top-3 | 1.000     |            | 0.920            |
+| Object  | Top-1 | 0.991 |            | 0.770            |
+|         | Top-3 | 1.000     |            | 0.896            |
+
 ## Contact
 
 If you have any questions regarding this repo, please post them in [issues](https://github.com/pi-umd/sailon-hoi/issues)
 . If you ran into issues related to the code, feel free to open an issue. Alternatively, you can contact us at
 anubhav@umd.edu or vinoj@umd.edu
 
-Release information for code merged on 9/9/2021
+## Release information for code merged on 9/9/2021
 
     Separate model folders for model files
     Separate box_coords, box_scores for subjects and objects
@@ -125,5 +94,10 @@ Release information for code merged on 9/9/2021
     Restructure the output dictionary
     Separate classification heads for subject and object
         NOTE: Will work only with same backbone and same no. of classes for now.
-    Data loader for custom datasets
+    Data loader for custom dataset
 
+## TODO
+    Support “unknown”/“null” classes. 
+    Support missing subject/object boxes (-1s as input). 
+    Support for different number of subjects and objects. 
+    Integrate with SAIL-ON API.
