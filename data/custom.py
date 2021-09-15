@@ -57,7 +57,10 @@ class CustomDet(Dataset):
     def __init__(self, root: str,
                  transform: Optional[Callable] = None,
                  target_transform: Optional[Callable] = None,
-                 transforms: Optional[Callable] = None) -> None:
+                 transforms: Optional[Callable] = None,
+                 num_obj_cls: int = 0,
+                 num_subj_cls: int = 0,
+                 num_action_cls: int = 0) -> None:
         super(CustomDet, self).__init__()
 
         if transforms is None:
@@ -69,6 +72,9 @@ class CustomDet(Dataset):
             self._transforms = transforms
 
         # Load annotations
+        self.num_object_cls = num_obj_cls
+        self.num_subject_cls = num_subj_cls
+        self.num_action_cls = num_action_cls
         self._load_annotation_and_metadata(root)
 
     def __len__(self) -> int:
@@ -172,10 +178,14 @@ class CustomDet(Dataset):
 
         self._image_sizes = self.create_sizes(df)
 
-        self.num_object_cls = max(len(self._objects), len(self._subjects))
+        if self.num_object_cls == 0:
+            self.num_object_cls = max(len(self._objects), len(self._subjects))
+        else:
+            self.num_object_cls = max(self.num_object_cls, self.num_subject_cls)
         self.num_subject_cls = self.num_object_cls
         # self.num_interation_cls = len(self._class_corr)
-        self.num_action_cls = len(self._verbs)
+        if self.num_action_cls == 0:
+            self.num_action_cls = len(self._verbs)
 
         idx = list(range(len(df)))
 
