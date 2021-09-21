@@ -33,7 +33,7 @@ class Train(object):
             self.net,
             self.train_loader,
             self.val_loader,
-            num_classes=args.num_classes,
+            num_classes=args.num_action_cls,
             print_interval=args.print_interval,
             cache_dir=args.cache_dir
         )
