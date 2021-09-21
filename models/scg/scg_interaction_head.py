@@ -85,7 +85,7 @@ class InteractionHead(Module):
     def preprocess(self,
                    subject_detections: List[dict],
                    object_detections: List[dict],
-                   targets: List[dict],
+                   targets: List[dict] = None,
                    append_gt: Optional[bool] = None
                    ) -> List[Dict[str, Union[int, Any]]]:
         results = []

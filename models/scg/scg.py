@@ -210,8 +210,10 @@ class GenericHOINetwork(nn.Module):
         subject_box_features, object_box_features = self.get_box_features(images, detections, features)
         subject_box_coords = [detection['subject_boxes'] for detection in detections]
         object_box_coords = [detection['object_boxes'] for detection in detections]
-        subject_pred_detections = self.interaction_head.classify_boxes(subject_box_features, subject_box_coords)
-        object_pred_detections = self.interaction_head.classify_boxes(object_box_features, object_box_coords)
+        subject_pred_detections = self.interaction_head.classify_boxes(subject_box_features, subject_box_coords,
+                                                                       box_type="subject")
+        object_pred_detections = self.interaction_head.classify_boxes(object_box_features, object_box_coords,
+                                                                      box_type="object")
         detections = self.interaction_head.preprocess(subject_pred_detections, object_pred_detections)
         subject_box_coords = list()
         subject_box_all_scores = list()
