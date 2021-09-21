@@ -23,8 +23,8 @@ import pickle
 def get_net(args):
     if args.net == 'scg':
         net = SCG(
-            num_classes=args.num_classes,
-            num_obj_classes=args.num_obj_classes, num_subject_classes=args.num_subject_classes,
+            num_classes=args.num_action_cls,
+            num_obj_classes=args.num_obj_cls, num_subject_classes=args.num_subj_cls,
             num_iterations=args.num_iter, postprocess=False,
             max_subject=args.max_subject, max_object=args.max_object,
             box_score_thresh=args.box_score_thresh,
@@ -335,7 +335,6 @@ def main(rank, args):
         valset = DataFactory(
             name=args.dataset, partition=args.partitions[1],
             data_root=args.data_root,
-            detection_root=args.detection_dir,
             csv_path=args.csv_path,
             training=False,
             num_subj_cls=args.num_subj_cls,
@@ -354,22 +353,6 @@ def main(rank, args):
         )
 
     elif args.net == 'idn':
-        raise NotImplementedError
-
-    if args.dataset == 'hicodet':
-        if args.net == 'scg':
-            args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
-            args.num_subject_classes = 80
-
-        args.num_classes = 117
-
-    elif args.dataset == 'Custom':
-        if args.net == 'scg':
-            args.num_obj_classes = val_loader.dataset.dataset.num_object_cls
-            args.num_subject_classes = val_loader.dataset.dataset.num_subject_cls
-        args.num_classes = 63
-
-    else:
         raise NotImplementedError
 
     net = get_net(args)
@@ -403,10 +386,8 @@ if __name__ == "__main__":
     parser.add_argument('--net', default='scg', type=str)
     parser.add_argument('--top-k', default=5, type=int)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
-    parser.add_argument('--data-root', default='hicodet', type=str)
+    parser.add_argument('--data-root', default='Custom', type=str)
     parser.add_argument('--csv-path', default=None, type=str, help="Csv Path is required only for Custom dataset")
-    parser.add_argument('--detection-dir', default='hicodet/detections/test2015',
-                        type=str, help="Directory where detection files are stored")
     parser.add_argument('--partition', default='test2015', type=str)
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
