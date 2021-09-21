@@ -11,9 +11,6 @@ from data.data_factory import DataFactory
 from utils import custom_collate, Timer, AverageMeter, get_config, DataLoaderX
 
 import pickle
-import torch.optim as optim
-from models.idn import IDN
-from data.dataset_idn import HICO_train_set, HICO_test_set
 
 train_timer = Timer()
 
@@ -138,25 +135,21 @@ class Train(object):
 def get_net(args):
     if args.net == 'scg':
         net = SCG(
-            num_classes=args.num_classes,
-            num_obj_classes=args.num_obj_classes,
-            num_subject_classes=args.num_subject_classes,
+            num_classes=args.num_action_cls,
+            num_obj_classes=args.num_obj_cls,
+            num_subject_classes=args.num_subj_cls,
             num_iterations=args.num_iter, postprocess=False,
             max_subject=args.max_subject, max_object=args.max_object,
             box_score_thresh=args.box_score_thresh,
             distributed=True
         )
-    elif args.net == 'idn':
-        args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
-        HO_weight = torch.from_numpy(args_idn['HO_weight'])
-        config = get_config(args.config_path)
-        net = IDN(config.MODEL, HO_weight, num_classes=args.num_classes)
-
-    elif args.net == 'cascaded-hoi':
-        net = ''
-
-    if net == '':
+    else:
         raise NotImplementedError
+    # elif args.net == 'idn':
+    #     args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
+    #     HO_weight = torch.from_numpy(args_idn['HO_weight'])
+    #     config = get_config(args.config_path)
+    #     net = IDN(config.MODEL, HO_weight, num_classes=args.num_classes)
     return net
 
 
@@ -173,7 +166,6 @@ def main(rank, args):
             name=args.dataset, partition=args.partitions[1],
             data_root=args.data_root,
             csv_path=args.csv_path,
-            detection_root=args.train_detection_dir,
             num_subj_cls=args.num_subj_cls,
             num_obj_cls=args.num_obj_cls,
             num_action_cls=args.num_action_cls,
@@ -184,7 +176,6 @@ def main(rank, args):
             name=args.dataset, partition=args.partitions[1],
             data_root=args.data_root,
             csv_path=args.csv_path,
-            detection_root=args.val_detection_dir,
             num_subj_cls=args.num_subj_cls,
             num_obj_cls=args.num_obj_cls,
             num_action_cls=args.num_action_cls
@@ -209,39 +200,25 @@ def main(rank, args):
                 num_replicas=args.world_size,
                 rank=rank)
         )
+    else:
+        raise NotImplementedError
 
-    elif args.net == 'idn':
-        args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
-        HO_weight = torch.from_numpy(args_idn['HO_weight'])
-        config = get_config(args.config_path)
-        train_set = HICO_train_set(config, split='trainval', train_mode=True)
-        train_loader = DataLoaderX(train_set, batch_size=config.TRAIN.DATASET.BATCH_SIZE, shuffle=True,
-                                   collate_fn=train_set.collate_fn, pin_memory=False, drop_last=False)
-
-        val_set = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
-        val_loader = DataLoaderX(val_set, batch_size=args.batch_size, shuffle=False, collate_fn=val_set.collate_fn,
-                                 pin_memory=False, drop_last=False)
+    # elif args.net == 'idn':
+    #     args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
+    #     HO_weight = torch.from_numpy(args_idn['HO_weight'])
+    #     config = get_config(args.config_path)
+    #     train_set = HICO_train_set(config, split='trainval', train_mode=True)
+    #     train_loader = DataLoaderX(train_set, batch_size=config.TRAIN.DATASET.BATCH_SIZE, shuffle=True,
+    #                                collate_fn=train_set.collate_fn, pin_memory=False, drop_last=False)
+    #
+    #     val_set = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
+    #     val_loader = DataLoaderX(val_set, batch_size=args.batch_size, shuffle=False, collate_fn=val_set.collate_fn,
+    #                              pin_memory=False, drop_last=False)
     #         train_loader = val_loader
     # Fix random seed for model synchronisation
     torch.manual_seed(args.random_seed)
 
-    if args.dataset == 'hicodet':
-        if args.net == 'scg':
-            args.num_obj_classes = train_loader.dataset.dataset.num_object_cls
-        args.num_classes = 117
-    elif args.dataset == 'Custom':
-        if args.net == 'scg':
-            args.num_obj_classes = train_loader.dataset.dataset.num_object_cls
-            args.num_subject_classes = train_loader.dataset.dataset.num_subject_cls
-        args.num_classes = 63
-    elif args.dataset == 'vcoco':
-        if args.net == 'scg':
-            args.num_obj_classes = train_loader.dataset.dataset.num_object_cls
-        args.num_classes = 24
-
     net = get_net(args)
-    if net == '':
-        raise NotImplementedError
 
     if os.path.exists(args.checkpoint_path):
         print("=> Rank {}: continue from saved checkpoint".format(
@@ -274,10 +251,8 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', default='Custom', type=str)
     parser.add_argument('--net', default='scg', type=str)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
-    parser.add_argument('--data-root', default='hicodet', type=str, help="Give full csv path for Custom dataset")
+    parser.add_argument('--data-root', default='Custom', type=str, help="Give full csv path for Custom dataset")
     parser.add_argument('--csv-path', default=None, type=str, help="Csv Path is required only for Custom dataset")
-    parser.add_argument('--train-detection-dir', default='hicodet/detections/test2015', type=str)
-    parser.add_argument('--val-detection-dir', default='hicodet/detections/test2015', type=str)
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
     parser.add_argument('--num-epochs', default=8, type=int)
