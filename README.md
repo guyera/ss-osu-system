@@ -20,7 +20,6 @@ This is the repo for the SAIL-ON SVO. Spatially Conditioned Graphs (SCG) is the 
 
 - [Prerequisites](#prerequisites)
 - [Data Utilities](#data-utilities)
-    * [HICO-DET](#hico-det)
     * [SAIL-ON Custom Data](#custom-sailon-data)
 - [Testing](#testing)
 - [Training](#training)
@@ -35,14 +34,6 @@ This is the repo for the SAIL-ON SVO. Spatially Conditioned Graphs (SCG) is the 
 
 ## Data Utilities
 
-The [HICO-DET](https://github.com/pi-umd/hicodet) and [V-COCO](https://github.com/pi-umd/vcoco) repos have been
-incorporated as submodules for convenience. To download relevant data utilities, run the following commands.
-
-```bash
-cd /path/to/sailon-hoi
-git submodule init
-git submodule update
-```
 ### Custom Sailon Data
 
 1. Images, annotations and pretrained model is available [here](https://drive.google.com/drive/u/1/folders/18sp-dXGFyIfOH2K3ZZVfDLAna_rCEcn9)
@@ -112,4 +103,3 @@ anubhav@umd.edu or vinoj@umd.edu
     Support missing subject/object boxes (-1s as input). 
     Support for different number of subjects and objects. 
     Integrate with SAIL-ON API.
-    Remove HICO-DET and V-COCO sub modules

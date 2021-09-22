@@ -138,6 +138,9 @@ class Test(object):
         results = list()
         correct = 0.
         incorrect = 0.
+        correct_obj = 0.
+        incorrect_obj = 0.
+        correct_subj = 0.
         triplet_accuracy = dict()
         for i, batch in tqdm(enumerate(self.data_loader)):
             inputs = batch[:-1]
@@ -176,7 +179,10 @@ class Test(object):
                 # gt_triplet expects only one box as the input and will fail otherwise                
                 gt_triplet = [batch[-1][0]["subject"].item(), batch[-1][0]["verb"].item(), batch[-1][0]["object"].item()]
                 pred_triplets = [np.array(x[-1]).tolist() for x in result['top_k']]
-
+                gt_subj = gt_triplet[0]
+                gt_obj = gt_triplet[2]
+                pred_subjs = [elem[0] for elem in pred_triplets]
+                pred_objs = [elem[2] for elem in pred_triplets]
                 # This creates the accuracy of all the triplets
                 if tuple(gt_triplet) not in triplet_accuracy:
                     triplet_accuracy[tuple(gt_triplet)] = {'correct' : 0, 'incorrect' : 0}
@@ -187,11 +193,21 @@ class Test(object):
                 else:
                     incorrect +=1
                     triplet_accuracy[tuple(gt_triplet)]["incorrect"] += 1
-                    
+                if gt_obj in pred_objs:
+                    correct_obj += 1
+                else:
+                    incorrect_obj +=1
+                if gt_subj in pred_subjs:
+                    correct_subj += 1
+                else:
+                    incorrect_subj +=1
                 
         print(f"Correct : {correct}, Incorrect :  {incorrect}, Total : {correct+incorrect}")
         print(f"Accuracy :  {correct / (correct + incorrect)}")
-
+        print(f"Correct_obj : {correct_obj}, Incorrect :  {incorrect_obj}, Total : {correct_obj + incorrect_obj}")
+        print(f"Accuracy_obj :  {correct_obj / (correct_obj + incorrect_obj)}")
+        print(f"Correct_subj: {correct_subj}, Incorrect :  {incorrect_subj}, Total : {correct_subj + incorrect_subj}")
+        print(f"Accuracy_subj :  {correct_subj / (correct_subj + incorrect_subj)}")
         print("Triplet level Accuracy")
         for key in triplet_accuracy:
             gt = triplet_accuracy[key]
