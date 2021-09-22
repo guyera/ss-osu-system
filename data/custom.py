@@ -182,15 +182,6 @@ class CustomDet(Dataset):
 
         self._image_sizes = self.create_sizes(df)
 
-        # if self.num_object_cls == 0:
-        #     self.num_object_cls = max(len(self._objects), len(self._subjects))
-        # else:
-        #     self.num_object_cls = max(self.num_object_cls, self.num_subject_cls)
-        # self.num_subject_cls = self.num_object_cls
-        # # self.num_interation_cls = len(self._class_corr)
-        # if self.num_action_cls == 0:
-        #     self.num_action_cls = len(self._verbs)
-
         idx = list(range(len(df)))
 
         self._idx = idx
