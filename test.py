@@ -77,6 +77,8 @@ class Test(object):
                                             verb_ind[x[0][0][0]][x[0][2][0]][x[0][1]],
                                             obj_ind[x[0][2][0]][x[0][2][1]])), probs))
             result['top_k'] = top_k
+            result['top_k_objects'] = obj_ind
+            result['top_k_subjects'] = subj_ind
             return result
 
         def clean_result(my_net, orig_result, detections):
@@ -141,6 +143,7 @@ class Test(object):
         correct_obj = 0.
         incorrect_obj = 0.
         correct_subj = 0.
+        incorrect_subj = 0.
         triplet_accuracy = dict()
         for i, batch in tqdm(enumerate(self.data_loader)):
             inputs = batch[:-1]
@@ -181,8 +184,8 @@ class Test(object):
                 pred_triplets = [np.array(x[-1]).tolist() for x in result['top_k']]
                 gt_subj = gt_triplet[0]
                 gt_obj = gt_triplet[2]
-                pred_subjs = [elem[0] for elem in pred_triplets]
-                pred_objs = [elem[2] for elem in pred_triplets]
+                pred_objs = result['top_k_objects'][0]
+                pred_subjs = result['top_k_subjects'][0]
                 # This creates the accuracy of all the triplets
                 if tuple(gt_triplet) not in triplet_accuracy:
                     triplet_accuracy[tuple(gt_triplet)] = {'correct' : 0, 'incorrect' : 0}
