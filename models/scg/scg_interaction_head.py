@@ -388,7 +388,7 @@ class InteractionHead(Module):
         # Original code resumes
 
         results = list()
-        for obj, sub, tar in zip(object_pred_detections, subject_pred_detections, targets):
+        for obj, sub in zip(object_pred_detections, subject_pred_detections):
             results.append(dict(
                 subject_boxes=sub["boxes"],
                 object_boxes=obj["boxes"],
