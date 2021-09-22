@@ -78,6 +78,7 @@ class CustomDet(Dataset):
         self.num_object_cls = num_obj_cls
         self.num_subject_cls = num_subj_cls
         self.num_action_cls = num_action_cls
+        print(self.num_action_cls, self.num_object_cls, self.num_subject_cls)
         self._load_annotation_and_metadata(csv_path)
 
     def __len__(self) -> int:
@@ -92,7 +93,7 @@ class CustomDet(Dataset):
         Returns:
             tuple[image, target]: By default, the tuple consists of a PIL image and a
                 dict with the following keys:
-                    "boxes_h": list[list[4]]
+                    "boxes_s": list[list[4]]
                     "boxes_o": list[list[4]]
                     "hoi":: list[N]
                     "verb": list[N]
@@ -109,7 +110,7 @@ class CustomDet(Dataset):
         det = dict()
 
         det["object_boxes"] = self._anno[idx]['boxes_o']
-        det["subject_boxes"] = self._anno[idx]['boxes_h']
+        det["subject_boxes"] = self._anno[idx]['boxes_s']
         det["object_labels"] = self._anno[idx]["object"]
         det["subject_labels"] = self._anno[idx]["subject"]
 
@@ -181,14 +182,14 @@ class CustomDet(Dataset):
 
         self._image_sizes = self.create_sizes(df)
 
-        if self.num_object_cls == 0:
-            self.num_object_cls = max(len(self._objects), len(self._subjects))
-        else:
-            self.num_object_cls = max(self.num_object_cls, self.num_subject_cls)
-        self.num_subject_cls = self.num_object_cls
-        # self.num_interation_cls = len(self._class_corr)
-        if self.num_action_cls == 0:
-            self.num_action_cls = len(self._verbs)
+        # if self.num_object_cls == 0:
+        #     self.num_object_cls = max(len(self._objects), len(self._subjects))
+        # else:
+        #     self.num_object_cls = max(self.num_object_cls, self.num_subject_cls)
+        # self.num_subject_cls = self.num_object_cls
+        # # self.num_interation_cls = len(self._class_corr)
+        # if self.num_action_cls == 0:
+        #     self.num_action_cls = len(self._verbs)
 
         idx = list(range(len(df)))
 
@@ -201,19 +202,19 @@ class CustomDet(Dataset):
         for i, row in df.iterrows():
             annot = dict()
 
-            boxes_h = list()
+            boxes_s = list()
             boxes_o = list()
             objects = list()
             subjects = list()
             verbs = list()
             
-            boxes_h.append([row["subject_xmin"], row["subject_ymin"], row["subject_xmax"], row["subject_ymax"]])
+            boxes_s.append([row["subject_xmin"], row["subject_ymin"], row["subject_xmax"], row["subject_ymax"]])
             boxes_o.append([row["object_xmin"], row["object_ymin"], row["object_xmax"], row["object_ymax"]])
             objects.append(row["object_id"])
             subjects.append(row["subject_id"])
             verbs.append(row["verb_id"])
 
-            annot["boxes_h"] = boxes_h
+            annot["boxes_s"] = boxes_s
             annot["boxes_o"] = boxes_o
             annot["object"] = objects
             annot["subject"] = subjects

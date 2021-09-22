@@ -386,17 +386,36 @@ class InteractionHead(Module):
             object_cls_loss = self.compute_box_classification_loss(object_orig_labels, object_box_logits)
             box_cls_loss = subject_cls_loss + object_cls_loss
         # Original code resumes
-        detections = self.preprocess(subject_pred_detections, object_pred_detections, targets)
+        # detections = self.preprocess(subject_pred_detections, object_pred_detections, targets)
+
+        # print(subject_pred_detections)
+        # print(object_pred_detections)
+        # print(targets)
+
+        # assert 1==2
+
+        results = list()
+        for obj, sub, tar in zip(object_pred_detections, subject_pred_detections, targets):
+            results.append(dict(
+                subject_boxes=sub["boxes"],
+                object_boxes=obj["boxes"],
+                subject_box_scores=sub["box_all_scores"],
+                object_box_scores=sub["box_all_scores"],
+                # labels=labels[active_idx].view(-1),
+                # scores=scores[active_idx].view(-1),
+                # box_all_scores=box_all_scores[active_idx],
+                # num_subjects=len(s_idx),
+            ))
 
         subject_box_coords = list()
         subject_box_all_scores = list()
         object_box_coords = list()
         object_box_all_scores = list()
-        for detection in detections:
-            subject_box_coords.append(detection['boxes'][:detection['num_subjects']])
-            subject_box_all_scores.append(detection['box_all_scores'][:detection['num_subjects']])
-            object_box_coords.append(detection['boxes'][detection['num_subjects']:])
-            object_box_all_scores.append(detection['box_all_scores'][detection['num_subjects']:])
+        for detection in results:
+            subject_box_coords.append(detection['subject_boxes'])
+            subject_box_all_scores.append(detection['subject_box_scores'])
+            object_box_coords.append(detection['object_boxes'])
+            object_box_all_scores.append(detection['object_box_scores'])
         subject_box_features = self.box_roi_pool(features, subject_box_coords, image_shapes)
         object_box_features = self.box_roi_pool(features, object_box_coords, image_shapes)
 
