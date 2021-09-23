@@ -72,12 +72,12 @@ Top-k performance of the SCG model on the custom SAIL-ON data
 
 |         |       | Train | Validation | Novel Validation |
 |---------|-------|-------|------------|------------------|
-| Triplet | Top-1 | 0.992 | 0.952      | 0.264            |
-|         | Top-3 | 0.998 | 0.976      | 0.540            |
-| Subject | Top-1 | 0.999 | 0.991      | 0.736            |
+| Triplet | Top-1 | 0.992 | 0.955      | 0.540            |
+|         | Top-3 | 0.995 | 0.970      | 0.690            |
+| Subject | Top-1 | 0.994 | 0.994      | 0.793            |
+|         | Top-3 | 1.000 | 1.000      | 0.989            |
+| Object  | Top-1 | 1.000 | 0.964      | 0.747            |
 |         | Top-3 | 1.000 | 0.997      | 0.920            |
-| Object  | Top-1 | 0.991 | 0.964      | 0.770            |
-|         | Top-3 | 1.000 | 1.000      | 0.896            |
 
 Hardware: single instance of NVIDIA Quandro P6000 (24G)
 
