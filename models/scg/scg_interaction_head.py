@@ -841,7 +841,7 @@ class GraphHead(Module):
             all_boxes_s.append(coords[x_keep])
             all_boxes_o.append(coords[y_keep])
             all_subject_scores.append(subject_box_all_scores[b_idx])
-            all_object_scores.append(object_box_coords[b_idx])
+            all_object_scores.append(object_box_all_scores[b_idx])
             # The prior score is the product of the object detection scores
             all_prior.append(self.compute_prior_scores(
                 x_keep, y_keep, device)
