@@ -138,9 +138,6 @@ class DataFactory(Dataset):
 
     def __getitem__(self, i):
         image, target = self.dataset[i]
-        if "boxes_h" in target:
-            target['boxes_s'] = target['boxes_h']
-            del target['boxes_h']
         target["labels"] = target['verb']
         detections = self.dataset.get_detections(i)
         detection = pocket.ops.to_tensor(detections, input_format='dict')

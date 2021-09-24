@@ -386,19 +386,24 @@ class InteractionHead(Module):
             object_cls_loss = self.compute_box_classification_loss(object_orig_labels, object_box_logits)
             box_cls_loss = subject_cls_loss + object_cls_loss
         # Original code resumes
-        detections = self.preprocess(subject_pred_detections, object_pred_detections, targets)
+
+        # Might need to uncomment this if multiple subject and object boxes in detections
+        # detections = self.preprocess(subject_pred_detections, object_pred_detections, targets)
+
 
         subject_box_coords = list()
         subject_box_all_scores = list()
         object_box_coords = list()
         object_box_all_scores = list()
-        for detection in detections:
-            subject_box_coords.append(detection['boxes'][:detection['num_subjects']])
-            subject_box_all_scores.append(detection['box_all_scores'][:detection['num_subjects']])
-            object_box_coords.append(detection['boxes'][detection['num_subjects']:])
-            object_box_all_scores.append(detection['box_all_scores'][detection['num_subjects']:])
-        subject_box_features = self.box_roi_pool(features, subject_box_coords, image_shapes)
-        object_box_features = self.box_roi_pool(features, object_box_coords, image_shapes)
+        for obj, sub in zip(object_pred_detections, subject_pred_detections):
+            subject_box_coords.append(sub['boxes'])
+            subject_box_all_scores.append(sub['box_all_scores'])
+            object_box_coords.append(obj['boxes'])
+            object_box_all_scores.append(obj['box_all_scores'])
+        
+
+        # subject_box_features = self.box_roi_pool(features, subject_box_coords, image_shapes)
+        # object_box_features = self.box_roi_pool(features, object_box_coords, image_shapes)
 
         box_verb_features, boxes_s, boxes_o, object_scores, subject_scores, box_pair_labels, box_pair_prior = \
             self.box_pair_head(features, image_shapes, subject_box_features, subject_box_coords,
@@ -647,8 +652,7 @@ class GraphHead(Module):
 
     def compute_prior_scores(self,
                              x: Tensor, y: Tensor,
-                             all_scores: Tensor,
-                             ) -> Tensor:
+                             device) -> Tensor:
         """
         Parameters:
         -----------
@@ -656,12 +660,11 @@ class GraphHead(Module):
                 Indices of subject boxes (paired)
             y: Tensor[M]
                 Indices of object boxes (paired)
-            all_scores: Tensor[N, number object classes]
-                Object detection scores (before pairing)
+            device: cuda/cpu
         """
-        scores, object_class = torch.max(all_scores, dim=1)
-        prior_s = torch.ones(len(x), self.num_cls, device=scores.device)
-        prior_o = torch.ones_like(prior_s)
+        # scores, object_class = torch.max(all_scores, dim=1)
+        prior_s = torch.ones(len(x), self.num_cls, device=device)
+        prior_o = torch.ones(len(y), self.num_cls, device=device)
 
         return torch.stack([prior_s, prior_o])
 
@@ -765,7 +768,7 @@ class GraphHead(Module):
             # NOTE: We are only removing self relations. In the current state a subject can very well become an object
             # TODO: Resolve the above conundrum if required. This has been handled on the output side where we filter
             #  out results where subject has become an object
-            x_keep, y_keep = torch.nonzero(x != y).unbind(1)
+            x_keep, y_keep = torch.nonzero(x != y).unbind(1) # only 1 input pair is given so x_keep = [0] and y_keep =[1]
             if len(x_keep) == 0:
                 # Should never happen, just to be safe
                 raise ValueError("There are no valid subject-object pairs")
@@ -777,7 +780,7 @@ class GraphHead(Module):
             # Compute spatial features
             # NOTE: only 1 element batch supported
             coords = torch.cat([subject_box_coords[b_idx], object_box_coords[b_idx]])
-            all_scores = torch.cat([subject_box_all_scores[b_idx], object_box_all_scores[b_idx]])
+            #all_scores = torch.cat([subject_box_all_scores[b_idx], object_box_all_scores[b_idx]])
             box_pair_spatial = compute_spatial_encodings(
                 [coords[x]], [coords[y]], [image_shapes[b_idx]]
             )
@@ -837,11 +840,11 @@ class GraphHead(Module):
             ], dim=1))
             all_boxes_s.append(coords[x_keep])
             all_boxes_o.append(coords[y_keep])
-            all_subject_scores.append(all_scores[x_keep])
-            all_object_scores.append(all_scores[y_keep])
+            all_subject_scores.append(subject_box_all_scores[b_idx])
+            all_object_scores.append(object_box_coords[b_idx])
             # The prior score is the product of the object detection scores
             all_prior.append(self.compute_prior_scores(
-                x_keep, y_keep, all_scores)
+                x_keep, y_keep, device)
             )
 
             subject_counter += n_s
