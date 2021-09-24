@@ -78,7 +78,7 @@ class CustomDet(Dataset):
         self.num_object_cls = num_obj_cls
         self.num_subject_cls = num_subj_cls
         self.num_action_cls = num_action_cls
-        print(self.num_action_cls, self.num_object_cls, self.num_subject_cls)
+
         self._load_annotation_and_metadata(csv_path)
 
     def __len__(self) -> int:
