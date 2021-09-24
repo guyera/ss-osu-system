@@ -34,7 +34,7 @@ Sample steps that can be followed if you're unable to follow the steps given abo
 ```bash
 cd ~/sailon-svo
 git clone https://github.com/fredzzhang/pocket.git
-export PYTHONPATH="/home/myusername/svo/pocket"
+export PYTHONPATH="<path to this dir>/sailon-svo/pocket"
 ```
 3. Make sure the environment you created for Pocket is activated. You are good to go!
 4. A conda environment file `svo.yml` is provided for easy installation of other prerequisites.
