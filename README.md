@@ -30,6 +30,13 @@ This is the repo for the SAIL-ON SVO. Spatially Conditioned Graphs (SCG) is the 
 
 1. Download the repository with `git clone https://github.com/pi-umd/sailon-hoi`
 2. Install the lightweight deep learning library [Pocket](https://github.com/fredzzhang/pocket)
+
+Sample steps that can be followed if you're unable to follow the steps given above:
+```bash
+cd ~/sailon-svo
+git clone https://github.com/fredzzhang/pocket.git
+export PYTHONPATH=$PYTHONPATH:"<path to this dir>/sailon-svo/pocket"
+```
 3. Make sure the environment you created for Pocket is activated. You are good to go!
 4. A conda environment file `svo.yml` is provided for easy installation of other prerequisites.
 
@@ -47,6 +54,7 @@ git submodule update
 
 1. Images, annotations and pretrained model is available [here](https://drive.google.com/drive/u/1/folders/18sp-dXGFyIfOH2K3ZZVfDLAna_rCEcn9)
 
+```md5sum of model file: 1bbb3c07a33901a0003dee4a055aeb8c```
 
 ## Training
 
@@ -72,12 +80,12 @@ Top-k performance of the SCG model on the custom SAIL-ON data
 
 |         |       | Train | Validation | Novel Validation |
 |---------|-------|-------|------------|------------------|
-| Triplet | Top-1 | 0.992 | 0.952      | 0.264            |
-|         | Top-3 | 0.998 | 0.976      | 0.540            |
-| Subject | Top-1 | 0.999 | 0.991      | 0.736            |
+| Triplet | Top-1 | 0.992 | 0.955      | 0.540            |
+|         | Top-3 | 0.995 | 0.970      | 0.690            |
+| Subject | Top-1 | 0.994 | 0.994      | 0.793            |
+|         | Top-3 | 1.000 | 1.000      | 0.989            |
+| Object  | Top-1 | 1.000 | 0.964      | 0.747            |
 |         | Top-3 | 1.000 | 0.997      | 0.920            |
-| Object  | Top-1 | 0.991 | 0.964      | 0.770            |
-|         | Top-3 | 1.000 | 1.000      | 0.896            |
 
 Hardware: single instance of NVIDIA Quandro P6000 (24G)
 
