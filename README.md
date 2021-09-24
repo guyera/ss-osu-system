@@ -30,11 +30,12 @@ This is the repo for the SAIL-ON SVO. Spatially Conditioned Graphs (SCG) is the 
 
 1. Download the repository with `git clone https://github.com/pi-umd/sailon-hoi`
 2. Install the lightweight deep learning library [Pocket](https://github.com/fredzzhang/pocket)
+
 Sample steps that can be followed if you're unable to follow the steps given above:
 ```bash
 cd ~/sailon-svo
 git clone https://github.com/fredzzhang/pocket.git
-export PYTHONPATH="<path to this dir>/sailon-svo/pocket"
+export PYTHONPATH=$PYTHONPATH:"<path to this dir>/sailon-svo/pocket"
 ```
 3. Make sure the environment you created for Pocket is activated. You are good to go!
 4. A conda environment file `svo.yml` is provided for easy installation of other prerequisites.
