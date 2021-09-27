@@ -45,7 +45,7 @@ export PYTHONPATH=$PYTHONPATH:"<path to this dir>/sailon-svo/pocket"
 
 1. Images, annotations and pretrained model is available [here](https://drive.google.com/drive/u/1/folders/18sp-dXGFyIfOH2K3ZZVfDLAna_rCEcn9)
 
-```md5sum of model file: 1bbb3c07a33901a0003dee4a055aeb8c```
+```md5sum of model file: 70536666cc873e3b8848bb83416771bb```
 
 ## Training
 
