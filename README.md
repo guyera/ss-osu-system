@@ -43,7 +43,7 @@ export PYTHONPATH=$PYTHONPATH:"<path to this dir>/sailon-svo/pocket"
 
 ### Custom Sailon Data
 
-1. Images, annotations and pretrained model is available [here](https://drive.google.com/drive/u/1/folders/18sp-dXGFyIfOH2K3ZZVfDLAna_rCEcn9)
+1. Images, annotations and pretrained model is available [here](https://drive.google.com/drive/u/1/folders/18sp-dXGFyIfOH2K3ZZVfDLAna_rCEcn9). Note: Please use ```annotations_v1.1.tar``` for the annotations.
 
 ```md5sum of model file: 70536666cc873e3b8848bb83416771bb```
 
