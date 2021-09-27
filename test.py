@@ -411,9 +411,9 @@ if __name__ == "__main__":
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
     parser.add_argument('--box-score-thresh', default=0.0, type=float)
-    parser.add_argument('--num-subj-cls', default=8, type=int)
-    parser.add_argument('--num-obj-cls', default=8, type=int)
-    parser.add_argument('--num-action-cls', default=7, type=int)
+    parser.add_argument('--num-subj-cls', default=6, type=int)
+    parser.add_argument('--num-obj-cls', default=9, type=int)
+    parser.add_argument('--num-action-cls', default=8, type=int)
     parser.add_argument('--max-subject', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
     parser.add_argument('--num-workers', default=2, type=int)
