@@ -82,6 +82,10 @@ Top-k performance of the SCG model on the custom SAIL-ON data
 NOTE: We should note that model is not trained using any unknown data, so 0th index are not meaningful to use right now. They’ll be used in the next update of training data
 ```
 
+## NOTE
+
+For evaluation, we will first look for triplets in 'top_k_triplets' and if this key is empty then we will pull triplets from 'triplet_tensor' key
+
 Hardware: single instance of NVIDIA Quandro P6000 (24G)
 
 Inference Stats:
@@ -93,7 +97,7 @@ Inference Stats:
 
 If you have any questions regarding this repo, please post them in [issues](https://github.com/pi-umd/sailon-hoi/issues)
 . If you ran into issues related to the code, feel free to open an issue. Alternatively, you can contact us at
-anubhav@umd.edu or vinoj@umd.edu
+anubhav@umd.edu or sonaal@umd.edu
 
 ## TODO
     Support missing subject/object boxes (-1s as input)
