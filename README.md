@@ -94,3 +94,7 @@ Inference Stats:
 If you have any questions regarding this repo, please post them in [issues](https://github.com/pi-umd/sailon-hoi/issues)
 . If you ran into issues related to the code, feel free to open an issue. Alternatively, you can contact us at
 anubhav@umd.edu or vinoj@umd.edu
+
+## TODO
+    Support missing subject/object boxes (-1s as input)
+    Integrate with SAIL-ON API
