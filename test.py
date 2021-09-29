@@ -142,16 +142,19 @@ class Test(object):
 
             NOTE: This is intended to and will work only for the case where there is only 1 subject and object box each
             """
-            top_k_triplets = torch.zeros((len(orig_result['subject_scores'][0]),
+            triplet_tensor = torch.zeros((len(orig_result['subject_scores'][0]),
                                           len(orig_result['verb_matrix'][0][0]),
                                           len(orig_result['object_scores'][0])))
+            top_k_triplets = list()
             for triplet in orig_result['top_k']:
-                top_k_triplets[int(triplet[1][0])][int(triplet[1][1])][int(triplet[1][2])] = triplet[0][1]
+                triplet_tensor[int(triplet[1][0])][int(triplet[1][1])][int(triplet[1][2])] = triplet[0][1]
+                top_k_triplets.append((int(triplet[1][0]), int(triplet[1][1]), int(triplet[1][2])))
             new_result = {
                 'object_scores': orig_result['object_scores'][0],
                 'subject_scores': orig_result['subject_scores'][0],
                 'img_id': orig_result['img_id'],
                 'verb_scores': orig_result['verb_matrix'][0][0],
+                'triplet_tensor': triplet_tensor,
                 'top_k_triplets': top_k_triplets,
                 'top_k_objects': orig_result['top_k_objects'][0],
                 'top_k_subjects': orig_result['top_k_subjects'][0],
