@@ -137,6 +137,27 @@ class Test(object):
 
             return new_result
 
+        def simplify_result(orig_result):
+            """Simplifies the result for sending over the API.
+
+            NOTE: This is intended to and will work only for the case where there is only 1 subject and object box each
+            """
+            top_k_triplets = torch.zeros((len(orig_result['subject_scores'][0]),
+                                          len(orig_result['verb_matrix'][0][0]),
+                                          len(orig_result['object_scores'][0])))
+            for triplet in orig_result['top_k']:
+                top_k_triplets[int(triplet[1][0])][int(triplet[1][1])][int(triplet[1][2])] = triplet[0][1]
+            new_result = {
+                'object_scores': orig_result['object_scores'][0],
+                'subject_scores': orig_result['subject_scores'][0],
+                'img_id': orig_result['img_id'],
+                'verb_scores': orig_result['verb_matrix'][0][0],
+                'top_k_triplets': top_k_triplets,
+                'top_k_objects': orig_result['top_k_objects'][0],
+                'top_k_subjects': orig_result['top_k_subjects'][0],
+            }
+            return new_result
+
         results = list()
         correct = 0.
         incorrect = 0.
@@ -177,7 +198,6 @@ class Test(object):
                 
                 result = clean_result(self.net, result, mod_detections[0])
                 result = select_topk(result, self.top_k)
-                results.append(result)
                 
                 # gt_triplet expects only one box as the input and will fail otherwise                
                 gt_triplet = [batch[-1][0]["subject"].item(), batch[-1][0]["verb"].item(), batch[-1][0]["object"].item()]
@@ -188,22 +208,24 @@ class Test(object):
                 pred_subjs = result['top_k_subjects'][0]
                 # This creates the accuracy of all the triplets
                 if tuple(gt_triplet) not in triplet_accuracy:
-                    triplet_accuracy[tuple(gt_triplet)] = {'correct' : 0, 'incorrect' : 0}
+                    triplet_accuracy[tuple(gt_triplet)] = {'correct': 0, 'incorrect': 0}
                 
                 if gt_triplet in pred_triplets:
                     correct += 1
                     triplet_accuracy[tuple(gt_triplet)]["correct"] += 1
                 else:
-                    incorrect +=1
+                    incorrect += 1
                     triplet_accuracy[tuple(gt_triplet)]["incorrect"] += 1
                 if gt_obj in pred_objs:
                     correct_obj += 1
                 else:
-                    incorrect_obj +=1
+                    incorrect_obj += 1
                 if gt_subj in pred_subjs:
                     correct_subj += 1
                 else:
-                    incorrect_subj +=1
+                    incorrect_subj += 1
+                result = simplify_result(result)
+                results.append(result)
                 
         print(f"Correct : {correct}, Incorrect :  {incorrect}, Total : {correct+incorrect}")
         print(f"Accuracy :  {correct / (correct + incorrect)}")
