@@ -137,30 +137,6 @@ class Test(object):
 
             return new_result
 
-        def simplify_result(orig_result):
-            """Simplifies the result for sending over the API.
-
-            NOTE: This is intended to and will work only for the case where there is only 1 subject and object box each
-            """
-            triplet_tensor = torch.zeros((len(orig_result['subject_scores'][0]),
-                                          len(orig_result['verb_matrix'][0][0]),
-                                          len(orig_result['object_scores'][0])))
-            top_k_triplets = list()
-            for triplet in orig_result['top_k']:
-                triplet_tensor[int(triplet[1][0])][int(triplet[1][1])][int(triplet[1][2])] = triplet[0][1]
-                top_k_triplets.append((int(triplet[1][0]), int(triplet[1][1]), int(triplet[1][2])))
-            new_result = {
-                'object_scores': orig_result['object_scores'][0],
-                'subject_scores': orig_result['subject_scores'][0],
-                'img_id': orig_result['img_id'],
-                'verb_scores': orig_result['verb_matrix'][0][0],
-                'triplet_tensor': triplet_tensor,
-                'top_k_triplets': top_k_triplets,
-                'top_k_objects': orig_result['top_k_objects'][0],
-                'top_k_subjects': orig_result['top_k_subjects'][0],
-            }
-            return new_result
-
         results = list()
         correct = 0.
         incorrect = 0.
@@ -201,6 +177,7 @@ class Test(object):
                 
                 result = clean_result(self.net, result, mod_detections[0])
                 result = select_topk(result, self.top_k)
+                results.append(result)
                 
                 # gt_triplet expects only one box as the input and will fail otherwise                
                 gt_triplet = [batch[-1][0]["subject"].item(), batch[-1][0]["verb"].item(), batch[-1][0]["object"].item()]
@@ -211,24 +188,22 @@ class Test(object):
                 pred_subjs = result['top_k_subjects'][0]
                 # This creates the accuracy of all the triplets
                 if tuple(gt_triplet) not in triplet_accuracy:
-                    triplet_accuracy[tuple(gt_triplet)] = {'correct': 0, 'incorrect': 0}
+                    triplet_accuracy[tuple(gt_triplet)] = {'correct' : 0, 'incorrect' : 0}
                 
                 if gt_triplet in pred_triplets:
                     correct += 1
                     triplet_accuracy[tuple(gt_triplet)]["correct"] += 1
                 else:
-                    incorrect += 1
+                    incorrect +=1
                     triplet_accuracy[tuple(gt_triplet)]["incorrect"] += 1
                 if gt_obj in pred_objs:
                     correct_obj += 1
                 else:
-                    incorrect_obj += 1
+                    incorrect_obj +=1
                 if gt_subj in pred_subjs:
                     correct_subj += 1
                 else:
-                    incorrect_subj += 1
-                result = simplify_result(result)
-                results.append(result)
+                    incorrect_subj +=1
                 
         print(f"Correct : {correct}, Incorrect :  {incorrect}, Total : {correct+incorrect}")
         print(f"Accuracy :  {correct / (correct + incorrect)}")
@@ -436,9 +411,9 @@ if __name__ == "__main__":
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
     parser.add_argument('--box-score-thresh', default=0.0, type=float)
-    parser.add_argument('--num-subj-cls', default=6, type=int)
-    parser.add_argument('--num-obj-cls', default=9, type=int)
-    parser.add_argument('--num-action-cls', default=8, type=int)
+    parser.add_argument('--num-subj-cls', default=8, type=int)
+    parser.add_argument('--num-obj-cls', default=8, type=int)
+    parser.add_argument('--num-action-cls', default=7, type=int)
     parser.add_argument('--max-subject', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
     parser.add_argument('--num-workers', default=2, type=int)

@@ -218,6 +218,8 @@ def main(rank, args):
     # Fix random seed for model synchronisation
     torch.manual_seed(args.random_seed)
 
+    print(f'random seed: {args.random_seed}')
+
     net = get_net(args)
 
     if os.path.exists(args.checkpoint_path):

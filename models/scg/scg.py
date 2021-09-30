@@ -11,7 +11,6 @@ from torchvision.models.detection import transform
 from torchvision.models.detection.faster_rcnn import TwoMLPHead
 from torchvision.ops import MultiScaleRoIAlign
 
-
 class CustomFastRCNNPredictor(nn.Module):
     """
     Standard classification + bounding box regression layers
@@ -165,6 +164,7 @@ class GenericHOINetwork(nn.Module):
         images, detections, targets, original_image_sizes = self.preprocess(
             images, detections, targets)
         features = self.backbone(images.tensors)
+
         results = self.interaction_head(features, detections,
                                         images.image_sizes, targets)
 

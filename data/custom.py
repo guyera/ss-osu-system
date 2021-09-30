@@ -3,13 +3,15 @@ import json
 import numpy as np
 import pandas as pd
 from PIL import Image
-import pocket
-import random
+# import pocket
+# import random
 
 from typing import Any, Optional, List, Callable, Tuple
 from pocket.data import ImageDataset, DataSubset
 from torch.utils.data import Dataset
 
+import pathlib
+from debug_util import *
 
 class StandardTransform:
     """https://github.com/pytorch/vision/blob/master/torchvision/datasets/vision.py"""
@@ -101,6 +103,7 @@ class CustomDet(Dataset):
                     "subject" : list[N]
         """
         intra_idx = self._idx[i]
+
         return self._transforms(
             self.load_image(os.path.join(self.root, self._filenames[intra_idx])),
             self._anno[intra_idx]
@@ -174,6 +177,8 @@ class CustomDet(Dataset):
         df = pd.read_csv(f)
 
         self._filenames = list(df['new_image_path'])
+        # self._filenames = [pathlib.Path(p).name for p in self._filenames]
+
         self._objects = list(df['object_name'].unique())
         self._subjects = list(df['subject_name'].unique())
         self._verbs = list(df['verb_name'].unique())

@@ -9,10 +9,10 @@ import numpy as np
 import os.path as osp
 import torch
 import pickle
-import yaml
+# import yaml
 import re
-from easydict import EasyDict as edict
-from prefetch_generator import BackgroundGenerator
+# from easydict import EasyDict as edict
+# from prefetch_generator import BackgroundGenerator
 from torch.utils.data import DataLoader
 
 
