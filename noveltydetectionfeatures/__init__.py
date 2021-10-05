@@ -50,7 +50,8 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
             min_size = 800,
             max_size = 1333,
             image_mean = None,
-            image_std = None):
+            image_std = None,
+            feature_extraction_device = 'cpu'):
         super().__init__()
         
         filename = os.path.join(f'{os.path.splitext(csv_path)[0]}_novelty_features.pth')
@@ -75,7 +76,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                 )
                 
                 detector = models.fasterrcnn_resnet_fpn('resnet50', pretrained=True)
-                backbone = detector.backbone
+                backbone = detector.backbone.to(feature_extraction_device)
                 
                 box_roi_pool = MultiScaleRoIAlign(
                     featmap_names=['0', '1', '2', '3'],
@@ -116,7 +117,8 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                         obj_boxes = transform.resize_boxes(obj_boxes, o_im_s, im_s)
                         det['object_boxes'] = obj_boxes
                     
-                    features = backbone(images.tensors)
+                    features = backbone(images.tensors.to(feature_extraction_device))
+                    features = {k: v.cpu() for k, v in features.items()}
                     
                     image_shapes = images.image_sizes
                     
