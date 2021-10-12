@@ -1,3 +1,5 @@
 Custom/
 __pycache__/
 pocket/
+checkpoints/
+pretrained/

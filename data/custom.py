@@ -3,15 +3,10 @@ import json
 import numpy as np
 import pandas as pd
 from PIL import Image
-# import pocket
-# import random
 
 from typing import Any, Optional, List, Callable, Tuple
-from pocket.data import ImageDataset, DataSubset
+# from pocket.data import ImageDataset, DataSubset
 from torch.utils.data import Dataset
-
-import pathlib
-from debug_util import *
 
 class StandardTransform:
     """https://github.com/pytorch/vision/blob/master/torchvision/datasets/vision.py"""

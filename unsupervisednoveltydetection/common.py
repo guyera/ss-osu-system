@@ -1,0 +1,1168 @@
+import torch
+import argparse
+import re
+import copy
+import numpy as np
+import pickle
+import os
+
+from tqdm import tqdm
+
+"""
+Description: Gets the indices of the datapoints in the given dataset with
+    any of the given labels.
+
+Parameters:
+    dataset: The dataset into which to index.
+    labels: The labels for which to acquire indices.
+"""
+def get_indices_of_labels(dataset, labels):
+    indices = []
+    for idx, (_, label) in enumerate(dataset):
+        if label in labels:
+            indices.append(idx)
+    return indices
+
+"""
+Description: Provides functions for generating, saving, loading, and using class
+    splits to bipartition datasets into "in-distribution" and
+    "out-of-distribution" subsets according to class label.
+"""
+class ClassSplit:
+    """
+    Parameters:
+        id_labels: List of in-distribution class labels.
+        ood_labels: List of out-of-distribution class labels.
+    """
+    def __init__(self, id_labels, ood_labels):
+        self._id_labels = id_labels
+        self._ood_labels = ood_labels
+
+    """
+    Description: Partitions a given dataset into an in-distribution dataset and
+        an out-of-distribution dataset according to the class labels of each
+        data point.
+
+    Parameters:
+        dataset: The dataset to partition.
+    """
+    def split_dataset(self, dataset):
+        id_indices = get_indices_of_labels(
+            dataset,
+            self._id_labels)
+        ood_indices = get_indices_of_labels(
+            dataset,
+            self._ood_labels)
+        
+        id_dataset = torch.utils.data.Subset(
+            dataset,
+            id_indices
+        )
+        ood_dataset = torch.utils.data.Subset(
+            dataset,
+            ood_indices
+        )
+
+        return id_dataset, ood_dataset
+
+    def id_labels(self):
+        return copy.deepcopy(self._id_labels)
+    
+    def ood_labels(self):
+        return copy.deepcopy(self._ood_labels)
+
+"""
+Description: A dataset which wraps around another dataset, returning the same
+    data points after remapping their labels. Used to remap labels to [0, N-1]
+    after splitting datasets by class.
+"""
+class LabelMappingDataset(torch.utils.data.Dataset):
+    """
+    Parameters:
+        dataset: The dataset from which to retrieve data points prior to
+            remapping labels.
+        labels: An enumerable of labels of the form labels[i] = j. Labels of
+            value j are remapped to value i.
+    """
+    def __init__(self, dataset, labels):
+        self._dataset = dataset
+    
+        label_mapping = {}
+        new_label = 0
+        for label in labels:
+            label_mapping[label] = new_label
+            new_label += 1
+        self._label_mapping = label_mapping
+
+    def __len__(self):
+        return len(self._dataset)
+
+    def __getitem__(self, index):
+        data, label = self._dataset.__getitem__(index)
+        label = int(label.item())
+        label = self._label_mapping[label]
+        return data, label
+
+"""
+Description: A dataset which wraps around another dataset, returning the same
+    data points after applying a transformation to them. Used to apply
+    transformations separately to training and testing datasets after splitting
+    them by in-distribution and out-of-distribution classes.
+"""
+class TransformingDataset(torch.utils.data.Dataset):
+    """
+    Parameters:
+        dataset: Underlying dataset from which to retrieve data points prior
+            to transformation.
+        transform: Transformation to apply to data.
+        target_transform: Target transformation to apply to data targets.
+    """
+    def __init__(self, dataset, transform = None, target_transform = None):
+        self._dataset = dataset
+        self._transform = transform
+        self._target_transform = target_transform
+
+    def __len__(self):
+        return len(self._dataset)
+
+    def __getitem__(self, index):
+        res = self._dataset.__getitem__(index)
+        item = res[0]
+        target = res[1]
+        if self._transform is not None:
+            item = self._transform(item)
+        if self._target_transform is not None:
+            target = self._target_transform(target)
+        return (item, target)
+
+"""
+Description: Target transform which converts all labels to a fixed constant.
+    Used to convert in-distribution labels to zeros and out-of-distribution
+    labels to ones.
+"""
+class FixedTargetTransform(object):
+    """
+    Parameters:
+        target: Fixed target to which all labels are converted.
+    """
+    def __init__(self, target):
+        self._target = target
+
+    def __call__(self, prev_target):
+        return self._target
+
+"""
+Description: Combines an in-distribution and out-of-distribution dataset into a
+    single dataset, remapping labels to zeros for in-distribution points and
+    ones for out-of-distribution points. This can be used for evaluation to
+    avoid bugs associated with batch-aggregation (like leaving a model with
+    batch normalization in training mode during evaluation), e.g. by
+    constructing a shuffling data loader from an AnomalyDetectionDataset.
+    It can also be used to train and evaluate binary Oracle classifiers.
+"""
+class AnomalyDetectionDataset(torch.utils.data.Dataset):
+    """
+    Parameters:
+        id_dataset: Dataset of in-distribution points.
+        ood_dataset: Dataset of out-of-distribution points.
+    """
+    def __init__(self, id_dataset, ood_dataset):
+        relabeled_id_dataset = TransformingDataset(
+            id_dataset,
+            target_transform = FixedTargetTransform(0)
+        )
+        relabeled_ood_dataset = TransformingDataset(
+            ood_dataset,
+            target_transform = FixedTargetTransform(1)
+        )
+        self._dataset = torch.utils.data.ConcatDataset((relabeled_id_dataset, relabeled_ood_dataset))
+
+    def __len__(self):
+        return len(self._dataset)
+
+    def __getitem__(self, index):
+        return self._dataset.__getitem__(index)
+
+def _generate_tqdm_description(title, **kwargs):
+    desc = title
+    for name, value in kwargs.items():
+        if value is not None:
+            desc += f' {name}: {value}'
+    return desc
+
+def _state_dict(module):
+    return {k: v.cpu() for k, v in module.state_dict().items()}
+
+def _load_state_dict(module, state_dict):
+    next_param = next(module.parameters())
+    if next_param.is_cuda:
+        cuda_state_dict = {k: v.to(next_param.device) for k, v in state_dict.items()}
+        module.load_state_dict(cuda_state_dict)
+    else:
+        module.load_state_dict(state_dict)
+
+class ReshapedNoveltyFeatureDataset(torch.utils.data.Dataset):
+    def __init__(self, dataset):
+        super().__init__()
+        self.dataset = dataset
+    
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        spatial_features,\
+            subject_appearance_features,\
+            object_appearance_features,\
+            verb_appearance_features,\
+            subject_label,\
+            object_label,\
+            verb_label = self.dataset[idx]
+
+        spatial_features = torch.flatten(spatial_features, start_dim = 0)
+        subject_appearance_features = torch.flatten(
+            subject_appearance_features,
+            start_dim = 0
+        )
+        object_appearance_features = torch.flatten(
+            object_appearance_features,
+            start_dim = 0
+        )
+        verb_appearance_features = torch.flatten(
+            verb_appearance_features,
+            start_dim = 0
+        )
+        verb_features =\
+            torch.cat((spatial_features, verb_appearance_features), dim = 0)
+        
+        return subject_appearance_features,\
+            object_appearance_features,\
+            verb_features,\
+            subject_label,\
+            object_label,\
+            verb_label
+
+class AnomalyDetector:
+    def __init__(
+            self,
+            num_appearance_features,
+            num_verb_features,
+            num_hidden_nodes,
+            num_subj_cls,
+            num_obj_cls,
+            num_action_cls):
+        self.device = 'cpu'
+        self.subject_classifier = torch.nn.Sequential(
+            torch.nn.Linear(num_appearance_features, num_hidden_nodes),
+            torch.nn.ReLU(),
+            torch.nn.Linear(num_hidden_nodes, num_subj_cls)
+        )
+        self.object_classifier = torch.nn.Sequential(
+            torch.nn.Linear(num_appearance_features, num_hidden_nodes),
+            torch.nn.ReLU(),
+            torch.nn.Linear(num_hidden_nodes, num_obj_cls)
+        )
+        self.verb_classifier = torch.nn.Sequential(
+            torch.nn.Linear(
+                num_verb_features,
+                num_hidden_nodes
+            ),
+            torch.nn.ReLU(),
+            torch.nn.Linear(num_hidden_nodes, num_action_cls)
+        )
+
+    def fit(self, lr, weight_decay, epochs, data_loader):
+        # Create optimizers
+        subject_optimizer = torch.optim.SGD(
+            self.subject_classifier.parameters(),
+            lr = lr,
+            momentum = 0.9,
+            weight_decay = weight_decay
+        )
+        object_optimizer = torch.optim.SGD(
+            self.object_classifier.parameters(),
+            lr = lr,
+            momentum = 0.9,
+            weight_decay = weight_decay
+        )
+        verb_optimizer = torch.optim.SGD(
+            self.verb_classifier.parameters(),
+            lr = lr,
+            momentum = 0.9,
+            weight_decay = weight_decay
+        )
+        
+        # Create loss function
+        criterion = torch.nn.CrossEntropyLoss()
+        
+        # Progress bar; updated per batch
+        progress = tqdm(
+            total = epochs * len(data_loader),
+            desc = 'Training classifiers',
+            leave = False
+        )
+        
+        # Construct previous epoch losses for display
+        prev_epoch_subject_loss = None
+        prev_epoch_object_loss = None
+        prev_epoch_verb_loss = None
+        
+        # For each epoch
+        for epoch in range(epochs):
+            # Init accumulated average losses for the epoch
+            epoch_subject_loss = 0.0
+            epoch_object_loss = 0.0
+            epoch_verb_loss = 0.0
+            
+            # For each batch
+            for batch_idx, (subject_features,\
+                    object_features,\
+                    verb_features,\
+                    subject_targets,\
+                    object_targets,\
+                    verb_targets)\
+                    in enumerate(data_loader):
+                # Relocate data if appropriate
+                subject_features = \
+                    subject_features.to(self.device)
+                object_features = \
+                    object_features.to(self.device)
+                verb_features = \
+                    verb_features.to(self.device)
+                subject_targets = subject_targets.to(self.device)
+                object_targets = object_targets.to(self.device)
+                verb_targets = verb_targets.to(self.device)
+                
+                # Update progress description
+                progress.set_description(
+                    _generate_tqdm_description(
+                        'Training classifiers',
+                        epoch = f'{epoch + 1} / {epochs}',
+                        batch = f'{batch_idx + 1} / {len(data_loader)}',
+                        epoch_subject_loss = prev_epoch_subject_loss,
+                        epoch_object_loss = prev_epoch_object_loss,
+                        epoch_verb_loss = prev_epoch_verb_loss
+                    )
+                )
+                
+                # Make predictions
+                subject_predictions = self.subject_classifier(subject_features)
+                object_predictions = self.object_classifier(object_features)
+                verb_predictions = self.verb_classifier(verb_features)
+                
+                # Compute losses
+                subject_loss = criterion(subject_predictions, subject_targets)
+                object_loss = criterion(object_predictions, object_targets)
+                verb_loss = criterion(verb_predictions, verb_targets)
+                
+                # Step optimizers
+                subject_optimizer.zero_grad()
+                subject_loss.backward()
+                subject_optimizer.step()
+                object_optimizer.zero_grad()
+                object_loss.backward()
+                object_optimizer.step()
+                verb_optimizer.zero_grad()
+                verb_loss.backward()
+                verb_optimizer.step()
+                
+                # Update epoch losses
+                epoch_subject_loss += float(subject_loss.item()) / len(data_loader)
+                epoch_object_loss += float(object_loss.item()) / len(data_loader)
+                epoch_verb_loss += float(verb_loss.item()) / len(data_loader)
+                
+                # Update progress bar
+                progress.update()
+            
+            # Update previous losses for display
+            prev_epoch_subject_loss = epoch_subject_loss
+            prev_epoch_object_loss = epoch_object_loss
+            prev_epoch_verb_loss = epoch_verb_loss
+        
+        # Close progress bar
+        progress.close()
+
+    def fit_open_category(
+            self,
+            lr,
+            weight_decay,
+            epochs,
+            subject_training_loader,
+            object_training_loader,
+            verb_training_loader):
+        # Create optimizers
+        subject_optimizer = torch.optim.SGD(
+            self.subject_classifier.parameters(),
+            lr = lr,
+            momentum = 0.9,
+            weight_decay = weight_decay
+        )
+        object_optimizer = torch.optim.SGD(
+            self.object_classifier.parameters(),
+            lr = lr,
+            momentum = 0.9,
+            weight_decay = weight_decay
+        )
+        verb_optimizer = torch.optim.SGD(
+            self.verb_classifier.parameters(),
+            lr = lr,
+            momentum = 0.9,
+            weight_decay = weight_decay
+        )
+        
+        # Create loss function
+        criterion = torch.nn.CrossEntropyLoss()
+        
+        # Progress bar; updated per batch
+        progress = tqdm(
+            total = epochs,
+            desc = 'Training classifiers',
+            leave = False
+        )
+        
+        # Construct previous epoch losses for display
+        prev_epoch_subject_loss = None
+        prev_epoch_object_loss = None
+        prev_epoch_verb_loss = None
+        
+        # For each epoch
+        for epoch in range(epochs):
+            # Init accumulated average losses for the epoch
+            epoch_subject_loss = 0.0
+            epoch_object_loss = 0.0
+            epoch_verb_loss = 0.0
+            
+            # Update progress description
+            progress.set_description(
+                _generate_tqdm_description(
+                    'Training classifiers',
+                    epoch = f'{epoch + 1} / {epochs}',
+                    epoch_subject_loss = prev_epoch_subject_loss,
+                    epoch_object_loss = prev_epoch_object_loss,
+                    epoch_verb_loss = prev_epoch_verb_loss
+                )
+            )
+            
+            # For each subject batch
+            for subject_features, subject_targets in subject_training_loader:
+                # Relocate data if appropriate
+                subject_features = \
+                    subject_features.to(self.device)
+                subject_targets = subject_targets.to(self.device)
+                
+                # Make predictions
+                subject_predictions = self.subject_classifier(subject_features)
+                
+                # Compute losses
+                subject_loss = criterion(subject_predictions, subject_targets)
+                
+                # Step optimizers
+                subject_optimizer.zero_grad()
+                subject_loss.backward()
+                subject_optimizer.step()
+                
+                # Update epoch losses
+                epoch_subject_loss += float(subject_loss.item()) / len(subject_training_loader)
+
+            # For each object batch
+            for object_features, object_targets in object_training_loader:
+                # Relocate data if appropriate
+                object_features = \
+                    object_features.to(self.device)
+                object_targets = object_targets.to(self.device)
+                
+                # Make predictions
+                object_predictions = self.object_classifier(object_features)
+                
+                # Compute losses
+                object_loss = criterion(object_predictions, object_targets)
+                
+                # Step optimizers
+                object_optimizer.zero_grad()
+                object_loss.backward()
+                object_optimizer.step()
+                
+                # Update epoch losses
+                epoch_object_loss += float(object_loss.item()) / len(object_training_loader)
+
+            # For each verb batch
+            for verb_features, verb_targets in verb_training_loader:
+                # Relocate data if appropriate
+                verb_features = \
+                    verb_features.to(self.device)
+                verb_targets = verb_targets.to(self.device)
+                
+                # Make predictions
+                verb_predictions = self.verb_classifier(verb_features)
+                
+                # Compute losses
+                verb_loss = criterion(verb_predictions, verb_targets)
+                
+                # Step optimizers
+                verb_optimizer.zero_grad()
+                verb_loss.backward()
+                verb_optimizer.step()
+                
+                # Update epoch losses
+                epoch_verb_loss += float(verb_loss.item()) / len(verb_training_loader)
+                
+            # Update progress bar
+            progress.update()
+            
+            # Update previous losses for display
+            prev_epoch_subject_loss = epoch_subject_loss
+            prev_epoch_object_loss = epoch_object_loss
+            prev_epoch_verb_loss = epoch_verb_loss
+        
+        # Close progress bar
+        progress.close()
+    
+    def predict(self, subject_features, object_features, verb_features):
+        subject_logits = self.subject_classifier(subject_features)
+        object_logits = self.object_classifier(object_features)
+        verb_logits = self.verb_classifier(verb_features)
+        return subject_logits, object_logits, verb_logits
+
+    def predict_score_subject(self, features):
+        logits = self.subject_classifier(features)
+        max_logits, _ = torch.max(logits, dim = 1)
+        logit_scores = -max_logits
+        return logits, logit_scores
+
+    def predict_score_object(self, features):
+        logits = self.object_classifier(features)
+        max_logits, _ = torch.max(logits, dim = 1)
+        logit_scores = -max_logits
+        return logits, logit_scores
+
+    def predict_score_verb(self, features):
+        logits = self.verb_classifier(features)
+        max_logits, _ = torch.max(logits, dim = 1)
+        logit_scores = -max_logits
+        return logits, logit_scores
+
+    def score_subject(self, features):
+        logits = self.subject_classifier(features)
+        softmaxes = torch.nn.functional.softmax(logits, dim = 1)
+        
+        max_logits, _ = torch.max(logits, dim = 1)
+        max_softmaxes, _ = torch.max(softmaxes, dim = 1)
+        
+        logit_scores = -max_logits
+        softmax_scores = 1 - max_softmaxes
+
+        return logit_scores, softmax_scores
+
+    def score_object(self, features):
+        logits = self.object_classifier(features)
+        softmaxes = torch.nn.functional.softmax(logits, dim = 1)
+        
+        max_logits, _ = torch.max(logits, dim = 1)
+        max_softmaxes, _ = torch.max(softmaxes, dim = 1)
+        
+        logit_scores = -max_logits
+        softmax_scores = 1 - max_softmaxes
+
+        return logit_scores, softmax_scores
+
+    def score_verb(self, features):
+        logits = self.verb_classifier(features)
+        softmaxes = torch.nn.functional.softmax(logits, dim = 1)
+        
+        max_logits, _ = torch.max(logits, dim = 1)
+        max_softmaxes, _ = torch.max(softmaxes, dim = 1)
+        
+        logit_scores = -max_logits
+        softmax_scores = 1 - max_softmaxes
+
+        return logit_scores, softmax_scores
+    
+    def to(self, device):
+        self.device = device
+        self.subject_classifier = self.subject_classifier.to(device)
+        self.object_classifier = self.object_classifier.to(device)
+        self.verb_classifier = self.verb_classifier.to(device)
+        return self
+    
+    def state_dict(self):
+        state_dict = {}
+        state_dict['subject_classifier'] = _state_dict(self.subject_classifier)
+        state_dict['object_classifier'] = _state_dict(self.object_classifier)
+        state_dict['verb_classifier'] = _state_dict(self.verb_classifier)
+        return state_dict
+
+    def load_state_dict(self, state_dict):
+        _load_state_dict(
+            self.subject_classifier,
+            state_dict['subject_classifier']
+        )
+        _load_state_dict(
+            self.object_classifier,
+            state_dict['object_classifier']
+        )
+        _load_state_dict(
+            self.verb_classifier,
+            state_dict['verb_classifier']
+        )
+        
+class SubjectDataset(torch.utils.data.Dataset):
+    def __init__(self, svo_dataset):
+        super().__init__()
+        self.svo_dataset = svo_dataset
+
+    def __len__(self):
+        return len(self.svo_dataset)
+
+    def __getitem__(self, idx):
+        subject_features, _, _, subject_labels, _, _ = self.svo_dataset[idx]
+        return subject_features, subject_labels
+
+class ObjectDataset(torch.utils.data.Dataset):
+    def __init__(self, svo_dataset):
+        super().__init__()
+        self.svo_dataset = svo_dataset
+
+    def __len__(self):
+        return len(self.svo_dataset)
+
+    def __getitem__(self, idx):
+        _, object_features,  _, _, object_labels, _ = self.svo_dataset[idx]
+        return object_features, object_labels
+
+class VerbDataset(torch.utils.data.Dataset):
+    def __init__(self, svo_dataset):
+        super().__init__()
+        self.svo_dataset = svo_dataset
+
+    def __len__(self):
+        return len(self.svo_dataset)
+
+    def __getitem__(self, idx):
+        _, _, verb_features, _, _, verb_labels = self.svo_dataset[idx]
+        return verb_features, verb_labels
+
+def bipartition_dataset(dataset, p = 0.5):
+    full_indices = list(range(len(dataset)))
+
+    num = int(len(dataset) * p)
+    first_indices = list(range(num))
+    first_indices = [int(float(index) / p) for index in first_indices]
+
+    second_indices = [index for index in full_indices if index not in first_indices]
+
+    first_dataset = torch.utils.data.Subset(dataset, first_indices)
+    second_dataset = torch.utils.data.Subset(dataset, second_indices)
+    return first_dataset, second_dataset
+
+class TemperatureScaler(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.temperature = torch.nn.Parameter(torch.tensor(1.0))
+
+    def forward(self, logits):
+        return logits / self.temperature
+
+class ConfidenceCalibrator:
+    def __init__(self):
+        self.device = 'cpu'
+        self.subject_calibrator = TemperatureScaler()
+        self.object_calibrator = TemperatureScaler()
+        self.verb_calibrator = TemperatureScaler()
+        self.sigmoid = torch.nn.Sigmoid()
+    
+    def fit(
+            self,
+            anomaly_detector,
+            lr,
+            weight_decay,
+            epochs,
+            data_loader):
+        # Create optimizers
+        subject_optimizer = torch.optim.SGD(
+            self.subject_calibrator.parameters(),
+            lr = lr,
+            momentum = 0.9,
+            weight_decay = weight_decay
+        )
+        object_optimizer = torch.optim.SGD(
+            self.object_calibrator.parameters(),
+            lr = lr,
+            momentum = 0.9,
+            weight_decay = weight_decay
+        )
+        verb_optimizer = torch.optim.SGD(
+            self.verb_calibrator.parameters(),
+            lr = lr,
+            momentum = 0.9,
+            weight_decay = weight_decay
+        )
+        
+        # Create loss function
+        criterion = torch.nn.CrossEntropyLoss()
+        
+        # Progress bar; updated per batch
+        progress = tqdm(
+            total = epochs * len(data_loader),
+            desc = 'Training calibrators',
+            leave = False
+        )
+        
+        # Construct previous epoch losses for display
+        prev_epoch_subject_loss = None
+        prev_epoch_object_loss = None
+        prev_epoch_verb_loss = None
+        
+        # For each epoch
+        for epoch in range(epochs):
+            # Init accumulated average losses for the epoch
+            epoch_subject_loss = 0.0
+            epoch_object_loss = 0.0
+            epoch_verb_loss = 0.0
+            
+            # For each subject batch
+            for batch_idx, (subject_features,\
+                    object_features,\
+                    verb_features,\
+                    subject_targets,\
+                    object_targets,\
+                    verb_targets) in\
+                        enumerate(data_loader):
+                # Relocate data if appropriate
+                subject_features = subject_features.to(self.device)
+                object_features = object_features.to(self.device)
+                verb_features = verb_features.to(self.device)
+                subject_targets = subject_targets.to(self.device)
+                object_targets = object_targets.to(self.device)
+                verb_targets = verb_targets.to(self.device)
+
+                # Update progress description
+                progress.set_description(
+                    _generate_tqdm_description(
+                        'Training calibrators',
+                        epoch = f'{epoch + 1} / {epochs}',
+                        batch = f'{batch_idx + 1} / {len(data_loader)}',
+                        epoch_subject_loss = prev_epoch_subject_loss,
+                        epoch_object_loss = prev_epoch_object_loss,
+                        epoch_verb_loss = prev_epoch_verb_loss
+                    )
+                )
+                
+                # Get raw logits from anomaly detector
+                subject_logits, object_logits, verb_logits = \
+                    anomaly_detector.predict(
+                        subject_features,
+                        object_features,
+                        verb_features
+                    )
+                
+                # Calibrate logits
+                subject_predictions = self.subject_calibrator(subject_logits)
+                object_predictions = self.object_calibrator(object_logits)
+                verb_predictions = self.verb_calibrator(verb_logits)
+                
+                # Compute losses
+                subject_loss = criterion(subject_predictions, subject_targets)
+                object_loss = criterion(object_predictions, object_targets)
+                verb_loss = criterion(verb_predictions, verb_targets)
+                
+                # Step optimizers
+                subject_optimizer.zero_grad()
+                subject_loss.backward()
+                subject_optimizer.step()
+                object_optimizer.zero_grad()
+                object_loss.backward()
+                object_optimizer.step()
+                verb_optimizer.zero_grad()
+                verb_loss.backward()
+                verb_optimizer.step()
+                
+                # Update epoch losses
+                epoch_subject_loss += float(subject_loss.item()) / len(data_loader)
+                epoch_object_loss += float(object_loss.item()) / len(data_loader)
+                epoch_verb_loss += float(verb_loss.item()) / len(data_loader)
+
+                # Update progress bar
+                progress.update()
+            
+            # Update previous losses for display
+            prev_epoch_subject_loss = epoch_subject_loss
+            prev_epoch_object_loss = epoch_object_loss
+            prev_epoch_verb_loss = epoch_verb_loss
+        
+        # Close progress bar
+        progress.close()
+
+    def calibrate_subject(self, logits):
+        calibrated_logits = self.subject_calibrator(logits)
+        predictions = torch.nn.functional.softmax(calibrated_logits, dim = 1)
+        return predictions
+
+    def calibrate_object(self, logits):
+        calibrated_logits = self.object_calibrator(logits)
+        predictions = torch.nn.functional.softmax(calibrated_logits, dim = 1)
+        return predictions
+
+    def calibrate_verb(self, logits):
+        calibrated_logits = self.verb_calibrator(logits)
+        predictions = torch.nn.functional.softmax(calibrated_logits, dim = 1)
+        return predictions
+
+    def calibrate(self, subject_logits, object_logits, verb_logits):
+        calibrated_subject_logits = self.subject_calibrator(subject_logits)
+        calibrated_object_logits = self.object_calibrator(object_logits)
+        calibrated_verb_logits = self.verb_calibrator(verb_logits)
+        
+        subject_predictions = torch.nn.functional.softmax(calibrated_subject_logits, dim = 1)
+        object_predictions = torch.nn.functional.softmax(calibrated_object_logits, dim = 1)
+        verb_predictions = torch.nn.functional.softmax(calibrated_verb_logits, dim = 1)
+        
+        return subject_predictions, object_predictions, verb_predictions
+    
+    def to(self, device):
+        self.device = device
+        self.subject_calibrator = self.subject_calibrator.to(device)
+        self.object_calibrator = self.object_calibrator.to(device)
+        self.verb_calibrator = self.verb_calibrator.to(device)
+        return self
+    
+    def state_dict(self):
+        state_dict = {}
+        state_dict['subject_calibrator'] =\
+            _state_dict(self.subject_calibrator)
+        state_dict['object_calibrator'] =\
+            _state_dict(self.object_calibrator)
+        state_dict['verb_calibrator'] =\
+            _state_dict(self.verb_calibrator)
+        return state_dict
+
+    def load_state_dict(self, state_dict):
+        _load_state_dict(
+            self.subject_calibrator,
+            state_dict['subject_calibrator']
+        )
+        _load_state_dict(
+            self.object_calibrator,
+            state_dict['object_calibrator']
+        )
+        _load_state_dict(
+            self.verb_calibrator,
+            state_dict['verb_calibrator']
+        )
+
+class Calibrator:
+    def __init__(self):
+        self.device = 'cpu'
+        self.subject_calibrator = torch.nn.Linear(1, 1)
+        self.object_calibrator = torch.nn.Linear(1, 1)
+        self.verb_calibrator = torch.nn.Linear(1, 1)
+        self.union_calibrator = torch.nn.Linear(3, 1)
+        self.sigmoid = torch.nn.Sigmoid()
+        
+    def fit(
+            self,
+            anomaly_detector,
+            lr,
+            weight_decay,
+            epochs,
+            subject_anomaly_detection_loader,
+            object_anomaly_detection_loader,
+            verb_anomaly_detection_loader,
+            novelty_presence_loader):
+        # Create optimizers
+        subject_optimizer = torch.optim.SGD(
+            self.subject_calibrator.parameters(),
+            lr = lr,
+            momentum = 0.9,
+            weight_decay = weight_decay
+        )
+        object_optimizer = torch.optim.SGD(
+            self.object_calibrator.parameters(),
+            lr = lr,
+            momentum = 0.9,
+            weight_decay = weight_decay
+        )
+        verb_optimizer = torch.optim.SGD(
+            self.verb_calibrator.parameters(),
+            lr = lr,
+            momentum = 0.9,
+            weight_decay = weight_decay
+        )
+        union_optimizer = torch.optim.SGD(
+            self.union_calibrator.parameters(),
+            lr = lr,
+            momentum = 0.9,
+            weight_decay = weight_decay
+        )
+        
+        # Create loss function
+        criterion = torch.nn.BCELoss()
+        
+        # Progress bar; updated per batch
+        progress = tqdm(
+            total = epochs,
+            desc = 'Training calibrators',
+            leave = False
+        )
+        
+        # Construct previous epoch losses for display
+        prev_epoch_subject_loss = None
+        prev_epoch_object_loss = None
+        prev_epoch_verb_loss = None
+        prev_epoch_union_loss = None
+        
+        # For each epoch
+        for epoch in range(epochs):
+            # Init accumulated average losses for the epoch
+            epoch_subject_loss = 0.0
+            epoch_object_loss = 0.0
+            epoch_verb_loss = 0.0
+            epoch_union_loss = 0.0
+            
+            # Update progress description
+            progress.set_description(
+                _generate_tqdm_description(
+                    'Training calibrators',
+                    epoch = f'{epoch + 1} / {epochs}',
+                    epoch_subject_loss = prev_epoch_subject_loss,
+                    epoch_object_loss = prev_epoch_object_loss,
+                    epoch_verb_loss = prev_epoch_verb_loss,
+                    epoch_union_loss = prev_epoch_union_loss,
+                )
+            )
+            
+            # For each subject batch
+            for features, targets in\
+                    subject_anomaly_detection_loader:
+                # Relocate data if appropriate
+                features = features.to(self.device)
+                targets = targets.to(torch.float).to(self.device)
+                
+                # Get anomaly detection scores and unsqueeze for logistic
+                # regression
+                scores, _ = anomaly_detector.score_subject(
+                    features
+                )
+                scores = scores.unsqueeze(1)
+                
+                # Make predictions
+                logits = self.subject_calibrator(scores)
+                predictions = self.sigmoid(logits).squeeze(1)
+                
+                # Compute loss
+                loss = criterion(predictions, targets)
+                
+                # Step optimizer
+                subject_optimizer.zero_grad()
+                loss.backward()
+                subject_optimizer.step()
+                
+                # Update epoch loss
+                epoch_subject_loss += float(loss.item()) / len(subject_anomaly_detection_loader)
+
+            # For each object batch
+            for features, targets in\
+                    object_anomaly_detection_loader:
+                # Relocate data if appropriate
+                features = features.to(self.device)
+                targets = targets.to(torch.float).to(self.device)
+                
+                # Get anomaly detection scores and unsqueeze for logistic
+                # regression
+                scores, _ = anomaly_detector.score_object(
+                    features
+                )
+                scores = scores.unsqueeze(1)
+                
+                # Make predictions
+                logits = self.object_calibrator(scores)
+                predictions = self.sigmoid(logits).squeeze(1)
+                
+                # Compute loss
+                loss = criterion(predictions, targets)
+                
+                # Step optimizer
+                object_optimizer.zero_grad()
+                loss.backward()
+                object_optimizer.step()
+                
+                # Update epoch loss
+                epoch_object_loss += float(loss.item()) / len(object_anomaly_detection_loader)
+
+            # For each verb batch
+            for features, targets in\
+                    verb_anomaly_detection_loader:
+                # Relocate data if appropriate
+                features = features.to(self.device)
+                targets = targets.to(torch.float).to(self.device)
+                
+                # Get anomaly detection scores and unsqueeze for logistic
+                # regression
+                scores, _ = anomaly_detector.score_verb(
+                    features
+                )
+                scores = scores.unsqueeze(1)
+                
+                # Make predictions
+                logits = self.verb_calibrator(scores)
+                predictions = self.sigmoid(logits).squeeze(1)
+                
+                # Compute loss
+                loss = criterion(predictions, targets)
+                
+                # Step optimizer
+                verb_optimizer.zero_grad()
+                loss.backward()
+                verb_optimizer.step()
+                
+                # Update epoch loss
+                epoch_verb_loss += float(loss.item()) / len(verb_anomaly_detection_loader)
+            
+            # For each novelty presence batch
+            for subject_features, object_features, verb_features, targets in\
+                    novelty_presence_loader:
+                # Relocate data if appropriate
+                subject_features = \
+                    subject_features.to(self.device)
+                object_features = \
+                    object_features.to(self.device)
+                verb_features = \
+                    verb_features.to(self.device)
+                targets = targets.to(torch.float).to(self.device)
+                
+                # Get anomaly detection scores and stack for logistic
+                # regression
+                subject_scores, _ =\
+                    anomaly_detector.score_subject(subject_features)
+                object_scores, _ =\
+                    anomaly_detector.score_object(object_features)
+                verb_scores, _ =\
+                    anomaly_detector.score_verb(verb_features)
+                scores = torch.stack(
+                    (subject_scores, object_scores, verb_scores),
+                    dim = 1
+                )
+                
+                # Make predictions
+                logits = self.union_calibrator(scores)
+                predictions = self.sigmoid(logits).squeeze(1)
+                
+                # Compute loss
+                loss = criterion(predictions, targets)
+                
+                # Step optimizer
+                union_optimizer.zero_grad()
+                loss.backward()
+                union_optimizer.step()
+                
+                # Update epoch loss
+                epoch_union_loss += float(loss.item()) / len(novelty_presence_loader)
+
+            # Update progress bar
+            progress.update()
+            
+            # Update previous losses for display
+            prev_epoch_subject_loss = epoch_subject_loss
+            prev_epoch_object_loss = epoch_object_loss
+            prev_epoch_verb_loss = epoch_verb_loss
+            prev_epoch_union_loss = epoch_union_loss
+        
+        # Close progress bar
+        progress.close()
+    
+    def to(self, device):
+        self.device = device
+        self.subject_calibrator = self.subject_calibrator.to(device)
+        self.object_calibrator = self.object_calibrator.to(device)
+        self.verb_calibrator = self.verb_calibrator.to(device)
+        self.union_calibrator = self.union_calibrator.to(device)
+        return self
+    
+    def state_dict(self):
+        state_dict = {}
+        state_dict['subject_calibrator'] =\
+            _state_dict(self.subject_calibrator)
+        state_dict['object_calibrator'] =\
+            _state_dict(self.object_calibrator)
+        state_dict['verb_calibrator'] =\
+            _state_dict(self.verb_calibrator)
+        state_dict['union_calibrator'] =\
+            _state_dict(self.union_calibrator)
+        return state_dict
+
+    def load_state_dict(self, state_dict):
+        _load_state_dict(
+            self.subject_calibrator,
+            state_dict['subject_calibrator']
+        )
+        _load_state_dict(
+            self.object_calibrator,
+            state_dict['object_calibrator']
+        )
+        _load_state_dict(
+            self.verb_calibrator,
+            state_dict['verb_calibrator']
+        )
+        _load_state_dict(
+            self.union_calibrator,
+            state_dict['union_calibrator']
+        )
+
+class NoveltyPresenceDataset(torch.utils.data.Dataset):
+    def __init__(
+            self,
+            dataset,
+            id_subject_labels,
+            id_object_labels,
+            id_verb_labels,
+            ood_subject_labels,
+            ood_object_labels,
+            ood_verb_labels):
+        super().__init__()
+
+        self.dataset = dataset
+        self.id_subject_labels = id_subject_labels
+        self.id_object_labels = id_object_labels
+        self.id_verb_labels = id_verb_labels
+
+        indices = []
+        for idx, (_, _, _, subject_label, object_label, verb_label) in\
+                enumerate(self.dataset):
+            relevant_joint_label = True
+            if subject_label not in id_subject_labels and\
+                    subject_label not in ood_subject_labels:
+                relevant_joint_label = False
+            if object_label not in id_object_labels and\
+                    object_label not in ood_object_labels:
+                relevant_joint_label = False
+            if verb_label not in id_verb_labels and\
+                    verb_label not in ood_verb_labels:
+                relevant_joint_label = False
+            
+            if relevant_joint_label:
+                indices.append(idx)
+        self.indices = indices
+    
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        subject_features,\
+            object_features,\
+            verb_features,\
+            subject_label,\
+            object_label,\
+            verb_label = self.dataset[self.indices[idx]]
+        
+        if subject_label not in self.id_subject_labels or\
+                object_label not in self.id_object_labels or\
+                verb_label not in self.id_verb_labels:
+            # If any of the labels are not ID (and thus are OOD), mark the label
+            # as 1
+            label = 1
+        else:
+            # Otherwise, mark the label as 0
+            label = 0
+
+        return subject_features,\
+            object_features,\
+            verb_features,\
+            label
