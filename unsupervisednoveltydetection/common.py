@@ -201,6 +201,15 @@ def _load_state_dict(module, state_dict):
     else:
         module.load_state_dict(state_dict)
 
+def reshaped_list_collate(batch):
+    subject_appearance_features = [batch[0] for item in batch]
+    object_appearance_features = [batch[1] for item in batch]
+    verb_features = [batch[2] for item in batch]
+    subject_labels = [batch[3] for item in batch]
+    object_labels = [batch[4] for item in batch]
+    verb_labels = [batch[5] for item in batch]
+    return [subject_appearance_features, object_appearance_features, verb_features, subject_labels, object_labels, verb_labels]
+
 class ReshapedNoveltyFeatureDataset(torch.utils.data.Dataset):
     def __init__(self, dataset):
         super().__init__()
@@ -217,22 +226,29 @@ class ReshapedNoveltyFeatureDataset(torch.utils.data.Dataset):
             subject_label,\
             object_label,\
             verb_label = self.dataset[idx]
+        
+        if subject_appearance_features is not None:
+            subject_appearance_features = torch.flatten(
+                subject_appearance_features,
+                start_dim = 0
+            )
 
-        spatial_features = torch.flatten(spatial_features, start_dim = 0)
-        subject_appearance_features = torch.flatten(
-            subject_appearance_features,
-            start_dim = 0
-        )
-        object_appearance_features = torch.flatten(
-            object_appearance_features,
-            start_dim = 0
-        )
-        verb_appearance_features = torch.flatten(
-            verb_appearance_features,
-            start_dim = 0
-        )
-        verb_features =\
-            torch.cat((spatial_features, verb_appearance_features), dim = 0)
+        if object_appearance_features is not None:
+            object_appearance_features = torch.flatten(
+                object_appearance_features,
+                start_dim = 0
+            )
+        
+        if spatial_features is not None and verb_appearance_features is not None:
+            spatial_features = torch.flatten(spatial_features, start_dim = 0)
+            verb_appearance_features = torch.flatten(
+                verb_appearance_features,
+                start_dim = 0
+            )
+            verb_features =\
+                torch.cat((spatial_features, verb_appearance_features), dim = 0)
+        else:
+            verb_features = None
         
         return subject_appearance_features,\
             object_appearance_features,\
@@ -270,125 +286,7 @@ class AnomalyDetector:
             torch.nn.Linear(num_hidden_nodes, num_action_cls)
         )
 
-    def fit(self, lr, weight_decay, epochs, data_loader):
-        # Create optimizers
-        subject_optimizer = torch.optim.SGD(
-            self.subject_classifier.parameters(),
-            lr = lr,
-            momentum = 0.9,
-            weight_decay = weight_decay
-        )
-        object_optimizer = torch.optim.SGD(
-            self.object_classifier.parameters(),
-            lr = lr,
-            momentum = 0.9,
-            weight_decay = weight_decay
-        )
-        verb_optimizer = torch.optim.SGD(
-            self.verb_classifier.parameters(),
-            lr = lr,
-            momentum = 0.9,
-            weight_decay = weight_decay
-        )
-        
-        # Create loss function
-        criterion = torch.nn.CrossEntropyLoss()
-        
-        # Progress bar; updated per batch
-        progress = tqdm(
-            total = epochs * len(data_loader),
-            desc = 'Training classifiers',
-            leave = False
-        )
-        
-        # Construct previous epoch losses for display
-        prev_epoch_subject_loss = None
-        prev_epoch_object_loss = None
-        prev_epoch_verb_loss = None
-        
-        # For each epoch
-        for epoch in range(epochs):
-            # Init accumulated average losses for the epoch
-            epoch_subject_loss = 0.0
-            epoch_object_loss = 0.0
-            epoch_verb_loss = 0.0
-            
-            # For each batch
-            for batch_idx, (subject_features,\
-                    object_features,\
-                    verb_features,\
-                    subject_targets,\
-                    object_targets,\
-                    verb_targets)\
-                    in enumerate(data_loader):
-                # Relocate data if appropriate
-                subject_features = \
-                    subject_features.to(self.device)
-                object_features = \
-                    object_features.to(self.device)
-                verb_features = \
-                    verb_features.to(self.device)
-                subject_targets = subject_targets.to(self.device)
-                object_targets = object_targets.to(self.device)
-                verb_targets = verb_targets.to(self.device)
-                
-                # Update progress description
-                progress.set_description(
-                    _generate_tqdm_description(
-                        'Training classifiers',
-                        epoch = f'{epoch + 1} / {epochs}',
-                        batch = f'{batch_idx + 1} / {len(data_loader)}',
-                        epoch_subject_loss = prev_epoch_subject_loss,
-                        epoch_object_loss = prev_epoch_object_loss,
-                        epoch_verb_loss = prev_epoch_verb_loss
-                    )
-                )
-                
-                # Make predictions
-                subject_predictions = self.subject_classifier(subject_features)
-                object_predictions = self.object_classifier(object_features)
-                verb_predictions = self.verb_classifier(verb_features)
-                
-                # Compute losses
-                subject_loss = criterion(subject_predictions, subject_targets)
-                object_loss = criterion(object_predictions, object_targets)
-                verb_loss = criterion(verb_predictions, verb_targets)
-                
-                # Step optimizers
-                subject_optimizer.zero_grad()
-                subject_loss.backward()
-                subject_optimizer.step()
-                object_optimizer.zero_grad()
-                object_loss.backward()
-                object_optimizer.step()
-                verb_optimizer.zero_grad()
-                verb_loss.backward()
-                verb_optimizer.step()
-                
-                # Update epoch losses
-                epoch_subject_loss += float(subject_loss.item()) / len(data_loader)
-                epoch_object_loss += float(object_loss.item()) / len(data_loader)
-                epoch_verb_loss += float(verb_loss.item()) / len(data_loader)
-                
-                # Update progress bar
-                progress.update()
-            
-            # Update previous losses for display
-            prev_epoch_subject_loss = epoch_subject_loss
-            prev_epoch_object_loss = epoch_object_loss
-            prev_epoch_verb_loss = epoch_verb_loss
-        
-        # Close progress bar
-        progress.close()
-
-    def fit_open_category(
-            self,
-            lr,
-            weight_decay,
-            epochs,
-            subject_training_loader,
-            object_training_loader,
-            verb_training_loader):
+    def fit(self, lr, weight_decay, epochs, subject_loader, object_loader, verb_loader):
         # Create optimizers
         subject_optimizer = torch.optim.SGD(
             self.subject_classifier.parameters(),
@@ -426,11 +324,6 @@ class AnomalyDetector:
         
         # For each epoch
         for epoch in range(epochs):
-            # Init accumulated average losses for the epoch
-            epoch_subject_loss = 0.0
-            epoch_object_loss = 0.0
-            epoch_verb_loss = 0.0
-            
             # Update progress description
             progress.set_description(
                 _generate_tqdm_description(
@@ -441,69 +334,71 @@ class AnomalyDetector:
                     epoch_verb_loss = prev_epoch_verb_loss
                 )
             )
-            
-            # For each subject batch
-            for subject_features, subject_targets in subject_training_loader:
+
+            # Init accumulated average losses for the epoch
+            epoch_subject_loss = 0.0
+            epoch_object_loss = 0.0
+            epoch_verb_loss = 0.0
+                
+            # For each batch
+            for features, targets in subject_loader:
                 # Relocate data if appropriate
-                subject_features = \
-                    subject_features.to(self.device)
-                subject_targets = subject_targets.to(self.device)
+                features = features.to(self.device)
+                targets = targets.to(self.device)
                 
                 # Make predictions
-                subject_predictions = self.subject_classifier(subject_features)
+                predictions = self.subject_classifier(features)
                 
                 # Compute losses
-                subject_loss = criterion(subject_predictions, subject_targets)
+                loss = criterion(predictions, targets)
                 
                 # Step optimizers
                 subject_optimizer.zero_grad()
-                subject_loss.backward()
+                loss.backward()
                 subject_optimizer.step()
                 
                 # Update epoch losses
-                epoch_subject_loss += float(subject_loss.item()) / len(subject_training_loader)
+                epoch_subject_loss += float(loss.item()) / len(subject_loader)
 
-            # For each object batch
-            for object_features, object_targets in object_training_loader:
+            # For each batch
+            for features, targets in object_loader:
                 # Relocate data if appropriate
-                object_features = \
-                    object_features.to(self.device)
-                object_targets = object_targets.to(self.device)
+                features = features.to(self.device)
+                targets = targets.to(self.device)
                 
                 # Make predictions
-                object_predictions = self.object_classifier(object_features)
+                predictions = self.object_classifier(features)
                 
                 # Compute losses
-                object_loss = criterion(object_predictions, object_targets)
+                loss = criterion(predictions, targets)
                 
                 # Step optimizers
                 object_optimizer.zero_grad()
-                object_loss.backward()
+                loss.backward()
                 object_optimizer.step()
                 
                 # Update epoch losses
-                epoch_object_loss += float(object_loss.item()) / len(object_training_loader)
+                epoch_object_loss += float(loss.item()) / len(object_loader)
 
-            # For each verb batch
-            for verb_features, verb_targets in verb_training_loader:
+            # For each batch
+            for features, targets in verb_loader:
                 # Relocate data if appropriate
-                verb_features = \
-                    verb_features.to(self.device)
-                verb_targets = verb_targets.to(self.device)
+                features = features.to(self.device)
+                targets = targets.to(self.device)
                 
                 # Make predictions
-                verb_predictions = self.verb_classifier(verb_features)
+                predictions = self.verb_classifier(features)
                 
                 # Compute losses
-                verb_loss = criterion(verb_predictions, verb_targets)
+                loss = criterion(predictions, targets)
                 
                 # Step optimizers
                 verb_optimizer.zero_grad()
-                verb_loss.backward()
+                loss.backward()
                 verb_optimizer.step()
                 
                 # Update epoch losses
-                epoch_verb_loss += float(verb_loss.item()) / len(verb_training_loader)
+                epoch_verb_loss += float(loss.item()) / len(verb_loader)
                 
             # Update progress bar
             progress.update()
@@ -515,7 +410,7 @@ class AnomalyDetector:
         
         # Close progress bar
         progress.close()
-    
+
     def predict(self, subject_features, object_features, verb_features):
         subject_logits = self.subject_classifier(subject_features)
         object_logits = self.object_classifier(object_features)
@@ -539,6 +434,18 @@ class AnomalyDetector:
         max_logits, _ = torch.max(logits, dim = 1)
         logit_scores = -max_logits
         return logits, logit_scores
+
+    def predict_subject(self, features):
+        logits = self.subject_classifier(features)
+        return logits
+
+    def predict_object(self, features):
+        logits = self.object_classifier(features)
+        return logits
+
+    def predict_verb(self, features):
+        logits = self.verb_classifier(features)
+        return logits
 
     def score_subject(self, features):
         logits = self.subject_classifier(features)
@@ -603,41 +510,68 @@ class AnomalyDetector:
             self.verb_classifier,
             state_dict['verb_classifier']
         )
-        
+
 class SubjectDataset(torch.utils.data.Dataset):
-    def __init__(self, svo_dataset):
+    def __init__(self, svo_dataset, train = False):
         super().__init__()
         self.svo_dataset = svo_dataset
+        indices = []
+        for idx, (subject_appearance_features, _, _, subject_label, _, _) in\
+                enumerate(self.svo_dataset):
+            if subject_appearance_features is None:
+                continue
+            if train and subject_label is None:
+                continue
+            indices.append(idx)
+        self.indices = indices
 
     def __len__(self):
-        return len(self.svo_dataset)
+        return len(self.indices)
 
     def __getitem__(self, idx):
-        subject_features, _, _, subject_labels, _, _ = self.svo_dataset[idx]
+        subject_features, _, _, subject_labels, _, _ = self.svo_dataset[self.indices[idx]]
         return subject_features, subject_labels
 
 class ObjectDataset(torch.utils.data.Dataset):
-    def __init__(self, svo_dataset):
+    def __init__(self, svo_dataset, train = False):
         super().__init__()
         self.svo_dataset = svo_dataset
+        indices = []
+        for idx, (_, object_appearance_features, _, _, object_label, _) in\
+                enumerate(self.svo_dataset):
+            if object_appearance_features is None:
+                continue
+            if train and object_label is None:
+                continue
+            indices.append(idx)
+        self.indices = indices
 
     def __len__(self):
-        return len(self.svo_dataset)
+        return len(self.indices)
 
     def __getitem__(self, idx):
-        _, object_features,  _, _, object_labels, _ = self.svo_dataset[idx]
+        _, object_features, _, _, object_labels, _ = self.svo_dataset[self.indices[idx]]
         return object_features, object_labels
 
 class VerbDataset(torch.utils.data.Dataset):
-    def __init__(self, svo_dataset):
+    def __init__(self, svo_dataset, train = False):
         super().__init__()
         self.svo_dataset = svo_dataset
+        indices = []
+        for idx, (_, _, verb_appearance_features, _, _, verb_label) in\
+                enumerate(self.svo_dataset):
+            if verb_appearance_features is None:
+                continue
+            if train and verb_label is None:
+                continue
+            indices.append(idx)
+        self.indices = indices
 
     def __len__(self):
-        return len(self.svo_dataset)
+        return len(self.indices)
 
     def __getitem__(self, idx):
-        _, _, verb_features, _, _, verb_labels = self.svo_dataset[idx]
+        _, _, verb_features, _, _, verb_labels = self.svo_dataset[self.indices[idx]]
         return verb_features, verb_labels
 
 def bipartition_dataset(dataset, p = 0.5):
@@ -675,7 +609,9 @@ class ConfidenceCalibrator:
             lr,
             weight_decay,
             epochs,
-            data_loader):
+            subject_loader,
+            object_loader,
+            verb_loader):
         # Create optimizers
         subject_optimizer = torch.optim.SGD(
             self.subject_calibrator.parameters(),
@@ -701,7 +637,7 @@ class ConfidenceCalibrator:
         
         # Progress bar; updated per batch
         progress = tqdm(
-            total = epochs * len(data_loader),
+            total = epochs,
             desc = 'Training calibrators',
             leave = False
         )
@@ -713,75 +649,105 @@ class ConfidenceCalibrator:
         
         # For each epoch
         for epoch in range(epochs):
+            # Update progress description
+            progress.set_description(
+                _generate_tqdm_description(
+                    'Training calibrators',
+                    epoch = f'{epoch + 1} / {epochs}',
+                    epoch_subject_loss = prev_epoch_subject_loss,
+                    epoch_object_loss = prev_epoch_object_loss,
+                    epoch_verb_loss = prev_epoch_verb_loss
+                )
+            )
+            
             # Init accumulated average losses for the epoch
             epoch_subject_loss = 0.0
             epoch_object_loss = 0.0
             epoch_verb_loss = 0.0
             
             # For each subject batch
-            for batch_idx, (subject_features,\
-                    object_features,\
-                    verb_features,\
-                    subject_targets,\
-                    object_targets,\
-                    verb_targets) in\
-                        enumerate(data_loader):
+            for features, targets in subject_loader:
                 # Relocate data if appropriate
-                subject_features = subject_features.to(self.device)
-                object_features = object_features.to(self.device)
-                verb_features = verb_features.to(self.device)
-                subject_targets = subject_targets.to(self.device)
-                object_targets = object_targets.to(self.device)
-                verb_targets = verb_targets.to(self.device)
-
-                # Update progress description
-                progress.set_description(
-                    _generate_tqdm_description(
-                        'Training calibrators',
-                        epoch = f'{epoch + 1} / {epochs}',
-                        batch = f'{batch_idx + 1} / {len(data_loader)}',
-                        epoch_subject_loss = prev_epoch_subject_loss,
-                        epoch_object_loss = prev_epoch_object_loss,
-                        epoch_verb_loss = prev_epoch_verb_loss
-                    )
-                )
+                features = features.to(self.device)
+                targets = targets.to(self.device)
                 
                 # Get raw logits from anomaly detector
-                subject_logits, object_logits, verb_logits = \
-                    anomaly_detector.predict(
-                        subject_features,
-                        object_features,
-                        verb_features
-                    )
+                logits = anomaly_detector.predict_subject(
+                    features,
+                    object_features,
+                    verb_features
+                )
                 
                 # Calibrate logits
-                subject_predictions = self.subject_calibrator(subject_logits)
-                object_predictions = self.object_calibrator(object_logits)
-                verb_predictions = self.verb_calibrator(verb_logits)
+                predictions = self.subject_calibrator(logits)
                 
                 # Compute losses
-                subject_loss = criterion(subject_predictions, subject_targets)
-                object_loss = criterion(object_predictions, object_targets)
-                verb_loss = criterion(verb_predictions, verb_targets)
+                loss = criterion(predictions, targets)
                 
-                # Step optimizers
+                # Step optimizer
                 subject_optimizer.zero_grad()
-                subject_loss.backward()
+                loss.backward()
                 subject_optimizer.step()
+                
+                # Update epoch loss
+                epoch_subject_loss += float(subject_loss.item()) / len(subject_loader)
+
+            # For each object batch
+            for features, targets in object_loader:
+                # Relocate data if appropriate
+                features = features.to(self.device)
+                targets = targets.to(self.device)
+                
+                # Get raw logits from anomaly detector
+                logits = anomaly_detector.predict_object(
+                    features,
+                    object_features,
+                    verb_features
+                )
+                
+                # Calibrate logits
+                predictions = self.object_calibrator(logits)
+                
+                # Compute losses
+                loss = criterion(predictions, targets)
+                
+                # Step optimizer
                 object_optimizer.zero_grad()
-                object_loss.backward()
+                loss.backward()
                 object_optimizer.step()
+                
+                # Update epoch loss
+                epoch_object_loss += float(loss.item()) / len(object_loader)
+
+            # For each verb batch
+            for features, targets in verb_loader:
+                # Relocate data if appropriate
+                features = features.to(self.device)
+                targets = targets.to(self.device)
+                
+                # Get raw logits from anomaly detector
+                logits = anomaly_detector.predict_verb(
+                    features,
+                    object_features,
+                    verb_features
+                )
+                
+                # Calibrate logits
+                predictions = self.verb_calibrator(logits)
+                
+                # Compute losses
+                loss = criterion(predictions, targets)
+                
+                # Step optimizer
                 verb_optimizer.zero_grad()
-                verb_loss.backward()
+                loss.backward()
                 verb_optimizer.step()
                 
-                # Update epoch losses
-                epoch_subject_loss += float(subject_loss.item()) / len(data_loader)
-                epoch_object_loss += float(object_loss.item()) / len(data_loader)
-                epoch_verb_loss += float(verb_loss.item()) / len(data_loader)
+                # Update epoch loss
+                epoch_verb_loss += float(loss.item()) / len(verb_loader)
 
-                # Update progress bar
-                progress.update()
+            # Update progress bar
+            progress.update()
             
             # Update previous losses for display
             prev_epoch_subject_loss = epoch_subject_loss

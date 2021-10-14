@@ -111,89 +111,108 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                             detections, original_image_sizes, images.image_sizes
                     ):
                         sub_boxes = det['subject_boxes']
-                        sub_boxes = transform.resize_boxes(sub_boxes, o_im_s, im_s)
-                        det['subject_boxes'] = sub_boxes
+                        if sub_boxes[0][0].item() == -1:
+                            det['subject_boxes'] = None
+                        else:
+                            sub_boxes = transform.resize_boxes(sub_boxes, o_im_s, im_s)
+                            det['subject_boxes'] = sub_boxes
+                        
                         obj_boxes = det['object_boxes']
-                        obj_boxes = transform.resize_boxes(obj_boxes, o_im_s, im_s)
-                        det['object_boxes'] = obj_boxes
+                        if obj_boxes[0][0].item() == -1:
+                            det['object_boxes'] = None
+                        else:
+                            obj_boxes = transform.resize_boxes(obj_boxes, o_im_s, im_s)
+                            det['object_boxes'] = obj_boxes
                     
                     features = backbone(images.tensors.to(feature_extraction_device))
                     features = {k: v.cpu() for k, v in features.items()}
                     
                     image_shapes = images.image_sizes
                     
-                    subject_box_coords = list()
-                    object_box_coords = list()
-                    verb_box_coords = list()
-                    batch_box_pair_spatial = list()
-                    batch_subject_labels = list()
-                    batch_object_labels = list()
-                    batch_verb_labels = list()
                     for b_idx, detection in enumerate(detections):
-                        subject_box_coords.append(detection['subject_boxes'])
-                        object_box_coords.append(detection['object_boxes'])
+                        if targets is None:
+                            subject_label = None
+                            object_label = None
+                            verb_label = None
+                        else:
+                            subject_label = targets[b_idx]['subject'][0].detach()
+                            object_label = targets[b_idx]['object'][0].detach()
+                            verb_label = targets[b_idx]['verb'][0].detach()
+                            subject_label = None if subject_label.item() == -1 else subject_label
+                            object_label = None if object_label.item() == -1 else object_label
+                            verb_label = None if (verb_label.item() == -1 or verb_label.item() == 0) else verb_label
                         
-                        n_s = len(detection['subject_boxes'])
-                        n_o = len(detection['object_boxes'])
-                        if n_s == 1 and n_o == 1:
+                        subject_labels.append(subject_label)
+                        object_labels.append(object_label)
+                        verb_labels.append(verb_label)
+                        
+                        if detection['subject_boxes'] is not None and detection['object_boxes'] is not None:
                             s_xmin, s_ymin, s_xmax, s_ymax = detection['subject_boxes'][0]
                             o_xmin, o_ymin, o_xmax, o_ymax = detection['object_boxes'][0]
                             v_xmin = min(s_xmin, o_xmin)
                             v_ymin = min(s_ymin, o_ymin)
                             v_xmax = max(s_xmax, o_xmax)
                             v_ymax = max(s_ymax, o_ymax)
-                            verb_box_coords.append(torch.tensor([[v_xmin, v_ymin, v_xmax, v_ymax]]))
-                        elif n_o == 0:
-                            verb_box_coords.append(detection['subject_boxes'].clone().detach())
+                            verb_box_coords = torch.tensor([[v_xmin, v_ymin, v_xmax, v_ymax]])
+                        
+                            x, y = torch.meshgrid(
+                                torch.arange(1),
+                                torch.arange(2)
+                            )
+                            x = x.flatten()
+                            y = y.flatten()
+                            coords = torch.cat([detection['subject_boxes'], detection['object_boxes']])
+                            box_pair_spatial.append(compute_spatial_encodings(
+                                [coords[x]], [coords[y]], [image_shapes[b_idx]]
+                            ).detach())
+
+                            subject_box_features.append(box_roi_pool(features, [detection['subject_boxes']], image_shapes).detach())
+                            object_box_features.append(box_roi_pool(features, [detection['object_boxes']], image_shapes).detach())
+                            verb_box_features.append(box_roi_pool(features, [verb_box_coords], image_shapes).detach())
+                        elif detection['subject_boxes'] is not None:
+                            verb_box_coords = detection['subject_boxes'].clone().detach()
+                            
+                            x, y = torch.meshgrid(
+                                torch.arange(1),
+                                torch.arange(2)
+                            )
+                            x = x.flatten()
+                            y = y.flatten()
+                            coords = torch.cat([detection['subject_boxes'], detection['subject_boxes']])
+                            box_pair_spatial.append(compute_spatial_encodings(
+                                [coords[x]], [coords[y]], [image_shapes[b_idx]]
+                            ).detach())
+                            
+                            # x, y = torch.meshgrid(
+                            #     torch.arange(1),
+                            #     torch.arange(1)
+                            # )
+                            # x = x.flatten()
+                            # y = y.flatten()
+                            # coords = torch.cat([detection['subject_boxes'], []])
+                            # box_pair_spatial.append(compute_spatial_encodings(
+                            #     [coords[x]], [coords[y]], [image_shapes[b_idx]]
+                            # ))
+                            
+                            subject_box_features.append(box_roi_pool(features, [detection['subject_boxes']], image_shapes).detach())
+                            object_box_features.append(None)
+                            verb_box_features.append(box_roi_pool(features, [verb_box_coords], image_shapes).detach())
+                        elif detection['object_boxes'] is not None:
+                            verb_box_coords = None
+                            box_pair_spatial.append(None)
+                            subject_box_features.append(None)
+                            object_box_features.append(box_roi_pool(features, [detection['object_boxes']], image_shapes).detach())
+                            verb_box_features.append(None)
                         else:
                             return NotImplemented
-                        
-                        x, y = torch.meshgrid(
-                            torch.arange(n_s),
-                            torch.arange(n_s + n_o)
-                        )
-                        x = x.flatten()
-                        y = y.flatten()
-                        coords = torch.cat([detection['subject_boxes'], detection['object_boxes']])
-                        batch_box_pair_spatial.append(compute_spatial_encodings(
-                            [coords[x]], [coords[y]], [image_shapes[b_idx]]
-                        ))
-                        
-                        batch_subject_labels.append(detection['subject_labels'])
-                        batch_object_labels.append(detection['object_labels'])
-                        batch_verb_labels.append(targets[b_idx]['verb'] if targets is not None else None)
-                        
-                    batch_box_pair_spatial = torch.stack(batch_box_pair_spatial)
-                    batch_subject_labels = torch.cat(batch_subject_labels)
-                    batch_object_labels = torch.cat(batch_object_labels)
-                    batch_verb_labels = torch.cat(batch_verb_labels)
-                    batch_subject_box_features = box_roi_pool(features, subject_box_coords, image_shapes)
-                    batch_object_box_features = box_roi_pool(features, object_box_coords, image_shapes)
-                    batch_verb_box_features = box_roi_pool(features, verb_box_coords, image_shapes)
                     
-                    box_pair_spatial.append(batch_box_pair_spatial)
-                    subject_labels.append(batch_subject_labels)
-                    object_labels.append(batch_object_labels)
-                    verb_labels.append(batch_verb_labels)
-                    subject_box_features.append(batch_subject_box_features)
-                    object_box_features.append(batch_object_box_features)
-                    verb_box_features.append(batch_verb_box_features)
-                
-                box_pair_spatial = torch.cat(box_pair_spatial)
-                subject_labels = torch.cat(subject_labels)
-                object_labels = torch.cat(object_labels)
-                verb_labels = torch.cat(verb_labels)
-                subject_box_features = torch.cat(subject_box_features)
-                object_box_features = torch.cat(object_box_features)
-                verb_box_features = torch.cat(verb_box_features)
-                
-                self.spatial_features = box_pair_spatial.detach()
-                self.subject_labels = subject_labels.detach()
-                self.object_labels = object_labels.detach()
-                self.verb_labels = verb_labels.detach()
-                self.subject_appearance_features = subject_box_features.detach()
-                self.object_appearance_features = object_box_features.detach()
-                self.verb_appearance_features = verb_box_features.detach()
+                self.spatial_features = box_pair_spatial
+                self.subject_labels = subject_labels
+                self.object_labels = object_labels
+                self.verb_labels = verb_labels
+                self.subject_appearance_features = subject_box_features
+                self.object_appearance_features = object_box_features
+                self.verb_appearance_features = verb_box_features
                 
                 data = {
                     'spatial_features': self.spatial_features,
@@ -223,3 +242,13 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.spatial_features)
+
+def list_collate(batch):
+    spatial_features = [batch[0] for item in batch]
+    subject_appearance_features = [batch[1] for item in batch]
+    object_appearance_features = [batch[2] for item in batch]
+    verb_appearance_features = [batch[3] for item in batch]
+    subject_labels = [batch[4] for item in batch]
+    object_labels = [batch[5] for item in batch]
+    verb_labels = [batch[6] for item in batch]
+    return [spatial_features, subject_appearance_features, object_appearance_features, verb_appearance_features, subject_labels, object_labels, verb_labels]
