@@ -1,13 +1,21 @@
 import torch
 
+import noveltydetection
 import noveltydetectionfeatures
 import unsupervisednoveltydetection
 
 def main():
     detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(12544, 12616, 1024, 6, 9, 8)
     detector = detector.to('cuda:0')
+    subject_score_context = noveltydetection.utils.ScoreContext(noveltydetection.utils.ScoreContext.Source.UNSUPERVISED)
+    object_score_context = noveltydetection.utils.ScoreContext(noveltydetection.utils.ScoreContext.Source.UNSUPERVISED)
+    verb_score_context = noveltydetection.utils.ScoreContext(noveltydetection.utils.ScoreContext.Source.UNSUPERVISED)
+    
     state_dict = torch.load('unsupervisednoveltydetection/unsupervised_novelty_detection_module.pth')
-    detector.load_state_dict(state_dict)
+    detector.load_state_dict(state_dict['module'])
+    subject_score_context.load_state_dict(state_dict['subject_score_context'])
+    object_score_context.load_state_dict(state_dict['object_score_context'])
+    verb_score_context.load_state_dict(state_dict['verb_score_context'])
 
     testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
         name = 'Custom',

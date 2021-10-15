@@ -28,12 +28,12 @@ def parse_args():
     parser.add_argument(
         '--data-root',
         type = str,
-        default = 'Custom_new'
+        default = 'Custom'
     )
     parser.add_argument(
         '--csv-path',
         type = str,
-        default = 'Custom_new/annotations/val_dataset_v1_train.csv'
+        default = 'Custom/annotations/val_dataset_v1_train.csv'
     )
     parser.add_argument(
         '--num-subj-cls',
@@ -63,7 +63,7 @@ def parse_args():
 
     # Model persistence parameters
     parser.add_argument(
-        '--anomaly-detector-save-file',
+        '--classifier-save-file',
         type = str,
         required = True
     )
@@ -120,6 +120,12 @@ def main():
     object_set = unsupervisednoveltydetection.common.ObjectDataset(training_set, train = True)
     verb_set = unsupervisednoveltydetection.common.VerbDataset(training_set, train = True)
     
+    # Split the training sets into a training and calibration sets (discarding
+    # the latter; it's only used in train_confidence_calibrator.py).
+    subject_set, _ = unsupervisednoveltydetection.common.bipartition_dataset(subject_set, 0.7)
+    object_set, _ = unsupervisednoveltydetection.common.bipartition_dataset(object_set, 0.7)
+    verb_set, _ = unsupervisednoveltydetection.common.bipartition_dataset(verb_set, 0.7)
+    
     # Construct training loaders
     subject_loader = torch.utils.data.DataLoader(
         dataset = subject_set,
@@ -139,8 +145,8 @@ def main():
         shuffle = True
     )
     
-    # Create anomaly detector
-    anomaly_detector = unsupervisednoveltydetection.common.AnomalyDetector(
+    # Create classifier
+    classifier = unsupervisednoveltydetection.common.Classifier(
         12544,
         12616,
         args.hidden_nodes,
@@ -149,7 +155,7 @@ def main():
         args.num_action_cls
     ).to(args.device)
     
-    anomaly_detector.fit(
+    classifier.fit(
         args.lr,
         args.weight_decay,
         args.epochs,
@@ -159,8 +165,8 @@ def main():
     )
 
     torch.save(
-        anomaly_detector.state_dict(),
-        args.anomaly_detector_save_file
+        classifier.state_dict(),
+        args.classifier_save_file
     )
 
 if __name__ == '__main__':

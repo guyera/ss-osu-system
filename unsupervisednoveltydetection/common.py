@@ -257,7 +257,7 @@ class ReshapedNoveltyFeatureDataset(torch.utils.data.Dataset):
             object_label,\
             verb_label
 
-class AnomalyDetector:
+class Classifier:
     def __init__(
             self,
             num_appearance_features,
@@ -449,39 +449,21 @@ class AnomalyDetector:
 
     def score_subject(self, features):
         logits = self.subject_classifier(features)
-        softmaxes = torch.nn.functional.softmax(logits, dim = 1)
-        
         max_logits, _ = torch.max(logits, dim = 1)
-        max_softmaxes, _ = torch.max(softmaxes, dim = 1)
-        
         logit_scores = -max_logits
-        softmax_scores = 1 - max_softmaxes
-
-        return logit_scores, softmax_scores
+        return logit_scores
 
     def score_object(self, features):
         logits = self.object_classifier(features)
-        softmaxes = torch.nn.functional.softmax(logits, dim = 1)
-        
         max_logits, _ = torch.max(logits, dim = 1)
-        max_softmaxes, _ = torch.max(softmaxes, dim = 1)
-        
         logit_scores = -max_logits
-        softmax_scores = 1 - max_softmaxes
-
-        return logit_scores, softmax_scores
+        return logit_scores
 
     def score_verb(self, features):
         logits = self.verb_classifier(features)
-        softmaxes = torch.nn.functional.softmax(logits, dim = 1)
-        
         max_logits, _ = torch.max(logits, dim = 1)
-        max_softmaxes, _ = torch.max(softmaxes, dim = 1)
-        
         logit_scores = -max_logits
-        softmax_scores = 1 - max_softmaxes
-
-        return logit_scores, softmax_scores
+        return logit_scores
     
     def to(self, device):
         self.device = device
@@ -605,7 +587,7 @@ class ConfidenceCalibrator:
     
     def fit(
             self,
-            anomaly_detector,
+            classifier,
             lr,
             weight_decay,
             epochs,
@@ -671,12 +653,8 @@ class ConfidenceCalibrator:
                 features = features.to(self.device)
                 targets = targets.to(self.device)
                 
-                # Get raw logits from anomaly detector
-                logits = anomaly_detector.predict_subject(
-                    features,
-                    object_features,
-                    verb_features
-                )
+                # Get raw logits from classifier
+                logits = classifier.predict_subject(features)
                 
                 # Calibrate logits
                 predictions = self.subject_calibrator(logits)
@@ -690,7 +668,7 @@ class ConfidenceCalibrator:
                 subject_optimizer.step()
                 
                 # Update epoch loss
-                epoch_subject_loss += float(subject_loss.item()) / len(subject_loader)
+                epoch_subject_loss += float(loss.item()) / len(subject_loader)
 
             # For each object batch
             for features, targets in object_loader:
@@ -698,12 +676,8 @@ class ConfidenceCalibrator:
                 features = features.to(self.device)
                 targets = targets.to(self.device)
                 
-                # Get raw logits from anomaly detector
-                logits = anomaly_detector.predict_object(
-                    features,
-                    object_features,
-                    verb_features
-                )
+                # Get raw logits from classifier
+                logits = classifier.predict_object(features)
                 
                 # Calibrate logits
                 predictions = self.object_calibrator(logits)
@@ -725,12 +699,8 @@ class ConfidenceCalibrator:
                 features = features.to(self.device)
                 targets = targets.to(self.device)
                 
-                # Get raw logits from anomaly detector
-                logits = anomaly_detector.predict_verb(
-                    features,
-                    object_features,
-                    verb_features
-                )
+                # Get raw logits from classifier
+                logits = classifier.predict_verb(features)
                 
                 # Calibrate logits
                 predictions = self.verb_calibrator(logits)
@@ -825,7 +795,7 @@ class Calibrator:
         
     def fit(
             self,
-            anomaly_detector,
+            classifier,
             lr,
             weight_decay,
             epochs,
@@ -904,7 +874,7 @@ class Calibrator:
                 
                 # Get anomaly detection scores and unsqueeze for logistic
                 # regression
-                scores, _ = anomaly_detector.score_subject(
+                scores, _ = classifier.score_subject(
                     features
                 )
                 scores = scores.unsqueeze(1)
@@ -933,7 +903,7 @@ class Calibrator:
                 
                 # Get anomaly detection scores and unsqueeze for logistic
                 # regression
-                scores, _ = anomaly_detector.score_object(
+                scores, _ = classifier.score_object(
                     features
                 )
                 scores = scores.unsqueeze(1)
@@ -962,7 +932,7 @@ class Calibrator:
                 
                 # Get anomaly detection scores and unsqueeze for logistic
                 # regression
-                scores, _ = anomaly_detector.score_verb(
+                scores, _ = classifier.score_verb(
                     features
                 )
                 scores = scores.unsqueeze(1)
@@ -997,11 +967,11 @@ class Calibrator:
                 # Get anomaly detection scores and stack for logistic
                 # regression
                 subject_scores, _ =\
-                    anomaly_detector.score_subject(subject_features)
+                    classifier.score_subject(subject_features)
                 object_scores, _ =\
-                    anomaly_detector.score_object(object_features)
+                    classifier.score_object(object_features)
                 verb_scores, _ =\
-                    anomaly_detector.score_verb(verb_features)
+                    classifier.score_verb(verb_features)
                 scores = torch.stack(
                     (subject_scores, object_scores, verb_scores),
                     dim = 1

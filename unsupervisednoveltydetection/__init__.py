@@ -16,7 +16,7 @@ class UnsupervisedNoveltyDetector:
     def __init__(self, num_appearance_features, num_verb_features, num_hidden_nodes, num_subj_cls, num_obj_cls, num_action_cls):
         self.device = 'cpu'
 
-        self.anomaly_detector = unsupervisednoveltydetection.common.AnomalyDetector(
+        self.classifier = unsupervisednoveltydetection.common.Classifier(
             num_appearance_features,
             num_verb_features,
             num_hidden_nodes,
@@ -31,17 +31,17 @@ class UnsupervisedNoveltyDetector:
     
     def to(self, device):
         self.device = device
-        self.anomaly_detector = self.anomaly_detector.to(device)
+        self.classifier = self.classifier.to(device)
         self.confidence_calibrator = self.confidence_calibrator.to(device)
         self.known_combinations = self.known_combinations.to(device)
         return self
 
     def load_state_dict(self, state_dict):
-        anomaly_detector_state_dict = state_dict['anomaly_detector']
+        classifier_state_dict = state_dict['classifier']
         confidence_calibrator_state_dict = state_dict['confidence_calibrator']
         known_combinations = state_dict['known_combinations']
 
-        self.anomaly_detector.load_state_dict(anomaly_detector_state_dict)
+        self.classifier.load_state_dict(classifier_state_dict)
         self.confidence_calibrator.load_state_dict(confidence_calibrator_state_dict)
         
         self.known_combinations[:] = False
@@ -275,6 +275,7 @@ class UnsupervisedNoveltyDetector:
         subject_novelty_scores = []
         object_novelty_scores = []
         verb_novelty_scores = []
+        p_n_t4 = []
         for idx in range(len(spatial_features)):
             example_spatial_features = spatial_features[idx]
             example_subject_appearance_features = subject_appearance_features[idx]
@@ -283,16 +284,21 @@ class UnsupervisedNoveltyDetector:
             
             if example_subject_appearance_features is not None:
                 example_subject_features = torch.flatten(example_subject_appearance_features).to(self.device)
-                subject_logits, subject_scores = self.anomaly_detector.predict_score_subject(example_subject_features.unsqueeze(0))
+
+                subject_logits, subject_score = self.classifier.predict_score_subject(example_subject_features.unsqueeze(0))
+                
+                subject_score = subject_score.squeeze(0)
+
                 subject_probs = self.confidence_calibrator.calibrate_subject(subject_logits)
                 subject_probs = subject_probs.squeeze(0)
-                subject_novelty_scores.append(subject_scores)
+
+                subject_novelty_scores.append(subject_score)
             else:
                 subject_novelty_scores.append(None)
 
             if example_object_appearance_features is not None:
                 example_object_features = torch.flatten(example_object_appearance_features).to(self.device)
-                object_logits, object_scores = self.anomaly_detector.predict_score_object(example_object_features.unsqueeze(0))
+                object_logits, object_scores = self.classifier.predict_score_object(example_object_features.unsqueeze(0))
                 object_probs = self.confidence_calibrator.calibrate_object(object_logits)
                 object_probs = object_probs.squeeze(0)
                 object_novelty_scores.append(object_scores)
@@ -302,16 +308,22 @@ class UnsupervisedNoveltyDetector:
             if example_verb_appearance_features is not None:
                 example_verb_features = torch.cat((torch.flatten(example_spatial_features), torch.flatten(example_verb_appearance_features)))
                 example_verb_features = example_verb_features.to(self.device)
-                verb_logits, verb_scores = self.anomaly_detector.predict_score_verb(example_verb_features.unsqueeze(0))
+                verb_logits, verb_scores = self.classifier.predict_score_verb(example_verb_features.unsqueeze(0))
                 verb_probs = self.confidence_calibrator.calibrate_verb(verb_logits)
                 verb_probs = verb_probs.squeeze(0)
                 verb_novelty_scores.append(verb_scores)
             else:
                 verb_novelty_scores.append(None)
             
+            p_ni_t4 = torch.tensor(0)
+            p_ni_t4 = p_ni_t4.to(subject_probs.device)
             if example_subject_appearance_features is not None and example_object_appearance_features is not None:
                 # Case 1, S/V/O
                 example_predictions = self._case_1(subject_probs, object_probs, verb_probs, p_type, 3)
+                
+                t4_raw_joint_probs = (subject_probs.unsqueeze(1) * object_probs.unsqueeze(0)).unsqueeze(2) * verb_probs.unsqueeze(0).unsqueeze(1)
+                t4_unknown_joint_probs = (1 - self.known_combinations.to(torch.int)) * t4_raw_joint_probs
+                p_ni_t4 = t4_unknown_joint_probs.sum()
             elif example_subject_appearance_features is not None and example_object_appearance_features is None:
                 # Case 2, S/V/None
                 example_predictions = self._case_2(subject_probs, verb_probs, p_type, 3)
@@ -322,10 +334,57 @@ class UnsupervisedNoveltyDetector:
                 return NotImplemented
             
             predictions.append(example_predictions)
+            p_n_t4.append(p_ni_t4)
         
-        results['top3'] = predictions
+        p_n_t4 = torch.stack(p_n_t4, dim = 0)
+
         results['subject_novelty_score'] = subject_novelty_scores
-        results['object_novelty_score'] = object_novelty_scores
         results['verb_novelty_score'] = verb_novelty_scores
+        results['object_novelty_score'] = object_novelty_scores
+        results['p_n_t4'] = p_n_t4
+        results['top3'] = predictions
+
+        return results
+    
+    def score(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type):
+        results = {}
+        subject_novelty_scores = []
+        object_novelty_scores = []
+        verb_novelty_scores = []
+        for idx in range(len(spatial_features)):
+            example_spatial_features = spatial_features[idx]
+            example_subject_appearance_features = subject_appearance_features[idx]
+            example_object_appearance_features = object_appearance_features[idx]
+            example_verb_appearance_features = verb_appearance_features[idx]
+            
+            if example_subject_appearance_features is not None:
+                example_subject_features = torch.flatten(example_subject_appearance_features).to(self.device)
+
+                subject_score = self.classifier.score_subject(example_subject_features.unsqueeze(0))
+                subject_score = subject_score.squeeze(0)
+                subject_novelty_scores.append(subject_score)
+            else:
+                subject_novelty_scores.append(None)
+
+            if example_object_appearance_features is not None:
+                example_object_features = torch.flatten(example_object_appearance_features).to(self.device)
+                object_score = self.classifier.score_object(example_object_features.unsqueeze(0))
+                object_score = object_score.squeeze(0)
+                object_novelty_scores.append(object_score)
+            else:
+                object_novelty_scores.append(None)
+            
+            if example_verb_appearance_features is not None:
+                example_verb_features = torch.cat((torch.flatten(example_spatial_features), torch.flatten(example_verb_appearance_features)))
+                example_verb_features = example_verb_features.to(self.device)
+                verb_score = self.classifier.score_verb(example_verb_features.unsqueeze(0))
+                verb_score = verb_score.squeeze(0)
+                verb_novelty_scores.append(verb_score)
+            else:
+                verb_novelty_scores.append(None)
+            
+        results['subject_novelty_score'] = subject_novelty_scores
+        results['verb_novelty_score'] = verb_novelty_scores
+        results['object_novelty_score'] = object_novelty_scores
 
         return results
