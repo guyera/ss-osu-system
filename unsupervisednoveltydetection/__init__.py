@@ -142,7 +142,7 @@ class UnsupervisedNoveltyDetector:
                 
                 verb_index = flattened_index
                 
-                example_predictions.append(((0, verb_index, object_index), sorted_t1_joint_probs[0].item()))
+                example_predictions.append(((0, verb_index, object_index), sorted_t1_joint_probs[0]))
                 
                 sorted_t1_joint_probs = sorted_t1_joint_probs[1:]
                 sorted_t1_joint_prob_indices = sorted_t1_joint_prob_indices[1:]
@@ -159,7 +159,7 @@ class UnsupervisedNoveltyDetector:
                 
                 object_index = flattened_index
                 
-                example_predictions.append(((subject_index, 0, object_index), sorted_t2_joint_probs[0].item()))
+                example_predictions.append(((subject_index, 0, object_index), sorted_t2_joint_probs[0]))
                 
                 sorted_t2_joint_probs = sorted_t2_joint_probs[1:]
                 sorted_t2_joint_prob_indices = sorted_t2_joint_prob_indices[1:]
@@ -175,7 +175,7 @@ class UnsupervisedNoveltyDetector:
                 
                 verb_index = flattened_index
                 
-                example_predictions.append(((subject_index, verb_index, 0), sorted_t3_joint_probs[0].item()))
+                example_predictions.append(((subject_index, verb_index, 0), sorted_t3_joint_probs[0]))
                 
                 sorted_t3_joint_probs = sorted_t3_joint_probs[1:]
                 sorted_t3_joint_prob_indices = sorted_t3_joint_prob_indices[1:]
@@ -196,7 +196,7 @@ class UnsupervisedNoveltyDetector:
                 
                 verb_index = flattened_index
                 
-                example_predictions.append(((subject_index, verb_index, object_index), sorted_t4_joint_probs[0].item()))
+                example_predictions.append(((subject_index, verb_index, object_index), sorted_t4_joint_probs[0]))
                 
                 sorted_t4_joint_probs = sorted_t4_joint_probs[1:]
                 sorted_t4_joint_prob_indices = sorted_t4_joint_prob_indices[1:]
@@ -207,18 +207,14 @@ class UnsupervisedNoveltyDetector:
         t1_raw_joint_probs = verb_probs
         t1_joint_probs = t1_raw_joint_probs * p_type[0]
         
-        t2_raw_joint_probs = subject_probs
-        t2_joint_probs = t2_raw_joint_probs * p_type[1]
-        
-        t5_known_combinations = self.known_combinations.to(torch.int).sum(dim = 1) > 0
-        t5_raw_joint_probs = subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
-        t5_unknown_joint_probs = (1 - t5_known_combinations.to(torch.int)) * t5_raw_joint_probs
-        t5_unknown_joint_probs_sum = t5_unknown_joint_probs.sum()
-        if t5_unknown_joint_probs_sum.item() == 0:
-            t5_conditional_joint_probs = t5_unknown_joint_probs
-        else:
-            t5_conditional_joint_probs = t5_unknown_joint_probs / (t5_unknown_joint_probs_sum)
-        t5_joint_probs = t5_conditional_joint_probs * p_type[4]
+        t2_5_raw_joint_probs = subject_probs
+        # Type 2 and 5 instances are indistinguishable in case 2; a tuple of
+        # the form <S, 0, None> can be either type 2 or type 5. Thus, its
+        # probability of being correct is
+        #   P(Correct | valid) * P(valid)
+        # = P(Correct | valid) * P(type = 2 or type = 5)
+        # = P(Correct | valid) * (P(type = 2) + P(type = 5))
+        t2_5_joint_probs = t2_5_raw_joint_probs * (p_type[1] + p_type[4])
         
         # We've computed P(Correct | N_i), but we also have the case information.
         # We need to compute:
@@ -238,61 +234,40 @@ class UnsupervisedNoveltyDetector:
         type_normalizer = p_type[0] + p_type[1] + p_type[4]
         
         t1_joint_probs /= type_normalizer
-        t2_joint_probs /= type_normalizer
-        t5_joint_probs /= type_normalizer
+        t2_5_joint_probs /= type_normalizer
         
         flattened_t1_joint_probs = torch.flatten(t1_joint_probs)
         sorted_t1_joint_probs, sorted_t1_joint_prob_indices = torch.sort(flattened_t1_joint_probs, descending = True)
         
-        flattened_t2_joint_probs = torch.flatten(t2_joint_probs)
-        sorted_t2_joint_probs, sorted_t2_joint_prob_indices = torch.sort(flattened_t2_joint_probs, descending = True)
-        
-        flattened_t5_joint_probs = torch.flatten(t5_joint_probs)
-        sorted_t5_joint_probs, sorted_t5_joint_prob_indices = torch.sort(flattened_t5_joint_probs, descending = True)
+        flattened_t2_5_joint_probs = torch.flatten(t2_5_joint_probs)
+        sorted_t2_5_joint_probs, sorted_t2_5_joint_prob_indices = torch.sort(flattened_t2_5_joint_probs, descending = True)
         
         example_predictions = []
         for _ in range(k):
-            if sorted_t1_joint_probs[0] >= sorted_t2_joint_probs[0]\
-                    and sorted_t1_joint_probs[0] >= sorted_t5_joint_probs[0]:
+            if sorted_t1_joint_probs[0] >= sorted_t2_5_joint_probs[0]:
                 flattened_index = int(sorted_t1_joint_prob_indices[0].item())
                 
                 verb_index = flattened_index
                 
-                example_predictions.append(((0, verb_index, None), sorted_t1_joint_probs[0].item()))
+                example_predictions.append(((0, verb_index, None), sorted_t1_joint_probs[0]))
                 
                 sorted_t1_joint_probs = sorted_t1_joint_probs[1:]
                 sorted_t1_joint_prob_indices = sorted_t1_joint_prob_indices[1:]
                 
-            elif sorted_t2_joint_probs[0] >= sorted_t5_joint_probs[0]:
-                flattened_index = int(sorted_t2_joint_prob_indices[0].item())
+            else:
+                flattened_index = int(sorted_t2_5_joint_prob_indices[0].item())
                 
                 subject_index = flattened_index
                 
-                example_predictions.append(((subject_index, 0, None), sorted_t2_joint_probs[0].item()))
+                example_predictions.append(((subject_index, 0, None), sorted_t2_5_joint_probs[0]))
                 
-                sorted_t2_joint_probs = sorted_t2_joint_probs[1:]
-                sorted_t2_joint_prob_indices = sorted_t2_joint_prob_indices[1:]
+                sorted_t2_5_joint_probs = sorted_t2_5_joint_probs[1:]
+                sorted_t2_5_joint_prob_indices = sorted_t2_5_joint_prob_indices[1:]
                 
-            else:
-                flattened_index = int(sorted_t5_joint_prob_indices[0].item())
-                
-                subject_skip_interval = verb_probs.shape[0]
-
-                subject_index = flattened_index // subject_skip_interval
-                subject_skip_total = subject_index * subject_skip_interval
-                flattened_index -= subject_skip_total
-                
-                verb_index = flattened_index
-                
-                example_predictions.append(((subject_index, verb_index, None), sorted_t5_joint_probs[0].item()))
-                
-                sorted_t5_joint_probs = sorted_t5_joint_probs[1:]
-                sorted_t5_joint_prob_indices = sorted_t5_joint_prob_indices[1:]
-
         return example_predictions
 
     def _case_3(self, p_type):
-        return [((None, None, torch.tensor(0, dtype = torch.long)), torch.tensor(1.0).item())]
+        return [((None, None, torch.tensor(0, dtype = torch.long)), torch.tensor(1.0))]
 
     def __call__(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type):
         predictions = []
@@ -311,7 +286,7 @@ class UnsupervisedNoveltyDetector:
                 subject_logits, subject_scores = self.anomaly_detector.predict_score_subject(example_subject_features.unsqueeze(0))
                 subject_probs = self.confidence_calibrator.calibrate_subject(subject_logits)
                 subject_probs = subject_probs.squeeze(0)
-                subject_novelty_scores.append(subject_scores.item())
+                subject_novelty_scores.append(subject_scores)
             else:
                 subject_novelty_scores.append(None)
 
@@ -320,7 +295,7 @@ class UnsupervisedNoveltyDetector:
                 object_logits, object_scores = self.anomaly_detector.predict_score_object(example_object_features.unsqueeze(0))
                 object_probs = self.confidence_calibrator.calibrate_object(object_logits)
                 object_probs = object_probs.squeeze(0)
-                object_novelty_scores.append(object_scores.item())
+                object_novelty_scores.append(object_scores)
             else:
                 object_novelty_scores.append(None)
             
@@ -330,7 +305,7 @@ class UnsupervisedNoveltyDetector:
                 verb_logits, verb_scores = self.anomaly_detector.predict_score_verb(example_verb_features.unsqueeze(0))
                 verb_probs = self.confidence_calibrator.calibrate_verb(verb_logits)
                 verb_probs = verb_probs.squeeze(0)
-                verb_novelty_scores.append(verb_scores.item())
+                verb_novelty_scores.append(verb_scores)
             else:
                 verb_novelty_scores.append(None)
             
