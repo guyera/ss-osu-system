@@ -56,8 +56,6 @@ def main():
 
     results = detector(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, torch.full((5,), 0.2, device = 'cuda:0')) 
 
-    import pdb; pdb.set_trace()
- 
     for i in range(10):
         print(results['top3'][i])
         print()
