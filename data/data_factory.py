@@ -74,8 +74,7 @@ class CustomInput(object):
 
 class DataFactory(Dataset):
     def __init__(self,
-                 name, partition,
-                 data_root,
+                 name, data_root,
                  csv_path=None,
                  flip=False,
                  box_score_thresh_h=0.2,
@@ -142,7 +141,6 @@ class DataFactory(Dataset):
         detections = self.dataset.get_detections(i)
         detection = pocket.ops.to_tensor(detections, input_format='dict')
 
-        # print(detection)
         if not self.training:
             detection['img_id'] = self.dataset.filename(i)
 

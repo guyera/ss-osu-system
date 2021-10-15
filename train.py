@@ -8,9 +8,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from models.scg import SpatiallyConditionedGraph as SCG
 from models.scg import CustomisedDLE
 from data.data_factory import DataFactory
-from utils import custom_collate, Timer, AverageMeter, get_config, DataLoaderX
-
-import pickle
+from utils import custom_collate, Timer
 
 train_timer = Timer()
 
@@ -163,7 +161,7 @@ def main(rank, args):
 
     if args.net == 'scg':
         trainset = DataFactory(
-            name=args.dataset, partition=args.partitions[1],
+            name=args.dataset,
             data_root=args.data_root,
             csv_path=args.csv_path,
             num_subj_cls=args.num_subj_cls,
@@ -173,9 +171,9 @@ def main(rank, args):
         )
 
         valset = DataFactory(
-            name=args.dataset, partition=args.partitions[1],
+            name=args.dataset,
             data_root=args.data_root,
-            csv_path=args.csv_path,
+            csv_path=args.val_csv_path,
             num_subj_cls=args.num_subj_cls,
             num_obj_cls=args.num_obj_cls,
             num_action_cls=args.num_action_cls
@@ -218,8 +216,6 @@ def main(rank, args):
     # Fix random seed for model synchronisation
     torch.manual_seed(args.random_seed)
 
-    print(f'random seed: {args.random_seed}')
-
     net = get_net(args)
 
     if os.path.exists(args.checkpoint_path):
@@ -252,9 +248,9 @@ if __name__ == "__main__":
                         help="Number of subprocesses/GPUs to use")
     parser.add_argument('--dataset', default='Custom', type=str)
     parser.add_argument('--net', default='scg', type=str)
-    parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='Custom', type=str, help="Give full csv path for Custom dataset")
     parser.add_argument('--csv-path', default=None, type=str, help="Csv Path is required only for Custom dataset")
+    parser.add_argument('--val-csv-path', default=None, type=str, help="Csv Path is required only for Custom dataset")
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
     parser.add_argument('--num-epochs', default=8, type=int)

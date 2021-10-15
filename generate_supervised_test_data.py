@@ -1,23 +1,15 @@
 import torch
 
-import noveltydetection
 import noveltydetectionfeatures
 import unsupervisednoveltydetection
 
 def main():
     detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(12544, 12616, 1024, 6, 9, 8)
     detector = detector.to('cuda:0')
-    subject_score_context = noveltydetection.utils.ScoreContext(noveltydetection.utils.ScoreContext.Source.UNSUPERVISED)
-    object_score_context = noveltydetection.utils.ScoreContext(noveltydetection.utils.ScoreContext.Source.UNSUPERVISED)
-    verb_score_context = noveltydetection.utils.ScoreContext(noveltydetection.utils.ScoreContext.Source.UNSUPERVISED)
-    
     state_dict = torch.load('unsupervisednoveltydetection/unsupervised_novelty_detection_module.pth')
-    detector.load_state_dict(state_dict['module'])
-    subject_score_context.load_state_dict(state_dict['subject_score_context'])
-    object_score_context.load_state_dict(state_dict['object_score_context'])
-    verb_score_context.load_state_dict(state_dict['verb_score_context'])
+    detector.load_state_dict(state_dict)
 
-    testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
+    known_set = noveltydetectionfeatures.NoveltyFeatureDataset(
         name = 'Custom',
         data_root = 'Custom',
         csv_path = 'Custom/annotations/val_dataset_v1_val.csv',
@@ -28,6 +20,45 @@ def main():
         image_batch_size = 16,
         feature_extraction_device = 'cuda:0'
     )
+
+    unknown_set = noveltydetectionfeatures.NoveltyFeatureDataset(
+        name = 'Custom',
+        data_root = 'Custom',
+        csv_path = 'Custom/annotations/val_dataset_v1_novel_val.csv',
+        num_subj_cls = 6,
+        num_obj_cls = 9,
+        num_action_cls = 8,
+        training = False,
+        image_batch_size = 16,
+        feature_extraction_device = 'cuda:0'
+    )
+
+    S_X_kn = torch.flatten(torch.tensor(known_set.__dict__['subject_appearance_features']), start_dim=1, end_dim=3)
+    S_y_kn = torch.tensor([1 for _ in range(len(S_X_kn))]) 
+    
+    import pdb; pdb.set_trace()
+    S_X_unkn = torch.flatten(torch.tensor(unknown_set.__dict__['subject_appearance_features']), start_dim=1, end_dim=3)
+    S_y_unkn = torch.tensor([0 for _ in range(len(S_X_unkn))]) 
+
+    S_X = torch.vstack((S_X_kn, S_X_unkn))
+    S_y = torch.vstack((S_y_kn, S_y_unkn))
+
+    import pdb; pdb.set_trace()
+
+    V_X_kn = torch.flatten(torch.tensor(known_set.__dict__['verb_appearance_features']), start_dim=1, end_dim=3)
+    V_y_kn = torch.tensor([1 for _ in range(len(V_X_kn))]) 
+    
+    V_X_unkn = torch.flatten(torch.tensor(unknown_set.__dict__['verb_appearance_features']), start_dim=1, end_dim=3)
+    V_y_unkn = torch.tensor([0 for _ in range(len(V_X_unkn))]) 
+    
+    V_X_kn = torch.flatten(torch.tensor(known_set.__dict__['object_appearance_features']), start_dim=1, end_dim=3)
+    V_y_kn = torch.tensor([1 for _ in range(len(O_X_kn))]) 
+    
+    V_X_unkn = torch.flatten(torch.tensor(unknown_set.__dict__['object_appearance_features']), start_dim=1, end_dim=3)
+    V_y_unkn = torch.tensor([0 for _ in range(len(O_X_unkn))]) 
+   
+ 
+    import pdb; pdb.set_trace()
 
     spatial_features = []
     subject_appearance_features = []
@@ -56,8 +87,6 @@ def main():
 
     results = detector(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, torch.full((5,), 0.2, device = 'cuda:0')) 
 
-    import pdb; pdb.set_trace()
- 
     for i in range(10):
         print(results['top3'][i])
         print()
