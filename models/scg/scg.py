@@ -11,6 +11,7 @@ from torchvision.models.detection import transform
 from torchvision.models.detection.faster_rcnn import TwoMLPHead
 from torchvision.ops import MultiScaleRoIAlign
 
+
 class CustomFastRCNNPredictor(nn.Module):
     """
     Standard classification + bounding box regression layers
@@ -126,19 +127,71 @@ class GenericHOINetwork(nn.Module):
     ]:
         original_image_sizes = [img.shape[-2:] for img in images]
         images, targets = self.transform(images, targets)
-        for det, o_im_s, im_s in zip(
+        for im_id, (det, o_im_s, im_s) in enumerate(zip(
                 detections, original_image_sizes, images.image_sizes
-        ):
-            # Now separating object and subject boxes
-            # boxes = det['boxes']
-            # boxes = transform.resize_boxes(boxes, o_im_s, im_s)
-            # det['boxes'] = boxes
+        )):
             sub_boxes = det['subject_boxes']
-            sub_boxes = transform.resize_boxes(sub_boxes, o_im_s, im_s)
+
+            # Tracking empty boxes so that we can ignore them during training of object classification head and to
+            # filter predictions while compiling final results
+            # We will reject a box if any of the co-ordinate == -1
+            non_empty_ids = torch.nonzero(torch.all(torch.where(sub_boxes != -1, True, False), dim=1))
+            if len(non_empty_ids) > 1:
+                non_empty_ids = non_empty_ids.squeeze()
+            elif len(non_empty_ids) == 1:
+                non_empty_ids = non_empty_ids[0]
+
+            sub_boxes = pocket.ops.relocate_to_cuda(sub_boxes.type(torch.FloatTensor))
+            new_boxes = transform.resize_boxes(sub_boxes, o_im_s, im_s)
+            # Replacing empty boxes with full image as box
+            for box_id in range(len(sub_boxes)):
+                if box_id in non_empty_ids:
+                    sub_boxes[box_id] = new_boxes[box_id]
+
+                    # We need to do this to handle matching in evaluation.
+                    if torch.equal(sub_boxes[box_id], pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0]]))):
+                        sub_boxes[box_id] = pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1] - 1, im_s[0]]))
+
+                        if targets is not None:
+                            targets[im_id]['boxes_s'][box_id] = \
+                                pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1] - 1, im_s[0]]))
+                else:
+                    sub_boxes[box_id] = pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0]]))
+
+                    if targets is not None:
+                        targets[im_id]['boxes_s'][box_id] = \
+                            pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0]]))
+
             det['subject_boxes'] = sub_boxes
+            det['valid_subjects'] = non_empty_ids
             obj_boxes = det['object_boxes']
-            obj_boxes = transform.resize_boxes(obj_boxes, o_im_s, im_s)
+            non_empty_ids = torch.nonzero(torch.all(torch.where(obj_boxes != -1, True, False), dim=1))
+
+            if len(non_empty_ids) > 1:
+                non_empty_ids = non_empty_ids.squeeze()
+            elif len(non_empty_ids) == 1:
+                non_empty_ids = non_empty_ids[0]
+
+            obj_boxes = pocket.ops.relocate_to_cuda(obj_boxes.type(torch.FloatTensor))
+            new_boxes = transform.resize_boxes(obj_boxes, o_im_s, im_s)
+
+            # Replacing empty boxes with full image as box
+            for box_id in range(len(obj_boxes)):
+                if box_id in non_empty_ids:
+                    obj_boxes[box_id] = new_boxes[box_id]
+                    if torch.equal(obj_boxes[box_id], pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0]]))):
+                        obj_boxes[box_id] = pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1] - 1, im_s[0]]))
+                        if targets is not None:
+                            targets[im_id]['boxes_o'][box_id] = \
+                                pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1] - 1, im_s[0]]))
+                else:
+                    obj_boxes[box_id] = pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0]]))
+                    if targets is not None:
+                        targets[im_id]['boxes_o'][box_id] = \
+                            pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0]]))
+
             det['object_boxes'] = obj_boxes
+            det['valid_objects'] = non_empty_ids
 
         return images, detections, targets, original_image_sizes
 
@@ -164,7 +217,6 @@ class GenericHOINetwork(nn.Module):
         images, detections, targets, original_image_sizes = self.preprocess(
             images, detections, targets)
         features = self.backbone(images.tensors)
-
         results = self.interaction_head(features, detections,
                                         images.image_sizes, targets)
 
@@ -192,13 +244,28 @@ class GenericHOINetwork(nn.Module):
         """
         images, detections, _, _ = self.preprocess(
             images, detections)
+        is_downstream = False
+
         if features is not None:
+            is_downstream = True
             features = self.backbone(images.tensors)
+
         subject_box_coords = [detection['subject_boxes'] for detection in detections]
         object_box_coords = [detection['object_boxes'] for detection in detections]
         subject_box_features = self.interaction_head.box_roi_pool(features, subject_box_coords, images.image_sizes)
         object_box_features = self.interaction_head.box_roi_pool(features, object_box_coords, images.image_sizes)
-        # box_features = self.interaction_head.box_head(box_features)
+
+        # Nullify invalid boxes only if this function is an independent call
+        if not is_downstream:
+            for im_id, det in enumerate(detections):
+                for id, _ in enumerate(det['subject_boxes']):
+                    if id not in det['valid_subjects']:
+                        subject_box_features[im_id][id] = -1
+
+                for id, _ in enumerate(det['object_boxes']):
+                    if id not in det['valid_objects']:
+                        object_box_features[im_id][id] = -1
+
         return subject_box_features, object_box_features
 
     def get_verb_features(self,
@@ -219,17 +286,27 @@ class GenericHOINetwork(nn.Module):
         subject_box_all_scores = list()
         object_box_coords = list()
         object_box_all_scores = list()
+
         for detection in detections:
             subject_box_coords.append(detection['boxes'][:detection['num_subjects']])
             subject_box_all_scores.append(detection['box_all_scores'][:detection['num_subjects']])
             object_box_coords.append(detection['boxes'][detection['num_subjects']:])
             object_box_all_scores.append(detection['box_all_scores'][detection['num_subjects']:])
+
         subject_box_features = self.interaction_head.box_roi_pool(features, subject_box_coords, images.image_sizes)
         object_box_features = self.interaction_head.box_roi_pool(features, object_box_coords, images.image_sizes)
         result = self.interaction_head.box_pair_head(features, images.image_sizes,
                                                      subject_box_features, subject_box_coords,
                                                      subject_box_all_scores, object_box_features, object_box_coords,
                                                      object_box_all_scores)
+        result = result[0]
+
+        # This filtering will work only for 1-pair/image case
+        for im_id, det in enumerate(detections):
+            for id, _ in enumerate(det['subject_boxes']):
+                if id not in det['valid_subjects']:
+                    result[im_id][0] = -1
+
         return result[0]
 
 
@@ -314,6 +391,7 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             image_mean = [0.485, 0.456, 0.406]
         if image_std is None:
             image_std = [0.229, 0.224, 0.225]
+            
         transform = HOINetworkTransform(min_size, max_size,
                                         image_mean, image_std)
 
