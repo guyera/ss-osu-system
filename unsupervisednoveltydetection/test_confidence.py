@@ -25,15 +25,29 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 feature_extraction_device = self.device
             )
         )
+    
+        subject_set = unsupervisednoveltydetection.common.SubjectDataset(testing_set, train = False)
+        object_set = unsupervisednoveltydetection.common.ObjectDataset(testing_set, train = False)
+        verb_set = unsupervisednoveltydetection.common.VerbDataset(testing_set, train = False)
 
         # The remaining datasets are used for evaluating AUC of subject, object,
         # and verb classifiers in the open set setting.
         
         # Construct data loader
-        self.testing_loader = torch.utils.data.DataLoader(
-            dataset = testing_set,
+        self.subject_loader = torch.utils.data.DataLoader(
+            dataset = subject_set,
             batch_size = 128,
-            shuffle = True
+            shuffle = False
+        )
+        self.object_loader = torch.utils.data.DataLoader(
+            dataset = object_set,
+            batch_size = 128,
+            shuffle = False
+        )
+        self.verb_loader = torch.utils.data.DataLoader(
+            dataset = verb_set,
+            batch_size = 128,
+            shuffle = False
         )
         
         # Get example features for shape information to construct classifiers
@@ -92,65 +106,65 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         subject_correct = []
         object_correct = []
         verb_correct = []
-        for subject_features,\
-                object_features,\
-                verb_features,\
-                subject_labels,\
-                object_labels,\
-                verb_labels in self.testing_loader:
-            subject_features = subject_features.to(self.device)
-            object_features = object_features.to(self.device)
-            verb_features = verb_features.to(self.device)
-            subject_labels = subject_labels.to(self.device)
-            object_labels = object_labels.to(self.device)
-            verb_labels = verb_labels.to(self.device)
+        for features, labels in self.subject_loader:
+            features = features.to(self.device)
+            labels = labels.to(self.device)
         
-            subject_logits, object_logits, verb_logits = self.classifier.predict(
-                subject_features,
-                object_features,
-                verb_features
-            )
+            logits = self.classifier.predict_subject(features)
             
-            uncalibrated_subject_probabilities = torch.nn.functional.softmax(subject_logits, dim = 1)
-            uncalibrated_object_probabilities = torch.nn.functional.softmax(object_logits, dim = 1)
-            uncalibrated_verb_probabilities = torch.nn.functional.softmax(verb_logits, dim = 1)
+            uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)
+            calibrated_probabilities = self.calibrator.calibrate_subject(logits)
+            
+            batch_uncalibrated_confidences, predictions =\
+                torch.max(uncalibrated_probabilities, dim = 1)
+            batch_calibrated_confidences, _ =\
+                torch.max(calibrated_probabilities, dim = 1)
+            
+            uncalibrated_subject_confidences.append(batch_uncalibrated_confidences)
+            calibrated_subject_confidences.append(batch_calibrated_confidences)
+            
+            batch_correct = predictions == labels
+            subject_correct.append(batch_correct)
 
-            calibrated_subject_probabilities, calibrated_object_probabilities, calibrated_verb_probabilities =\
-                self.calibrator.calibrate(
-                    subject_logits,
-                    object_logits,
-                    verb_logits
-                )
+        for features, labels in self.object_loader:
+            features = features.to(self.device)
+            labels = labels.to(self.device)
+        
+            logits = self.classifier.predict_object(features)
             
-            batch_uncalibrated_subject_confidences, subject_predictions =\
-                torch.max(uncalibrated_subject_probabilities, dim = 1)
-            batch_uncalibrated_object_confidences, object_predictions =\
-                torch.max(uncalibrated_object_probabilities, dim = 1)
-            batch_uncalibrated_verb_confidences, verb_predictions =\
-                torch.max(uncalibrated_verb_probabilities, dim = 1)
+            uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)
+            calibrated_probabilities = self.calibrator.calibrate_object(logits)
+            
+            batch_uncalibrated_confidences, predictions =\
+                torch.max(uncalibrated_probabilities, dim = 1)
+            batch_calibrated_confidences, _ =\
+                torch.max(calibrated_probabilities, dim = 1)
+            
+            uncalibrated_object_confidences.append(batch_uncalibrated_confidences)
+            calibrated_object_confidences.append(batch_calibrated_confidences)
+            
+            batch_correct = predictions == labels
+            object_correct.append(batch_correct)
 
-            batch_calibrated_subject_confidences, _ =\
-                torch.max(calibrated_subject_probabilities, dim = 1)
-            batch_calibrated_object_confidences, _ =\
-                torch.max(calibrated_object_probabilities, dim = 1)
-            batch_calibrated_verb_confidences, _ =\
-                torch.max(calibrated_verb_probabilities, dim = 1)
+        for features, labels in self.verb_loader:
+            features = features.to(self.device)
+            labels = labels.to(self.device)
+        
+            logits = self.classifier.predict_verb(features)
             
-            uncalibrated_subject_confidences.append(batch_uncalibrated_subject_confidences)
-            uncalibrated_object_confidences.append(batch_uncalibrated_object_confidences)
-            uncalibrated_verb_confidences.append(batch_uncalibrated_verb_confidences)
-
-            calibrated_subject_confidences.append(batch_calibrated_subject_confidences)
-            calibrated_object_confidences.append(batch_calibrated_object_confidences)
-            calibrated_verb_confidences.append(batch_calibrated_verb_confidences)
+            uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)
+            calibrated_probabilities = self.calibrator.calibrate_verb(logits)
             
-            batch_subject_correct = subject_predictions == subject_labels
-            batch_object_correct = object_predictions == object_labels
-            batch_verb_correct = verb_predictions == verb_labels
+            batch_uncalibrated_confidences, predictions =\
+                torch.max(uncalibrated_probabilities, dim = 1)
+            batch_calibrated_confidences, _ =\
+                torch.max(calibrated_probabilities, dim = 1)
             
-            subject_correct.append(batch_subject_correct)
-            object_correct.append(batch_object_correct)
-            verb_correct.append(batch_verb_correct)
+            uncalibrated_verb_confidences.append(batch_uncalibrated_confidences)
+            calibrated_verb_confidences.append(batch_calibrated_confidences)
+            
+            batch_correct = predictions == labels
+            verb_correct.append(batch_correct)
         
         uncalibrated_subject_confidences = torch.cat(uncalibrated_subject_confidences, dim = 0)
         uncalibrated_object_confidences = torch.cat(uncalibrated_object_confidences, dim = 0)
