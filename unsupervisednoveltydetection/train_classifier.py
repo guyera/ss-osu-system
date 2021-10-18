@@ -5,7 +5,6 @@ import os
 
 import noveltydetectionfeatures
 import unsupervisednoveltydetection.common
-from auc import compute_auc
 
 def parse_args():
     parser = argparse.ArgumentParser(

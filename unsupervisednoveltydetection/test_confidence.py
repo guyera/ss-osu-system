@@ -5,273 +5,176 @@ import os
 
 import noveltydetectionfeatures
 import unsupervisednoveltydetection.common
-from auc import compute_auc
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description = 'Max Classifier Logits for Anomaly Detection'
-    )
-    
-    # Device parameters
-    parser.add_argument(
-        '--device',
-        type = str,
-        default = 'cpu'
-    )
+import unittest
 
-    # Data loading parameters
-    parser.add_argument(
-        '--dataset-name',
-        type = str,
-        default = 'Custom'
-    )
-    parser.add_argument(
-        '--data-root',
-        type = str,
-        default = 'Custom'
-    )
-    parser.add_argument(
-        '--training-csv-path',
-        type = str,
-        default = 'Custom/annotations/val_dataset_v1_train.csv'
-    )
-    parser.add_argument(
-        '--testing-csv-path',
-        type = str,
-        default = 'Custom/annotations/val_dataset_v1_val.csv'
-    )
-    parser.add_argument(
-        '--num-subj-cls',
-        type = int,
-        default = 6
-    )
-    parser.add_argument(
-        '--num-obj-cls',
-        type = int,
-        default = 9
-    )
-    parser.add_argument(
-        '--num-action-cls',
-        type = int,
-        default = 8
-    )
-    parser.add_argument(
-        '--image-batch-size',
-        type = int,
-        default = 16
-    )
-    parser.add_argument(
-        '--batch-size',
-        type = int,
-        default = 128
-    )
-
-    # Model persistence parameters
-    parser.add_argument(
-        '--anomaly-detector-load-file',
-        type = str,
-        required = True
-    )
-    parser.add_argument(
-        '--calibrator-load-file',
-        type = str,
-        default = None
-    )
-
-    # Architectural parameters
-    parser.add_argument(
-        '--hidden-nodes',
-        type = int,
-        default = 1024
-    )
-
-    # Evaluation parameters
-    parser.add_argument(
-        '--num-bins',
-        type = int,
-        default = 15
-    )
-
-    args = parser.parse_args()
-
-    return args
-
-def _test(
-        device,
-        anomaly_detector,
-        calibrator,
-        testing_loader,
-        num_bins):
-    subject_confidences = []
-    object_confidences = []
-    verb_confidences = []
-    subject_correct = []
-    object_correct = []
-    verb_correct = []
-    for subject_features,\
-            object_features,\
-            verb_features,\
-            subject_labels,\
-            object_labels,\
-            verb_labels in testing_loader:
-        subject_features = subject_features.to(device)
-        object_features = object_features.to(device)
-        verb_features = verb_features.to(device)
-        subject_labels = subject_labels.to(device)
-        object_labels = object_labels.to(device)
-        verb_labels = verb_labels.to(device)
-        
-        subject_logits, object_logits, verb_logits = anomaly_detector.predict(
-            subject_features,
-            object_features,
-            verb_features
-        )
-        subject_probabilities, object_probabilities, verb_probabilities =\
-            calibrator.calibrate(
-                subject_logits,
-                object_logits,
-                verb_logits
+class TestConfidenceCalibrationMethods(unittest.TestCase):
+    def setUp(self):
+        self.device = 'cuda:0'
+        self.num_bins = 15
+        testing_set = unsupervisednoveltydetection.common.ReshapedNoveltyFeatureDataset(
+            noveltydetectionfeatures.NoveltyFeatureDataset(
+                name = 'Custom',
+                data_root = 'Custom',
+                csv_path = 'Custom/annotations/val_dataset_v1_val.csv',
+                num_subj_cls = 6,
+                num_obj_cls = 9,
+                num_action_cls = 8,
+                training = False,
+                image_batch_size = 16,
+                feature_extraction_device = self.device
             )
-        batch_subject_confidences, subject_predictions =\
-            torch.max(subject_probabilities, dim = 1)
-        batch_object_confidences, object_predictions =\
-            torch.max(object_probabilities, dim = 1)
-        batch_verb_confidences, verb_predictions =\
-            torch.max(verb_probabilities, dim = 1)
-        
-        subject_confidences.append(batch_subject_confidences)
-        object_confidences.append(batch_object_confidences)
-        verb_confidences.append(batch_verb_confidences)
-
-        batch_subject_correct = subject_predictions == subject_labels
-        batch_object_correct = object_predictions == object_labels
-        batch_verb_correct = verb_predictions == verb_labels
-        
-        subject_correct.append(batch_subject_correct)
-        object_correct.append(batch_object_correct)
-        verb_correct.append(batch_verb_correct)
-
-    subject_confidences = torch.cat(subject_confidences, dim = 0)
-    object_confidences = torch.cat(object_confidences, dim = 0)
-    verb_confidences = torch.cat(verb_confidences, dim = 0)
-    
-    subject_correct = torch.cat(subject_correct, dim = 0)
-    object_correct = torch.cat(object_correct, dim = 0)
-    verb_correct = torch.cat(verb_correct, dim = 0)
-
-    # TODO Compute ECE
-    bin_starts = torch.arange(num_bins, device = device, dtype = torch.float) / num_bins
-    bin_ends = (torch.arange(num_bins, device = device, dtype = torch.float) + 1.0) / num_bins
-    bin_ends[-1] += 0.000001
-    subject_bin_memberships = torch.logical_and(
-        subject_confidences.unsqueeze(1) >= bin_starts,
-        subject_confidences.unsqueeze(1) < bin_ends
-    ).to(torch.float)
-    object_bin_memberships = torch.logical_and(
-        object_confidences.unsqueeze(1) >= bin_starts,
-        object_confidences.unsqueeze(1) < bin_ends
-    ).to(torch.float)
-    verb_bin_memberships = torch.logical_and(
-        verb_confidences.unsqueeze(1) >= bin_starts,
-        verb_confidences.unsqueeze(1) < bin_ends
-    ).to(torch.float)
-    
-    subject_bin_counts = subject_bin_memberships.sum(dim = 0)
-    object_bin_counts = object_bin_memberships.sum(dim = 0)
-    verb_bin_counts = verb_bin_memberships.sum(dim = 0)
-    
-    subject_bin_weights = subject_bin_counts / (torch.sum(subject_bin_counts) + 0.000001)
-    object_bin_weights = object_bin_counts / (torch.sum(object_bin_counts) + 0.000001)
-    verb_bin_weights = verb_bin_counts / (torch.sum(verb_bin_counts) + 0.000001)
-
-    subject_bin_correct = (subject_bin_memberships * subject_correct.unsqueeze(1)).sum(dim = 0)
-    object_bin_correct = (object_bin_memberships * object_correct.unsqueeze(1)).sum(dim = 0)
-    verb_bin_correct = (verb_bin_memberships * verb_correct.unsqueeze(1)).sum(dim = 0)
-
-    subject_bin_accuracies = subject_bin_correct / (subject_bin_counts + 0.000001)
-    object_bin_accuracies = object_bin_correct / (object_bin_counts + 0.000001)
-    verb_bin_accuracies = verb_bin_correct / (verb_bin_counts + 0.000001)
-    
-    subject_bin_confidences = (subject_bin_memberships * subject_confidences.unsqueeze(1)).sum(dim = 0) / (subject_bin_counts + 0.000001)
-    object_bin_confidences = (object_bin_memberships * object_confidences.unsqueeze(1)).sum(dim = 0) / (object_bin_counts + 0.000001)
-    verb_bin_confidences = (verb_bin_memberships * verb_confidences.unsqueeze(1)).sum(dim = 0) / (verb_bin_counts + 0.000001)
-    
-    subject_bin_abs_errors = torch.abs(subject_bin_accuracies - subject_bin_confidences)
-    object_bin_abs_errors = torch.abs(object_bin_accuracies - object_bin_confidences)
-    verb_bin_abs_errors = torch.abs(verb_bin_accuracies - verb_bin_confidences)
-    
-    subject_bin_weighted_errors = subject_bin_abs_errors * subject_bin_weights
-    object_bin_weighted_errors = object_bin_abs_errors * object_bin_weights
-    verb_bin_weighted_errors = verb_bin_abs_errors * verb_bin_weights
-
-    subject_ece = subject_bin_weighted_errors.sum()
-    object_ece = object_bin_weighted_errors.sum()
-    verb_ece = verb_bin_weighted_errors.sum()
-    
-    print(f'Subject ECE: {subject_ece}')
-    print(f'Object ECE: {object_ece}')
-    print(f'Verb ECE: {verb_ece}')
-
-def main():
-    args = parse_args()
-    testing_set = unsupervisednoveltydetection.common.ReshapedNoveltyFeatureDataset(
-        noveltydetectionfeatures.NoveltyFeatureDataset(
-            name = args.dataset_name,
-            data_root = args.data_root,
-            csv_path = args.testing_csv_path,
-            num_subj_cls = args.num_subj_cls,
-            num_obj_cls = args.num_obj_cls,
-            num_action_cls = args.num_action_cls,
-            training = False,
-            image_batch_size = args.image_batch_size,
-            feature_extraction_device = args.device
         )
-    )
 
-    # The remaining datasets are used for evaluating AUC of subject, object,
-    # and verb classifiers in the open set setting.
-    
-    # Construct data loader
-    testing_loader = torch.utils.data.DataLoader(
-        dataset = testing_set,
-        batch_size = args.batch_size,
-        shuffle = True
-    )
-    
-    # Get example features for shape information to construct classifiers
-    appearance_features, _, verb_features, _, _, _ = testing_set[0]
-    print(len(appearance_features))
-    print(len(verb_features))
-
-    # Create anomaly detector
-    anomaly_detector = unsupervisednoveltydetection.common.AnomalyDetector(
-        len(appearance_features),
-        len(verb_features),
-        args.hidden_nodes,
-        args.num_subj_cls,
-        args.num_obj_cls,
-        args.num_action_cls
-    )
-    
-    anomaly_detector_state_dict = torch.load(args.anomaly_detector_load_file)
-    anomaly_detector.load_state_dict(anomaly_detector_state_dict)
-    
-    anomaly_detector = anomaly_detector.to(args.device)
-    
-    calibrator = unsupervisednoveltydetection.common.ConfidenceCalibrator().to(args.device)
-    
-    if args.calibrator_load_file is not None:
-        calibrator_state_dict = torch.load(args.calibrator_load_file)
+        # The remaining datasets are used for evaluating AUC of subject, object,
+        # and verb classifiers in the open set setting.
+        
+        # Construct data loader
+        self.testing_loader = torch.utils.data.DataLoader(
+            dataset = testing_set,
+            batch_size = 128,
+            shuffle = True
+        )
+        
+        # Get example features for shape information to construct classifiers
+        appearance_features, _, verb_features, _, _, _ = testing_set[0]
+        
+        # Create classifier
+        classifier = unsupervisednoveltydetection.common.Classifier(
+            len(appearance_features),
+            len(verb_features),
+            1024,
+            6,
+            9,
+            8
+        )
+        
+        classifier_state_dict = torch.load('unsupervisednoveltydetection/confidence_classifier.pth')
+        classifier.load_state_dict(classifier_state_dict)
+        
+        self.classifier = classifier.to(self.device)
+        
+        calibrator = unsupervisednoveltydetection.common.ConfidenceCalibrator().to(self.device)
+        calibrator_state_dict = torch.load('unsupervisednoveltydetection/confidence_calibrator.pth')
         calibrator.load_state_dict(calibrator_state_dict)
+        self.calibrator = calibrator
     
-    with torch.no_grad():
-        _test(
-            args.device,
-            anomaly_detector,
-            calibrator,
-            testing_loader,
-            args.num_bins
-        )
+    def ece(self, confidences, correct):
+        bin_starts = torch.arange(self.num_bins, device = self.device, dtype = torch.float) / self.num_bins
+        bin_ends = (torch.arange(self.num_bins, device = self.device, dtype = torch.float) + 1.0) / self.num_bins
+        bin_ends[-1] += 0.000001
+        
+        # Compute NxB confidence membership matrix, where B = self.num_bins
+        bin_memberships = torch.logical_and(
+            confidences.unsqueeze(1) >= bin_starts,
+            confidences.unsqueeze(1) < bin_ends
+        ).to(torch.float)
+        
+        # Use bin memberships to compute ECE
+        bin_counts = bin_memberships.sum(dim = 0)
+        bin_weights = bin_counts / (torch.sum(bin_counts) + 0.000001)
+        bin_correct = (bin_memberships * correct.unsqueeze(1)).sum(dim = 0)
+        bin_accuracies = bin_correct / (bin_counts + 0.000001)
+        bin_confidences = (bin_memberships * confidences.unsqueeze(1)).sum(dim = 0) / (bin_counts + 0.000001)
+        bin_abs_errors = torch.abs(bin_accuracies - bin_confidences)
+        bin_weighted_errors = bin_abs_errors * bin_weights
+        ece = bin_weighted_errors.sum()
 
+        return ece.item()
+
+    def test_reduces_ece(self):
+        uncalibrated_subject_confidences = []
+        uncalibrated_object_confidences = []
+        uncalibrated_verb_confidences = []
+        calibrated_subject_confidences = []
+        calibrated_object_confidences = []
+        calibrated_verb_confidences = []
+        subject_correct = []
+        object_correct = []
+        verb_correct = []
+        for subject_features,\
+                object_features,\
+                verb_features,\
+                subject_labels,\
+                object_labels,\
+                verb_labels in self.testing_loader:
+            subject_features = subject_features.to(self.device)
+            object_features = object_features.to(self.device)
+            verb_features = verb_features.to(self.device)
+            subject_labels = subject_labels.to(self.device)
+            object_labels = object_labels.to(self.device)
+            verb_labels = verb_labels.to(self.device)
+        
+            subject_logits, object_logits, verb_logits = self.classifier.predict(
+                subject_features,
+                object_features,
+                verb_features
+            )
+            
+            uncalibrated_subject_probabilities = torch.nn.functional.softmax(subject_logits, dim = 1)
+            uncalibrated_object_probabilities = torch.nn.functional.softmax(object_logits, dim = 1)
+            uncalibrated_verb_probabilities = torch.nn.functional.softmax(verb_logits, dim = 1)
+
+            calibrated_subject_probabilities, calibrated_object_probabilities, calibrated_verb_probabilities =\
+                self.calibrator.calibrate(
+                    subject_logits,
+                    object_logits,
+                    verb_logits
+                )
+            
+            batch_uncalibrated_subject_confidences, subject_predictions =\
+                torch.max(uncalibrated_subject_probabilities, dim = 1)
+            batch_uncalibrated_object_confidences, object_predictions =\
+                torch.max(uncalibrated_object_probabilities, dim = 1)
+            batch_uncalibrated_verb_confidences, verb_predictions =\
+                torch.max(uncalibrated_verb_probabilities, dim = 1)
+
+            batch_calibrated_subject_confidences, _ =\
+                torch.max(calibrated_subject_probabilities, dim = 1)
+            batch_calibrated_object_confidences, _ =\
+                torch.max(calibrated_object_probabilities, dim = 1)
+            batch_calibrated_verb_confidences, _ =\
+                torch.max(calibrated_verb_probabilities, dim = 1)
+            
+            uncalibrated_subject_confidences.append(batch_uncalibrated_subject_confidences)
+            uncalibrated_object_confidences.append(batch_uncalibrated_object_confidences)
+            uncalibrated_verb_confidences.append(batch_uncalibrated_verb_confidences)
+
+            calibrated_subject_confidences.append(batch_calibrated_subject_confidences)
+            calibrated_object_confidences.append(batch_calibrated_object_confidences)
+            calibrated_verb_confidences.append(batch_calibrated_verb_confidences)
+            
+            batch_subject_correct = subject_predictions == subject_labels
+            batch_object_correct = object_predictions == object_labels
+            batch_verb_correct = verb_predictions == verb_labels
+            
+            subject_correct.append(batch_subject_correct)
+            object_correct.append(batch_object_correct)
+            verb_correct.append(batch_verb_correct)
+        
+        uncalibrated_subject_confidences = torch.cat(uncalibrated_subject_confidences, dim = 0)
+        uncalibrated_object_confidences = torch.cat(uncalibrated_object_confidences, dim = 0)
+        uncalibrated_verb_confidences = torch.cat(uncalibrated_verb_confidences, dim = 0)
+
+        calibrated_subject_confidences = torch.cat(calibrated_subject_confidences, dim = 0)
+        calibrated_object_confidences = torch.cat(calibrated_object_confidences, dim = 0)
+        calibrated_verb_confidences = torch.cat(calibrated_verb_confidences, dim = 0)
+        
+        subject_correct = torch.cat(subject_correct, dim = 0)
+        object_correct = torch.cat(object_correct, dim = 0)
+        verb_correct = torch.cat(verb_correct, dim = 0)
+
+        uncalibrated_subject_ece = self.ece(uncalibrated_subject_confidences, subject_correct)
+        uncalibrated_object_ece = self.ece(uncalibrated_object_confidences, object_correct)
+        uncalibrated_verb_ece = self.ece(uncalibrated_verb_confidences, verb_correct)
+
+        calibrated_subject_ece = self.ece(calibrated_subject_confidences, subject_correct)
+        calibrated_object_ece = self.ece(calibrated_object_confidences, object_correct)
+        calibrated_verb_ece = self.ece(calibrated_verb_confidences, verb_correct)
+
+        self.assertTrue(calibrated_subject_ece <= uncalibrated_subject_ece)
+        self.assertTrue(calibrated_object_ece <= uncalibrated_object_ece)
+        self.assertTrue(calibrated_verb_ece <= uncalibrated_verb_ece)
+        
 if __name__ == '__main__':
-    main()
+    unittest.main()
