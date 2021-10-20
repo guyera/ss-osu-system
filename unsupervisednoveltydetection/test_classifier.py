@@ -61,7 +61,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             8
         )
         
-        classifier_state_dict = torch.load('unsupervisednoveltydetection/confidence_classifier.pth')
+        classifier_state_dict = torch.load('unsupervisednoveltydetection/classifier.pth')
         classifier.load_state_dict(classifier_state_dict)
         
         self.classifier = classifier.to(self.device)
@@ -80,6 +80,9 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             logits = self.classifier.predict_subject(features)
             
             predictions = torch.argmax(logits, dim = 1)
+
+            # Shift predictions forward to allow for anomaly label = 0
+            predictions += 1
             
             batch_correct = predictions == labels
             num_subject_correct += batch_correct.to(torch.int).sum().cpu().item()
@@ -92,6 +95,9 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             logits = self.classifier.predict_object(features)
             
             predictions = torch.argmax(logits, dim = 1)
+
+            # Shift predictions forward to allow for anomaly label = 0
+            predictions += 1
             
             batch_correct = predictions == labels
             num_object_correct += batch_correct.to(torch.int).sum().cpu().item()
@@ -104,6 +110,9 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             logits = self.classifier.predict_verb(features)
             
             predictions = torch.argmax(logits, dim = 1)
+
+            # Shift predictions forward to allow for anomaly label = 0
+            predictions += 1
             
             batch_correct = predictions == labels
             num_verb_correct += batch_correct.to(torch.int).sum().cpu().item()

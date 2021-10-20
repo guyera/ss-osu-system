@@ -29,12 +29,6 @@ class ScoreContext:
         self.source = source
         self.nominal_scores = nominal_scores
         self.novel_scores = novel_scores
-        if nominal_scores.device != novel_scores.device:
-            print(('Warning: nominal_scores and novel_scores are on '
-                'different devices. Moving novel_scores to '
-                'nominal_scores.device.'),
-                file = sys.stderr)
-            self.novel_scores = self.novel_scores.to(nominal_scores.device)
 
     def add_nominal_scores(self, nominal_scores):
         if self.nominal_scores is None:

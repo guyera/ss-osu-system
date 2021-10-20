@@ -120,6 +120,9 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 torch.max(uncalibrated_probabilities, dim = 1)
             batch_calibrated_confidences, _ =\
                 torch.max(calibrated_probabilities, dim = 1)
+
+            # Shift predictions forward to allow for anomaly label = 0
+            predictions += 1
             
             uncalibrated_subject_confidences.append(batch_uncalibrated_confidences)
             calibrated_subject_confidences.append(batch_calibrated_confidences)
@@ -140,6 +143,9 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 torch.max(uncalibrated_probabilities, dim = 1)
             batch_calibrated_confidences, _ =\
                 torch.max(calibrated_probabilities, dim = 1)
+
+            # Shift predictions forward to allow for anomaly label = 0
+            predictions += 1
             
             uncalibrated_object_confidences.append(batch_uncalibrated_confidences)
             calibrated_object_confidences.append(batch_calibrated_confidences)
@@ -160,6 +166,9 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 torch.max(uncalibrated_probabilities, dim = 1)
             batch_calibrated_confidences, _ =\
                 torch.max(calibrated_probabilities, dim = 1)
+
+            # Shift predictions forward to allow for anomaly label = 0
+            predictions += 1
             
             uncalibrated_verb_confidences.append(batch_uncalibrated_confidences)
             calibrated_verb_confidences.append(batch_calibrated_confidences)

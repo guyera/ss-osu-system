@@ -27,7 +27,7 @@ class UnsupervisedNoveltyDetector:
     
         self.confidence_calibrator = unsupervisednoveltydetection.common.ConfidenceCalibrator()
 
-        self.known_combinations = torch.zeros(num_subj_cls, num_obj_cls, num_action_cls, dtype = torch.bool)
+        self.known_combinations = torch.zeros(num_subj_cls - 1, num_obj_cls - 1, num_action_cls - 1, dtype = torch.bool)
     
     def to(self, device):
         self.device = device
@@ -142,7 +142,8 @@ class UnsupervisedNoveltyDetector:
                 
                 verb_index = flattened_index
                 
-                example_predictions.append(((0, verb_index, object_index), sorted_t1_joint_probs[0]))
+                # Shift labels forward, to allow for anomaly = 0
+                example_predictions.append(((0, verb_index + 1, object_index + 1), sorted_t1_joint_probs[0]))
                 
                 sorted_t1_joint_probs = sorted_t1_joint_probs[1:]
                 sorted_t1_joint_prob_indices = sorted_t1_joint_prob_indices[1:]
@@ -159,7 +160,8 @@ class UnsupervisedNoveltyDetector:
                 
                 object_index = flattened_index
                 
-                example_predictions.append(((subject_index, 0, object_index), sorted_t2_joint_probs[0]))
+                # Shift labels forward, to allow for anomaly = 0
+                example_predictions.append(((subject_index + 1, 0, object_index + 1), sorted_t2_joint_probs[0]))
                 
                 sorted_t2_joint_probs = sorted_t2_joint_probs[1:]
                 sorted_t2_joint_prob_indices = sorted_t2_joint_prob_indices[1:]
@@ -175,7 +177,8 @@ class UnsupervisedNoveltyDetector:
                 
                 verb_index = flattened_index
                 
-                example_predictions.append(((subject_index, verb_index, 0), sorted_t3_joint_probs[0]))
+                # Shift labels forward, to allow for anomaly = 0
+                example_predictions.append(((subject_index + 1, verb_index + 1, 0), sorted_t3_joint_probs[0]))
                 
                 sorted_t3_joint_probs = sorted_t3_joint_probs[1:]
                 sorted_t3_joint_prob_indices = sorted_t3_joint_prob_indices[1:]
@@ -196,7 +199,8 @@ class UnsupervisedNoveltyDetector:
                 
                 verb_index = flattened_index
                 
-                example_predictions.append(((subject_index, verb_index, object_index), sorted_t4_joint_probs[0]))
+                # Shift labels forward, to allow for anomaly = 0
+                example_predictions.append(((subject_index + 1, verb_index + 1, object_index + 1), sorted_t4_joint_probs[0]))
                 
                 sorted_t4_joint_probs = sorted_t4_joint_probs[1:]
                 sorted_t4_joint_prob_indices = sorted_t4_joint_prob_indices[1:]
@@ -249,7 +253,8 @@ class UnsupervisedNoveltyDetector:
                 
                 verb_index = flattened_index
                 
-                example_predictions.append(((0, verb_index, None), sorted_t1_joint_probs[0]))
+                # Shift labels forward, to allow for anomaly = 0
+                example_predictions.append(((0, verb_index + 1, None), sorted_t1_joint_probs[0]))
                 
                 sorted_t1_joint_probs = sorted_t1_joint_probs[1:]
                 sorted_t1_joint_prob_indices = sorted_t1_joint_prob_indices[1:]
@@ -259,7 +264,8 @@ class UnsupervisedNoveltyDetector:
                 
                 subject_index = flattened_index
                 
-                example_predictions.append(((subject_index, 0, None), sorted_t2_5_joint_probs[0]))
+                # Shift labels forward, to allow for anomaly = 0
+                example_predictions.append(((subject_index + 1, 0, None), sorted_t2_5_joint_probs[0]))
                 
                 sorted_t2_5_joint_probs = sorted_t2_5_joint_probs[1:]
                 sorted_t2_5_joint_prob_indices = sorted_t2_5_joint_prob_indices[1:]

@@ -50,12 +50,12 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         object_testing_set = unsupervisednoveltydetection.common.ObjectDataset(testing_set, train = True)
         verb_testing_set = unsupervisednoveltydetection.common.VerbDataset(testing_set, train = True)
         
-        id_subject_labels = list(range(0, 4))
+        id_subject_labels = list(range(1, 4))
         ood_subject_labels = list(range(4, 6))
-        id_object_labels = list(range(0, 4))
-        ood_object_labels = list(range(4, 6))
-        id_verb_labels = list(range(0, 4))
-        ood_verb_labels = list(range(4, 6))
+        id_object_labels = list(range(1, 5))
+        ood_object_labels = list(range(5, 9))
+        id_verb_labels = list(range(1, 5))
+        ood_verb_labels = list(range(5, 8))
         subject_class_split = unsupervisednoveltydetection.common.ClassSplit(id_subject_labels, ood_subject_labels)
         object_class_split = unsupervisednoveltydetection.common.ClassSplit(id_object_labels, ood_object_labels)
         verb_class_split = unsupervisednoveltydetection.common.ClassSplit(id_verb_labels, ood_verb_labels)
@@ -71,11 +71,29 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         ood_subject_set = torch.utils.data.ConcatDataset((ood_subject_training_set, ood_subject_testing_set))
         ood_object_set = torch.utils.data.ConcatDataset((ood_object_training_set, ood_object_testing_set))
         ood_verb_set = torch.utils.data.ConcatDataset((ood_verb_training_set, ood_verb_testing_set))
-
+        
+        """
         # Remap ID training labels
         id_subject_training_set = unsupervisednoveltydetection.common.LabelMappingDataset(id_subject_training_set, id_subject_labels)
         id_object_training_set = unsupervisednoveltydetection.common.LabelMappingDataset(id_object_training_set, id_object_labels)
         id_verb_training_set = unsupervisednoveltydetection.common.LabelMappingDataset(id_verb_training_set, id_verb_labels)
+
+        # Shift ID training labels up 1; classifiers assume label 0 is for
+        # anomalies.
+        label_upshift_transform = unsupervisednoveltydetection.common.UpshiftTargetTransform()
+        id_subject_training_set = unsupervisednoveltydetection.common.TransformingDataset(
+            id_subject_training_set,
+            target_transform = label_upshift_transform
+        )
+        id_object_training_set = unsupervisednoveltydetection.common.TransformingDataset(
+            id_object_training_set,
+            target_transform = label_upshift_transform
+        )
+        id_verb_training_set = unsupervisednoveltydetection.common.TransformingDataset(
+            id_verb_training_set,
+            target_transform = label_upshift_transform
+        )
+        """
         
         # Construct anomaly detection sets (i.e. remap ID testing labels to 0,
         # OOD testing labels to 1)
@@ -121,9 +139,9 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             12544,
             12616,
             1024,
-            len(id_subject_labels),
-            len(id_object_labels),
-            len(id_verb_labels)
+            len(id_subject_labels) + 1, # Add 1 for anomaly label = 0
+            len(id_object_labels) + 1, # Add 1 for anomaly label = 0
+            len(id_verb_labels) + 1 # Add 1 for anomaly label = 0
         ).to(self.device)
         
         classifier.fit(0.01, 0.0001, 300, id_subject_training_loader, id_object_training_loader, id_verb_training_loader)

@@ -93,7 +93,8 @@ def main():
     joint_labels = set()
 
     for _, _, _, subject_label, object_label, verb_label in training_set:
-        joint_label = (int(subject_label.item()), int(object_label.item()), int(verb_label.item()))
+        # Shift labels back 1, since 0 is for anomaly
+        joint_label = (int(subject_label.item()) - 1, int(object_label.item()) - 1, int(verb_label.item()) - 1)
         joint_labels.add(joint_label)
 
     with open(args.known_combinations_save_file, 'wb') as f:

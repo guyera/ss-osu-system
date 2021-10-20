@@ -173,6 +173,15 @@ class FixedTargetTransform(object):
         return self._target
 
 """
+Description: Target transform which converts shifts all labels up by 1.
+    Used to convert standard labels into labels where label 0 is considered
+    the novelty label.
+"""
+class UpshiftTargetTransform(object):
+    def __call__(self, prev_target):
+        return prev_target + 1
+
+"""
 Description: Combines an in-distribution and out-of-distribution dataset into a
     single dataset, remapping labels to zeros for in-distribution points and
     ones for out-of-distribution points. This can be used for evaluation to
@@ -291,12 +300,12 @@ class Classifier:
         self.subject_classifier = torch.nn.Sequential(
             torch.nn.Linear(num_appearance_features, num_hidden_nodes),
             torch.nn.ReLU(),
-            torch.nn.Linear(num_hidden_nodes, num_subj_cls)
+            torch.nn.Linear(num_hidden_nodes, num_subj_cls - 1)
         )
         self.object_classifier = torch.nn.Sequential(
             torch.nn.Linear(num_appearance_features, num_hidden_nodes),
             torch.nn.ReLU(),
-            torch.nn.Linear(num_hidden_nodes, num_obj_cls)
+            torch.nn.Linear(num_hidden_nodes, num_obj_cls - 1)
         )
         self.verb_classifier = torch.nn.Sequential(
             torch.nn.Linear(
@@ -304,7 +313,7 @@ class Classifier:
                 num_hidden_nodes
             ),
             torch.nn.ReLU(),
-            torch.nn.Linear(num_hidden_nodes, num_action_cls)
+            torch.nn.Linear(num_hidden_nodes, num_action_cls - 1)
         )
 
     def fit(self, lr, weight_decay, epochs, subject_loader, object_loader, verb_loader):
@@ -365,7 +374,8 @@ class Classifier:
             for features, targets in subject_loader:
                 # Relocate data if appropriate
                 features = features.to(self.device)
-                targets = targets.to(self.device)
+                # Shift targets back 1, since label 0 is for anomalies
+                targets = targets.to(self.device) - 1
                 
                 # Make predictions
                 predictions = self.subject_classifier(features)
@@ -385,7 +395,8 @@ class Classifier:
             for features, targets in object_loader:
                 # Relocate data if appropriate
                 features = features.to(self.device)
-                targets = targets.to(self.device)
+                # Shift targets back 1, since label 0 is for anomalies
+                targets = targets.to(self.device) - 1
                 
                 # Make predictions
                 predictions = self.object_classifier(features)
@@ -405,7 +416,8 @@ class Classifier:
             for features, targets in verb_loader:
                 # Relocate data if appropriate
                 features = features.to(self.device)
-                targets = targets.to(self.device)
+                # Shift targets back 1, since label 0 is for anomalies
+                targets = targets.to(self.device) - 1
                 
                 # Make predictions
                 predictions = self.verb_classifier(features)
@@ -604,7 +616,6 @@ class ConfidenceCalibrator:
         self.subject_calibrator = TemperatureScaler()
         self.object_calibrator = TemperatureScaler()
         self.verb_calibrator = TemperatureScaler()
-        self.sigmoid = torch.nn.Sigmoid()
     
     def fit(
             self,
@@ -672,7 +683,8 @@ class ConfidenceCalibrator:
             for features, targets in subject_loader:
                 # Relocate data if appropriate
                 features = features.to(self.device)
-                targets = targets.to(self.device)
+                # Shift targets back 1, since label 0 is for anomalies
+                targets = targets.to(self.device) - 1
                 
                 # Get raw logits from classifier
                 logits = classifier.predict_subject(features)
@@ -695,7 +707,8 @@ class ConfidenceCalibrator:
             for features, targets in object_loader:
                 # Relocate data if appropriate
                 features = features.to(self.device)
-                targets = targets.to(self.device)
+                # Shift targets back 1, since label 0 is for anomalies
+                targets = targets.to(self.device) - 1
                 
                 # Get raw logits from classifier
                 logits = classifier.predict_object(features)
@@ -718,7 +731,8 @@ class ConfidenceCalibrator:
             for features, targets in verb_loader:
                 # Relocate data if appropriate
                 features = features.to(self.device)
-                targets = targets.to(self.device)
+                # Shift targets back 1, since label 0 is for anomalies
+                targets = targets.to(self.device) - 1
                 
                 # Get raw logits from classifier
                 logits = classifier.predict_verb(features)
