@@ -1,5 +1,8 @@
 import torch
 import sklearn.metrics
+import sklearn.neighbors
+import math
+import sys
 
 from enum import Enum
 
@@ -26,6 +29,12 @@ class ScoreContext:
         self.source = source
         self.nominal_scores = nominal_scores
         self.novel_scores = novel_scores
+        if nominal_scores.device != novel_scores.device:
+            print(('Warning: nominal_scores and novel_scores are on '
+                'different devices. Moving novel_scores to '
+                'nominal_scores.device.'),
+                file = sys.stderr)
+            self.novel_scores = self.novel_scores.to(nominal_scores.device)
 
     def add_nominal_scores(self, nominal_scores):
         if self.nominal_scores is None:
@@ -54,18 +63,18 @@ class ScoreContext:
         return bw
         
     
-    def _nominal_bandwidth(self, scores):
+    def _nominal_bandwidth(self):
         return self._compute_bandwidth(self.nominal_scores)
 
-    def _novel_bandwidth(self, scores):
+    def _novel_bandwidth(self):
         return self._compute_bandwidth(self.novel_scores)
     
     def fit_kdes(self):
         nominal_kde = sklearn.neighbors.KernelDensity(kernel = 'gaussian', bandwidth = self._nominal_bandwidth())
-        nominal_kde.fit(self.nominal_scores.detach().cpu().numpy())
+        nominal_kde.fit(self.nominal_scores.unsqueeze(1).detach().cpu().numpy())
         
         novel_kde = sklearn.neighbors.KernelDensity(kernel = 'gaussian', bandwidth = self._novel_bandwidth())
-        novel_kde.fit(self.novel_scores.detach().cpu().numpy())
+        novel_kde.fit(self.novel_scores.unsqueeze(1).detach().cpu().numpy())
 
         return nominal_kde, novel_kde
 
@@ -101,7 +110,8 @@ def compute_probability_novelty(
         p_n_t4,
         subject_score_ctx,
         verb_score_ctx,
-        object_score_ctx, p_type):
+        object_score_ctx,
+        p_type):
     nominal_subject_kde, novel_subject_kde = subject_score_ctx.fit_kdes()
     nominal_object_kde, novel_object_kde = object_score_ctx.fit_kdes()
     nominal_verb_kde, novel_verb_kde = verb_score_ctx.fit_kdes()
@@ -112,7 +122,7 @@ def compute_probability_novelty(
     case_2 = []
     for score in subject_scores:
         if score is None:
-            novel_subject_probs.append(torch.tensor(0, device = subject_scores.device))
+            novel_subject_probs.append(torch.tensor(0, device = p_type.device))
             continue
         
         nominal_log_prob = nominal_subject_kde.score(
@@ -124,7 +134,7 @@ def compute_probability_novelty(
 
         log_probs = torch.tensor(
             [nominal_log_prob, novel_log_prob],
-            device = subject_scores.device
+            device = p_type.device
         )
         novel_prob = torch.nn.functional.softmax(log_probs, dim = 0)[1]
         novel_subject_probs.append(novel_prob)
@@ -132,15 +142,15 @@ def compute_probability_novelty(
 
     for score in object_scores:
         if score is None:
-            novel_object_probs.append(torch.tensor(0, device = object_scores.device))
+            novel_object_probs.append(torch.tensor(0, device = p_type.device))
             # Object box is missing, so case is 2, and novel t5 instance is
             # possible.
-            case_2.append(torch.tensor(1, device = object_scores.device))
+            case_2.append(torch.tensor(1, device = p_type.device))
             continue
         
         # Object box present. Novel t5 instance is impossible in anything
         # but case 2 (object box must be missing).
-        case_2.append(torch.tensor(0, device = object_scores.device))
+        case_2.append(torch.tensor(0, device = p_type.device))
         
         nominal_log_prob = nominal_object_kde.score(
             score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
@@ -151,7 +161,7 @@ def compute_probability_novelty(
 
         log_probs = torch.tensor(
             [nominal_log_prob, novel_log_prob],
-            device = object_scores.device
+            device = p_type.device
         )
         novel_prob = torch.nn.functional.softmax(log_probs, dim = 0)[1]
         novel_object_probs.append(novel_prob)
@@ -160,7 +170,7 @@ def compute_probability_novelty(
     
     for score in verb_scores:
         if score is None:
-            novel_verb_probs.append(torch.tensor(0, device = verb_scores.device))
+            novel_verb_probs.append(torch.tensor(0, device = p_type.device))
             continue
         
         nominal_log_prob = nominal_verb_kde.score(
@@ -172,7 +182,7 @@ def compute_probability_novelty(
 
         log_probs = torch.tensor(
             [nominal_log_prob, novel_log_prob],
-            device = verb_scores.device
+            device = p_type.device
         )
         novel_prob = torch.nn.functional.softmax(log_probs, dim = 0)[1]
         novel_verb_probs.append(novel_prob)
@@ -189,4 +199,5 @@ def compute_probability_novelty(
     
     p_novel = p_novel_subject + p_novel_object + p_novel_verb + p_novel_combination
     
-    return 0.5
+    return p_novel
+    # return 0.5
