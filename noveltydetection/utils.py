@@ -44,6 +44,31 @@ class ScoreContext:
     def compute_partial_auc(self):
         return compute_partial_auc(self.nominal_scores, self.novel_scores)
 
+    def _compute_bandwidth(self, scores):
+        std = torch.std(scores, dim = 0, unbiased = True)
+        q3 = torch.quantile(scores, 0.75, dim = 0)
+        q1 = torch.quantile(scores, 0.25, dim = 0)
+        iqr = q3 - q1
+        a = torch.min(std, iqr / 1.34)
+        bw = 0.9 * a * math.pow(len(scores), -0.2)
+        return bw
+        
+    
+    def _nominal_bandwidth(self, scores):
+        return self._compute_bandwidth(self.nominal_scores)
+
+    def _novel_bandwidth(self, scores):
+        return self._compute_bandwidth(self.novel_scores)
+    
+    def fit_kdes(self):
+        nominal_kde = sklearn.neighbors.KernelDensity(kernel = 'gaussian', bandwidth = self._nominal_bandwidth())
+        nominal_kde.fit(self.nominal_scores.detach().cpu().numpy())
+        
+        novel_kde = sklearn.neighbors.KernelDensity(kernel = 'gaussian', bandwidth = self._novel_bandwidth())
+        novel_kde.fit(self.novel_scores.detach().cpu().numpy())
+
+        return nominal_kde, novel_kde
+
     def state_dict(self):
         state_dict = {}
         state_dict['source'] = self.source
@@ -77,8 +102,91 @@ def compute_probability_novelty(
         subject_score_ctx,
         verb_score_ctx,
         object_score_ctx, p_type):
-    # TODO. Will require more data before it actually works well, but post-
-    # red-button the scores for supervised feedback novelty can be added to the
-    # score contexts, and then kernel density estimation can be used to
-    # compute P(N).
+    nominal_subject_kde, novel_subject_kde = subject_score_ctx.fit_kdes()
+    nominal_object_kde, novel_object_kde = object_score_ctx.fit_kdes()
+    nominal_verb_kde, novel_verb_kde = verb_score_ctx.fit_kdes()
+    
+    novel_subject_probs = []
+    novel_object_probs = []
+    novel_verb_probs = []
+    case_2 = []
+    for score in subject_scores:
+        if score is None:
+            novel_subject_probs.append(torch.tensor(0, device = subject_scores.device))
+            continue
+        
+        nominal_log_prob = nominal_subject_kde.score(
+            score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
+        )
+        novel_log_prob = novel_subject_kde.score(
+            score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
+        )
+
+        log_probs = torch.tensor(
+            [nominal_log_prob, novel_log_prob],
+            device = subject_scores.device
+        )
+        novel_prob = torch.nn.functional.softmax(log_probs, dim = 0)[1]
+        novel_subject_probs.append(novel_prob)
+    novel_subject_probs = torch.stack(novel_subject_probs, dim = 0)
+
+    for score in object_scores:
+        if score is None:
+            novel_object_probs.append(torch.tensor(0, device = object_scores.device))
+            # Object box is missing, so case is 2, and novel t5 instance is
+            # possible.
+            case_2.append(torch.tensor(1, device = object_scores.device))
+            continue
+        
+        # Object box present. Novel t5 instance is impossible in anything
+        # but case 2 (object box must be missing).
+        case_2.append(torch.tensor(0, device = object_scores.device))
+        
+        nominal_log_prob = nominal_object_kde.score(
+            score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
+        )
+        novel_log_prob = novel_object_kde.score(
+            score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
+        )
+
+        log_probs = torch.tensor(
+            [nominal_log_prob, novel_log_prob],
+            device = object_scores.device
+        )
+        novel_prob = torch.nn.functional.softmax(log_probs, dim = 0)[1]
+        novel_object_probs.append(novel_prob)
+    novel_object_probs = torch.stack(novel_object_probs, dim = 0)
+    case_2 = torch.stack(case_2, dim = 0)
+    
+    for score in verb_scores:
+        if score is None:
+            novel_verb_probs.append(torch.tensor(0, device = verb_scores.device))
+            continue
+        
+        nominal_log_prob = nominal_verb_kde.score(
+            score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
+        )
+        novel_log_prob = novel_verb_kde.score(
+            score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
+        )
+
+        log_probs = torch.tensor(
+            [nominal_log_prob, novel_log_prob],
+            device = verb_scores.device
+        )
+        novel_prob = torch.nn.functional.softmax(log_probs, dim = 0)[1]
+        novel_verb_probs.append(novel_prob)
+    novel_verb_probs = torch.stack(novel_verb_probs, dim = 0)
+    
+    # P(subject is novel | subject can be novel) * P(subject exists) * P(type = 1)
+    p_novel_subject = novel_subject_probs * p_type[0]
+    # P(object is novel | object can be novel) * P(object exists) * P(type = 3)
+    p_novel_object = novel_object_probs * p_type[2]
+    # P(verb is novel | verb can be novel) * P(verb exists) * (P(type = 2) + P(type = 5) * P(case = 2))
+    p_novel_verb = novel_verb_probs * (p_type[1] + p_type[4] * case_2)
+    # P(combination is novel | combination can be novel) * P(all boxes exists) * P(type = 4)
+    p_novel_combination = p_n_t4 * p_type[3]
+    
+    p_novel = p_novel_subject + p_novel_object + p_novel_verb + p_novel_combination
+    
     return 0.5
