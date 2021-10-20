@@ -60,7 +60,6 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                 print('Image features have not yet been computed. Computing image features...')
                 dataset = DataFactory(
                     name = name,
-                    partition = None,
                     data_root = data_root,
                     csv_path = csv_path,
                     training = training,

@@ -226,6 +226,8 @@ class InteractionHead(Module):
                     valid_subjects: List[Tensor],
                     valid_objects: List[Tensor],
                     labels: List[Tensor],
+                    object_logits: List[Tensor],
+                    subject_logits: List[Tensor],
                     ) -> List[dict]:
         """
         Parameters:
@@ -271,6 +273,9 @@ class InteractionHead(Module):
             `unary_labels`: Tensor[M], optional
                 Labels for the unary weights
         """
+        assert len(subject_logits) == len(subject_scores), f"{len(subject_logits)} != {len(subject_scores)}"
+        assert len(object_logits) == len(object_scores), f"{len(object_logits)} != {len(object_scores)}"
+
         num_boxes = [len(b) for b in boxes_s]
         weights = torch.sigmoid(logits_s).squeeze(1)
         scores = torch.sigmoid(logits_p)
@@ -280,18 +285,28 @@ class InteractionHead(Module):
             labels = [None for _ in range(len(num_boxes))]
 
         results = []
-        for w, sc, p, b_s, b_o, o_sc, s_sc, v_sub, v_ob, l in zip(
+        for w, sc, p, b_s, b_o, o_sc, s_sc, v_sub, v_ob, l, obj_logit, subj_logit, p_logit in zip(
                 weights, scores, prior, boxes_s, boxes_o, object_scores, subject_scores, valid_subjects,
-                valid_objects, labels
+                valid_objects, labels, object_logits, subject_logits, logits_p
         ):
             # Keep valid classes
             x, y = torch.nonzero(p[0]).unbind(1)
+            curr_score = sc[x, y] * p[:, x, y].prod(dim=0) * w[x].detach()
+
             result_dict = dict(
-                boxes_s=b_s, boxes_o=b_o,
-                index=x, prediction=y,
+                boxes_s=b_s, 
+                boxes_o=b_o,
+                index=x, 
+                prediction=y,
                 scores=sc[x, y] * p[:, x, y].prod(dim=0) * w[x].detach(),
-                object_scores=o_sc, subject_scores=s_sc, weights=w,
-                valid_subjects=v_sub, valid_objects=v_ob,
+                object_scores=o_sc, 
+                subject_scores=s_sc, 
+                weights=w,
+                logits_verbs=p_logit.reshape_as(curr_score),
+                logits_subject=subj_logit,
+                logits_object=obj_logit,
+                valid_subjects=v_sub, 
+                valid_objects=v_ob,
             )
             # If binary labels are provided
             if l is not None:
@@ -384,6 +399,7 @@ class InteractionHead(Module):
         object_box_features = self.box_roi_pool(features, object_box_coords, image_shapes)
         subject_pred_detections = self.classify_boxes(subject_box_features, subject_box_coords, box_type="subject")
         object_pred_detections = self.classify_boxes(object_box_features, object_box_coords, box_type="object")
+        
         # Computing classification head loss
         if self.training:
             subject_box_logits = [detection['box_logits'] for detection in subject_pred_detections]
@@ -394,6 +410,7 @@ class InteractionHead(Module):
             object_orig_labels = torch.cat(object_orig_labels)
 
             subject_cls_loss = self.compute_box_classification_loss(subject_orig_labels, subject_box_tensor)
+
             # TODO: Optimize this
             validity_vector = pocket.ops.relocate_to_cuda(torch.zeros(subject_cls_loss.size()))
             curr_pos = 0
@@ -402,16 +419,20 @@ class InteractionHead(Module):
                     if box_id in valid_subjects[im]:
                         validity_vector[curr_pos + box_id] = 1
                 curr_pos += len(boxes)
+
             subject_cls_loss = torch.mean(subject_cls_loss*validity_vector)
 
             object_cls_loss = self.compute_box_classification_loss(object_orig_labels, object_box_tensor)
             validity_vector = pocket.ops.relocate_to_cuda(torch.zeros(object_cls_loss.size()))
             curr_pos = 0
+            
             for im, boxes in enumerate(object_box_logits):
                 for box_id, _ in enumerate(boxes):
                     if box_id in valid_objects[im]:
                         validity_vector[curr_pos + box_id] = 1
+            
                 curr_pos += len(boxes)
+            
             object_cls_loss = torch.mean(object_cls_loss * validity_vector)
             box_cls_loss = subject_cls_loss + object_cls_loss
         # Original code resumes
@@ -423,16 +444,23 @@ class InteractionHead(Module):
         subject_box_all_scores = list()
         object_box_coords = list()
         object_box_all_scores = list()
+        subject_box_all_logits = list()
+        object_box_all_logits = list()
         for obj, sub in zip(object_pred_detections, subject_pred_detections):
             subject_box_coords.append(sub['boxes'])
             subject_box_all_scores.append(sub['box_all_scores'])
             object_box_coords.append(obj['boxes'])
             object_box_all_scores.append(obj['box_all_scores'])
 
-        box_verb_features, boxes_s, boxes_o, object_scores, subject_scores, box_pair_labels, box_pair_prior = \
-            self.box_pair_head(features, image_shapes, subject_box_features, subject_box_coords,
-                               subject_box_all_scores, object_box_features, object_box_coords,
-                               object_box_all_scores, targets)
+            subject_box_all_logits.append(sub['box_logits'])
+            object_box_all_logits.append(obj['box_logits'])
+
+        box_verb_features, boxes_s, boxes_o, object_scores, subject_scores, box_pair_labels, box_pair_prior, \
+        subject_logits, object_logits = self.box_pair_head(features, image_shapes, subject_box_features, 
+                            subject_box_coords, subject_box_all_scores, object_box_features, 
+                            object_box_coords, object_box_all_scores, targets, 
+                            subject_box_all_logits, object_box_all_logits)
+
         box_verb_features = torch.cat(box_verb_features)
         logits_p = self.box_verb_predictor(box_verb_features)
         logits_s = self.box_verb_suppressor(box_verb_features)
@@ -441,7 +469,8 @@ class InteractionHead(Module):
             logits_p, logits_s, box_pair_prior,
             boxes_s, boxes_o,
             object_scores, subject_scores,
-            valid_subjects, valid_objects, box_pair_labels
+            valid_subjects, valid_objects, box_pair_labels, 
+            object_logits, subject_logits
         )
 
         if self.training:
@@ -698,7 +727,9 @@ class GraphHead(Module):
                 subject_box_all_scores: List[Tensor],
                 object_box_features: Tensor, object_box_coords: List[Tensor],
                 object_box_all_scores: List[Tensor],
-                targets: Optional[List[dict]] = None
+                targets: Optional[List[dict]],
+                subject_box_all_logits: List[Tensor],
+                object_box_all_logits: List[Tensor]
                 ) -> Tuple[
         List[Tensor], List[Tensor], List[Tensor],
         List[Tensor], List[Tensor], List[Tensor]
@@ -757,6 +788,8 @@ class GraphHead(Module):
         all_labels = []
         all_prior = []
         all_box_verb_features = []
+        all_subject_logits = []
+        all_object_logits = []
         for b_idx, _ in enumerate(subject_box_coords):
             n_s = len(subject_box_coords[b_idx])
             n_o = len(object_box_coords[b_idx])
@@ -775,7 +808,10 @@ class GraphHead(Module):
                 all_object_scores.append(torch.zeros(0, self.num_object_cls, device=device, dtype=torch.int64))
                 all_prior.append(torch.zeros(2, 0, self.num_cls, device=device))
                 all_labels.append(torch.zeros(0, self.num_cls, device=device))
+                all_subject_logits.append(torch.zeros(0, self.num_subject_cls, device=device, dtype=torch.int64))
+                all_object_logits.append(torch.zeros(0, self.num_object_cls, device=device, dtype=torch.int64))
                 continue
+
             # TODO: Reimplement this check
             # if not torch.all(labels[:num_subjects] == self.human_idx):
             #     raise ValueError("Subject detections are not permuted to the top")
@@ -863,10 +899,14 @@ class GraphHead(Module):
                     global_features[b_idx, None],
                     box_pair_spatial_reshaped[x_keep, y_keep])
             ], dim=1))
+
             all_boxes_s.append(coords[x_keep])
             all_boxes_o.append(coords[y_keep])
             all_subject_scores.append(subject_box_all_scores[b_idx])
             all_object_scores.append(object_box_all_scores[b_idx])
+            all_subject_logits.append(subject_box_all_logits[b_idx])
+            all_object_logits.append(object_box_all_logits[b_idx])
+
             # The prior score is the product of the object detection scores
             all_prior.append(self.compute_prior_scores(
                 x_keep, y_keep, device)
@@ -875,5 +915,5 @@ class GraphHead(Module):
             subject_counter += n_s
             object_counter += n_o
 
-        return all_box_verb_features, all_boxes_s, all_boxes_o, all_object_scores, all_subject_scores, all_labels, \
-               all_prior
+        return all_box_verb_features, all_boxes_s, all_boxes_o, all_object_scores, \
+               all_subject_scores, all_labels, all_prior, all_subject_logits, all_object_logits
