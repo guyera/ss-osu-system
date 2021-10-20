@@ -82,7 +82,8 @@ class DataFactory(Dataset):
                  training=True,
                  num_subj_cls=0,
                  num_obj_cls=0,
-                 num_action_cls=0
+                 num_action_cls=0,
+                 partition=None
                  ):
         self.training = training
         # Ensuring explicit awareness of user about this fact

@@ -231,7 +231,19 @@ def train_supervised_model(X, anom_scores, y):
         scores.append(auc)
         models.append(model_i)
 
+    # TODO: 
+    #   -> Modify to return novelty scores instead
+    #
+    #   -> Multiple dataloaders (one nom, other anom) 
+    #      to balance batches during training.
+    #
+    #   -> If you have time, calibration
+    #      - NOTE: Temperature scaling paper (Guo et al.) 
+    #              suggests that this isn't necessary in your
+    #              case (MLP for binary classification)
+
     mean_AUC = sum(scores) / len(scores)
+    mean_nov_scores = pass
 
     # TODO: Return models as well!
 
@@ -248,11 +260,11 @@ def train_supervised_models(S_X, V_X, O_X, S_a, V_a, O_a, S_y, V_y, O_y):
     Returns: S_AUC_scores, V_AUC_scores, O_AUC_scores 
     '''
      
-    S_AUC_scores, S_models = train_supervised_model(S_X, S_a, S_y)
-    V_AUC_scores, V_models = train_supervised_model(V_X, V_a, V_y)
-    O_AUC_scores, O_models = train_supervised_model(O_X, O_a, O_y)
+    S_nov_scores, S_models = train_supervised_model(S_X, S_a, S_y)
+    V_nov_scores, V_models = train_supervised_model(V_X, V_a, V_y)
+    O_nov_scores, O_models = train_supervised_model(O_X, O_a, O_y)
 
-    return ((S_AUC_scores, V_AUC_scores, O_AUC_scores),
+    return ((S_nov_scores, V_nov_scores, O_nov_scores),
             (S_models, V_models, O_models))
 
 

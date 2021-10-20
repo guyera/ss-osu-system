@@ -1,1 +1,1 @@
-from ..models import MLP_Fusion
+import supervised_anomaly_detectors

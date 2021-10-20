@@ -25,7 +25,7 @@ import pandas as pd
 import os
 import sys
 import math
-from adaptation.MLP_Fusion import MLP_Fusion
+from .MLP_Fusion import MLP_Fusion
 #import matplotlib.pyplot as plt
 
 from torch.autograd import Variable
@@ -152,6 +152,7 @@ def test(model, test_loader, data_params):
            #_, predicted = torch.max(outputs.data, 1)
            predicted = torch.round(outputs.data).T[0]
            total += labels.size(0)
+           labels = labels.float()
            correct += (predicted == torch.round(labels.T)).sum().item()
           
            y_hat = torch.cat((y_hat, outputs))
@@ -231,7 +232,21 @@ def train_supervised_model(X, anom_scores, y):
         scores.append(auc)
         models.append(model_i)
 
+    # TODO: 
+    #   -> Modify to return novelty scores instead
+    #
+    #   -> Multiple dataloaders (one nom, other anom) 
+    #      to balance batches during training.
+    #
+    #   -> If you have time, calibration
+    #      - NOTE: Temperature scaling paper (Guo et al.) 
+    #              suggests that this isn't necessary in your
+    #              case (MLP for binary classification)
+
     mean_AUC = sum(scores) / len(scores)
+    #mean_nov_scores = pass
+
+    # TODO: Return models as well!
 
     return mean_AUC, models    
     
@@ -246,11 +261,11 @@ def train_supervised_models(S_X, V_X, O_X, S_a, V_a, O_a, S_y, V_y, O_y):
     Returns: S_AUC_scores, V_AUC_scores, O_AUC_scores 
     '''
      
-    S_AUC_scores, S_models = train_supervised_model(S_X, S_a, S_y)
-    V_AUC_scores, V_models = train_supervised_model(V_X, V_a, V_y)
-    O_AUC_scores, O_models = train_supervised_model(O_X, O_a, O_y)
+    S_nov_scores, S_models = train_supervised_model(S_X, S_a, S_y)
+    V_nov_scores, V_models = train_supervised_model(V_X, V_a, V_y)
+    O_nov_scores, O_models = train_supervised_model(O_X, O_a, O_y)
 
-    return ((S_AUC_scores, V_AUC_scores, O_AUC_scores),
+    return ((S_nov_scores, V_nov_scores, O_nov_scores),
             (S_models, V_models, O_models))
 
 
@@ -310,3 +325,31 @@ def eval_supervised(S_X, V_X, O_X, S_a, V_a, O_a, models):
     object_nov_scores  = eval_supervised_ensemble(models[O], O_X, O_a) 
 
     return (subject_nov_scores, verb_nov_scores, object_nov_scores)
+
+
+# For debugging and tests
+if __name__ == '__main__':
+    # TODO: Set this up with real data.
+
+    num_examples = 1142
+    num_features = 512
+    S_X = torch.rand(num_examples, num_features)
+    V_X = torch.rand(num_examples, num_features)
+    O_X = torch.rand(num_examples, num_features)
+    S_a = torch.rand(num_examples, 1)
+    V_a = torch.rand(num_examples, 1)
+    O_a = torch.rand(num_examples, 1)
+    S_y = torch.rand(num_examples, 1)
+    V_y = torch.rand(num_examples, 1)
+    O_y = torch.rand(num_examples, 1)
+    AUC, models = train_supervised_models(S_X,V_X,O_X,
+                                          S_a,V_a,O_a,
+                                          S_y,V_y,O_y)
+    scores = eval_supervised(S_X, V_X, O_X, S_a, V_a, O_a, models)
+    print("S Scores: {}".format(scores[0][0:5]))
+    print("V Scores: {}".format(scores[1][0:5]))
+    print("O Scores: {}".format(scores[2][0:5]))
+
+    print("S score shape: {}".format(scores[0].shape))
+    print("V score shape: {}".format(scores[1].shape))
+    print("O score shape: {}".format(scores[2].shape)) 
