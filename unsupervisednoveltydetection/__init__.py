@@ -345,46 +345,59 @@ class UnsupervisedNoveltyDetector:
         results['top3'] = predictions
 
         return results
-    
-    def score(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type):
+
+    def score_subject(self, subject_appearance_features):
         results = {}
-        subject_novelty_scores = []
-        object_novelty_scores = []
-        verb_novelty_scores = []
-        for idx in range(len(spatial_features)):
+        novelty_scores = []
+        for example_subject_appearance_features in subject_appearance_features:
+            if example_subject_appearance_features is not None:
+                example_features = torch.flatten(example_subject_appearance_features).to(self.device)
+                
+                score = self.classifier.score_subject(example_features.unsqueeze(0))
+                score = score.squeeze(0)
+                novelty_scores.append(score)
+            else:
+                novelty_scores.append(None)
+            
+        return novelty_scores
+
+    def score_object(self, object_appearance_features):
+        results = {}
+        novelty_scores = []
+        for example_object_appearance_features in object_appearance_features:
+            if example_object_appearance_features is not None:
+                example_features = torch.flatten(example_object_appearance_features).to(self.device)
+                
+                score = self.classifier.score_object(example_features.unsqueeze(0))
+                score = score.squeeze(0)
+                novelty_scores.append(score)
+            else:
+                novelty_scores.append(None)
+            
+        return novelty_scores
+
+    def score_verb(self, spatial_features, verb_appearance_features):
+        results = {}
+        novelty_scores = []
+        for idx in range(len(verb_appearance_features)):
             example_spatial_features = spatial_features[idx]
-            example_subject_appearance_features = subject_appearance_features[idx]
-            example_object_appearance_features = object_appearance_features[idx]
             example_verb_appearance_features = verb_appearance_features[idx]
             
-            if example_subject_appearance_features is not None:
-                example_subject_features = torch.flatten(example_subject_appearance_features).to(self.device)
-
-                subject_score = self.classifier.score_subject(example_subject_features.unsqueeze(0))
-                subject_score = subject_score.squeeze(0)
-                subject_novelty_scores.append(subject_score)
+            if example_verb_appearance_features is not None and example_spatial_features is not None:
+                example_features = torch.cat((torch.flatten(example_spatial_features), torch.flatten(example_verb_appearance_features)))
+                example_features = example_features.to(self.device)
+                
+                score = self.classifier.score_verb(example_features.unsqueeze(0))
+                score = score.squeeze(0)
+                novelty_scores.append(score)
             else:
-                subject_novelty_scores.append(None)
-
-            if example_object_appearance_features is not None:
-                example_object_features = torch.flatten(example_object_appearance_features).to(self.device)
-                object_score = self.classifier.score_object(example_object_features.unsqueeze(0))
-                object_score = object_score.squeeze(0)
-                object_novelty_scores.append(object_score)
-            else:
-                object_novelty_scores.append(None)
+                novelty_scores.append(None)
             
-            if example_verb_appearance_features is not None:
-                example_verb_features = torch.cat((torch.flatten(example_spatial_features), torch.flatten(example_verb_appearance_features)))
-                example_verb_features = example_verb_features.to(self.device)
-                verb_score = self.classifier.score_verb(example_verb_features.unsqueeze(0))
-                verb_score = verb_score.squeeze(0)
-                verb_novelty_scores.append(verb_score)
-            else:
-                verb_novelty_scores.append(None)
-            
-        results['subject_novelty_score'] = subject_novelty_scores
-        results['verb_novelty_score'] = verb_novelty_scores
-        results['object_novelty_score'] = object_novelty_scores
-
+        return novelty_scores
+    
+    def score(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features):
+        results = {}
+        results['subject_novelty_score'] = self.score_subject(subject_appearance_features)
+        results['object_novelty_score'] = self.score_object(object_appearance_features)
+        results['verb_novelty_score'] = self.score_verb(spatial_features, verb_appearance_features)
         return results
