@@ -347,7 +347,6 @@ class UnsupervisedNoveltyDetector:
         return results
 
     def score_subject(self, subject_appearance_features):
-        results = {}
         novelty_scores = []
         for example_subject_appearance_features in subject_appearance_features:
             if example_subject_appearance_features is not None:
@@ -362,7 +361,6 @@ class UnsupervisedNoveltyDetector:
         return novelty_scores
 
     def score_object(self, object_appearance_features):
-        results = {}
         novelty_scores = []
         for example_object_appearance_features in object_appearance_features:
             if example_object_appearance_features is not None:
@@ -377,7 +375,6 @@ class UnsupervisedNoveltyDetector:
         return novelty_scores
 
     def score_verb(self, spatial_features, verb_appearance_features):
-        results = {}
         novelty_scores = []
         for idx in range(len(verb_appearance_features)):
             example_spatial_features = spatial_features[idx]
