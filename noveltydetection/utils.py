@@ -50,9 +50,13 @@ class ScoreContext:
             self.novel_scores =\
                 torch.cat((self.novel_scores, novel_scores), dim = 0)
 
+    def data_available(self):
+        return self.nominal_scores is not None and self.novel_scores is not None
+
     def compute_partial_auc(self):
         return compute_partial_auc(self.nominal_scores, self.novel_scores)
 
+    # Use silverman's rule of thumb to choose bandwidth.
     def _compute_bandwidth(self, scores):
         std = torch.std(scores, dim = 0, unbiased = True)
         q3 = torch.quantile(scores, 0.75, dim = 0)
@@ -61,7 +65,6 @@ class ScoreContext:
         a = torch.min(std, iqr / 1.34)
         bw = 0.9 * a * math.pow(len(scores), -0.2)
         return bw
-        
     
     def _nominal_bandwidth(self):
         return self._compute_bandwidth(self.nominal_scores)
@@ -112,6 +115,12 @@ def compute_probability_novelty(
         verb_score_ctx,
         object_score_ctx,
         p_type):
+    if not subject_score_ctx.data_available() or\
+            not verb_score_ctx.data_available() or\
+            not object_score_ctx.data_available():
+        # Missing nominal or novel data for one or more KDEs. Return 0.5.
+        return 0.5
+
     nominal_subject_kde, novel_subject_kde = subject_score_ctx.fit_kdes()
     nominal_object_kde, novel_object_kde = object_score_ctx.fit_kdes()
     nominal_verb_kde, novel_verb_kde = verb_score_ctx.fit_kdes()
@@ -200,4 +209,3 @@ def compute_probability_novelty(
     p_novel = p_novel_subject + p_novel_object + p_novel_verb + p_novel_combination
     
     return p_novel
-    # return 0.5
