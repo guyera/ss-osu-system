@@ -26,6 +26,7 @@ import os
 import sys
 import math
 from .MLP_Fusion import MLP_Fusion
+import noveltydetectionfeatures
 #import matplotlib.pyplot as plt
 
 from torch.autograd import Variable
@@ -158,13 +159,15 @@ def test(model, test_loader, data_params):
            y_hat = torch.cat((y_hat, outputs))
            y     = torch.cat((y, labels)) 
 
+        scores = y_hat
+
         # Put these on the cpu so that sklearn can 
         # do its magic
         y = y.cpu()
         y = y.detach().numpy()
         y_hat = y_hat.cpu()
         y_hat = y_hat.detach().numpy()
-        auc = roc_auc_score(np.round(y), np.round(y_hat))
+        auc = roc_auc_score(np.round(y), np.round(y_hat), max_fpr=0.25)
 
         print(f"Accuracy of the model on the {total} " +
               f"test images: {100 * correct / total}%")
@@ -172,7 +175,7 @@ def test(model, test_loader, data_params):
         print(f"AUC of the model on the {total} " + 
               f"test images: {auc}")
  
-    return auc
+    return auc, scores
 
 
 def train_supervised_model(X, anom_scores, y):
@@ -193,7 +196,8 @@ def train_supervised_model(X, anom_scores, y):
     lrate = 0.0546 
     mu = 0.9    
 
-    scores = []    
+    scores = []
+    aucs   = []    
     models = []   
  
     # Doing 5-fold cross-validation
@@ -225,11 +229,23 @@ def train_supervised_model(X, anom_scores, y):
         # Train the model
         train(model_i, train_dataloader, criterion, optimizer, data_params)
 
-        # Compute the AUC
-        auc = test(model_i, val_dataloader, data_params)        
+        # Compute the AUC with max_fpr at 0.25
+        auc, scores_split_i = test(model_i, val_dataloader, data_params)        
+
+        # TODO: -> CHECK AUC VAL/STRUCTURE; CHANGED IT TO max_fpr=0.25
+        #          MIGHT NEED TO MODIFY MEAN_AUC BELOW
+        #
+        #       -> NEED TO CHECK scores_split_i TYPE AND SHAPE TO DETERMINE
+        #          BEST WAY TO CONSOLIDATE NOVELTY SCORES
+        #
+        #       -> IF THERE'S TIME, REFACTOR TO BALANCE (i.e. USE 2 DATALOADERS,
+        #          ONE NOVEL, AND ONE NOMINAL AND USE THEM TO ENSURE EACH MINI-
+        #          BATCH IS BALANCED.)
+        import pdb; pdb.set_trace()
 
         # Store the model and AUC for this split
-        scores.append(auc)
+        scores.append(scores_split_i)
+        aucs.append(auc)
         models.append(model_i)
 
     # TODO: 
@@ -243,7 +259,7 @@ def train_supervised_model(X, anom_scores, y):
     #              suggests that this isn't necessary in your
     #              case (MLP for binary classification)
 
-    mean_AUC = sum(scores) / len(scores)
+    mean_AUC = sum(aucs) / len(aucs)
     #mean_nov_scores = pass
 
     # TODO: Return models as well!
