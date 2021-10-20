@@ -25,10 +25,14 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 feature_extraction_device = self.device
             )
         )
-    
-        subject_set = unsupervisednoveltydetection.common.SubjectDataset(testing_set, train = False)
-        object_set = unsupervisednoveltydetection.common.ObjectDataset(testing_set, train = False)
-        verb_set = unsupervisednoveltydetection.common.VerbDataset(testing_set, train = False)
+        
+        # Initialize the datasets in "train" mode. All this actually does is
+        # omit null instances (e.g. the subject_set will omit images which
+        # don't have subject boxes), which is helpful for testing of
+        # individual units.
+        subject_set = unsupervisednoveltydetection.common.SubjectDataset(testing_set, train = True)
+        object_set = unsupervisednoveltydetection.common.ObjectDataset(testing_set, train = True)
+        verb_set = unsupervisednoveltydetection.common.VerbDataset(testing_set, train = True)
 
         # The remaining datasets are used for evaluating AUC of subject, object,
         # and verb classifiers in the open set setting.
@@ -50,13 +54,10 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             shuffle = False
         )
         
-        # Get example features for shape information to construct classifiers
-        appearance_features, _, verb_features, _, _, _ = testing_set[0]
-        
         # Create classifier
         classifier = unsupervisednoveltydetection.common.Classifier(
-            len(appearance_features),
-            len(verb_features),
+            12544,
+            12616,
             1024,
             6,
             9,

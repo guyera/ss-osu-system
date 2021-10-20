@@ -72,6 +72,27 @@ class ClassSplit:
         return copy.deepcopy(self._ood_labels)
 
 """
+Description: Generates a random class split.
+
+Parameters:
+    labels: An enumerable of all class labels.
+    num_id: The number of classes to hold out as in-distribution.
+"""
+def generate_class_split(labels, num_id: int):
+    # Copy labels to ood_labels
+    ood_labels = labels[:]
+    id_labels = []
+    
+    # Remove random labels from ood_labels and put them in id_labels
+    for i in range(num_id):
+        idx = np.random.randint(0, len(ood_labels))
+        label = ood_labels.pop(idx)
+        id_labels.append(label)
+    
+    # Construct and return ClassSplit
+    return ClassSplit(id_labels, ood_labels)
+
+"""
 Description: A dataset which wraps around another dataset, returning the same
     data points after remapping their labels. Used to remap labels to [0, N-1]
     after splitting datasets by class.
