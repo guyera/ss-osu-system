@@ -196,7 +196,7 @@ def train_supervised_model(X, anom_scores, y):
     lrate = 0.0546 
     mu = 0.9    
 
-    scores = []
+    scores = None
     aucs   = []    
     models = []   
  
@@ -232,24 +232,21 @@ def train_supervised_model(X, anom_scores, y):
         # Compute the AUC with max_fpr at 0.25
         auc, scores_split_i = test(model_i, val_dataloader, data_params)        
 
-        # TODO: -> CHECK AUC VAL/STRUCTURE; CHANGED IT TO max_fpr=0.25
-        #          MIGHT NEED TO MODIFY MEAN_AUC BELOW
-        #
-        #       -> NEED TO CHECK scores_split_i TYPE AND SHAPE TO DETERMINE
-        #          BEST WAY TO CONSOLIDATE NOVELTY SCORES
+        # TODO:
         #
         #       -> IF THERE'S TIME, REFACTOR TO BALANCE (i.e. USE 2 DATALOADERS,
         #          ONE NOVEL, AND ONE NOMINAL AND USE THEM TO ENSURE EACH MINI-
         #          BATCH IS BALANCED.)
-        import pdb; pdb.set_trace()
 
         # Store the model and AUC for this split
-        scores.append(scores_split_i)
+        if scores is None:
+            scores = scores_split_i
+        else:
+            scores = torch.vstack((scores,scores_split_i))
         aucs.append(auc)
         models.append(model_i)
 
     # TODO: 
-    #   -> Modify to return novelty scores instead
     #
     #   -> Multiple dataloaders (one nom, other anom) 
     #      to balance batches during training.
@@ -260,11 +257,8 @@ def train_supervised_model(X, anom_scores, y):
     #              case (MLP for binary classification)
 
     mean_AUC = sum(aucs) / len(aucs)
-    #mean_nov_scores = pass
 
-    # TODO: Return models as well!
-
-    return mean_AUC, models    
+    return mean_AUC, scores, models    
     
 
 def train_supervised_models(S_X, V_X, O_X, S_a, V_a, O_a, S_y, V_y, O_y):
@@ -277,11 +271,12 @@ def train_supervised_models(S_X, V_X, O_X, S_a, V_a, O_a, S_y, V_y, O_y):
     Returns: S_AUC_scores, V_AUC_scores, O_AUC_scores 
     '''
      
-    S_nov_scores, S_models = train_supervised_model(S_X, S_a, S_y)
-    V_nov_scores, V_models = train_supervised_model(V_X, V_a, V_y)
-    O_nov_scores, O_models = train_supervised_model(O_X, O_a, O_y)
+    S_auc, S_nov_scores, S_models = train_supervised_model(S_X, S_a, S_y)
+    V_auc, V_nov_scores, V_models = train_supervised_model(V_X, V_a, V_y)
+    O_auc, O_nov_scores, O_models = train_supervised_model(O_X, O_a, O_y)
 
-    return ((S_nov_scores, V_nov_scores, O_nov_scores),
+    return ((S_auc, V_auc, O_auc),
+            (S_nov_scores, V_nov_scores, O_nov_scores),
             (S_models, V_models, O_models))
 
 
