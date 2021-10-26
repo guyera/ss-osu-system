@@ -11,7 +11,7 @@ from ensemble.cal_model import LogisticRegression
 class Ensemble:
     def __init__(self, nets, num_obj_classes, num_subj_classes, num_verb_classes):
         if len(nets) < 2:
-            raise Exception(f'Ensemble size has to be at least two.')
+            raise Exception(f'Ensemble size has to be at least two. Actual size: {len(nets)}')
 
         self.nets = nets
         self.top_k = 3
