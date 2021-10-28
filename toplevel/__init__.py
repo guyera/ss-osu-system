@@ -10,7 +10,7 @@ from toplevel.util import *
 import noveltydetectionfeatures
 import pandas as pd
 from noveltydetection.utils import compute_probability_novelty
-from cusum import SprtPredictor
+from toplevel.cusum import SprtPredictor
 
 
 class TopLevelApp:
