@@ -321,7 +321,7 @@ class UnsupervisedNoveltyDetector:
             else:
                 verb_novelty_scores.append(None)
             
-            p_ni_t4 = torch.tensor(0)
+            p_ni_t4 = torch.tensor(0) 
             p_ni_t4 = p_ni_t4.to(subject_probs.device)
             if example_subject_appearance_features is not None and example_object_appearance_features is not None:
                 # Case 1, S/V/O

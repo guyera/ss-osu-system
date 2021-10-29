@@ -71,7 +71,7 @@ def get_dataloaders(data):
         dataset=train_dataset,
         batch_size=img_batch_size,
         num_workers=num_workers, 
-        pin_memory=True
+        pin_memory=False
     )
         
     val_Xa_i    = torch.hstack((val_X_i,val_a_i))
@@ -80,7 +80,7 @@ def get_dataloaders(data):
         dataset=val_dataset,
         batch_size=img_batch_size,
         num_workers=num_workers, 
-        pin_memory=True
+        pin_memory=False
     )
 
     return train_dataloader, val_dataloader
@@ -95,7 +95,14 @@ def train(model, loader, criterion, optimizer, config):
     example_ct = 0   
     batch_ct   = 0 
 
-    for epoch in tqdm(range(epochs)):
+    progress = tqdm(                                                                                                                     
+        total = epochs,
+        desc = 'Training classifier',
+        leave = False
+    )
+
+    for epoch in range(epochs):
+        progress.set_description("epoch {}".format(epoch))
         for _, (images, labels) in enumerate(loader):
 
             loss = train_batch(images, labels, 
@@ -105,9 +112,9 @@ def train(model, loader, criterion, optimizer, config):
             batch_ct   +=  1
 
             # Report loss every 25th batch
-            if ((batch_ct + 1) % 25) == 0:
-                train_log(loss, example_ct, epoch)             
-
+            #if ((batch_ct + 1) % 25) == 0:
+            #    train_log(loss, example_ct, epoch)             
+    
 
 def train_log(loss, example_ct, epoch):
     ''' Print out loss info '''
@@ -121,6 +128,7 @@ def train_batch(images, labels, model, optimizer, criterion, device):
 
     # Forward pass ->
     outputs = model(images)
+
     outputs = torch.reshape(outputs, (-1,))
     labels  = torch.reshape(labels,  (-1,))
     loss = criterion(outputs, labels.float())
@@ -184,7 +192,7 @@ def train_supervised_model(X, anom_scores, y):
     using X, a, and y
     '''  
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")     
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")     
 
     num_folds = 5
     num_examples = X.shape[0]
@@ -233,7 +241,8 @@ def train_supervised_model(X, anom_scores, y):
         auc, scores_split_i = test(model_i, val_dataloader, data_params)        
 
         # TODO:
-        #
+        #       -> Throw an exception if you come across a NoneType       
+        # 
         #       -> IF THERE'S TIME, REFACTOR TO BALANCE (i.e. USE 2 DATALOADERS,
         #          ONE NOVEL, AND ONE NOMINAL AND USE THEM TO ENSURE EACH MINI-
         #          BATCH IS BALANCED.)
@@ -251,7 +260,7 @@ def train_supervised_model(X, anom_scores, y):
     #   -> Multiple dataloaders (one nom, other anom) 
     #      to balance batches during training.
     #
-    #   -> If you have time, calibration
+    #   -> If you have time, double check calibration assumption
     #      - NOTE: Temperature scaling paper (Guo et al.) 
     #              suggests that this isn't necessary in your
     #              case (MLP for binary classification)
@@ -270,9 +279,11 @@ def train_supervised_models(S_X, V_X, O_X, S_a, V_a, O_a, S_y, V_y, O_y):
 
     Returns: S_AUC_scores, V_AUC_scores, O_AUC_scores 
     '''
-     
+
     S_auc, S_nov_scores, S_models = train_supervised_model(S_X, S_a, S_y)
+
     V_auc, V_nov_scores, V_models = train_supervised_model(V_X, V_a, V_y)
+        
     O_auc, O_nov_scores, O_models = train_supervised_model(O_X, O_a, O_y)
 
     return ((S_auc, V_auc, O_auc),
