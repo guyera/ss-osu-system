@@ -88,7 +88,7 @@ class Calibrator:
 
         matrix_idx = torch.cat([res_to_det_subj[new_pair_idx].unsqueeze(1),
                                 res_to_det_obj[new_pair_idx].unsqueeze(1),
-                                verbs.unsqueeze(1)], dim=1)
+                                verbs.unsqueeze(1)], dim=1).long()
 
         new_verb_matrix[matrix_idx[:, 0], matrix_idx[:, 1], matrix_idx[:, 2]] = verb_scores
         new_verb_matrix_logits[matrix_idx[:, 0], matrix_idx[:, 1], matrix_idx[:, 2]] = verb_logits

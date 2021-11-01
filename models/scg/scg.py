@@ -149,18 +149,18 @@ class GenericHOINetwork(nn.Module):
                     sub_boxes[box_id] = new_boxes[box_id]
 
                     # We need to do this to handle matching in evaluation.
-                    if torch.equal(sub_boxes[box_id], pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0]]))):
-                        sub_boxes[box_id] = pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1] - 1, im_s[0]]))
+                    if torch.equal(sub_boxes[box_id], pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1] - 1, im_s[0]]))):
+                        sub_boxes[box_id] = pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1] - 2, im_s[0]]))
 
                         if targets is not None:
                             targets[im_id]['boxes_s'][box_id] = \
-                                pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1] - 1, im_s[0]]))
+                                pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1] - 2, im_s[0]]))
                 else:
-                    sub_boxes[box_id] = pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0]]))
+                    sub_boxes[box_id] = pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1] - 1, im_s[0]]))
 
                     if targets is not None:
                         targets[im_id]['boxes_s'][box_id] = \
-                            pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0]]))
+                            pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1] - 1, im_s[0]]))
 
             det['subject_boxes'] = sub_boxes
             det['valid_subjects'] = non_empty_ids
@@ -179,16 +179,19 @@ class GenericHOINetwork(nn.Module):
             for box_id in range(len(obj_boxes)):
                 if box_id in non_empty_ids:
                     obj_boxes[box_id] = new_boxes[box_id]
-                    if torch.equal(obj_boxes[box_id], pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0]]))):
-                        obj_boxes[box_id] = pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1] - 1, im_s[0]]))
+                    
+                    if torch.equal(obj_boxes[box_id], pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0] - 1]))):
+                        obj_boxes[box_id] = pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1] - 1, im_s[0] - 2]))
+
                         if targets is not None:
                             targets[im_id]['boxes_o'][box_id] = \
-                                pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1] - 1, im_s[0]]))
+                                pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0] - 2]))
                 else:
-                    obj_boxes[box_id] = pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0]]))
+                    obj_boxes[box_id] = pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0] - 1]))
+
                     if targets is not None:
                         targets[im_id]['boxes_o'][box_id] = \
-                            pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0]]))
+                            pocket.ops.relocate_to_cuda(torch.FloatTensor([0, 0, im_s[1], im_s[0] - 1]))
 
             det['object_boxes'] = obj_boxes
             det['valid_objects'] = non_empty_ids
