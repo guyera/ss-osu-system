@@ -17,9 +17,9 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             noveltydetectionfeatures.NoveltyFeatureDataset(
                 name = 'Custom',
                 data_root = 'Custom',
-                csv_path = 'Custom/annotations/val_dataset_v1_val.csv',
-                num_subj_cls = 6,
-                num_obj_cls = 9,
+                csv_path = 'Custom/annotations/dataset_v3_val.csv',
+                num_subj_cls = 5,
+                num_obj_cls = 13,
                 num_action_cls = 8,
                 training = False,
                 image_batch_size = 16,
@@ -30,6 +30,17 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         subject_set = unsupervisednoveltydetection.common.SubjectDataset(testing_set, train = False)
         object_set = unsupervisednoveltydetection.common.ObjectDataset(testing_set, train = False)
         verb_set = unsupervisednoveltydetection.common.VerbDataset(testing_set, train = False)
+
+        # Remove novel 0 labels
+        id_subject_labels = list(range(1, 5))
+        id_object_labels = list(range(1, 13))
+        id_verb_labels = list(range(1, 8))
+        id_subject_indices = unsupervisednoveltydetection.common.get_indices_of_labels(subject_set, id_subject_labels)
+        id_object_indices = unsupervisednoveltydetection.common.get_indices_of_labels(object_set, id_object_labels)
+        id_verb_indices = unsupervisednoveltydetection.common.get_indices_of_labels(verb_set, id_verb_labels)
+        subject_set = torch.utils.data.Subset(subject_set, id_subject_indices)
+        object_set = torch.utils.data.Subset(object_set, id_object_indices)
+        verb_set = torch.utils.data.Subset(verb_set, id_verb_indices)
 
         # The remaining datasets are used for evaluating AUC of subject, object,
         # and verb classifiers in the open set setting.
@@ -56,8 +67,8 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             12544,
             12616,
             1024,
-            6,
-            9,
+            5,
+            13,
             8
         )
         

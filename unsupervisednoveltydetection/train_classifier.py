@@ -32,17 +32,17 @@ def parse_args():
     parser.add_argument(
         '--csv-path',
         type = str,
-        default = 'Custom/annotations/val_dataset_v1_train.csv'
+        default = 'Custom/annotations/dataset_v3_train.csv'
     )
     parser.add_argument(
         '--num-subj-cls',
         type = int,
-        default = 6
+        default = 5
     )
     parser.add_argument(
         '--num-obj-cls',
         type = int,
-        default = 9
+        default = 13
     )
     parser.add_argument(
         '--num-action-cls',
@@ -118,6 +118,18 @@ def main():
     subject_set = unsupervisednoveltydetection.common.SubjectDataset(training_set, train = True)
     object_set = unsupervisednoveltydetection.common.ObjectDataset(training_set, train = True)
     verb_set = unsupervisednoveltydetection.common.VerbDataset(training_set, train = True)
+
+    # Remove novel 0 labels (yes, there are novel labels in the v3 train.csv
+    # file. Don't ask my why.)
+    id_subject_labels = list(range(1, args.num_subj_cls))
+    id_object_labels = list(range(1, args.num_obj_cls))
+    id_verb_labels = list(range(1, args.num_action_cls))
+    id_subject_indices = unsupervisednoveltydetection.common.get_indices_of_labels(subject_set, id_subject_labels)
+    id_object_indices = unsupervisednoveltydetection.common.get_indices_of_labels(object_set, id_object_labels)
+    id_verb_indices = unsupervisednoveltydetection.common.get_indices_of_labels(verb_set, id_verb_labels)
+    subject_set = torch.utils.data.Subset(subject_set, id_subject_indices)
+    object_set = torch.utils.data.Subset(object_set, id_object_indices)
+    verb_set = torch.utils.data.Subset(verb_set, id_verb_indices)
     
     # Construct training loaders
     subject_loader = torch.utils.data.DataLoader(

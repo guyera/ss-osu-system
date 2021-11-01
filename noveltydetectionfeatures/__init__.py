@@ -139,7 +139,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                             verb_label = targets[b_idx]['verb'][0].detach()
                             subject_label = None if subject_label.item() == -1 else subject_label
                             object_label = None if object_label.item() == -1 else object_label
-                            verb_label = None if (verb_label.item() == -1 or verb_label.item() == 0) else verb_label
+                            verb_label = None if verb_label.item() == -1 else verb_label
                         
                         subject_labels.append(subject_label)
                         object_labels.append(object_label)
@@ -197,13 +197,15 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                             object_box_features.append(None)
                             verb_box_features.append(box_roi_pool(features, [verb_box_coords], image_shapes).detach())
                         elif detection['object_boxes'] is not None:
-                            verb_box_coords = None
                             box_pair_spatial.append(None)
                             subject_box_features.append(None)
                             object_box_features.append(box_roi_pool(features, [detection['object_boxes']], image_shapes).detach())
                             verb_box_features.append(None)
                         else:
-                            return NotImplemented
+                            box_pair_spatial.append(None)
+                            subject_box_features.append(None)
+                            object_box_features.append(None)
+                            verb_box_features.append(None)
                     
                 self.spatial_features = box_pair_spatial
                 self.subject_labels = subject_labels

@@ -19,7 +19,7 @@ def parse_args():
         required = True
     )
     parser.add_argument(
-        '--score-context-load-file',
+        '--score-contexts-load-file',
         type = str,
         required = True
     )
@@ -43,7 +43,7 @@ def main():
     
     classifier_state_dict = torch.load(args.classifier_load_file)
     confidence_calibrator_state_dict = torch.load(args.confidence_calibrator_load_file)
-    score_context_state_dict = torch.load(args.score_context_load_file)
+    score_context_state_dict = torch.load(args.score_contexts_load_file)
     with open(args.known_combinations_load_file, 'rb') as f:
         known_combinations = pickle.load(f)
 

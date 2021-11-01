@@ -9,7 +9,7 @@ import unittest
 class TestConfidenceCalibrationMethods(unittest.TestCase):
     def setUp(self):
         self.device = 'cuda:0'
-        detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(12544, 12616, 1024, 6, 9, 8)
+        detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(12544, 12616, 1024, 5, 13, 8)
         self.detector = detector.to(self.device)
 
         state_dict = torch.load('unsupervisednoveltydetection/unsupervised_novelty_detection_module.pth')
@@ -18,9 +18,9 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         self.testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
             name = 'Custom',
             data_root = 'Custom',
-            csv_path = 'Custom/annotations/val_dataset_v1_val.csv',
-            num_subj_cls = 6,
-            num_obj_cls = 9,
+            csv_path = 'Custom/annotations/dataset_v3_val.csv',
+            num_subj_cls = 5,
+            num_obj_cls = 13,
             num_action_cls = 8,
             training = False,
             image_batch_size = 16,
@@ -33,11 +33,14 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         object_appearance_features = []
         verb_appearance_features = []
         
-        for example_spatial_features, example_subject_appearance_features, example_object_appearance_features, example_verb_appearance_features, _, _, _ in self.testing_set:
+        for example_spatial_features, example_subject_appearance_features, example_object_appearance_features, example_verb_appearance_features, subject_label, object_label, verb_label in self.testing_set:
             if example_spatial_features is None or\
                     example_subject_appearance_features is None or\
                     example_object_appearance_features is None or\
-                    example_verb_appearance_features is None:
+                    example_verb_appearance_features is None or\
+                    subject_label <= 0 or\
+                    object_label <= 0 or\
+                    verb_label <= 0:
                 continue
             spatial_features.append(example_spatial_features)
             subject_appearance_features.append(example_subject_appearance_features)
@@ -59,11 +62,14 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         object_appearance_features = []
         verb_appearance_features = []
         
-        for example_spatial_features, example_subject_appearance_features, example_object_appearance_features, example_verb_appearance_features, _, _, _ in self.testing_set:
+        for example_spatial_features, example_subject_appearance_features, example_object_appearance_features, example_verb_appearance_features, subject_label, object_label, verb_label in self.testing_set:
             if example_spatial_features is None or\
                     example_subject_appearance_features is None or\
                     example_object_appearance_features is None or\
-                    example_verb_appearance_features is None:
+                    example_verb_appearance_features is None or\
+                    subject_label <= 0 or\
+                    object_label <= 0 or\
+                    verb_label <= 0:
                 continue
             spatial_features.append(example_spatial_features)
             subject_appearance_features.append(example_subject_appearance_features)
@@ -85,11 +91,14 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         object_appearance_features = []
         verb_appearance_features = []
         
-        for example_spatial_features, example_subject_appearance_features, example_object_appearance_features, example_verb_appearance_features, _, _, _ in self.testing_set:
+        for example_spatial_features, example_subject_appearance_features, example_object_appearance_features, example_verb_appearance_features, subject_label, object_label, verb_label in self.testing_set:
             if example_spatial_features is None or\
                     example_subject_appearance_features is None or\
                     example_object_appearance_features is None or\
-                    example_verb_appearance_features is None:
+                    example_verb_appearance_features is None or\
+                    subject_label <= 0 or\
+                    object_label <= 0 or\
+                    verb_label <= 0:
                 continue
             spatial_features.append(example_spatial_features)
             subject_appearance_features.append(example_subject_appearance_features)
@@ -111,11 +120,14 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         object_appearance_features = []
         verb_appearance_features = []
         
-        for example_spatial_features, example_subject_appearance_features, example_object_appearance_features, example_verb_appearance_features, _, _, _ in self.testing_set:
+        for example_spatial_features, example_subject_appearance_features, example_object_appearance_features, example_verb_appearance_features, subject_label, object_label, verb_label in self.testing_set:
             if example_spatial_features is None or\
                     example_subject_appearance_features is None or\
                     example_object_appearance_features is None or\
-                    example_verb_appearance_features is None:
+                    example_verb_appearance_features is None or\
+                    subject_label <= 0 or\
+                    object_label <= 0 or\
+                    verb_label <= 0:
                 continue
             spatial_features.append(example_spatial_features)
             subject_appearance_features.append(example_subject_appearance_features)
@@ -137,11 +149,14 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         object_appearance_features = []
         verb_appearance_features = []
         
-        for example_spatial_features, example_subject_appearance_features, example_object_appearance_features, example_verb_appearance_features, _, _, _ in self.testing_set:
+        for example_spatial_features, example_subject_appearance_features, example_object_appearance_features, example_verb_appearance_features, subject_label, object_label, verb_label in self.testing_set:
             if example_spatial_features is None or\
                     example_subject_appearance_features is None or\
                     example_object_appearance_features is None or\
-                    example_verb_appearance_features is None:
+                    example_verb_appearance_features is None or\
+                    subject_label <= 0 or\
+                    object_label <= 0 or\
+                    verb_label <= 0:
                 continue
             spatial_features.append(example_spatial_features)
             subject_appearance_features.append(example_subject_appearance_features)

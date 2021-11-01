@@ -30,17 +30,17 @@ def parse_args():
     parser.add_argument(
         '--csv-path',
         type = str,
-        default = 'Custom/annotations/val_dataset_v1_train.csv'
+        default = 'Custom/annotations/dataset_v3_train.csv'
     )
     parser.add_argument(
         '--num-subj-cls',
         type = int,
-        default = 6
+        default = 5
     )
     parser.add_argument(
         '--num-obj-cls',
         type = int,
-        default = 9
+        default = 13
     )
     parser.add_argument(
         '--num-action-cls',
@@ -90,12 +90,50 @@ def main():
         )
     )
     
-    joint_labels = set()
+    known_svo = set()
+    known_sv = set()
+    known_so = set()
+    known_vo = set()
 
     for _, _, _, subject_label, object_label, verb_label in training_set:
+        if subject_label is not None and int(subject_label.item()) > 0:
+            known_subject = True
+        else:
+            known_subject = False
+        
+        if verb_label is not None and int(verb_label.item()) > 0:
+            known_verb = True
+        else:
+            known_verb = False
+
+        if object_label is not None and int(object_label.item()) > 0:
+            known_object = True
+        else:
+            known_object = False
+        
         # Shift labels back 1, since 0 is for anomaly
-        joint_label = (int(subject_label.item()) - 1, int(object_label.item()) - 1, int(verb_label.item()) - 1)
-        joint_labels.add(joint_label)
+        if known_subject and known_verb and known_object:
+            joint_label = (int(subject_label.item()) - 1, int(verb_label.item()) - 1, int(object_label.item()) - 1)
+            known_svo.add(joint_label)
+            known_sv.add((joint_label[0], joint_label[1]))
+            known_so.add((joint_label[0], joint_label[2]))
+            known_vo.add((joint_label[1], joint_label[2]))
+        elif known_subject and known_verb:
+            joint_label = (int(subject_label.item()) - 1, int(verb_label.item()) - 1)
+            known_sv.add(joint_label)
+        elif known_subject and known_object:
+            joint_label = (int(subject_label.item()) - 1, int(object_label.item()) - 1)
+            known_so.add(joint_label)
+        elif known_verb and known_object:
+            joint_label = (int(verb_label.item() - 1), int(object_label.item()) - 1)
+            known_vo.add(joint_label)
+
+    joint_labels = {
+        'svo': known_svo,
+        'sv': known_sv,
+        'so': known_so,
+        'vo': known_vo
+    }
 
     with open(args.known_combinations_save_file, 'wb') as f:
         pickle.dump(joint_labels, f)

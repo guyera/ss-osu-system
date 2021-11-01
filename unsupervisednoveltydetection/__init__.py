@@ -27,71 +27,102 @@ class UnsupervisedNoveltyDetector:
     
         self.confidence_calibrator = unsupervisednoveltydetection.common.ConfidenceCalibrator()
 
-        self.known_combinations = torch.zeros(num_subj_cls - 1, num_obj_cls - 1, num_action_cls - 1, dtype = torch.bool)
+        self.known_svo_combinations = torch.zeros(num_subj_cls - 1, num_action_cls - 1, num_obj_cls - 1, dtype = torch.bool)
+        self.known_sv_combinations = torch.zeros(num_subj_cls - 1, num_action_cls - 1, dtype = torch.bool)
+        self.known_so_combinations = torch.zeros(num_subj_cls - 1, num_obj_cls - 1, dtype = torch.bool)
+        self.known_vo_combinations = torch.zeros(num_action_cls - 1, num_obj_cls - 1, dtype = torch.bool)
     
     def to(self, device):
         self.device = device
         self.classifier = self.classifier.to(device)
         self.confidence_calibrator = self.confidence_calibrator.to(device)
-        self.known_combinations = self.known_combinations.to(device)
+        self.known_svo_combinations = self.known_svo_combinations.to(device)
+        self.known_sv_combinations = self.known_sv_combinations.to(device)
+        self.known_so_combinations = self.known_so_combinations.to(device)
+        self.known_vo_combinations = self.known_vo_combinations.to(device)
         return self
 
     def load_state_dict(self, state_dict):
         classifier_state_dict = state_dict['classifier']
         confidence_calibrator_state_dict = state_dict['confidence_calibrator']
         known_combinations = state_dict['known_combinations']
+        known_svo = known_combinations['svo']
+        known_sv = known_combinations['sv']
+        known_so = known_combinations['so']
+        known_vo = known_combinations['vo']
 
         self.classifier.load_state_dict(classifier_state_dict)
         self.confidence_calibrator.load_state_dict(confidence_calibrator_state_dict)
         
-        self.known_combinations[:] = False
+        self.known_svo_combinations[:] = False
+        subject_indices = []
+        verb_indices = []
+        object_indices = []
+        for subject_index, verb_index, object_index in known_svo:
+            subject_indices.append(subject_index)
+            verb_indices.append(verb_index)
+            object_indices.append(object_index)
+        self.known_svo_combinations[(subject_indices, verb_indices, object_indices)] = True
+
+        self.known_sv_combinations[:] = False
+        subject_indices = []
+        verb_indices = []
+        for subject_index, verb_index in known_sv:
+            subject_indices.append(subject_index)
+            verb_indices.append(verb_index)
+        self.known_sv_combinations[(subject_indices, verb_indices)] = True
+
+        self.known_so_combinations[:] = False
         subject_indices = []
         object_indices = []
-        verb_indices = []
-        for subject_index, object_index, verb_index in known_combinations:
+        for subject_index, object_index in known_so:
             subject_indices.append(subject_index)
             object_indices.append(object_index)
+        self.known_so_combinations[(subject_indices, object_indices)] = True
+
+        self.known_vo_combinations[:] = False
+        verb_indices = []
+        object_indices = []
+        for verb_index, object_index in known_vo:
             verb_indices.append(verb_index)
-        self.known_combinations[(subject_indices, object_indices, verb_indices)] = True
+            object_indices.append(object_index)
+        self.known_vo_combinations[(verb_indices, object_indices)] = True
     
     def _case_1(self, subject_probs, object_probs, verb_probs, p_type, k):
-        t1_known_combinations = self.known_combinations.to(torch.int).sum(dim = 0) > 0
-        t1_raw_joint_probs = object_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
-        t1_known_joint_probs = t1_known_combinations.to(torch.int) * t1_raw_joint_probs
+        t1_raw_joint_probs = verb_probs.unsqueeze(1) * object_probs.unsqueeze(0)
+        t1_known_joint_probs = self.known_vo_combinations.to(torch.int) * t1_raw_joint_probs
         t1_known_joint_probs_sum = t1_known_joint_probs.sum()
         if t1_known_joint_probs_sum.item() == 0:
             t1_conditional_joint_probs = t1_known_joint_probs
         else:
-            t1_conditional_joint_probs = t1_known_joint_probs / (t1_known_joint_probs_sum)
+            t1_conditional_joint_probs = t1_known_joint_probs / t1_known_joint_probs_sum
         t1_joint_probs = t1_conditional_joint_probs * p_type[0]
         
-        t2_known_combinations = self.known_combinations.to(torch.int).sum(dim = 2) > 0
         t2_raw_joint_probs = subject_probs.unsqueeze(1) * object_probs.unsqueeze(0)
-        t2_known_joint_probs = t2_known_combinations.to(torch.int) * t2_raw_joint_probs
+        t2_known_joint_probs = self.known_so_combinations.to(torch.int) * t2_raw_joint_probs
         t2_known_joint_probs_sum = t2_known_joint_probs.sum()
         if t2_known_joint_probs_sum.item() == 0:
             t2_conditional_joint_probs = t2_known_joint_probs
         else:
-            t2_conditional_joint_probs = t2_known_joint_probs / (t2_known_joint_probs_sum)
+            t2_conditional_joint_probs = t2_known_joint_probs / t2_known_joint_probs_sum
         t2_joint_probs = t2_conditional_joint_probs * p_type[1]
         
-        t3_known_combinations = self.known_combinations.to(torch.int).sum(dim = 1) > 0
         t3_raw_joint_probs = subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
-        t3_known_joint_probs = t3_known_combinations.to(torch.int) * t3_raw_joint_probs
+        t3_known_joint_probs = self.known_sv_combinations.to(torch.int) * t3_raw_joint_probs
         t3_known_joint_probs_sum = t3_known_joint_probs.sum()
         if t3_known_joint_probs_sum.item() == 0:
             t3_conditional_joint_probs = t3_known_joint_probs
         else:
-            t3_conditional_joint_probs = t3_known_joint_probs / (t3_known_joint_probs_sum)
+            t3_conditional_joint_probs = t3_known_joint_probs / t3_known_joint_probs_sum
         t3_joint_probs = t3_conditional_joint_probs * p_type[2]
         
-        t4_raw_joint_probs = (subject_probs.unsqueeze(1) * object_probs.unsqueeze(0)).unsqueeze(2) * verb_probs.unsqueeze(0).unsqueeze(1)
-        t4_unknown_joint_probs = (1 - self.known_combinations.to(torch.int)) * t4_raw_joint_probs
+        t4_raw_joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
+        t4_unknown_joint_probs = (1 - self.known_svo_combinations.to(torch.int)) * t4_raw_joint_probs
         t4_unknown_joint_probs_sum = t4_unknown_joint_probs.sum()
         if t4_unknown_joint_probs_sum.item() == 0:
             t4_conditional_joint_probs = t4_unknown_joint_probs
         else:
-            t4_conditional_joint_probs = t4_unknown_joint_probs / (t4_unknown_joint_probs_sum)
+            t4_conditional_joint_probs = t4_unknown_joint_probs / t4_unknown_joint_probs_sum
         t4_joint_probs = t4_conditional_joint_probs * p_type[3]
         
         # We've computed P(Correct | N_i), but we also have the case information.
@@ -134,13 +165,13 @@ class UnsupervisedNoveltyDetector:
                     and sorted_t1_joint_probs[0] >= sorted_t4_joint_probs[0]:
                 flattened_index = int(sorted_t1_joint_prob_indices[0].item())
                 
-                object_skip_interval = verb_probs.shape[0]
+                verb_skip_interval = object_probs.shape[0]
 
-                object_index = flattened_index // object_skip_interval
-                object_skip_total = object_index * object_skip_interval
-                flattened_index -= object_skip_total
+                verb_index = flattened_index // verb_skip_interval
+                verb_skip_total = verb_index * verb_skip_interval
+                flattened_index -= verb_skip_total
                 
-                verb_index = flattened_index
+                object_index = flattened_index
                 
                 # Shift labels forward, to allow for anomaly = 0
                 example_predictions.append(((0, verb_index + 1, object_index + 1), sorted_t1_joint_probs[0]))
@@ -186,18 +217,18 @@ class UnsupervisedNoveltyDetector:
             else:
                 flattened_index = int(sorted_t4_joint_prob_indices[0].item())
                 
-                subject_skip_interval = object_probs.shape[0] * verb_probs.shape[0]
-                object_skip_interval = verb_probs.shape[0]
+                subject_skip_interval = verb_probs.shape[0] * object_probs.shape[0]
+                verb_skip_interval = object_probs.shape[0]
 
                 subject_index = flattened_index // subject_skip_interval
                 subject_skip_total = subject_index * subject_skip_interval
                 flattened_index -= subject_skip_total
                 
-                object_index = flattened_index // object_skip_interval
-                object_skip_total = object_index * object_skip_interval
-                flattened_index -= object_skip_total
+                verb_index = flattened_index // verb_skip_interval
+                verb_skip_total = verb_index * verb_skip_interval
+                flattened_index -= verb_skip_total
                 
-                verb_index = flattened_index
+                object_index = flattened_index
                 
                 # Shift labels forward, to allow for anomaly = 0
                 example_predictions.append(((subject_index + 1, verb_index + 1, object_index + 1), sorted_t4_joint_probs[0]))
@@ -321,14 +352,14 @@ class UnsupervisedNoveltyDetector:
             else:
                 verb_novelty_scores.append(None)
             
-            p_ni_t4 = torch.tensor(0)
+            p_ni_t4 = torch.tensor(0, dtype = torch.float)
             p_ni_t4 = p_ni_t4.to(subject_probs.device)
             if example_subject_appearance_features is not None and example_object_appearance_features is not None:
                 # Case 1, S/V/O
                 example_predictions = self._case_1(subject_probs, object_probs, verb_probs, p_type, 3)
                 
-                t4_raw_joint_probs = (subject_probs.unsqueeze(1) * object_probs.unsqueeze(0)).unsqueeze(2) * verb_probs.unsqueeze(0).unsqueeze(1)
-                t4_unknown_joint_probs = (1 - self.known_combinations.to(torch.int)) * t4_raw_joint_probs
+                t4_raw_joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
+                t4_unknown_joint_probs = (1 - self.known_svo_combinations.to(torch.int)) * t4_raw_joint_probs
                 p_ni_t4 = t4_unknown_joint_probs.sum()
             elif example_subject_appearance_features is not None and example_object_appearance_features is None:
                 # Case 2, S/V/None

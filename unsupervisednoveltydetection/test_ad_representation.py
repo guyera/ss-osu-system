@@ -18,9 +18,9 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             noveltydetectionfeatures.NoveltyFeatureDataset(
                 name = 'Custom',
                 data_root = 'Custom',
-                csv_path = 'Custom/annotations/val_dataset_v1_train.csv',
-                num_subj_cls = 6,
-                num_obj_cls = 9,
+                csv_path = 'Custom/annotations/dataset_v3_train.csv',
+                num_subj_cls = 5,
+                num_obj_cls = 13,
                 num_action_cls = 8,
                 training = True,
                 image_batch_size = 16,
@@ -32,9 +32,9 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             noveltydetectionfeatures.NoveltyFeatureDataset(
                 name = 'Custom',
                 data_root = 'Custom',
-                csv_path = 'Custom/annotations/val_dataset_v1_val.csv',
-                num_subj_cls = 6,
-                num_obj_cls = 9,
+                csv_path = 'Custom/annotations/dataset_v3_val.csv',
+                num_subj_cls = 5,
+                num_obj_cls = 13,
                 num_action_cls = 8,
                 training = True,
                 image_batch_size = 16,
@@ -50,10 +50,10 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         object_testing_set = unsupervisednoveltydetection.common.ObjectDataset(testing_set, train = True)
         verb_testing_set = unsupervisednoveltydetection.common.VerbDataset(testing_set, train = True)
         
-        id_subject_labels = list(range(1, 4))
-        ood_subject_labels = list(range(4, 6))
-        id_object_labels = list(range(1, 5))
-        ood_object_labels = list(range(5, 9))
+        id_subject_labels = list(range(1, 3))
+        ood_subject_labels = list(range(3, 5))
+        id_object_labels = list(range(1, 6))
+        ood_object_labels = list(range(6, 13))
         id_verb_labels = list(range(1, 5))
         ood_verb_labels = list(range(5, 8))
         subject_class_split = unsupervisednoveltydetection.common.ClassSplit(id_subject_labels, ood_subject_labels)
@@ -71,29 +71,6 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         ood_subject_set = torch.utils.data.ConcatDataset((ood_subject_training_set, ood_subject_testing_set))
         ood_object_set = torch.utils.data.ConcatDataset((ood_object_training_set, ood_object_testing_set))
         ood_verb_set = torch.utils.data.ConcatDataset((ood_verb_training_set, ood_verb_testing_set))
-        
-        """
-        # Remap ID training labels
-        id_subject_training_set = unsupervisednoveltydetection.common.LabelMappingDataset(id_subject_training_set, id_subject_labels)
-        id_object_training_set = unsupervisednoveltydetection.common.LabelMappingDataset(id_object_training_set, id_object_labels)
-        id_verb_training_set = unsupervisednoveltydetection.common.LabelMappingDataset(id_verb_training_set, id_verb_labels)
-
-        # Shift ID training labels up 1; classifiers assume label 0 is for
-        # anomalies.
-        label_upshift_transform = unsupervisednoveltydetection.common.UpshiftTargetTransform()
-        id_subject_training_set = unsupervisednoveltydetection.common.TransformingDataset(
-            id_subject_training_set,
-            target_transform = label_upshift_transform
-        )
-        id_object_training_set = unsupervisednoveltydetection.common.TransformingDataset(
-            id_object_training_set,
-            target_transform = label_upshift_transform
-        )
-        id_verb_training_set = unsupervisednoveltydetection.common.TransformingDataset(
-            id_verb_training_set,
-            target_transform = label_upshift_transform
-        )
-        """
         
         # Construct anomaly detection sets (i.e. remap ID testing labels to 0,
         # OOD testing labels to 1)

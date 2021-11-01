@@ -24,6 +24,30 @@ def get_indices_of_labels(dataset, labels):
     return indices
 
 """
+Description: Gets the indices of the datapoints in the given dataset with
+    any of the given labels.
+
+Parameters:
+    dataset: The reshaped novelty feature dataset into which to index.
+    tuples: N-sized list of (S, V, O) tuples for which to acquire indices.
+"""
+def get_indices_of_tuples(dataset, tuples):
+    indices = []
+    for idx, (_, _, _, subject_label, object_label, verb_label) in enumerate(dataset):
+        subject_label = int(subject_label.cpu().item()) if\
+            subject_label is not None else None
+        object_label = int(object_label.cpu().item()) if\
+            object_label is not None else None
+        verb_label = int(verb_label.cpu().item()) if\
+            verb_label is not None else None
+        for t in tuples:
+            if t[0] == subject_label and t[1] == verb_label and\
+                    t[2] == object_label:
+                indices.append(idx)
+                break
+    return indices
+
+"""
 Description: Provides functions for generating, saving, loading, and using class
     splits to bipartition datasets into "in-distribution" and
     "out-of-distribution" subsets according to class label.
