@@ -6,12 +6,13 @@ import noveltydetection
 import noveltydetectionfeatures
 import unsupervisednoveltydetection
 
+from sklearn.metrics import roc_auc_score
 
 def main():
     torch.random.manual_seed(42)
     random.seed(42)
 
-    detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(12544, 12616, 1024, 6, 9, 8)
+    detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(12544, 12616, 1024, 5, 13, 8)
     detector = detector.to('cuda:1')
     subject_score_context = noveltydetection.utils.ScoreContext(noveltydetection.utils.ScoreContext.Source.UNSUPERVISED)
     object_score_context = noveltydetection.utils.ScoreContext(noveltydetection.utils.ScoreContext.Source.UNSUPERVISED)
@@ -26,9 +27,9 @@ def main():
     dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
         name = 'Custom',
         data_root = 'Custom',
-        csv_path = 'Custom/annotations/val_dataset_v1_val.csv',
-        num_subj_cls = 6,
-        num_obj_cls = 9,
+        csv_path = 'Custom/csvs/dataset_v3_val.csv',
+        num_subj_cls = 5,
+        num_obj_cls = 13,
         num_action_cls = 8,
         training = False,
         image_batch_size = 16,
@@ -51,18 +52,19 @@ def main():
     dataset.__dict__['verb_appearance_features'] = [dataset.__dict__['verb_appearance_features'][i] for i in mask] 
 
     A_s_size = 2
-    A_v_size = 3
-    A_o_size = 3
+    A_v_size = 2
+    A_o_size = 2
 
     num_s_classes = 5
-    num_v_classes = 7
-    num_o_classes = 8
+    num_v_classes = 8
+    num_o_classes = 13
 
-    num_random_splits = 30
+    num_random_class_splits = 5
 
     mean_aucs = []
+    means = []
 
-    for i in range(num_random_splits):
+    for i in range(num_random_class_splits):
         A_s = random.sample(range(1, num_s_classes), A_s_size)
         A_v = random.sample(range(1, num_v_classes), A_v_size)
         A_o = random.sample(range(1, num_o_classes), A_o_size)
@@ -146,29 +148,39 @@ def main():
         V_a = torch.tensor([float(i) for i in V_results])
         S_a = torch.reshape(S_a, (len(S_a),1)) 
         V_a = torch.reshape(V_a, (len(V_a),1)) 
+        O_a = torch.tensor([float(i) for i in O_results])
+        O_a = torch.reshape(O_a, (len(O_a),1))
+        
+
+        m = torch.nn.Sigmoid()
+        S_a_norm = m(S_a)
+        V_a_norm = m(V_a)
+        O_a_norm = m(O_a)
+
+        unsupervised_s_auc = roc_auc_score(S_y, S_a, max_fpr=0.25)
+        unsupervised_v_auc = roc_auc_score(V_y, V_a, max_fpr=0.25)
+        unsupervised_o_auc = roc_auc_score(O_y, O_a, max_fpr=0.25)     
+            
         S_shuffle_idxs = random.sample(range(len(S_a)), len(S_a))
         V_shuffle_idxs = random.sample(range(len(V_a)), len(V_a))
+        O_shuffle_idxs = random.sample(range(len(O_a)), len(O_a))
         S_X = S_X[S_shuffle_idxs]
         S_y = S_y[S_shuffle_idxs]
         S_a = S_a[S_shuffle_idxs] 
-
         V_X = V_X[V_shuffle_idxs]
         V_y = V_y[V_shuffle_idxs]
         V_a = V_a[V_shuffle_idxs] 
-            
-        O_a = torch.tensor([float(i) for i in O_results])
-        O_a = torch.reshape(O_a, (len(O_a),1))
-        O_shuffle_idxs = random.sample(range(len(O_a)), len(O_a))
         O_X = O_X[O_shuffle_idxs]
         O_y = O_y[O_shuffle_idxs]
         O_a = O_a[O_shuffle_idxs] 
          
         mean_AUC, novelty_scores, models = adaptation.supervised_anomaly_detectors.train_supervised_models(S_X,V_X,O_X,S_a,V_a,O_a,S_y,V_y,O_y)
         mean_aucs.append(mean_AUC)
-        print("For anomaly split {}: mean_AUC is {}".format(i, mean_AUC))
+        
+        print("For anomaly split {}: mean_AUC is {}\nand unsupervised AUC at fpr=0.25 is {}".format(i, mean_AUC, (unsupervised_s_auc, unsupervised_v_auc, unsupervised_o_auc)))
 
         with open('supervised_test_out.txt', 'a') as f:
-            f.write("For anomaly split {}: mean_AUC is {}\n".format(i, mean_AUC))
+            f.write("For anomaly split {}: mean_AUC is {}\nand unsupervised AUC at fpr=0.25 is {}".format(i, mean_AUC, (unsupervised_s_auc, unsupervised_v_auc, unsupervised_o_auc)))
 
     for i in range(3):
         accum = 0
