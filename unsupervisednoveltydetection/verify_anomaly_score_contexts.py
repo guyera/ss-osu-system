@@ -6,6 +6,7 @@ import torch
 from matplotlib import pyplot as plt
 import numpy as np
 import scipy.interpolate
+import sklearn.metrics
 
 import noveltydetectionfeatures
 import noveltydetection
@@ -33,7 +34,11 @@ def plot_score_distributions(
         p, x = np.histogram(score_group.detach().cpu().numpy(), bins = bins)
         x = x[:-1] + (x[1] - x[0]) / 2
         if normalize:
-            p = p / np.sum(p)
+            trapezoid_widths = x[1] - x[0]
+            trapezoid_left_heights = p[:-1]
+            trapezoid_right_heights = p[1:]
+            trapezoid_areas = (trapezoid_left_heights + trapezoid_right_heights) * trapezoid_widths / 2
+            p = p / np.sum(trapezoid_areas)
         f = scipy.interpolate.UnivariateSpline(x, p, s = smoothing_factor)
         plt.plot(x, f(x), label = labels[group_idx])
 
@@ -277,9 +282,9 @@ def main():
     ]
     
     # Get tuples of held-out OOD tuples
-    super_ood_subject_tuple_indices = unsupervisednoveltydetection.common.get_indices_of_tuples(training_set, ood_subject_tuples)
-    super_ood_object_tuple_indices = unsupervisednoveltydetection.common.get_indices_of_tuples(training_set, ood_object_tuples)
-    super_ood_verb_tuple_indices = unsupervisednoveltydetection.common.get_indices_of_tuples(training_set, ood_verb_tuples)
+    super_ood_subject_tuple_indices = unsupervisednoveltydetection.common.get_indices_of_tuples(training_set, super_ood_subject_tuples)
+    super_ood_object_tuple_indices = unsupervisednoveltydetection.common.get_indices_of_tuples(training_set, super_ood_object_tuples)
+    super_ood_verb_tuple_indices = unsupervisednoveltydetection.common.get_indices_of_tuples(training_set, super_ood_verb_tuples)
     
     # Construct held-out OOD sets
     super_ood_subject_tuple_set = torch.utils.data.Subset(training_set, super_ood_subject_tuple_indices)
@@ -441,6 +446,22 @@ def main():
         id_verb_training_loader,
     )
 
+    num_correct = None
+    num = 0
+    for features, targets in id_subject_testing_loader:
+        features = features.to(args.device)
+        targets = targets.to(args.device)
+        logits = classifier.predict_subject(features)
+        predictions = torch.argmax(logits, dim = 1) + 1
+        cur_num_correct = (predictions == targets).int().sum()
+        if num_correct is None:
+            num_correct = cur_num_correct
+        else:
+            num_correct += cur_num_correct
+        num += len(targets)
+    accuracy = num_correct / float(num)
+    print(f'Subject testing accuracy: {accuracy}')
+
     # Create classifier for split with more ID classes
     super_classifier = unsupervisednoveltydetection.common.Classifier(
         12544,
@@ -482,7 +503,7 @@ def main():
     id_subject_scores = []
     id_object_scores = []
     id_verb_scores = []
-    for features, _ in id_subject_testing_loader:
+    for features, targets in id_subject_testing_loader:
         features = features.to(args.device)
         id_subject_scores.append(classifier.score_subject(features))
     for features, _ in id_object_testing_loader:
@@ -494,12 +515,12 @@ def main():
     id_subject_scores = torch.cat(id_subject_scores, dim = 0)
     id_object_scores = torch.cat(id_object_scores, dim = 0)
     id_verb_scores = torch.cat(id_verb_scores, dim = 0)
-    
+
     # Compute OOD scores from classifier trained on split with fewer ID classes
     ood_subject_scores = []
     ood_object_scores = []
     ood_verb_scores = []
-    for features, _ in super_ood_subject_loader:
+    for features, targets in super_ood_subject_loader:
         features = features.to(args.device)
         ood_subject_scores.append(classifier.score_subject(features))
     for features, _ in super_ood_object_loader:
@@ -627,12 +648,12 @@ def main():
     plot_score_distributions(
         plot_scores,
         plot_labels,
-        100,
+        20,
         f'unsupervisednoveltydetection/subject_score_distributions_1.png',
         f'Subject Scores',
         plot_xlabel = 'Anomaly score',
         normalize = True,
-        smoothing_factor = 0.001
+        smoothing_factor = 0
     )
 
     plot_scores = (ood_object_scores, super_ood_object_scores, adjusted_ood_object_scores)
@@ -640,12 +661,12 @@ def main():
     plot_score_distributions(
         plot_scores,
         plot_labels,
-        100,
+        20,
         f'unsupervisednoveltydetection/object_score_distributions_1.png',
         f'Object Scores',
         plot_xlabel = 'Anomaly score',
         normalize = True,
-        smoothing_factor = 0.001
+        smoothing_factor = 0
     )
 
     plot_scores = (ood_verb_scores, super_ood_verb_scores, adjusted_ood_verb_scores)
@@ -653,12 +674,12 @@ def main():
     plot_score_distributions(
         plot_scores,
         plot_labels,
-        100,
+        20,
         f'unsupervisednoveltydetection/verb_score_distributions_1.png',
         f'Verb Scores',
         plot_xlabel = 'Anomaly score',
         normalize = True,
-        smoothing_factor = 0.001
+        smoothing_factor = 0
     )
     
     centered_super_id_subject_scores = (super_id_subject_scores - super_id_subject_score_mean) / super_id_subject_score_std
@@ -674,12 +695,12 @@ def main():
     plot_score_distributions(
         plot_scores,
         plot_labels,
-        100,
+        20,
         f'unsupervisednoveltydetection/subject_score_distributions_2.png',
         f'Subject Scores',
         plot_xlabel = 'Anomaly score',
         normalize = True,
-        smoothing_factor = 0.001
+        smoothing_factor = 0
     )
 
     plot_scores = (ood_object_scores, super_ood_object_scores, adjusted_super_id_object_scores)
@@ -687,12 +708,12 @@ def main():
     plot_score_distributions(
         plot_scores,
         plot_labels,
-        100,
+        20,
         f'unsupervisednoveltydetection/object_score_distributions_2.png',
         f'Object Scores',
         plot_xlabel = 'Anomaly score',
         normalize = True,
-        smoothing_factor = 0.001
+        smoothing_factor = 0
     )
 
     plot_scores = (ood_verb_scores, super_ood_verb_scores, adjusted_super_id_verb_scores)
@@ -700,13 +721,117 @@ def main():
     plot_score_distributions(
         plot_scores,
         plot_labels,
-        100,
+        20,
         f'unsupervisednoveltydetection/verb_score_distributions_2.png',
         f'Verb Scores',
         plot_xlabel = 'Anomaly score',
         normalize = True,
-        smoothing_factor = 0.001
+        smoothing_factor = 0
     )
+
+    plot_scores = (id_subject_scores, ood_subject_scores)
+    plot_labels = ('ID Subject scores', 'OOD Subject Scores')
+    plot_score_distributions(
+        plot_scores,
+        plot_labels,
+        20,
+        f'unsupervisednoveltydetection/held_out_subject_distributions.png',
+        f'Held-out Subject Scores',
+        plot_xlabel = 'Anomaly score',
+        normalize = True,
+        smoothing_factor = 0
+    )
+
+    plot_scores = (id_object_scores, ood_object_scores)
+    plot_labels = ('ID Object scores', 'OOD Object Scores')
+    plot_score_distributions(
+        plot_scores,
+        plot_labels,
+        20,
+        f'unsupervisednoveltydetection/held_out_object_distributions.png',
+        f'Held-out Object Scores',
+        plot_xlabel = 'Anomaly score',
+        normalize = True,
+        smoothing_factor = 0
+    )
+
+    plot_scores = (id_verb_scores, ood_verb_scores)
+    plot_labels = ('ID Verb scores', 'OOD Verb Scores')
+    plot_score_distributions(
+        plot_scores,
+        plot_labels,
+        20,
+        f'unsupervisednoveltydetection/held_out_verb_distributions.png',
+        f'Held-out Verb Scores',
+        plot_xlabel = 'Anomaly score',
+        normalize = True,
+        smoothing_factor = 0
+    )
+
+    plot_scores = (super_id_subject_scores, super_ood_subject_scores)
+    plot_labels = ('ID Subject scores', 'OOD Subject Scores')
+    plot_score_distributions(
+        plot_scores,
+        plot_labels,
+        20,
+        f'unsupervisednoveltydetection/non_held_out_subject_distributions.png',
+        f'Non-held-out Subject Scores',
+        plot_xlabel = 'Anomaly score',
+        normalize = True,
+        smoothing_factor = 0
+    )
+
+    plot_scores = (super_id_object_scores, super_ood_object_scores)
+    plot_labels = ('ID Object scores', 'OOD Object Scores')
+    plot_score_distributions(
+        plot_scores,
+        plot_labels,
+        20,
+        f'unsupervisednoveltydetection/non_held_out_object_distributions.png',
+        f'Non-held-out Object Scores',
+        plot_xlabel = 'Anomaly score',
+        normalize = True,
+        smoothing_factor = 0
+    )
+
+    plot_scores = (super_id_verb_scores, super_ood_verb_scores)
+    plot_labels = ('ID Verb scores', 'OOD Verb Scores')
+    plot_score_distributions(
+        plot_scores,
+        plot_labels,
+        20,
+        f'unsupervisednoveltydetection/non_held_out_verb_distributions.png',
+        f'Non-held-out Verb Scores',
+        plot_xlabel = 'Anomaly score',
+        normalize = True,
+        smoothing_factor = 0
+    )
+    
+    subject_scores = torch.cat((id_subject_scores, ood_subject_scores), dim = 0)
+    subject_trues = torch.cat((torch.zeros_like(id_subject_scores), torch.ones_like(ood_subject_scores)), dim = 0)
+    subject_auc = sklearn.metrics.roc_auc_score(subject_trues.detach().cpu().numpy(), subject_scores.detach().cpu().numpy())
+    print(f'Subject AUC: {subject_auc}')
+    object_scores = torch.cat((id_object_scores, ood_object_scores), dim = 0)
+    object_trues = torch.cat((torch.zeros_like(id_object_scores), torch.ones_like(ood_object_scores)), dim = 0)
+    object_auc = sklearn.metrics.roc_auc_score(object_trues.detach().cpu().numpy(), object_scores.detach().cpu().numpy())
+    print(f'Object AUC: {object_auc}')
+    verb_scores = torch.cat((id_verb_scores, ood_verb_scores), dim = 0)
+    verb_trues = torch.cat((torch.zeros_like(id_verb_scores), torch.ones_like(ood_verb_scores)), dim = 0)
+    verb_auc = sklearn.metrics.roc_auc_score(verb_trues.detach().cpu().numpy(), verb_scores.detach().cpu().numpy())
+    print(f'Verb AUC: {verb_auc}')
+
+    super_subject_scores = torch.cat((super_id_subject_scores, super_ood_subject_scores), dim = 0)
+    super_subject_trues = torch.cat((torch.zeros_like(super_id_subject_scores), torch.ones_like(super_ood_subject_scores)), dim = 0)
+    super_subject_auc = sklearn.metrics.roc_auc_score(super_subject_trues.detach().cpu().numpy(), super_subject_scores.detach().cpu().numpy())
+    print(f'Super Subject AUC: {super_subject_auc}')
+    super_object_scores = torch.cat((super_id_object_scores, super_ood_object_scores), dim = 0)
+    super_object_trues = torch.cat((torch.zeros_like(super_id_object_scores), torch.ones_like(super_ood_object_scores)), dim = 0)
+    super_object_auc = sklearn.metrics.roc_auc_score(super_object_trues.detach().cpu().numpy(), super_object_scores.detach().cpu().numpy())
+    print(f'Super Object AUC: {super_object_auc}')
+    super_verb_scores = torch.cat((super_id_verb_scores, super_ood_verb_scores), dim = 0)
+    super_verb_trues = torch.cat((torch.zeros_like(super_id_verb_scores), torch.ones_like(super_ood_verb_scores)), dim = 0)
+    super_verb_auc = sklearn.metrics.roc_auc_score(super_verb_trues.detach().cpu().numpy(), super_verb_scores.detach().cpu().numpy())
+    print(f'Super Verb AUC: {super_verb_auc}')
 
 if __name__ == '__main__':
     main()

@@ -192,6 +192,10 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         object_auc = sklearn.metrics.roc_auc_score(object_trues.numpy(), object_scores.detach().cpu().numpy())
         verb_auc = sklearn.metrics.roc_auc_score(verb_trues.numpy(), verb_scores.detach().cpu().numpy())
         
+        print(f'Subject auc: {subject_auc}')
+        print(f'Object auc: {object_auc}')
+        print(f'Verb auc: {verb_auc}')
+        
         # Do one-sided one-sample tests of proportion to test if estimated
         # auc > null hypothesis auc (random guessing auc = 0.5)
         subject_z = (subject_auc - 0.5) / math.sqrt(0.25 / num_subject)

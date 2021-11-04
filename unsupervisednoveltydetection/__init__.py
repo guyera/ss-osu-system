@@ -335,20 +335,29 @@ class UnsupervisedNoveltyDetector:
 
             if example_object_appearance_features is not None:
                 example_object_features = torch.flatten(example_object_appearance_features).to(self.device)
-                object_logits, object_scores = self.classifier.predict_score_object(example_object_features.unsqueeze(0))
+                
+                object_logits, object_score = self.classifier.predict_score_object(example_object_features.unsqueeze(0))
+                
+                object_score = object_score.squeeze(0)
+                
                 object_probs = self.confidence_calibrator.calibrate_object(object_logits)
                 object_probs = object_probs.squeeze(0)
-                object_novelty_scores.append(object_scores)
+                
+                object_novelty_scores.append(object_score)
             else:
                 object_novelty_scores.append(None)
             
             if example_verb_appearance_features is not None:
-                example_verb_features = torch.cat((torch.flatten(example_spatial_features), torch.flatten(example_verb_appearance_features)))
-                example_verb_features = example_verb_features.to(self.device)
-                verb_logits, verb_scores = self.classifier.predict_score_verb(example_verb_features.unsqueeze(0))
+                example_verb_features = torch.cat((torch.flatten(example_spatial_features), torch.flatten(example_verb_appearance_features))).to(self.device)
+                
+                verb_logits, verb_score = self.classifier.predict_score_verb(example_verb_features.unsqueeze(0))
+                
+                verb_score = verb_score.squeeze(0)
+
                 verb_probs = self.confidence_calibrator.calibrate_verb(verb_logits)
                 verb_probs = verb_probs.squeeze(0)
-                verb_novelty_scores.append(verb_scores)
+                
+                verb_novelty_scores.append(verb_score)
             else:
                 verb_novelty_scores.append(None)
             
