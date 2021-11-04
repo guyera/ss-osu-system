@@ -40,6 +40,90 @@ from tqdm import tqdm
 # For debugging
 ##from torch.utils.tensorboard import SummaryWriter
 
+def get_split_dataloaders(data):
+    ''' Constructs the dataloaders '''
+    
+    i, X, y = data['i'], data['X'], data['y']
+    num_folds = data['num_folds']
+    num_examples = data['num_examples']
+    anom_scores = data['anom_scores']
+    img_batch_size = data['img_batch_size']
+    num_workers = data['num_workers']
+
+    holdout_lo = round(i * (1/num_folds) * num_examples)
+    holdout_hi = round((i+1) * (1/num_folds) * num_examples)
+
+    val_idxs   = [i for i in range(holdout_lo, holdout_hi)]
+    train_idxs = [i for i in range(num_examples) if i not in val_idxs]
+
+    train_X_i = X[train_idxs]
+    train_a_i = anom_scores[train_idxs]
+    train_y_i = y[train_idxs]
+
+    train_nom_idxs  = list(torch.nonzero(torch.flatten(torch.tensor(train_y_i).clone().detach())))
+    train_anom_idxs = [i for i in range(len(train_y_i)) if i not in train_nom_idxs]       
+
+    train_y_i_nom = train_y_i[train_nom_idxs]
+    train_y_i_anom = train_y_i[train_anom_idxs]
+    train_X_i_nom = train_X_i[train_nom_idxs]
+    train_X_i_anom = train_X_i[train_anom_idxs]
+    train_a_i_nom = train_a_i[train_nom_idxs]
+    train_a_i_anom = train_a_i[train_anom_idxs]
+    
+    val_X_i = X[val_idxs]
+    val_a_i = anom_scores[val_idxs]
+    val_y_i = y[val_idxs]       
+
+    val_nom_idxs  = list(torch.nonzero(torch.flatten(torch.tensor(val_y_i).clone().detach())))
+    val_anom_idxs = [i for i in range(len(val_y_i)) if i not in val_nom_idxs]
+
+    val_y_i_nom = val_y_i[val_nom_idxs]
+    val_y_i_anom = val_y_i[val_anom_idxs]
+    val_X_i_nom = val_X_i[val_nom_idxs]
+    val_X_i_anom = val_X_i[val_anom_idxs]
+    val_a_i_nom = val_a_i[val_nom_idxs]
+    val_a_i_anom = val_a_i[val_anom_idxs]
+
+    # Construct the datasets and dataloaders
+    train_Xa_i_nom = torch.hstack((train_X_i_nom,train_a_i_nom))
+    train_dataset_nom = torch.utils.data.TensorDataset(train_Xa_i_nom, train_y_i_nom)
+    train_dataloader_nom = torch.utils.data.DataLoader(
+        dataset=train_dataset_nom,
+        batch_size=img_batch_size,
+        num_workers=num_workers, 
+        pin_memory=False
+    )
+    
+    train_Xa_i_anom = torch.hstack((train_X_i_anom,train_a_i_anom))
+    train_dataset_anom = torch.utils.data.TensorDataset(train_Xa_i_anom,train_y_i_anom)
+    train_dataloader_anom = torch.utils.data.DataLoader(
+        dataset=train_dataset_anom,
+        batch_size=img_batch_size,
+        num_workers=num_workers, 
+        pin_memory=False
+    )
+        
+    val_Xa_i_nom = torch.hstack((val_X_i_nom,val_a_i_nom))
+    val_dataset_nom = torch.utils.data.TensorDataset(val_Xa_i_nom,val_y_i_nom)
+    val_dataloader_nom = torch.utils.data.DataLoader(
+        dataset=val_dataset_nom,
+        batch_size=img_batch_size,
+        num_workers=num_workers, 
+        pin_memory=False
+    )
+
+    val_Xa_i_anom = torch.hstack((val_X_i_anom,val_a_i_anom))
+    val_dataset_anom = torch.utils.data.TensorDataset(val_Xa_i_anom,val_y_i_anom)
+    val_dataloader_anom = torch.utils.data.DataLoader(
+        dataset=val_dataset_anom,
+        batch_size=img_batch_size,
+        num_workers=num_workers, 
+        pin_memory=False
+    )
+    
+    return train_dataloader_nom, train_dataloader_anom, val_dataloader_nom, val_dataloader_anom
+
+
 def get_dataloaders(data):
     ''' Constructs the dataloaders '''
     
@@ -86,12 +170,12 @@ def get_dataloaders(data):
     return train_dataloader, val_dataloader
 
 
-def train(model, loader, criterion, optimizer, config):                                         
+def train(model, nom_loader, anom_loader, criterion, optimizer, config):                                         
     ''' Train the model '''        
     epochs = config['num_epochs']
     device = config['device']
 
-    total_batches = len(loader) * epochs
+    total_batches = (len(nom_loader)+len(anom_loader)) * epochs
     example_ct = 0   
     batch_ct   = 0 
 
@@ -101,20 +185,36 @@ def train(model, loader, criterion, optimizer, config):
         leave = False
     )
 
+
     for epoch in range(epochs):
         progress.set_description("epoch {}".format(epoch))
-        for _, (images, labels) in enumerate(loader):
+        
+        nom_iterator = iter(nom_loader)
 
-            loss = train_batch(images, labels, 
+        for _, (anom_images, anom_labels) in enumerate(anom_loader):
+
+            try:
+                (nom_images, nom_labels) = next(nom_iterator)
+            except StopIteration:
+                nom_iterator = iter(nom_loader)
+                (nom_images, nom_labels) = next(nom_iterator)
+
+            loss = train_batch(nom_images, nom_labels, 
+                               anom_images, anom_labels,
                                model, optimizer, 
                                criterion, device)
-            example_ct +=  len(images)
+            
+            #loss += train_batch(anom_images, anom_labels, 
+            #                    model, optimizer, 
+            #                    criterion, device)
+            
+            example_ct +=  len(nom_images) + len(anom_images)
             batch_ct   +=  1
 
             # Report loss every 25th batch
             #if ((batch_ct + 1) % 25) == 0:
             #    train_log(loss, example_ct, epoch)             
-    
+
 
 def train_log(loss, example_ct, epoch):
     ''' Print out loss info '''
@@ -122,12 +222,17 @@ def train_log(loss, example_ct, epoch):
     print(f"Loss after " + str(example_ct).zfill(5) + f" examples: {loss:.3f}")
 
 
-def train_batch(images, labels, model, optimizer, criterion, device):                                   
+def train_batch(nom_images, nom_labels, anom_images, anom_labels, model, optimizer, criterion, device):                                   
     ''' Train the model on one batch '''
-    images, labels = images.to(device), labels.to(device)   
+    nom_images, nom_labels = nom_images.to(device), nom_labels.to(device)   
+    anom_images, anom_labels = anom_images.to(device), anom_labels.to(device)
 
     # Forward pass ->
-    outputs = model(images)
+    nom_outputs = model(nom_images)
+    anom_outputs = model(anom_images)    
+
+    outputs = torch.cat((nom_outputs, anom_outputs), dim=0)
+    labels  = torch.cat((nom_labels,  anom_labels), dim=0)
 
     outputs = torch.reshape(outputs, (-1,))
     labels  = torch.reshape(labels,  (-1,))
@@ -143,7 +248,7 @@ def train_batch(images, labels, model, optimizer, criterion, device):
     return loss 
 
 
-def test(model, test_loader, data_params):                                                                   
+def test(model, test_nom_loader, test_anom_loader, data_params):                                                                   
     ''' Test the model on the test set '''
     device = data_params['device']
 
@@ -153,8 +258,22 @@ def test(model, test_loader, data_params):
 
     with torch.no_grad():
         correct, total = 0, 0
-        y_hat, y = torch.tensor([]).to(device), torch.tensor([]).to(device)
-        for images, labels in test_loader:
+        y_hat, y = torch.tensor([]).to(device), torch.tensor([]).to(device)     
+
+        for images, labels in test_nom_loader:
+           images, labels = images.to(device), labels.to(device)
+           outputs = model(images)
+           # torch.round since binary classification
+           #_, predicted = torch.max(outputs.data, 1)
+           predicted = torch.round(outputs.data).T[0]
+           total += labels.size(0)
+           labels = labels.float()
+           correct += (predicted == torch.round(labels.T)).sum().item()
+          
+           y_hat = torch.cat((y_hat, outputs))
+           y     = torch.cat((y, labels)) 
+
+        for images, labels in test_anom_loader:
            images, labels = images.to(device), labels.to(device)
            outputs = model(images)
            # torch.round since binary classification
@@ -175,7 +294,7 @@ def test(model, test_loader, data_params):
         y = y.detach().numpy()
         y_hat = y_hat.cpu()
         y_hat = y_hat.detach().numpy()
-        auc = roc_auc_score(np.round(y), np.round(y_hat), max_fpr=0.25)
+        auc = roc_auc_score(np.round(y), y_hat, max_fpr=0.25) #np.round(y_hat), max_fpr=0.25)
 
         print(f"Accuracy of the model on the {total} " +
               f"test images: {100 * correct / total}%")
@@ -223,8 +342,13 @@ def train_supervised_model(X, anom_scores, y):
         )
 
         # Load the data
-        train_dataloader, val_dataloader = get_dataloaders(data_params)
+        dataloaders = get_split_dataloaders(data_params) #get_dataloaders(data_params)
         
+        train_nom_dl = dataloaders[0]
+        train_anom_dl = dataloaders[1]
+        val_nom_dl = dataloaders[2]
+        val_anom_dl = dataloaders[3]     
+   
         # Get the model
         model_i = MLP_Fusion(n=num_features)        
         model_i.train()
@@ -235,10 +359,10 @@ def train_supervised_model(X, anom_scores, y):
         optimizer = optim.SGD(model_i.parameters(), lr=lrate, momentum=mu)
         
         # Train the model
-        train(model_i, train_dataloader, criterion, optimizer, data_params)
+        train(model_i, train_nom_dl, train_anom_dl, criterion, optimizer, data_params)
 
         # Compute the AUC with max_fpr at 0.25
-        auc, scores_split_i = test(model_i, val_dataloader, data_params)        
+        auc, scores_split_i = test(model_i, val_nom_dl, val_anom_dl, data_params)        
 
         # TODO:
         #       -> Throw an exception if you come across a NoneType       
