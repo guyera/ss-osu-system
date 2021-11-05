@@ -311,7 +311,7 @@ def train_supervised_model(X, anom_scores, y):
     using X, a, and y
     '''  
 
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")     
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")     
 
     num_folds = 5
     num_examples = X.shape[0]

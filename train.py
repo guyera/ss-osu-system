@@ -248,7 +248,7 @@ if __name__ == "__main__":
                         help="Number of subprocesses/GPUs to use")
     parser.add_argument('--dataset', default='Custom', type=str)
     parser.add_argument('--net', default='scg', type=str)
-    parser.add_argument('--data-root', default='Custom', type=str, help="Give full csv path for Custom dataset")
+    parser.add_argument('--data-root', default='.', type=str, help="Give full csv path for Custom dataset")
     parser.add_argument('--csv-path', default=None, type=str, help="Csv Path is required only for Custom dataset")
     parser.add_argument('--val-csv-path', default=None, type=str, help="Csv Path is required only for Custom dataset")
     parser.add_argument('--num-iter', default=2, type=int,
@@ -263,8 +263,8 @@ if __name__ == "__main__":
     parser.add_argument('--lr-decay', default=0.1, type=float,
                         help="The multiplier by which the learning rate is reduced")
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
-    parser.add_argument('--num-subj-cls', default=6, type=int)
-    parser.add_argument('--num-obj-cls', default=9, type=int)
+    parser.add_argument('--num-subj-cls', default=5, type=int)
+    parser.add_argument('--num-obj-cls', default=13, type=int)
     parser.add_argument('--num-action-cls', default=8, type=int)
     parser.add_argument('--max-subject', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
