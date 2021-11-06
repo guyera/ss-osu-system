@@ -132,12 +132,16 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         subject_accuracy = float(num_subject_correct) / float(num_subject)
         object_accuracy = float(num_object_correct) / float(num_object)
         verb_accuracy = float(num_verb_correct) / float(num_verb)
+
+        print(f'Subject accuracy: {subject_accuracy}')
+        print(f'Object accuracy: {object_accuracy}')
+        print(f'Verb accuracy: {verb_accuracy}')
         
         # Do one-sided one-sample tests of proportion, to test if estimated
         # accuracy > null hypothesis accuracy (random guessing accuracy)
-        subject_p0 = 1.0 / 6.0
+        subject_p0 = 1.0 / 5.0
         subject_z = (subject_accuracy - subject_p0) / math.sqrt(subject_p0 * (1 - subject_p0) / num_subject)
-        object_p0 = 1.0 / 9.0
+        object_p0 = 1.0 / 12.0
         object_z = (object_accuracy - object_p0) / math.sqrt(object_p0 * (1 - object_p0) / num_object)
         verb_p0 = 1.0 / 8.0
         verb_z = (verb_accuracy - verb_p0) / math.sqrt(verb_p0 * (1 - verb_p0) / num_verb)

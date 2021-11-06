@@ -1,54 +1,50 @@
-import os
 import torch
-from toplevel import TopLevelApp
+from session.bbn_session import BBNSession
+from session.osu_interface import OSUInterface
+from argparse import ArgumentParser
 
-class Args:
-    def __init__(self):
-        self.world_size = None
-        self.dataset = None
-        self.data_root = None
-        self.csv_path = None
-        self.num_subj_cls = None
-        self.num_obj_cls = None
-        self.num_action_cls = None
-        self.num_workers = None
-        self.batch_size = None
-        self.max_object = None
-        self.max_subject = None
-        self.num_iter = None
-        self.box_score_thresh = None
-        self.num_iter = None
-        self.top_k = None
-        self.checkpoint_path = None
-        self.ensemble_path = None
-        self.pretrained_unsupervised_novelty_module_path = None
 
 if __name__ == "__main__":
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "8888"
-
-    args = Args()
-
-    args.world_size = 1
-    args.dataset = 'Custom'
-    args.data_root = 'Custom'
-    args.csv_path = 'Custom/annotations/val_dataset_v1_val.csv'
-    args.ensemble_path = 'pretrained'
-    args.num_iter = 2
-    args.box_score_thresh = 0.0
-    args.num_subj_cls = 6
-    args.num_obj_cls = 9
-    args.num_action_cls = 8
-    args.num_workers = 1
-    args.batch_size = 1
-    args.pretrained_unsupervised_novelty_module_path = 'unsupervisednoveltydetection/unsupervised_novelty_detection_module.pth'
-
-    # rank = 1
+    p = ArgumentParser()
+    p.add_argument('--data-root', default='Custom')
+    p.add_argument('--scg-ensemble', default='./ensemble/pretrained')
+    p.add_argument('--pretrained-unsupervised-novelty-path', default='./unsupervisednoveltydetection/unsupervised_novelty_detection_module.pth')
+    p.add_argument('--num-subj-cls', default=5, type=int)
+    p.add_argument('--num-obj-cls', default=13, type=int)
+    p.add_argument('--num-action-cls', default=8, type=int)
+    p.add_argument('--cal-csv-path', default='./dataset_v3/dataset_v3_2_cal.csv')
+    p.add_argument('--val-csv-path', default='./dataset_v3/dataset_v3_2_val_modified.csv')
+    p.add_argument('--api_stubs', action='store_true')
+    p.add_argument('--url', default='http://localhost:6789')
+    p.add_argument('--class_count', type=int, default=29)
+    p.add_argument('--batch_size', type=int, default=4)
+    p.add_argument('--domain', default='svo_classification')
+    p.add_argument('--classification_feedback', action="store_true")
+    p.add_argument('--detection_feedback', action='store_true')
+    p.add_argument('--given_detection', action='store_true')
+    p.add_argument('--detector_seed', type=int, default=1234)
+    p.add_argument('--version', default='101')
+    p.add_argument('--sys_results_dir', default='session/temp/sys_results')
+    p.add_argument('--detection_threshold', type=float, default=0.65)
+    
+    args = p.parse_args()
 
     torch.cuda.set_device(0)
     torch.backends.cudnn.benchmark = False
 
-    app = TopLevelApp(args.ensemble_path, args.num_subj_cls, args.num_obj_cls, args.num_action_cls, 
-        args.data_root, args.csv_path, args.pretrained_unsupervised_novelty_module_path, test_batch_size=100)
+    osu_int = OSUInterface(scg_ensemble=args.scg_ensemble, 
+        num_subject_classes=args.num_subj_cls, 
+        num_object_classes=args.num_obj_cls, 
+        num_verb_classes=args.num_action_cls, 
+        data_root=args.data_root, 
+        pretrained_unsupervised_novelty_path=args.pretrained_unsupervised_novelty_path, 
+        cusum_thresh=args.detection_threshold)
 
-    app.run()
+    test_session = BBNSession('OND', args.domain, args.class_count, 
+        args.classification_feedback, args.detection_feedback,
+        args.given_detection, args.data_root,
+        args.sys_results_dir, args.url, args.batch_size,
+        args.version, args.detection_threshold,
+        args.api_stubs, osu_int)
+
+    test_session.run(args.detector_seed)
