@@ -25,6 +25,7 @@ import pandas as pd
 import os
 import sys
 import math
+#from .MLP_Fusion import MLP_Fusion
 from .MLP_Fusion import MLP_Fusion
 import noveltydetectionfeatures
 #import matplotlib.pyplot as plt
@@ -60,7 +61,8 @@ def get_split_dataloaders(data):
     train_a_i = anom_scores[train_idxs]
     train_y_i = y[train_idxs]
 
-    train_nom_idxs  = list(torch.nonzero(torch.flatten(torch.tensor(train_y_i).clone().detach())))
+    #train_nom_idxs  = list(torch.nonzero(torch.flatten(torch.tensor(train_y_i).clone().detach())))
+    train_nom_idxs  = list(torch.nonzero(torch.flatten(train_y_i.clone().detach())))
     train_anom_idxs = [i for i in range(len(train_y_i)) if i not in train_nom_idxs]       
 
     train_y_i_nom = train_y_i[train_nom_idxs]
@@ -74,7 +76,8 @@ def get_split_dataloaders(data):
     val_a_i = anom_scores[val_idxs]
     val_y_i = y[val_idxs]       
 
-    val_nom_idxs  = list(torch.nonzero(torch.flatten(torch.tensor(val_y_i).clone().detach())))
+    #val_nom_idxs  = list(torch.nonzero(torch.flatten(torch.tensor(val_y_i).clone().detach())))
+    val_nom_idxs  = list(torch.nonzero(torch.flatten(val_y_i.clone().detach())))
     val_anom_idxs = [i for i in range(len(val_y_i)) if i not in val_nom_idxs]
 
     val_y_i_nom = val_y_i[val_nom_idxs]
@@ -185,30 +188,46 @@ def train(model, nom_loader, anom_loader, criterion, optimizer, config):
         leave = False
     )
 
+    # Guarantees that loader_a is the shorter of the two.
+    # Done so that there will be no need to handle a 
+    # StopIteration Exception.
+    if len(nom_loader) <= len(anom_loader):
+        loader_a = nom_loader
+        loader_b = anom_loader
+    else:
+        loader_a = anom_loader
+        loader_b = nom_loader
 
     for epoch in range(epochs):
         progress.set_description("epoch {}".format(epoch))
         
-        nom_iterator = iter(nom_loader)
+        #nom_iterator = iter(nom_loader)
+        b_iterator = iter(loader_b)
 
-        for _, (anom_images, anom_labels) in enumerate(anom_loader):
-
-            try:
-                (nom_images, nom_labels) = next(nom_iterator)
-            except StopIteration:
-                nom_iterator = iter(nom_loader)
-                (nom_images, nom_labels) = next(nom_iterator)
-
-            loss = train_batch(nom_images, nom_labels, 
-                               anom_images, anom_labels,
+        #for _, (anom_images, anom_labels) in enumerate(anom_loader):
+        for i, (a_images, a_labels) in enumerate(loader_a):
+            
+            #try:
+            #    (nom_images, nom_labels) = next(nom_iterator)
+            #except StopIteration:
+            #    nom_iterator = iter(nom_loader)
+            #    (nom_images, nom_labels) = next(nom_iterator)
+            
+            (b_images, b_labels) = next(b_iterator)
+            
+            loss = train_batch(a_images, a_labels, 
+                               b_images, b_labels,
                                model, optimizer, 
                                criterion, device)
+
+            #loss = train_batch(nom_images, nom_labels, 
+            #                   anom_images, anom_labels,
+            #                   model, optimizer, 
+            #                   criterion, device)
             
-            #loss += train_batch(anom_images, anom_labels, 
-            #                    model, optimizer, 
-            #                    criterion, device)
             
-            example_ct +=  len(nom_images) + len(anom_images)
+            #example_ct +=  len(nom_images) + len(anom_images)
+            example_ct +=  len(a_images) + len(b_images)
             batch_ct   +=  1
 
             # Report loss every 25th batch
@@ -222,17 +241,24 @@ def train_log(loss, example_ct, epoch):
     print(f"Loss after " + str(example_ct).zfill(5) + f" examples: {loss:.3f}")
 
 
-def train_batch(nom_images, nom_labels, anom_images, anom_labels, model, optimizer, criterion, device):                                   
+def train_batch(a_images, a_labels, b_images, b_labels, model, optimizer, criterion, device):                                   
     ''' Train the model on one batch '''
-    nom_images, nom_labels = nom_images.to(device), nom_labels.to(device)   
-    anom_images, anom_labels = anom_images.to(device), anom_labels.to(device)
+    #nom_images, nom_labels = nom_images.to(device), nom_labels.to(device)   
+    #anom_images, anom_labels = anom_images.to(device), anom_labels.to(device)
+
+    a_images, a_labels = a_images.to(device), a_labels.to(device)   
+    b_images, b_labels = b_images.to(device), b_labels.to(device)
 
     # Forward pass ->
-    nom_outputs = model(nom_images)
-    anom_outputs = model(anom_images)    
+    #nom_outputs = model(nom_images)
+    #anom_outputs = model(anom_images)    
+    a_outputs = model(a_images)
+    b_outputs = model(b_images)    
 
-    outputs = torch.cat((nom_outputs, anom_outputs), dim=0)
-    labels  = torch.cat((nom_labels,  anom_labels), dim=0)
+    #outputs = torch.cat((nom_outputs, anom_outputs), dim=0)
+    #labels  = torch.cat((nom_labels,  anom_labels), dim=0)
+    outputs = torch.cat((a_outputs, b_outputs), dim=0)
+    labels  = torch.cat((a_labels,  b_labels), dim=0)
 
     outputs = torch.reshape(outputs, (-1,))
     labels  = torch.reshape(labels,  (-1,))
@@ -294,7 +320,7 @@ def test(model, test_nom_loader, test_anom_loader, data_params):
         y = y.detach().numpy()
         y_hat = y_hat.cpu()
         y_hat = y_hat.detach().numpy()
-        auc = roc_auc_score(np.round(y), y_hat, max_fpr=0.25) #np.round(y_hat), max_fpr=0.25)
+        auc = roc_auc_score(np.round(y), y_hat, max_fpr=0.25)
 
         print(f"Accuracy of the model on the {total} " +
               f"test images: {100 * correct / total}%")
@@ -311,11 +337,11 @@ def train_supervised_model(X, anom_scores, y):
     using X, a, and y
     '''  
 
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")     
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")     
 
     num_folds = 5
-    num_examples = X.shape[0]
-    num_features = X.shape[1]
+    num_examples = len(X)
+    num_features = len(X[0])
     num_workers = 1
     img_batch_size= 64
     
@@ -342,7 +368,7 @@ def train_supervised_model(X, anom_scores, y):
         )
 
         # Load the data
-        dataloaders = get_split_dataloaders(data_params) #get_dataloaders(data_params)
+        dataloaders = get_split_dataloaders(data_params)
         
         train_nom_dl = dataloaders[0]
         train_anom_dl = dataloaders[1]
@@ -364,13 +390,6 @@ def train_supervised_model(X, anom_scores, y):
         # Compute the AUC with max_fpr at 0.25
         auc, scores_split_i = test(model_i, val_nom_dl, val_anom_dl, data_params)        
 
-        # TODO:
-        #       -> Throw an exception if you come across a NoneType       
-        # 
-        #       -> IF THERE'S TIME, REFACTOR TO BALANCE (i.e. USE 2 DATALOADERS,
-        #          ONE NOVEL, AND ONE NOMINAL AND USE THEM TO ENSURE EACH MINI-
-        #          BATCH IS BALANCED.)
-
         # Store the model and AUC for this split
         if scores is None:
             scores = scores_split_i
@@ -378,16 +397,6 @@ def train_supervised_model(X, anom_scores, y):
             scores = torch.vstack((scores,scores_split_i))
         aucs.append(auc)
         models.append(model_i)
-
-    # TODO: 
-    #
-    #   -> Multiple dataloaders (one nom, other anom) 
-    #      to balance batches during training.
-    #
-    #   -> If you have time, double check calibration assumption
-    #      - NOTE: Temperature scaling paper (Guo et al.) 
-    #              suggests that this isn't necessary in your
-    #              case (MLP for binary classification)
 
     mean_AUC = sum(aucs) / len(aucs)
 
@@ -405,9 +414,7 @@ def train_supervised_models(S_X, V_X, O_X, S_a, V_a, O_a, S_y, V_y, O_y):
     '''
 
     S_auc, S_nov_scores, S_models = train_supervised_model(S_X, S_a, S_y)
-
     V_auc, V_nov_scores, V_models = train_supervised_model(V_X, V_a, V_y)
-        
     O_auc, O_nov_scores, O_models = train_supervised_model(O_X, O_a, O_y)
 
     return ((S_auc, V_auc, O_auc),
@@ -419,20 +426,66 @@ def eval_supervised_ensemble(models, X, a):
     '''
     Computes a supervised anomaly score for each instance
     given an ensemble of MLPs.
+
+    X: a list of feature vectors
+
+    a: a list of anomaly scores corresponding to each feature vector    
+
+    returns a novelty score vector of the same length as the input.
+
     '''
+
+    if len(X) != len(a):
+        raise ValueError("Feature list and anomaly score list must be same length.")
+
+    N = len(X)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")     
 
-    ensemble_size = len(models)    
+    ensemble_size = len(models)
+
+    none_idxs = []
+
+    X_o = X.copy()
+    a_o = a.copy()
+
+    # Need to try torch.stack on X
+    
+    # Gather None idxs
+    for i in range(N):
+        if a[i] is None or X[i] is None:
+            none_idxs.append(i)
+
+    # Remove the None elements from X and a
+    for i, idx in enumerate(none_idxs):
+        X.pop(idx)
+        a.pop(idx)
+
+        # Adjust idxs since we are popping from list.
+        # This implies that we must reintroduce elements
+        # from the end to the beginning (test this carefully)
+        for j in range(i+1,len(none_idxs)):
+            none_idxs[j] -= 1
+
+    a = torch.tensor(a)
+    #a = torch.unsqueeze(torch.tensor(a), dim=1)
+    a = torch.unsqueeze(a.clone().detach(), dim=1)
+    
+    #a.to(device)
+
+    X = torch.tensor(X)
+    #X.to(device)
 
     num_examples = X.shape[0]
     num_features = X.shape[1]
 
     X_concat = torch.hstack((X, a)) 
+    X_concat = X_concat.to(device)
 
     scores = None
 
     for model in models:   
+        model.to(device)
         model.eval()
         scores_i = model(X_concat)
         scores_i = torch.reshape(scores_i, (-1,1))
@@ -440,12 +493,18 @@ def eval_supervised_ensemble(models, X, a):
         if scores is None:
             scores = scores_i
         else:
-            scores = torch.hstack((scores, scores_i))
-    
+            scores = torch.hstack((scores, scores_i)) 
+
     # Now that we have a scores tensor of size (num_examples x num_models),
     # compute the average for every instance.
     nov_scores = torch.mean(scores, 1)
+    nov_scores = nov_scores.tolist()
     
+    reversed_none_idxs = reversed(none_idxs)    
+
+    for idx in reversed_none_idxs:
+        nov_scores.insert(idx, None)   
+ 
     return nov_scores
                 
 
@@ -482,15 +541,41 @@ if __name__ == '__main__':
     S_X = torch.rand(num_examples, num_features)
     V_X = torch.rand(num_examples, num_features)
     O_X = torch.rand(num_examples, num_features)
+
     S_a = torch.rand(num_examples, 1)
     V_a = torch.rand(num_examples, 1)
     O_a = torch.rand(num_examples, 1)
-    S_y = torch.rand(num_examples, 1)
-    V_y = torch.rand(num_examples, 1)
-    O_y = torch.rand(num_examples, 1)
-    AUC, models = train_supervised_models(S_X,V_X,O_X,
+    S_y = torch.sigmoid(torch.abs(torch.normal(0,1,size=(num_examples, 1))))
+    S_y = torch.bernoulli(S_y)
+    V_y = torch.sigmoid(torch.abs(torch.normal(0,1,size=(num_examples, 1))))
+    V_y = torch.bernoulli(V_y)
+    O_y = torch.sigmoid(torch.abs(torch.normal(0,1,size=(num_examples, 1))))
+    O_y = torch.bernoulli(O_y)
+    AUC, scores, models = train_supervised_models(S_X,V_X,O_X,
                                           S_a,V_a,O_a,
                                           S_y,V_y,O_y)
+    
+    S_a = [random.uniform(0,1) for _ in range(num_examples)]
+    V_a = [random.uniform(0,1) for _ in range(num_examples)]
+    O_a = [random.uniform(0,1) for _ in range(num_examples)]
+    S_none_idxs = random.sample([i for i in range(num_examples)], 5)
+    V_none_idxs = random.sample([i for i in range(num_examples)], 5)
+    O_none_idxs = random.sample([i for i in range(num_examples)], 5)
+    S_X = S_X.tolist()
+    V_X = V_X.tolist()
+    O_X = O_X.tolist() 
+
+    for i in range(num_examples):
+        if i in S_none_idxs:
+            S_X[i] = None
+            S_a[i] = None
+        if i in V_none_idxs:
+            V_X[i] = None
+            V_a[i] = None
+        if i in O_none_idxs:
+            O_X[i] = None
+            O_a[i] = None
+
     scores = eval_supervised(S_X, V_X, O_X, S_a, V_a, O_a, models)
     print("S Scores: {}".format(scores[0][0:5]))
     print("V Scores: {}".format(scores[1][0:5]))
