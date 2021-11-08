@@ -26,8 +26,8 @@ import os
 import sys
 import math
 #from .MLP_Fusion import MLP_Fusion
-from noveltydetection.utils import compute_partial_auc
-from .MLP_Fusion import MLP_Fusion
+#from noveltydetection.utils import compute_partial_auc
+from MLP_Fusion import MLP_Fusion
 import noveltydetectionfeatures
 #import matplotlib.pyplot as plt
 
@@ -343,6 +343,12 @@ def test(model, test_loader, test_nom_loader, test_anom_loader, data_params):
         nom_scores  = y_hat_nom
         anom_scores = y_hat_anom
 
+        if len(nom_scores) == 0:
+            nom_scores = torch.tensor([[0]])
+
+        if len(anom_scores) == 0:
+            anom_scores = torch.tensor([[1]]) 
+
         # Since anomalies are zero, these are put in an
         # order contrary to the method signature.
         auc = compute_partial_auc(anom_scores, nom_scores) 
@@ -354,6 +360,18 @@ def test(model, test_loader, test_nom_loader, test_anom_loader, data_params):
               f"test images: {auc}")
  
     return auc, scores
+
+
+def compute_partial_auc(nominal_scores, novel_scores):
+    nominal_trues = torch.zeros_like(nominal_scores)
+    novel_trues = torch.ones_like(novel_scores)
+
+    trues = torch.cat((nominal_trues.cpu(), novel_trues.cpu()), dim = 0).data.cpu().numpy()
+    scores = torch.cat((nominal_scores.cpu(), novel_scores.cpu()), dim = 0).data.cpu().numpy()
+
+    auc = roc_auc_score(trues, scores, max_fpr = 0.25)
+
+    return auc
 
 
 def train_supervised_model(X, anom_scores, y):
@@ -576,7 +594,7 @@ if __name__ == '__main__':
     V_y = torch.sigmoid(torch.abs(torch.normal(0,1,size=(num_examples, 1))))
     V_y = torch.bernoulli(V_y)
     O_y = torch.sigmoid(torch.abs(torch.normal(0,1,size=(num_examples, 1))))
-    O_y = torch.bernoulli(O_y)
+    O_y = torch.ones_like(torch.bernoulli(O_y))
     AUC, scores, models = train_supervised_models(S_X,V_X,O_X,
                                           S_a,V_a,O_a,
                                           S_y,V_y,O_y)
