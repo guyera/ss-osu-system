@@ -26,6 +26,7 @@ import os
 import sys
 import math
 #from .MLP_Fusion import MLP_Fusion
+from noveltydetection.utils import compute_partial_auc
 from .MLP_Fusion import MLP_Fusion
 import noveltydetectionfeatures
 #import matplotlib.pyplot as plt
@@ -123,8 +124,17 @@ def get_split_dataloaders(data):
         num_workers=num_workers, 
         pin_memory=False
     )
+
+    val_Xa_i = torch.hstack((val_X_i, val_a_i))
+    val_dataset = torch.utils.data.TensorDataset(val_Xa_i, val_y_i)
+    val_dataloader = torch.utils.data.DataLoader(
+        dataset=val_dataset,
+        batch_size=img_batch_size,
+        num_workers=num_workers,
+        pin_memory=False
+    )
     
-    return train_dataloader_nom, train_dataloader_anom, val_dataloader_nom, val_dataloader_anom
+    return train_dataloader_nom, train_dataloader_anom, val_dataloader_nom, val_dataloader_anom, val_dataloader
 
 
 def get_dataloaders(data):
@@ -274,7 +284,7 @@ def train_batch(a_images, a_labels, b_images, b_labels, model, optimizer, criter
     return loss 
 
 
-def test(model, test_nom_loader, test_anom_loader, data_params):                                                                   
+def test(model, test_loader, test_nom_loader, test_anom_loader, data_params):                                                                   
     ''' Test the model on the test set '''
     device = data_params['device']
 
@@ -284,7 +294,11 @@ def test(model, test_nom_loader, test_anom_loader, data_params):
 
     with torch.no_grad():
         correct, total = 0, 0
+        nom_correct, nom_total = 0, 0
+        anom_correct, anom_total = 0, 0
         y_hat, y = torch.tensor([]).to(device), torch.tensor([]).to(device)     
+        y_hat_nom, y_nom = torch.tensor([]).to(device), torch.tensor([]).to(device)     
+        y_hat_anom, y_anom = torch.tensor([]).to(device), torch.tensor([]).to(device)     
 
         for images, labels in test_nom_loader:
            images, labels = images.to(device), labels.to(device)
@@ -292,14 +306,27 @@ def test(model, test_nom_loader, test_anom_loader, data_params):
            # torch.round since binary classification
            #_, predicted = torch.max(outputs.data, 1)
            predicted = torch.round(outputs.data).T[0]
-           total += labels.size(0)
+           nom_total += labels.size(0)
            labels = labels.float()
-           correct += (predicted == torch.round(labels.T)).sum().item()
+           nom_correct += (predicted == torch.round(labels.T)).sum().item()
           
-           y_hat = torch.cat((y_hat, outputs))
-           y     = torch.cat((y, labels)) 
+           y_hat_nom = torch.cat((y_hat_nom, outputs))
+           y_nom     = torch.cat((y_nom, labels)) 
 
         for images, labels in test_anom_loader:
+           images, labels = images.to(device), labels.to(device)
+           outputs = model(images)
+           # torch.round since binary classification
+           #_, predicted = torch.max(outputs.data, 1)
+           predicted = torch.round(outputs.data).T[0]
+           anom_total += labels.size(0)
+           labels = labels.float()
+           anom_correct += (predicted == torch.round(labels.T)).sum().item()
+          
+           y_hat_anom = torch.cat((y_hat_anom, outputs))
+           y_anom     = torch.cat((y_anom, labels)) 
+
+        for images, labels in test_loader:
            images, labels = images.to(device), labels.to(device)
            outputs = model(images)
            # torch.round since binary classification
@@ -311,16 +338,14 @@ def test(model, test_nom_loader, test_anom_loader, data_params):
           
            y_hat = torch.cat((y_hat, outputs))
            y     = torch.cat((y, labels)) 
-
+        
         scores = y_hat
+        nom_scores  = y_hat_nom
+        anom_scores = y_hat_anom
 
-        # Put these on the cpu so that sklearn can 
-        # do its magic
-        y = y.cpu()
-        y = y.detach().numpy()
-        y_hat = y_hat.cpu()
-        y_hat = y_hat.detach().numpy()
-        auc = roc_auc_score(np.round(y), y_hat, max_fpr=0.25)
+        # Since anomalies are zero, these are put in an
+        # order contrary to the method signature.
+        auc = compute_partial_auc(anom_scores, nom_scores) 
 
         print(f"Accuracy of the model on the {total} " +
               f"test images: {100 * correct / total}%")
@@ -374,7 +399,8 @@ def train_supervised_model(X, anom_scores, y):
         train_anom_dl = dataloaders[1]
         val_nom_dl = dataloaders[2]
         val_anom_dl = dataloaders[3]     
-   
+        val_dl = dataloaders[4]  
+ 
         # Get the model
         model_i = MLP_Fusion(n=num_features)        
         model_i.train()
@@ -388,7 +414,7 @@ def train_supervised_model(X, anom_scores, y):
         train(model_i, train_nom_dl, train_anom_dl, criterion, optimizer, data_params)
 
         # Compute the AUC with max_fpr at 0.25
-        auc, scores_split_i = test(model_i, val_nom_dl, val_anom_dl, data_params)        
+        auc, scores_split_i = test(model_i, val_dl, val_nom_dl, val_anom_dl, data_params)        
 
         # Store the model and AUC for this split
         if scores is None:
