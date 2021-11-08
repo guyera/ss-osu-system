@@ -15,7 +15,6 @@ def compute_partial_auc(nominal_scores, novel_scores):
     scores = torch.cat((nominal_scores, novel_scores), dim = 0)\
         .data.cpu().numpy()
 
-    #import pdb; pdb.set_trace()    
     auc = sklearn.metrics.roc_auc_score(trues, scores, max_fpr = 0.25)
 
     return auc
