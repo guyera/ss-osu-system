@@ -27,7 +27,7 @@ import sys
 import math
 #from .MLP_Fusion import MLP_Fusion
 #from noveltydetection.utils import compute_partial_auc
-from MLP_Fusion import MLP_Fusion
+from .MLP_Fusion import MLP_Fusion
 import noveltydetectionfeatures
 #import matplotlib.pyplot as plt
 
@@ -353,10 +353,10 @@ def test(model, test_loader, test_nom_loader, test_anom_loader, data_params):
         # order contrary to the method signature.
         auc = compute_partial_auc(anom_scores, nom_scores) 
 
-        print(f"Accuracy of the model on the {total} " +
+        print(f"Accuracy of the supervised ensemble member on the {total} " +
               f"test images: {100 * correct / total}%")
 
-        print(f"AUC of the model on the {total} " + 
+        print(f"AUROC (at fpr=0.25) of the supervised ensemble member on the {total} " + 
               f"test images: {auc}")
  
     return auc, scores
@@ -512,8 +512,9 @@ def eval_supervised_ensemble(models, X, a):
             none_idxs[j] -= 1
 
     a = torch.tensor(a)
+    a = torch.reshape(a, (len(a),1))
     #a = torch.unsqueeze(torch.tensor(a), dim=1)
-    a = torch.unsqueeze(a.clone().detach(), dim=1)
+    ##a = torch.unsqueeze(a.clone().detach(), dim=1)
     
     #a.to(device)
 

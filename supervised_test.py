@@ -176,6 +176,14 @@ def main():
          
         mean_AUC, novelty_scores, models = adaptation.supervised_anomaly_detectors.train_supervised_models(S_X,V_X,O_X,S_a,V_a,O_a,S_y,V_y,O_y)
         mean_aucs.append(mean_AUC)
+
+        S_X = S_X.tolist()
+        V_X = V_X.tolist()
+        O_X = O_X.tolist()
+        S_a = S_a.tolist()
+        V_a = V_a.tolist()
+        O_a = O_a.tolist()
+        scores = adaptation.supervised_anomaly_detectors.eval_supervised(S_X,V_X,O_X,S_a,V_a,O_a,models)
         
         print("For anomaly split {}: mean_AUC is {}\nand unsupervised AUC at fpr=0.25 is {}".format(i, mean_AUC, (unsupervised_s_auc, unsupervised_v_auc, unsupervised_o_auc)))
 
