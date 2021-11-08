@@ -518,6 +518,8 @@ def eval_supervised_ensemble(models, X, a):
     
     #a.to(device)
 
+    # This will be a list of tensors
+    X = [torch.tolist(feature_vec) for feature_vec in X]
     X = torch.tensor(X)
     #X.to(device)
 
