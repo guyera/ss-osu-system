@@ -353,11 +353,9 @@ def test(model, test_loader, test_nom_loader, test_anom_loader, data_params):
         # order contrary to the method signature.
         auc = compute_partial_auc(anom_scores, nom_scores) 
 
-        print(f"Accuracy of the supervised ensemble member on the {total} " +
-              f"test images: {100 * correct / total}%")
+        #print(f"Accuracy of the supervised ensemble member on the {total} " + f"test images: {100 * correct / total}%")
 
-        print(f"AUROC (at fpr=0.25) of the supervised ensemble member on the {total} " + 
-              f"test images: {auc}")
+        #print(f"AUROC (at fpr=0.25) of the supervised ensemble member on the {total} " +  f"test images: {auc}")
  
     return auc, scores
 
