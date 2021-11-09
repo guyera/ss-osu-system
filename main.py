@@ -24,12 +24,11 @@ if __name__ == "__main__":
     p.add_argument('--given_detection', action='store_true')
     p.add_argument('--detector_seed', type=int, default=1234)
     p.add_argument('--version', default='101')
-    p.add_argument('--sys_results_dir', default='session/temp/sys_results')
+    p.add_argument('--sys_results_dir', default='./session/temp/sys_results')
     p.add_argument('--detection_threshold', type=float, default=0.65)
     
     args = p.parse_args()
 
-    torch.cuda.set_device(0)
     torch.backends.cudnn.benchmark = False
 
     osu_int = OSUInterface(scg_ensemble=args.scg_ensemble, 
@@ -41,7 +40,7 @@ if __name__ == "__main__":
         cusum_thresh=args.detection_threshold)
 
     test_session = BBNSession('OND', args.domain, args.class_count, 
-        args.classification_feedback, args.detection_feedback,
+        args.classification_feedback, True,
         args.given_detection, args.data_root,
         args.sys_results_dir, args.url, args.batch_size,
         args.version, args.detection_threshold,

@@ -53,6 +53,20 @@ class TopLevelApp:
         self.threshold = th
         self.batch_context = BatchContext()
 
+        self.unsupervised_aucs = None
+        self.supervised_aucs = None
+
+    def reset(self):
+        print(f'\nResetting...\n')
+        
+        self.post_red = False
+        self.p_type_dist = torch.tensor([0.2, 0.2, 0.2, 0.2, 0.2])
+        self.unsupervised_aucs = None
+        self.supervised_aucs = None
+
+        self.und_manager.reset()
+        self.snd_manager.reset()
+
     def run(self, csv_path):
         if csv_path is None:
             raise Exception('path to csv was None')
@@ -86,9 +100,13 @@ class TopLevelApp:
         subject_scores_ctx, verb_scores_ctx, object_scores_ctx = self.und_manager.get_score_contexts() 
 
         if self.post_red:
+            subject_novelty_scores_u_copy = [s.clone() if s is not None else None for s in subject_novelty_scores_u]
+            verb_novelty_scores_u_copy = [s.clone() if s is not None else None for s in verb_novelty_scores_u]
+            object_novelty_scores_u_copy = [s.clone() if s is not None else None for s in object_novelty_scores_u]
+
             # Supervised novelty scores
             subject_novelty_scores_s, verb_novelty_scores_s, object_novelty_scores_s = self.snd_manager.score(
-                novelty_dataset, subject_novelty_scores_u, verb_novelty_scores_u, object_novelty_scores_u)
+                novelty_dataset, subject_novelty_scores_u_copy, verb_novelty_scores_u_copy, object_novelty_scores_u_copy)
 
             # pick the scores from the detector with higher AUC
             if self.unsupervised_aucs[0] < self.supervised_aucs[0]:
@@ -99,6 +117,8 @@ class TopLevelApp:
             
             if self.unsupervised_aucs[2] < self.supervised_aucs[2]:
                 object_novelty_scores = object_novelty_scores_s
+
+        assert len(subject_novelty_scores) == len(verb_novelty_scores) == len(object_novelty_scores)
 
         p_ni = compute_probability_novelty(subject_novelty_scores, verb_novelty_scores, object_novelty_scores, 
             p_n_t4, subject_scores_ctx, verb_scores_ctx, object_scores_ctx, self.p_type_dist.to("cuda:0"))
@@ -124,7 +144,7 @@ class TopLevelApp:
 
             # cusum
             red_light_score = self._cusum()
-            # print(f'\n\tp_type: {self.p_type_dist.numpy()}\n\tp_ni: {p_ni}\n\tred_light_score: {red_light_score}\n\tpost_red: {self.post_red}\n')
+            print(f'\n\tp_type: {self.p_type_dist.numpy()}\n\tp_ni: {p_ni}\n\tred_light_score: {red_light_score}\n\tpost_red: {self.post_red}\n')
         else:
             red_light_score = 1.0
 
@@ -165,8 +185,6 @@ class TopLevelApp:
             self.batch_context.subject_novelty_scores_best, self.batch_context.verb_novelty_scores_best, 
             self.batch_context.object_novelty_scores_best)
 
-        # query_indices = np.random.choice(np.arange(len(self.batch_context.image_paths)), feedback_max_ids)
-
         if len(query_indices) > feedback_max_ids:
             raise Exception('number of queries exceeded feedback budget.')
 
@@ -180,9 +198,19 @@ class TopLevelApp:
     def feedback_callback(self, feedback_results):
         assert self.post_red, "query selection shoudn't happen pre-red button"
         assert self.batch_context.is_set(), "no batch context."
-        assert len(feedback_results) == len(self.batch_context.query_indices), "query/feedback mismatch."
         assert all([f in self.batch_context.image_paths for f in feedback_results.keys()]), "query/feedback mismatch."
 
+        if len(feedback_results) != len(self.batch_context.query_indices):
+            print(f"\nWARNING: query/feedback mismatch, requested feedback for {len(self.batch_context.query_indices)} images but got feedback for {len(feedback_results)} images. Recalculating query mask...\n")
+
+            N = len(self.batch_context.image_paths)
+            self.batch_context.query_mask = torch.zeros(N, dtype=torch.long)
+
+            query_indices = [self.batch_context.image_paths.index(k) for k in feedback_results.keys()]
+
+            self.batch_context.query_mask[query_indices] = 1
+            self.batch_context.query_indices = query_indices
+            
         N = len(self.batch_context.image_paths)
         self.batch_context.feedback_mask = torch.zeros(N, dtype=torch.long)
 
@@ -210,6 +238,10 @@ class TopLevelApp:
         self._update_novelty_detectors(all_subject_indices, all_verb_indices, all_object_indices, 
             subject_labels, verb_labels, object_labels, 
             subject_novelty_start_offset, verb_novelty_start_offset, object_novelty_start_offset)
+
+        if self.post_red and self.unsupervised_aucs is None:
+            self.supervised_aucs = self.snd_manager.get_svo_detectors_auc()
+            self.unsupervised_aucs = self.und_manager.get_svo_detectors_auc()
 
     def _build_merged_top3_SVOs(self, top3_non_novel, top3_novel, p_ni):
         """
@@ -379,7 +411,7 @@ class TopLevelApp:
         scores /= m_min_k
         max_score = np.max(scores)
 
-        red_light_score = max_score * 0.5 / self.threshold
+        red_light_score = np.clip(max_score * 0.5 / self.threshold, 0.0, 1.0)
         self.post_red = max_score > 0.5
 
         return red_light_score
@@ -399,7 +431,7 @@ class TopLevelApp:
             collate_fn=custom_collate, 
             batch_size=1,
             num_workers=1, 
-            pin_memory=True,
+            pin_memory=False,
             sampler=None)
 
         novelty_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
@@ -410,8 +442,9 @@ class TopLevelApp:
             num_obj_cls = self.num_object_classes,
             num_action_cls = self.num_verb_classes,
             training = False,
-            image_batch_size = 4,
-            feature_extraction_device = 'cuda:0')
+            image_batch_size = 10,
+            feature_extraction_device = 'cuda:0',
+            cache_to_disk = False)
 
         N = len(valset)
 
@@ -516,9 +549,9 @@ class TopLevelApp:
         object_features = torch.vstack(appearance_features) if len(appearance_features) > 0 else torch.tensor([])
         assert object_features.shape[1] == self.NUM_APP_FEATURES
 
-        subject_novelty_scores_u = [self.batch_context.subject_novelty_scores_u[i] for i in all_subject_indices.tolist()]
-        verb_novelty_scores_u = [self.batch_context.verb_novelty_scores_u[i] for i in all_verb_indices.tolist()]
-        object_novelty_scores_u = [self.batch_context.object_novelty_scores_u[i] for i in all_object_indices.tolist()]
+        subject_novelty_scores_u = torch.tensor([self.batch_context.subject_novelty_scores_u[i] for i in all_subject_indices.tolist()])
+        verb_novelty_scores_u = torch.tensor([self.batch_context.verb_novelty_scores_u[i] for i in all_verb_indices.tolist()])
+        object_novelty_scores_u = torch.tensor([self.batch_context.object_novelty_scores_u[i] for i in all_object_indices.tolist()])
 
         assert subject_features.shape[0] == subject_labels.shape[0]
         assert verb_features.shape[0] == verb_labels.shape[0]

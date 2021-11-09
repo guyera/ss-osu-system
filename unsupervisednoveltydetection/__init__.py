@@ -362,7 +362,7 @@ class UnsupervisedNoveltyDetector:
                 verb_novelty_scores.append(None)
             
             p_ni_t4 = torch.tensor(0, dtype = torch.float)
-            p_ni_t4 = p_ni_t4.to(subject_probs.device)
+            p_ni_t4 = p_ni_t4.to(self.device)
             if example_subject_appearance_features is not None and example_object_appearance_features is not None:
                 # Case 1, S/V/O
                 example_predictions = self._case_1(subject_probs, object_probs, verb_probs, p_type, 3)
@@ -383,6 +383,8 @@ class UnsupervisedNoveltyDetector:
             p_n_t4.append(p_ni_t4)
         
         p_n_t4 = torch.stack(p_n_t4, dim = 0)
+
+        assert len(subject_novelty_scores) == len(verb_novelty_scores) == len(object_novelty_scores)
 
         results['subject_novelty_score'] = subject_novelty_scores
         results['verb_novelty_score'] = verb_novelty_scores

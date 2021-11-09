@@ -38,6 +38,8 @@ class OSUInterface:
         :param test_id:
         :return: None
         """
+        self.app.reset()
+
         print(f'==> OSU got start test {test_id}')
 
     def process_round(self, test_id, round_id, contents):

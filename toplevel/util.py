@@ -57,6 +57,8 @@ class UnsupervisedNoveltyDetectionManager:
         self.num_appearance_features = num_appearance_features
         self.num_verb_features = num_verb_features
 
+        self.pretrained_path = pretrained_path
+
         self.detector = UnsupervisedNoveltyDetector(num_appearance_features=self.num_appearance_features, 
             num_verb_features=self.num_verb_features, 
             num_hidden_nodes=1024, 
@@ -67,6 +69,18 @@ class UnsupervisedNoveltyDetectionManager:
         self.detector = self.detector.to('cuda:0')
 
         state_dict = torch.load(pretrained_path)
+        self.detector.load_state_dict(state_dict['module'])
+
+        self.subject_score_context = ScoreContext(ScoreContext.Source.UNSUPERVISED, None, None)
+        self.object_score_context = ScoreContext(ScoreContext.Source.UNSUPERVISED, None, None)
+        self.verb_score_context = ScoreContext(ScoreContext.Source.UNSUPERVISED, None, None)
+        
+        self.subject_score_context.load_state_dict(state_dict['subject_score_context'])
+        self.object_score_context.load_state_dict(state_dict['object_score_context'])
+        self.verb_score_context.load_state_dict(state_dict['verb_score_context'])
+
+    def reset(self):
+        state_dict = torch.load(self.pretrained_path)
         self.detector.load_state_dict(state_dict['module'])
 
         self.subject_score_context = ScoreContext(ScoreContext.Source.UNSUPERVISED, None, None)
@@ -91,14 +105,14 @@ class UnsupervisedNoveltyDetectionManager:
         verb_novelty_scores_non_novel, verb_novelty_scores_novel,
         object_novelty_scores_non_novel, object_novelty_scores_novel):
 
-        self.subject_score_context.add_nominal_scores(subject_novelty_scores_non_novel)
-        self.subject_score_context.add_novel_scores(subject_novelty_scores_novel)
+        self.subject_score_context.add_nominal_scores(subject_novelty_scores_non_novel.cpu().view(-1))
+        self.subject_score_context.add_novel_scores(subject_novelty_scores_novel.cpu().view(-1))
 
-        self.verb_score_context.add_nominal_scores(verb_novelty_scores_non_novel)
-        self.verb_score_context.add_novel_scores(verb_novelty_scores_novel)
+        self.verb_score_context.add_nominal_scores(verb_novelty_scores_non_novel.cpu().view(-1))
+        self.verb_score_context.add_novel_scores(verb_novelty_scores_novel.cpu().view(-1))
 
-        self.object_score_context.add_nominal_scores(object_novelty_scores_non_novel)
-        self.object_score_context.add_novel_scores(object_novelty_scores_novel)
+        self.object_score_context.add_nominal_scores(object_novelty_scores_non_novel.cpu().view(-1))
+        self.object_score_context.add_novel_scores(object_novelty_scores_novel.cpu().view(-1))
 
     def score(self, dataset, p_type_dist):
         all_spatial_features = []
@@ -143,23 +157,20 @@ class SupervisedNoveltyDetectionManager:
         self.num_appearance_features = num_appearance_features
         self.num_verb_features = num_verb_features
 
+    def reset(self):
+        self.subject_features = None
+        self.object_features = None
+        self.verb_features = None
+        self.subject_labels = None
+        self.object_labels = None
+        self.verb_labels = None
+        self.subject_novelty_scores = None
+        self.verb_novelty_scores = None
+        self.object_novelty_scores = None
+        self.models = []
+        self.latest_AUC_scores = None
+
     def train(self):
-        # print(f'\nsubj_f: {self.subject_features}\n, verb_f: {self.verb_features}\n, obj_f: {self.object_features}\n')
-        # print(f'subj_n: {self.subject_novelty_scores}, verb:N: {self.verb_novelty_scores}, obj_n: {self.object_novelty_scores}\n')            
-        # print(f'subj_l: {self.subject_labels}, verb_l: {self.verb_labels}, obj_l: {self.object_labels}\n')
-
-        # torch.save({'S_X': self.subject_features, 
-        #     'V_X': self.verb_features, 
-        #     'O_X': self.object_features, 
-        #     'S_a': self.subject_novelty_scores,
-        #     'V_a': self.verb_novelty_scores,
-        #     'O_a': self.object_novelty_scores, 
-        #     'S_y': self.subject_labels, 
-        #     'V_y': self.verb_labels, 
-        #     'O_y': self.object_labels}, 'inputs.pth')
-
-        # print('save inputs.')
-
         aucs, novelty_scores, models = train_supervised_models(self.subject_features, 
             self.verb_features, 
             self.object_features, 
@@ -169,8 +180,6 @@ class SupervisedNoveltyDetectionManager:
             self.subject_labels.reshape((-1, 1)),
             self.verb_labels.reshape((-1, 1)),
             self.object_labels.reshape((-1, 1)))
-
-        print('qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq')
 
         self.models = models
         self.latest_AUC_scores = aucs
@@ -189,19 +198,21 @@ class SupervisedNoveltyDetectionManager:
             object_appearance_features, verb_appearance_features, _, _, _ in dataset:
 
             if subject_appearance_features is not None:
-                subject_features.append(subject_appearance_features)
+                subject_features.append(subject_appearance_features.view(-1))
             else:
                 subject_features.append(None)
 
             if verb_appearance_features is not None:
-                verb_features.append(torch.hstack([spatial_features, verb_appearance_features]))
+                verb_features.append(torch.hstack([spatial_features.view(-1), verb_appearance_features.view(-1)]))
             else:
                 verb_features.append(None)
 
             if object_appearance_features is not None:
-                object_features.append(object_appearance_features)
+                object_features.append(object_appearance_features.view(-1))
             else:
                 object_features.append(None)
+
+        assert len(subject_features) == len(object_features) == len(verb_features)
 
         subject_nov_scores_s, verb_nov_scores_s, object_nov_scores_s = eval_supervised(subject_features, 
             verb_features, 
@@ -210,6 +221,12 @@ class SupervisedNoveltyDetectionManager:
             verb_novelty_scores, 
             object_novelty_scores, 
             self.models)
+
+        assert len(subject_nov_scores_s) == len(verb_nov_scores_s) == len(object_nov_scores_s)
+
+        subject_nov_scores_s = [torch.tensor(s) if s is not None else None for s in subject_nov_scores_s]
+        verb_nov_scores_s = [torch.tensor(s) if s is not None else None for s in verb_nov_scores_s]
+        object_nov_scores_s = [torch.tensor(s) if s is not None else None for s in object_nov_scores_s]
 
         return subject_nov_scores_s, verb_nov_scores_s, object_nov_scores_s
 
@@ -229,13 +246,19 @@ class SupervisedNoveltyDetectionManager:
         self.verb_features = torch.vstack([self.verb_features, verb_features]) if self.verb_features is not None else verb_features
         self.object_features = torch.vstack([self.object_features, object_features]) if self.object_features is not None else object_features
 
-        self.subject_labels = torch.vstack([self.subject_labels, subject_labels]) if self.subject_labels is not None else subject_labels 
-        self.verb_labels = torch.vstack([self.verb_labels, verb_labels]) if self.verb_labels is not None else verb_labels
-        self.object_labels = torch.vstack([self.object_labels, object_labels]) if self.object_labels is not None else object_labels
+        subject_labels = subject_labels.view(-1)
+        verb_labels = verb_labels.view(-1)
+        object_labels = object_labels.view(-1)
 
-        self.subject_novelty_scores = torch.vstack([self.subject_novelty_scores, subject_novelty_scores]) \
-            if self.subject_novelty_scores is not None else torch.tensor(subject_novelty_scores)
-        self.verb_novelty_scores = torch.vstack([self.verb_novelty_scores, verb_novelty_scores]) \
-            if self.verb_novelty_scores is not None else torch.tensor(verb_novelty_scores)
-        self.object_novelty_scores = torch.vstack([self.object_novelty_scores, object_novelty_scores]) \
-            if self.object_novelty_scores is not None else torch.tensor(object_novelty_scores)
+        self.subject_labels = torch.cat([self.subject_labels, subject_labels]) if self.subject_labels is not None else subject_labels.view(-1)
+        self.verb_labels = torch.cat([self.verb_labels, verb_labels]) if self.verb_labels is not None else verb_labels.view(-1)
+        self.object_labels = torch.cat([self.object_labels, object_labels]) if self.object_labels is not None else object_labels.view(-1)
+
+        self.subject_novelty_scores = torch.cat([self.subject_novelty_scores, subject_novelty_scores.view(-1)]) if \
+            self.subject_novelty_scores is not None else subject_novelty_scores.view(-1)
+
+        self.verb_novelty_scores = torch.cat([self.verb_novelty_scores, verb_novelty_scores.view(-1)]) if \
+            self.verb_novelty_scores is not None else verb_novelty_scores.view(-1)
+
+        self.object_novelty_scores = torch.cat([self.object_novelty_scores, object_novelty_scores.view(-1)]) if \
+            self.object_novelty_scores is not None else object_novelty_scores.view(-1)

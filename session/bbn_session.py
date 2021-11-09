@@ -137,9 +137,6 @@ class BBNSession:
                                   (filename, predicted_probs))
 
     def run(self, detector_seed, test_ids=None, given_detection=False):
-        if not self.api_stubs:
-            raise Exception('rrrr')
-
         if not test_ids:
             # test_ids = requests.get(
             #     f"{self.url}/test/ids?protocol={self.protocol}&detector_seed={detector_seed}").content.decode('utf-8').split('\n')
@@ -360,8 +357,9 @@ class BBNSession:
         #     print(response)
         #     print('==> sent characterization file')
 
-        if api_stubs:
+        if self.api_stubs:
             api_stubs.finish_test(test_id)
+            print('api_stubs.finish_test')
         else:
             test_end_response = requests.delete(
                 f"{self.url}/test?session_id={session_id}&test_id={test_id}")
