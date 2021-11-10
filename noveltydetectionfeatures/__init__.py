@@ -11,7 +11,6 @@ from data.data_factory import DataFactory
 from torch.utils.data import DataLoader, DistributedSampler
 from utils import custom_collate
 
-from tqdm import tqdm
 
 class NoveltyFeatureDataset(torch.utils.data.Dataset):
     """
@@ -166,7 +165,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
             object_box_features = list()
             verb_box_features = list()
             
-            for images, detections, targets in tqdm(data_loader):
+            for images, detections, targets in data_loader:
                 original_image_sizes = [img.shape[-2:] for img in images]
                 images, targets = i_transform(images, targets)
                 for det, o_im_s, im_s in zip(

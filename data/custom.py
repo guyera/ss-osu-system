@@ -156,9 +156,9 @@ class CustomDet(Dataset):
         """Return the image file name given the index"""
         return os.path.join(self.root, self._filenames[self._idx[idx]])
 
-    def image_size(self, idx: int) -> Tuple[int, int]:
-        """Return the size (width, height) of an image"""
-        return self._image_sizes[self._idx[idx]]
+    # def image_size(self, idx: int) -> Tuple[int, int]:
+    #     """Return the size (width, height) of an image"""
+    #     return self._image_sizes[self._idx[idx]]
 
     def _load_annotation_and_metadata(self, f: str) -> None:
         """
@@ -175,7 +175,7 @@ class CustomDet(Dataset):
 
         self._anno = self.create_annotation(df)
 
-        self._image_sizes = self.create_sizes(df)
+        # self._image_sizes = self.create_sizes(df)
 
         idx = list(range(len(df)))
 
@@ -219,5 +219,5 @@ class CustomDet(Dataset):
 
         return corr[['idx', 'object_id', 'verb_id']].values.tolist()
 
-    def create_sizes(self, df):
-        return df[['image_width', 'image_height']].values.tolist()
+    # def create_sizes(self, df):
+    #     return df[['image_width', 'image_height']].values.tolist()

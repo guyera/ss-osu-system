@@ -129,6 +129,9 @@ class TopLevelApp:
         merged = self._build_merged_top3_SVOs(scg_preds, unsupervised_results['top3'], p_ni)
         top_1 = [m[0][0] for m in merged]
         top_1_probs = [m[0][1] for m in merged]
+        top_3 = [[e[0] for e in m] for m in merged]
+        top_3_probs = [[e[1] for e in m] for m in merged]
+
         batch_preds_is_nc = self._is_novel_combination(top_1)
 
         if not self.post_red:
@@ -144,7 +147,7 @@ class TopLevelApp:
 
             # cusum
             red_light_score = self._cusum()
-            print(f'\n\tp_type: {self.p_type_dist.numpy()}\n\tp_ni: {p_ni}\n\tred_light_score: {red_light_score}\n\tpost_red: {self.post_red}\n')
+            # print(f'\n\tp_type: {self.p_type_dist.numpy()}\n\tp_ni: {p_ni}\n\tred_light_score: {red_light_score}\n\tpost_red: {self.post_red}\n')
         else:
             red_light_score = 1.0
 
@@ -172,8 +175,8 @@ class TopLevelApp:
         ret = {}
         ret['p_ni'] = p_ni.numpy().tolist()
         ret['red_light_score'] = red_light_score
-        ret['svo'] = top_1
-        ret['svo_probs'] = top_1_probs
+        ret['svo'] = top_3
+        ret['svo_probs'] = top_3_probs
 
         return ret
 

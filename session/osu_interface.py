@@ -17,9 +17,6 @@ class OSUInterface:
             pretrained_unsupervised_module_path=pretrained_unsupervised_novelty_path,
             th=cusum_thresh)
 
-        self.declare_novelty_round = 3
-        self.declare_novelty_image = 15
-
         self.temp_path = pathlib.Path('./session/temp/')
         self.batch_csv_path = self.temp_path.joinpath('batch.csv')
 
@@ -76,16 +73,14 @@ class OSUInterface:
         ret = self.app.run(self.batch_csv_path)
         p_ni = ret['p_ni']
         red_light_score = ret['red_light_score']
-        top_1 = ret['svo']
-        top_1_probs = ret['svo_probs']
+        top_3 = ret['svo']
+        top_3_probs = ret['svo_probs']
 
         novelty_lines = [f'{img}, {red_light_score:e}, {p:e}' for img, p in zip(df['new_image_path'].to_list(), p_ni)]
         novelty_preds = '\n'.join(novelty_lines)
-        svo_preds = '\n'.join([f'{img}, {(svo[0], svo[1], svo[2], p)}' for img, svo, p in zip(df['new_image_path'].to_list(), top_1, top_1_probs)])
 
-        # temp_features_path = self.temp_path.joinpath('batch_novelty_features.pth')
-        # if temp_features_path.exists():
-        #     os.remove(temp_features_path)
+        top_3_str = [','.join([f'{(svo[0], svo[1], svo[2], p)}' for svo, p in zip(svos, ps)]) for svos, ps in zip(top_3, top_3_probs)]
+        svo_preds = '\n'.join([f'{img}, {svo_s}' for img, svo_s in zip(df['new_image_path'].to_list(), top_3_str)])
 
         print(f'  ==> OSU processed round {round_id}')
         
@@ -129,36 +124,4 @@ class OSUInterface:
 
     def end_session(self, session_id):
         print(f'==> OSU got end session {session_id}')
-
-    # def _red_light(self, round_id):
-    #     return round_id >= self.declare_novelty_round
-
-    # def _red_light_score(self, round_id, image_id):
-    #     if round_id < self.declare_novelty_round:
-    #         return random.uniform(0.01, 0.48)
-    #     elif round_id == self.declare_novelty_round:
-    #         if image_id < self.declare_novelty_image:
-    #             return random.uniform(0.01, 0.48)
-    #         elif image_id == self.declare_novelty_image:
-    #             return 0.75
-    #         else:
-    #             return random.random()
-    #     else:
-    #         return random.random()
-
-    # def _image_novelty_score(self):
-    #     return random.random()
-
-    # def _random_svo_preds(self, top_k = 3):
-    #     return ','.join(self._random_svo_pred() for i in range(top_k))
-
-    # def _random_svo_pred(self):
-    #     return ','.join([str(random.randrange(0,5)),
-    #                     str(random.randrange(0,5)),
-    #                     str(random.randrange(0,5)),
-    #                     f'{random.random():3}'])
-
-    # def _novel_p(self, image_path):
-    #     substrings = ['novel_val', 'imgs', 'verb_dataset', 'obj_dataset', 'sub_dataset']
-    #     return any([substring in image_path for substring in substrings])
 

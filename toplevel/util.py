@@ -133,7 +133,19 @@ class UnsupervisedNoveltyDetectionManager:
         for i, p in enumerate(results['top3']):
             new_p = []
             for j in range(3):
-                e = (p[j][0], p[j][1].item()) if j < len(p) else ((-100, -100, -100), -100)
+                if j < len(p):
+                    e = (p[j][0], p[j][1].item())
+                    new_svo = list(e[0])
+
+                    for k in range(3):
+                        if new_svo[k] is not None and type(new_svo[k]) == torch.Tensor:
+                            new_svo[k] = new_svo[k].item()
+                    
+                    e = (tuple(new_svo), e[1])
+
+                else: 
+                    e = ((int(-100), int(-100), int(-100)), -100)
+
                 new_p.append(e)
 
             results['top3'][i] = new_p
