@@ -192,11 +192,11 @@ def train(model, nom_loader, anom_loader, criterion, optimizer, config):
     example_ct = 0   
     batch_ct   = 0 
 
-    progress = tqdm(                                                                                                                     
-        total = epochs,
-        desc = 'Training classifier',
-        leave = False
-    )
+    #progress = tqdm(                                                                                                                     
+    #    total = epochs,
+    #    desc = 'Training classifier',
+    #    leave = False
+    #)
 
     # Guarantees that loader_a is the shorter of the two.
     # Done so that there will be no need to handle a 
@@ -209,7 +209,7 @@ def train(model, nom_loader, anom_loader, criterion, optimizer, config):
         loader_b = nom_loader
 
     for epoch in range(epochs):
-        progress.set_description("epoch {}".format(epoch))
+        #progress.set_description("epoch {}".format(epoch))
         
         #nom_iterator = iter(nom_loader)
         b_iterator = iter(loader_b)
