@@ -19,6 +19,7 @@ class BatchContext:
         self.novelty_dataset = None
         self.query_indices = None
         self.top_1 = None
+        self.top_3 = None
         self.cases = None
         self.preds_is_nc = None
 
@@ -36,6 +37,7 @@ class BatchContext:
         self.novelty_dataset = None
         self.query_indices = None
         self.top_1 = None
+        self.top_3 = None
         self.cases = None
         self.preds_is_nc = None
 
@@ -225,6 +227,7 @@ class SupervisedNoveltyDetectionManager:
                 object_features.append(None)
 
         assert len(subject_features) == len(object_features) == len(verb_features)
+        assert len(self.models) > 0, "no supervised models"
 
         subject_nov_scores_s, verb_nov_scores_s, object_nov_scores_s = eval_supervised(subject_features, 
             verb_features, 
