@@ -57,8 +57,6 @@ class TopLevelApp:
         self.supervised_aucs = None
 
     def reset(self):
-        # print(f'\nResetting...\n')
-        
         self.post_red = False
         self.p_type_dist = torch.tensor([0.2, 0.2, 0.2, 0.2, 0.2])
         self.unsupervised_aucs = None
@@ -126,7 +124,7 @@ class TopLevelApp:
         p_ni = p_ni.cpu().float()
 
         # Merging top-3 SVOs
-        merged = self._build_merged_top3_SVOs(scg_preds, unsupervised_results['top3'], p_ni)
+        merged = self._merge_top3_SVOs(scg_preds, unsupervised_results['top3'], p_ni)
         top_1 = [m[0][0] for m in merged]
         # top_1_probs = [m[0][1] for m in merged]
         top_3 = [[e[0] for e in m] for m in merged]
@@ -250,7 +248,7 @@ class TopLevelApp:
             self.supervised_aucs = self.snd_manager.get_svo_detectors_auc()
             self.unsupervised_aucs = self.und_manager.get_svo_detectors_auc()
 
-    def _build_merged_top3_SVOs(self, top3_non_novel, top3_novel, p_ni):
+    def _merge_top3_SVOs(self, top3_non_novel, top3_novel, p_ni):
         """
         Merges top-3 non-novel SVOs and top-3 novel SVOs
     
@@ -421,8 +419,16 @@ class TopLevelApp:
         scores = [np.mean(order_statistics[k:m + 1]) for k, m in zip(ks, ms)]
         max_score = np.max(scores)
 
-        red_light_score = min(max_score * 0.5 / self.threshold, 1.0)
-        self.post_red = red_light_score > 0.5
+        self.post_red = max_score > self.threshold
+
+        red_light_score = 0
+        if max_score < self.threshold:
+            red_light_score = max_score * 0.5 / self.threshold
+        else:
+            a = np.array([[self.threshold, 1], [1, 1]])
+            b = np.array([0.5, 1])
+            x = np.linalg.solve(a, b)
+            red_light_score = max_score * x[0] + x[1]
 
         return red_light_score
 
