@@ -6,13 +6,9 @@ from toplevel import TopLevelApp
 
 
 class OSUInterface:
-    def __init__(self, scg_ensemble, num_subject_classes, num_object_classes, num_verb_classes, 
-        data_root, pretrained_unsupervised_novelty_path, cusum_thresh):
+    def __init__(self, scg_ensemble, data_root, pretrained_unsupervised_novelty_path, cusum_thresh):
 
         self.app = TopLevelApp(ensemble_path=scg_ensemble, 
-            num_subject_classes=num_subject_classes, 
-            num_object_classes=num_object_classes, 
-            num_verb_classes=num_verb_classes, 
             data_root=data_root, 
             pretrained_unsupervised_module_path=pretrained_unsupervised_novelty_path,
             th=cusum_thresh)

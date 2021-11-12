@@ -3,15 +3,11 @@ from session.bbn_session import BBNSession
 from session.osu_interface import OSUInterface
 from argparse import ArgumentParser
 
-
 if __name__ == "__main__":
     p = ArgumentParser()
     p.add_argument('--data-root', default='Custom')
     p.add_argument('--scg-ensemble', default='./ensemble/pretrained')
     p.add_argument('--pretrained-unsupervised-novelty-path', default='./unsupervisednoveltydetection/unsupervised_novelty_detection_module.pth')
-    p.add_argument('--num-subj-cls', default=5, type=int)
-    p.add_argument('--num-obj-cls', default=13, type=int)
-    p.add_argument('--num-action-cls', default=8, type=int)
     p.add_argument('--cal-csv-path', default='./dataset_v3/dataset_v3_2_cal.csv')
     p.add_argument('--val-csv-path', default='./dataset_v3/dataset_v3_2_val_modified.csv')
     p.add_argument('--api_stubs', action='store_true')
@@ -32,9 +28,6 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = False
 
     osu_int = OSUInterface(scg_ensemble=args.scg_ensemble, 
-        num_subject_classes=args.num_subj_cls, 
-        num_object_classes=args.num_obj_cls, 
-        num_verb_classes=args.num_action_cls, 
         data_root=args.data_root, 
         pretrained_unsupervised_novelty_path=args.pretrained_unsupervised_novelty_path, 
         cusum_thresh=args.detection_threshold)
@@ -47,3 +40,6 @@ if __name__ == "__main__":
         args.api_stubs, osu_int)
 
     test_session.run(args.detector_seed)
+
+
+

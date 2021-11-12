@@ -14,16 +14,15 @@ from adaptation.query_formulation import select_queries
 
 
 class TopLevelApp:
-    def __init__(self, ensemble_path, num_subject_classes, num_object_classes, num_verb_classes, 
-        data_root, pretrained_unsupervised_module_path, th):
+    def __init__(self, ensemble_path, data_root, pretrained_unsupervised_module_path, th):
 
         if not pathlib.Path(ensemble_path).exists():
             raise Exception(f'pretrained SCG models were not found in path {ensemble_path}')
 
         self.data_root = data_root
-        self.num_subject_classes = num_subject_classes
-        self.num_object_classes = num_object_classes
-        self.num_verb_classes = num_verb_classes
+        self.num_subject_classes = 5
+        self.num_object_classes = 13
+        self.num_verb_classes = 8
 
         self.NUM_APP_FEATURES = 256 * 7 * 7
         self.NUM_VERB_FEATURES = self.NUM_APP_FEATURES + 2 * 36
@@ -38,13 +37,13 @@ class TopLevelApp:
         self.all_top_1_svo = []
         self.all_top_3_svo = []
 
-        self.scg_ensemble = Ensemble(ensemble_path, num_object_classes, num_subject_classes, 
-            num_verb_classes, data_root=None, cal_csv_path=None, val_csv_path=None)
+        self.scg_ensemble = Ensemble(ensemble_path, self.num_object_classes, self.num_subject_classes, 
+            self.num_verb_classes, data_root=None, cal_csv_path=None, val_csv_path=None)
 
         self.und_manager = UnsupervisedNoveltyDetectionManager(pretrained_unsupervised_module_path, 
-            num_subject_classes, 
-            num_object_classes, 
-            num_verb_classes, 
+            self.num_subject_classes, 
+            self.num_object_classes, 
+            self.num_verb_classes, 
             self.NUM_APP_FEATURES, 
             self.NUM_VERB_FEATURES)
 
@@ -61,6 +60,13 @@ class TopLevelApp:
         self.p_type_dist = torch.tensor([0.2, 0.2, 0.2, 0.2, 0.2])
         self.unsupervised_aucs = None
         self.supervised_aucs = None
+        self.all_query_masks = torch.tensor([])
+        self.all_feedback = torch.tensor([])
+        self.all_cases = torch.tensor([])
+        self.all_p_ni = torch.tensor([])
+        self.all_nc = torch.tensor([])
+        self.all_top_1_svo = []
+        self.all_top_3_svo = []
 
         self.und_manager.reset()
         self.snd_manager.reset()
