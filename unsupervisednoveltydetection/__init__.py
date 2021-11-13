@@ -304,7 +304,7 @@ class UnsupervisedNoveltyDetector:
         return example_predictions
 
     def _case_3(self, p_type):
-        return [((-1, -1, torch.tensor(0, dtype = torch.long)), torch.tensor(1.0))]
+        return [((-1, 0, torch.tensor(0, dtype = torch.long)), torch.tensor(1.0))]
 
     def __call__(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type):
         predictions = []
