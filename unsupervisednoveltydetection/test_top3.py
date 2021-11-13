@@ -53,7 +53,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             for prediction in top3:
                 self.assertTrue(prediction[1] <= previous_confidence)
                 previous_confidence = prediction[1]
-                self.assertTrue(prediction[0][0] is not None and prediction[0][1] is not None and prediction[0][2] is not None)
+                self.assertTrue(prediction[0][0] != -1 and prediction[0][1] != -1 and prediction[0][2] != -1)
                 self.assertTrue(prediction[0][0] == 0 and prediction[0][1] != 0 and prediction[0][2] != 0)
 
     def test_case_1_t2(self):
@@ -82,7 +82,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             for prediction in top3:
                 self.assertTrue(prediction[1] <= previous_confidence)
                 previous_confidence = prediction[1]
-                self.assertTrue(prediction[0][0] is not None and prediction[0][1] is not None and prediction[0][2] is not None)
+                self.assertTrue(prediction[0][0] != -1 and prediction[0][1] != -1 and prediction[0][2] != -1)
                 self.assertTrue(prediction[0][0] != 0 and prediction[0][1] == 0 and prediction[0][2] != 0)
 
     def test_case_1_t3(self):
@@ -111,7 +111,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             for prediction in top3:
                 self.assertTrue(prediction[1] <= previous_confidence)
                 previous_confidence = prediction[1]
-                self.assertTrue(prediction[0][0] is not None and prediction[0][1] is not None and prediction[0][2] is not None)
+                self.assertTrue(prediction[0][0] != -1 and prediction[0][1] != -1 and prediction[0][2] != -1)
                 self.assertTrue(prediction[0][0] != 0 and prediction[0][1] != 0 and prediction[0][2] == 0)
 
     def test_case_1_t4(self):
@@ -140,7 +140,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             for prediction in top3:
                 self.assertTrue(prediction[1] <= previous_confidence)
                 previous_confidence = prediction[1]
-                self.assertTrue(prediction[0][0] is not None and prediction[0][1] is not None and prediction[0][2] is not None)
+                self.assertTrue(prediction[0][0] != -1 and prediction[0][1] != -1 and prediction[0][2] != -1)
                 self.assertTrue(prediction[0][0] != 0 and prediction[0][1] != 0 and prediction[0][2] != 0)
     
     def test_case_1_not_t4(self):
@@ -169,7 +169,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             for prediction in top3:
                 self.assertTrue(prediction[1] <= previous_confidence)
                 previous_confidence = prediction[1]
-                self.assertTrue(prediction[0][0] is not None and prediction[0][1] is not None and prediction[0][2] is not None)
+                self.assertTrue(prediction[0][0] != -1 and prediction[0][1] != -1 and prediction[0][2] != -1)
                 self.assertTrue(prediction[0][0] == 0 or prediction[0][1] == 0 or prediction[0][2] == 0)
         
 if __name__ == '__main__':

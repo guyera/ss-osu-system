@@ -285,7 +285,7 @@ class UnsupervisedNoveltyDetector:
                 verb_index = flattened_index
                 
                 # Shift labels forward, to allow for anomaly = 0
-                example_predictions.append(((0, verb_index + 1, None), sorted_t1_joint_probs[0]))
+                example_predictions.append(((0, verb_index + 1, -1), sorted_t1_joint_probs[0]))
                 
                 sorted_t1_joint_probs = sorted_t1_joint_probs[1:]
                 sorted_t1_joint_prob_indices = sorted_t1_joint_prob_indices[1:]
@@ -296,7 +296,7 @@ class UnsupervisedNoveltyDetector:
                 subject_index = flattened_index
                 
                 # Shift labels forward, to allow for anomaly = 0
-                example_predictions.append(((subject_index + 1, 0, None), sorted_t2_5_joint_probs[0]))
+                example_predictions.append(((subject_index + 1, 0, -1), sorted_t2_5_joint_probs[0]))
                 
                 sorted_t2_5_joint_probs = sorted_t2_5_joint_probs[1:]
                 sorted_t2_5_joint_prob_indices = sorted_t2_5_joint_prob_indices[1:]
@@ -304,7 +304,7 @@ class UnsupervisedNoveltyDetector:
         return example_predictions
 
     def _case_3(self, p_type):
-        return [((None, None, torch.tensor(0, dtype = torch.long)), torch.tensor(1.0))]
+        return [((-1, -1, torch.tensor(0, dtype = torch.long)), torch.tensor(1.0))]
 
     def __call__(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type):
         predictions = []

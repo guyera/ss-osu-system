@@ -166,6 +166,7 @@ def main():
 
     # Hard-code held-out novel tuples
     
+    '''
     # Cat wearing tie, cat wearing bag, cat catching frisbee, cat riding bike,
     # horse wearing tie, horse pulling carriage
     ood_subject_tuples = [
@@ -193,6 +194,24 @@ def main():
         (2, 1, 1),
         (1, 1, 1),
         (4, 1, 8),
+        (4, 6, 8)
+    ]
+    '''
+
+    # horse wearing tie, horse pulling carriage
+    ood_subject_tuples = [
+        (4, 2, 4),
+        (4, 5, 7)
+    ]
+    
+    # horse pulling hay, person pulling hay
+    ood_object_tuples = [
+        (4, 5, 8),
+        (1, 5, 8)
+    ]
+    
+    # horse eating hay
+    ood_verb_tuples = [
         (4, 6, 8)
     ]
     
@@ -520,13 +539,13 @@ def main():
     ood_subject_scores = []
     ood_object_scores = []
     ood_verb_scores = []
-    for features, targets in super_ood_subject_loader:
+    for features, targets in ood_subject_loader:
         features = features.to(args.device)
         ood_subject_scores.append(classifier.score_subject(features))
-    for features, _ in super_ood_object_loader:
+    for features, _ in ood_object_loader:
         features = features.to(args.device)
         ood_object_scores.append(classifier.score_object(features))
-    for features, _ in super_ood_verb_loader:
+    for features, _ in ood_verb_loader:
         features = features.to(args.device)
         ood_verb_scores.append(classifier.score_verb(features))
     ood_subject_scores = torch.cat(ood_subject_scores, dim = 0)
@@ -537,13 +556,13 @@ def main():
     super_id_subject_scores = []
     super_id_object_scores = []
     super_id_verb_scores = []
-    for features, _ in id_subject_testing_loader:
+    for features, _ in super_id_subject_testing_loader:
         features = features.to(args.device)
         super_id_subject_scores.append(super_classifier.score_subject(features))
-    for features, _ in id_object_testing_loader:
+    for features, _ in super_id_object_testing_loader:
         features = features.to(args.device)
         super_id_object_scores.append(super_classifier.score_object(features))
-    for features, _ in id_verb_testing_loader:
+    for features, _ in super_id_verb_testing_loader:
         features = features.to(args.device)
         super_id_verb_scores.append(super_classifier.score_verb(features))
     super_id_subject_scores = torch.cat(super_id_subject_scores, dim = 0)
@@ -832,6 +851,24 @@ def main():
     super_verb_trues = torch.cat((torch.zeros_like(super_id_verb_scores), torch.ones_like(super_ood_verb_scores)), dim = 0)
     super_verb_auc = sklearn.metrics.roc_auc_score(super_verb_trues.detach().cpu().numpy(), super_verb_scores.detach().cpu().numpy())
     print(f'Super Verb AUC: {super_verb_auc}')
+
+    # Construct score contexts using the super id scores and the adjusted
+    # ood scores
+    subject_score_context = noveltydetection.utils.ScoreContext(
+        noveltydetection.utils.ScoreContext.Source.UNSUPERVISED,
+        nominal_scores = super_id_subject_scores,
+        novel_scores = adjusted_ood_subject_scores
+    )
+    object_score_context = noveltydetection.utils.ScoreContext(
+        noveltydetection.utils.ScoreContext.Source.UNSUPERVISED,
+        nominal_scores = super_id_object_scores,
+        novel_scores = adjusted_ood_object_scores
+    )
+    verb_score_context = noveltydetection.utils.ScoreContext(
+        noveltydetection.utils.ScoreContext.Source.UNSUPERVISED,
+        nominal_scores = super_id_verb_scores,
+        novel_scores = adjusted_ood_verb_scores
+    )
 
 if __name__ == '__main__':
     main()
