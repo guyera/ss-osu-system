@@ -141,10 +141,11 @@ class UnsupervisedNoveltyDetector:
         
         type_normalizer = p_type[0] + p_type[1] + p_type[2] + p_type[3]
         
-        t1_joint_probs /= type_normalizer
-        t2_joint_probs /= type_normalizer
-        t3_joint_probs /= type_normalizer
-        t4_joint_probs /= type_normalizer
+        if type_normalizer > 0:
+            t1_joint_probs /= type_normalizer
+            t2_joint_probs /= type_normalizer
+            t3_joint_probs /= type_normalizer
+            t4_joint_probs /= type_normalizer
         
         flattened_t1_joint_probs = torch.flatten(t1_joint_probs)
         sorted_t1_joint_probs, sorted_t1_joint_prob_indices = torch.sort(flattened_t1_joint_probs, descending = True)
@@ -268,8 +269,9 @@ class UnsupervisedNoveltyDetector:
         
         type_normalizer = p_type[0] + p_type[1] + p_type[4]
         
-        t1_joint_probs /= type_normalizer
-        t2_5_joint_probs /= type_normalizer
+        if type_normalizer > 0:
+            t1_joint_probs /= type_normalizer
+            t2_5_joint_probs /= type_normalizer
         
         flattened_t1_joint_probs = torch.flatten(t1_joint_probs)
         sorted_t1_joint_probs, sorted_t1_joint_prob_indices = torch.sort(flattened_t1_joint_probs, descending = True)
