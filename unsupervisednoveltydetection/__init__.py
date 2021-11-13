@@ -306,6 +306,72 @@ class UnsupervisedNoveltyDetector:
     def _case_3(self, p_type):
         return [((-1, 0, torch.tensor(0, dtype = torch.long)), torch.tensor(1.0))]
 
+    def _known_case_1(self, subject_probs, object_probs, verb_probs, k):
+        joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
+        
+        flattened_joint_probs = torch.flatten(joint_probs)
+        sorted_joint_probs, sorted_joint_prob_indices = torch.sort(flattened_joint_probs, descending = True)
+
+        # TODO tensorize
+        example_predictions = []
+        for i in range(k):
+            flattened_index = int(sorted_joint_prob_indices[i].item())
+            
+            subject_skip_interval = verb_probs.shape[0] * object_probs.shape[0]
+            verb_skip_interval = object_probs.shape[0]
+            
+            subject_index = flattened_index // subject_skip_interval
+            subject_skip_total = subject_index * subject_skip_interval
+            flattened_index -= subject_skip_total
+            
+            verb_index = flattened_index // verb_skip_interval
+            verb_skip_total = verb_index * verb_skip_interval
+            flattened_index -= verb_skip_total
+            
+            object_index = flattened_index
+            
+            # Shift labels forward, to allow for anomaly = 0
+            example_predictions.append(((subject_index + 1, verb_index + 1, object_index + 1), sorted_joint_probs[i]))
+        
+        return example_predictions
+
+    def _known_case_2(self, subject_probs, verb_probs, k):
+        joint_probs = subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
+        
+        flattened_joint_probs = torch.flatten(joint_probs)
+        sorted_joint_probs, sorted_joint_prob_indices = torch.sort(flattened_joint_probs, descending = True)
+        
+        # TODO tensorize
+        example_predictions = []
+        for i in range(k):
+            flattened_index = int(sorted_joint_prob_indices[i].item())
+            
+            subject_skip_interval = verb_probs.shape[0]
+            
+            subject_index = flattened_index // subject_skip_interval
+            subject_skip_total = subject_index * subject_skip_interval
+            flattened_index -= subject_skip_total
+
+            verb_index = flattened_index
+            
+            # Shift labels forward, to allow for anomaly = 0
+            example_predictions.append(((subject_index + 1, verb_index + 1, -1), sorted_joint_probs[i]))
+        
+        return example_predictions
+    
+    def _known_case_3(self, object_probs, k):
+        sorted_object_probs, sorted_object_prob_indices = torch.sort(object_probs, descending = True)
+
+        # TODO tensorize
+        example_predictions = []
+        for i in range(k):
+            object_index = int(sorted_object_prob_indices[i].item())
+            
+            # Shift labels forward, to allow for anomaly = 0
+            example_predictions.append(((-1, 0, object_index + 1), sorted_object_probs[i]))
+        
+        return example_predictions
+
     def __call__(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type):
         predictions = []
         results = {}
@@ -393,6 +459,54 @@ class UnsupervisedNoveltyDetector:
         results['top3'] = predictions
 
         return results
+
+    def known_top3(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features):
+        predictions = []
+        for idx in range(len(spatial_features)):
+            example_spatial_features = spatial_features[idx]
+            example_subject_appearance_features = subject_appearance_features[idx]
+            example_object_appearance_features = object_appearance_features[idx]
+            example_verb_appearance_features = verb_appearance_features[idx]
+            
+            if example_subject_appearance_features is not None:
+                example_subject_features = torch.flatten(example_subject_appearance_features).to(self.device)
+
+                subject_logits = self.classifier.predict_subject(example_subject_features.unsqueeze(0))
+
+                subject_probs = self.confidence_calibrator.calibrate_subject(subject_logits)
+                subject_probs = subject_probs.squeeze(0)
+
+            if example_object_appearance_features is not None:
+                example_object_features = torch.flatten(example_object_appearance_features).to(self.device)
+                
+                object_logits = self.classifier.predict_object(example_object_features.unsqueeze(0))
+                
+                object_probs = self.confidence_calibrator.calibrate_object(object_logits)
+                object_probs = object_probs.squeeze(0)
+            
+            if example_verb_appearance_features is not None:
+                example_verb_features = torch.cat((torch.flatten(example_spatial_features), torch.flatten(example_verb_appearance_features))).to(self.device)
+                
+                verb_logits = self.classifier.predict_verb(example_verb_features.unsqueeze(0))
+                
+                verb_probs = self.confidence_calibrator.calibrate_verb(verb_logits)
+                verb_probs = verb_probs.squeeze(0)
+            
+            if example_subject_appearance_features is not None and example_object_appearance_features is not None:
+                # Case 1, S/V/O
+                example_predictions = self._known_case_1(subject_probs, object_probs, verb_probs, 3)
+            elif example_subject_appearance_features is not None and example_object_appearance_features is None:
+                # Case 2, S/V/None
+                example_predictions = self._known_case_2(subject_probs, verb_probs, 3)
+            elif example_subject_appearance_features is None and example_object_appearance_features is not None:
+                # Case 3, None/None/O
+                example_predictions = self._known_case_3(object_probs, 3)
+            else:
+                return NotImplemented
+            
+            predictions.append(example_predictions)
+
+        return predictions
 
     def score_subject(self, subject_appearance_features):
         novelty_scores = []
