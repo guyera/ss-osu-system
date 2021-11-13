@@ -132,6 +132,8 @@ class UnsupervisedNoveltyDetectionManager:
             results = self.detector(all_spatial_features, all_subject_appearance_features, 
                 all_verb_appearance_features, all_object_appearance_features, p_type_dist)
 
+        assert not any([any([torch.isnan(p[1]).item() for p in preds]) for preds in results['top3']]), "NaNs in unsupervied detector's top-3"
+                
         for i, p in enumerate(results['top3']):
             new_p = []
             for j in range(3):
@@ -185,6 +187,10 @@ class SupervisedNoveltyDetectionManager:
         self.latest_AUC_scores = None
 
     def train(self):
+        assert self.subject_features is not None, "subject_features was None"
+        assert self.verb_features is not None, "verb_features was None"
+        assert self.object_features is not None, "object_features was None"
+
         aucs, novelty_scores, models = train_supervised_models(self.subject_features, 
             self.verb_features, 
             self.object_features, 

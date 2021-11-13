@@ -54,7 +54,7 @@ class TopLevelApp:
 
         self.unsupervised_aucs = None
         self.supervised_aucs = None
-
+        
     def reset(self):
         self.post_red = False
         self.p_type_dist = torch.tensor([0.2, 0.2, 0.2, 0.2, 0.2])
@@ -132,7 +132,6 @@ class TopLevelApp:
         # Merging top-3 SVOs
         merged = self._merge_top3_SVOs(scg_preds, unsupervised_results['top3'], p_ni)
         top_1 = [m[0][0] for m in merged]
-        # top_1_probs = [m[0][1] for m in merged]
         top_3 = [[e[0] for e in m] for m in merged]
         top_3_probs = [[e[1] for e in m] for m in merged]
 
@@ -158,9 +157,6 @@ class TopLevelApp:
             # decide which novelty detector to use
             self.supervised_aucs = self.snd_manager.get_svo_detectors_auc()
             self.unsupervised_aucs = self.und_manager.get_svo_detectors_auc()
-
-        # print(f'\nP_ni: {p_ni}\n')
-        # print(f'red_light_score: {red_light_score}\n')
 
         self.batch_context.p_ni = p_ni
         self.batch_context.subject_novelty_scores_u = subject_novelty_scores_u
@@ -425,8 +421,6 @@ class TopLevelApp:
         scores = [np.mean(order_statistics[k:m + 1]) for k, m in zip(ks, ms)]
         max_score = np.max(scores)
 
-        self.post_red = max_score > self.threshold
-
         red_light_score = 0
         if max_score < self.threshold:
             red_light_score = max_score * 0.5 / self.threshold
@@ -435,6 +429,9 @@ class TopLevelApp:
             b = np.array([0.5, 1])
             x = np.linalg.solve(a, b)
             red_light_score = max_score * x[0] + x[1]
+            
+        if not self.post_red:
+            self.post_red = red_light_score > 0.5
 
         return red_light_score
 
