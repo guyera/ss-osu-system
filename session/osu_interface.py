@@ -68,11 +68,11 @@ class OSUInterface:
         
         ret = self.app.run(self.batch_csv_path)
         p_ni = ret['p_ni']
-        red_light_score = ret['red_light_score']
+        red_light_scores = ret['red_light_score']
         top_3 = ret['svo']
         top_3_probs = ret['svo_probs']
 
-        novelty_lines = [f'{img}, {red_light_score:e}, {p:e}' for img, p in zip(df['new_image_path'].to_list(), p_ni)]
+        novelty_lines = [f'{img}, {rs:e}, {p:e}' for img, rs, p in zip(df['new_image_path'].to_list(), red_light_scores, p_ni)]
         novelty_preds = '\n'.join(novelty_lines)
 
         top_3_str = [','.join([f'{(svo[0], svo[1], svo[2], p)}' for svo, p in zip(svos, ps)]) for svos, ps in zip(top_3, top_3_probs)]

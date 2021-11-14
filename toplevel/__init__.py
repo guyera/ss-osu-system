@@ -75,10 +75,6 @@ class TopLevelApp:
         if csv_path is None:
             raise Exception('path to csv was None')
 
-        red_light_score = -1
-        p_ni = None
-        top_1 = None
-
         self.batch_context.reset()
 
         # Initializing data loaders
@@ -137,23 +133,20 @@ class TopLevelApp:
 
         batch_preds_is_nc = self._is_novel_combination(top_1)
 
+        # cache previous all_p_ni
+        all_p_ni_np = self.all_p_ni.numpy()
+        
         if not self.post_red:
             batch_query_mask = torch.zeros(N, dtype=torch.long)
             batch_feedback_mask = torch.zeros(N, dtype=torch.long)
 
-            # top_1, p_ni, batch_cases, feedback_mask, query_mask, preds_is_nc
-            self._accumulate(top_1, top_3, p_ni, batch_cases, batch_feedback_mask, batch_query_mask, batch_preds_is_nc)
+            self._accumulate(top_1, top_3, p_ni, batch_cases, batch_feedback_mask, batch_query_mask, 
+                batch_preds_is_nc)
 
             # novelty type inference
             if not torch.isclose(torch.max(self.p_type_dist), torch.ones(1))[0]:
                 self._type_inference()
-
-            # cusum
-            red_light_score = self._cusum()
         else:
-            # red_light_score = 1.0
-            red_light_score = self._cusum()
-
             # decide which novelty detector to use
             self.supervised_aucs = self.snd_manager.get_svo_detectors_auc()
             self.unsupervised_aucs = self.und_manager.get_svo_detectors_auc()
@@ -171,11 +164,19 @@ class TopLevelApp:
         self.batch_context.top_3 = top_3
         self.batch_context.cases = batch_cases
         self.batch_context.preds_is_nc = batch_preds_is_nc
+        
+        # cusum
+        p_ni = p_ni.numpy()
+        red_light_scores = [self._cusum(np.concatenate([all_p_ni_np, p_ni[:i]])) for i in range(1, p_ni.shape[0] + 1)]
+        assert len(red_light_scores) == p_ni.shape[0]
 
+        if not self.post_red:
+            self.post_red = any([score > 0.5 for score in red_light_scores])
+            
         # dictionary containing return values
         ret = {}
-        ret['p_ni'] = p_ni.numpy().tolist()
-        ret['red_light_score'] = red_light_score
+        ret['p_ni'] = p_ni.tolist()
+        ret['red_light_score'] = red_light_scores
         ret['svo'] = top_3
         ret['svo_probs'] = top_3_probs
 
@@ -402,14 +403,12 @@ class TopLevelApp:
             subject_labels, verb_labels, object_labels,  \
             subject_novelty_start_offset, verb_novelty_start_offset, object_novelty_start_offset
 
-    def _cusum(self):
-        t = self.all_p_ni.shape[0]
+    def _cusum(self, p_nis):
+        t = p_nis.shape[0]
 
         if t < 2:
-            self.post_red = False
             return 0.0
 
-        p_nis = self.all_p_ni.numpy()
         p_nis = p_nis[::-1]
 
         alphas = np.cumsum(p_nis, 0)[:-1]
@@ -430,9 +429,6 @@ class TopLevelApp:
             x = np.linalg.solve(a, b)
             red_light_score = max_score * x[0] + x[1]
             
-        if not self.post_red:
-            self.post_red = red_light_score > 0.5
-
         return red_light_score
 
     def _get_data_loaders(self, csv_path):
