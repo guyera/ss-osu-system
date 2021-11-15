@@ -183,8 +183,8 @@ def main():
         S_a = S_a.tolist()
         V_a = V_a.tolist()
         O_a = O_a.tolist()
-        scores = adaptation.supervised_anomaly_detectors.eval_supervised(S_X,V_X,O_X,S_a,V_a,O_a,models)
-        
+        scores = adaptation.supervised_anomaly_detectors.eval_supervised(S_X,V_X,O_X,S_a,V_a,O_a,models)      
+
         print("For anomaly split {}: mean_AUC is {}\nand unsupervised AUC at fpr=0.25 is {}".format(i, mean_AUC, (unsupervised_s_auc, unsupervised_v_auc, unsupervised_o_auc)))
 
         with open('supervised_test_out.txt', 'a') as f:

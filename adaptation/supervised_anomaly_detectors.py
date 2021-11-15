@@ -27,7 +27,7 @@ import sys
 import math
 #from .MLP_Fusion import MLP_Fusion
 #from noveltydetection.utils import compute_partial_auc
-from .MLP_Fusion import MLP_Fusion
+from MLP_Fusion import MLP_Fusion
 import noveltydetectionfeatures
 #import matplotlib.pyplot as plt
 
@@ -59,12 +59,14 @@ def get_split_dataloaders(data):
     train_idxs = [i for i in range(num_examples) if i not in val_idxs]
 
     train_X_i = X[train_idxs]
-    train_a_i = anom_scores[train_idxs]
-    train_y_i = y[train_idxs]
+    train_a_i = torch.flatten(anom_scores)[train_idxs]
+    train_y_i = torch.flatten(y)[train_idxs]
 
     #train_nom_idxs  = list(torch.nonzero(torch.flatten(torch.tensor(train_y_i).clone().detach())))
     train_nom_idxs  = list(torch.nonzero(torch.flatten(train_y_i.clone().detach())))
     train_anom_idxs = [i for i in range(len(train_y_i)) if i not in train_nom_idxs]       
+
+    # squeeze here
 
     train_y_i_nom = train_y_i[train_nom_idxs]
     train_y_i_anom = train_y_i[train_anom_idxs]
@@ -74,8 +76,8 @@ def get_split_dataloaders(data):
     train_a_i_anom = train_a_i[train_anom_idxs]
     
     val_X_i = X[val_idxs]
-    val_a_i = anom_scores[val_idxs]
-    val_y_i = y[val_idxs]       
+    val_a_i = torch.flatten(anom_scores)[val_idxs]
+    val_y_i = torch.flatten(y)[val_idxs]       
 
     #val_nom_idxs  = list(torch.nonzero(torch.flatten(torch.tensor(val_y_i).clone().detach())))
     val_nom_idxs  = list(torch.nonzero(torch.flatten(val_y_i.clone().detach())))
@@ -88,8 +90,10 @@ def get_split_dataloaders(data):
     val_a_i_nom = val_a_i[val_nom_idxs]
     val_a_i_anom = val_a_i[val_anom_idxs]
 
-    # Construct the datasets and dataloaders
-    train_Xa_i_nom = torch.hstack((train_X_i_nom,train_a_i_nom))
+    # unsqueeze here
+
+    # Construct the datasets and DataLoaders
+    train_Xa_i_nom = torch.hstack((train_X_i_nom,torch.unsqueeze(train_a_i_nom,1)))
     train_dataset_nom = torch.utils.data.TensorDataset(train_Xa_i_nom, train_y_i_nom)
     train_dataloader_nom = torch.utils.data.DataLoader(
         dataset=train_dataset_nom,
@@ -98,7 +102,7 @@ def get_split_dataloaders(data):
         pin_memory=False
     )
     
-    train_Xa_i_anom = torch.hstack((train_X_i_anom,train_a_i_anom))
+    train_Xa_i_anom = torch.hstack((train_X_i_anom,torch.unsqueeze(train_a_i_anom,1)))
     train_dataset_anom = torch.utils.data.TensorDataset(train_Xa_i_anom,train_y_i_anom)
     train_dataloader_anom = torch.utils.data.DataLoader(
         dataset=train_dataset_anom,
@@ -106,8 +110,8 @@ def get_split_dataloaders(data):
         num_workers=num_workers, 
         pin_memory=False
     )
-        
-    val_Xa_i_nom = torch.hstack((val_X_i_nom,val_a_i_nom))
+       
+    val_Xa_i_nom = torch.hstack((val_X_i_nom,torch.unsqueeze(val_a_i_nom,1)))
     val_dataset_nom = torch.utils.data.TensorDataset(val_Xa_i_nom,val_y_i_nom)
     val_dataloader_nom = torch.utils.data.DataLoader(
         dataset=val_dataset_nom,
@@ -116,7 +120,7 @@ def get_split_dataloaders(data):
         pin_memory=False
     )
 
-    val_Xa_i_anom = torch.hstack((val_X_i_anom,val_a_i_anom))
+    val_Xa_i_anom = torch.hstack((val_X_i_anom,torch.unsqueeze(val_a_i_anom,1)))
     val_dataset_anom = torch.utils.data.TensorDataset(val_Xa_i_anom,val_y_i_anom)
     val_dataloader_anom = torch.utils.data.DataLoader(
         dataset=val_dataset_anom,
@@ -125,7 +129,7 @@ def get_split_dataloaders(data):
         pin_memory=False
     )
 
-    val_Xa_i = torch.hstack((val_X_i, val_a_i))
+    val_Xa_i = torch.hstack((val_X_i,torch.unsqueeze(val_a_i,1)))
     val_dataset = torch.utils.data.TensorDataset(val_Xa_i, val_y_i)
     val_dataloader = torch.utils.data.DataLoader(
         dataset=val_dataset,
@@ -192,7 +196,7 @@ def train(model, nom_loader, anom_loader, criterion, optimizer, config):
     example_ct = 0   
     batch_ct   = 0 
 
-    #progress = tqdm(                                                                                                                     
+    #progress = tqdm( 
     #    total = epochs,
     #    desc = 'Training classifier',
     #    leave = False
@@ -517,7 +521,7 @@ def eval_supervised_ensemble(models, X, a):
     #a.to(device)
 
     # This will be a list of tensors
-    X = [feature_vec.tolist() for feature_vec in X]
+    X = [list(feature_vec) for feature_vec in X]
     X = torch.tensor(X)
     #X.to(device)
 
