@@ -386,6 +386,9 @@ def train_supervised_model(X, anom_scores, y):
 
     num_folds = 5
     num_examples = len(X)
+    num_folds = num_examples if num_examples < num_folds else num_folds
+    if num_folds == 0:
+        return 0.5, torch.empty(0, 1, device = device), []
     num_features = len(X[0])
     num_workers = 1
     img_batch_size= 64
