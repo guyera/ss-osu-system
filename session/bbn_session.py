@@ -6,6 +6,8 @@ from argparse import ArgumentParser
 import requests
 from seaborn.distributions import ecdfplot
 from session import api_stubs
+import itertools
+import numpy as np
 
 
 class BBNSession:
@@ -41,6 +43,22 @@ class BBNSession:
         self.history = None  # TestHistory for current test
         self.api_stubs = api_stubs_flag
         self.osu_stubs = osu_interface
+        # These are also defined in toplevel
+        self.num_subject_classes = 5
+        self.num_object_classes = 13
+        self.num_verb_classes = 8
+
+        # Turn this to True to get readable (S,O,V) triples for our top-3 in classification output.
+        # Default is to get the 945 floats that UMD is requesting. 
+        self.probs_debug_format = False
+        self.triple_list = list(itertools.product(
+            np.arange(-1, self.num_subject_classes + 1),
+            np.arange(0, self.num_verb_classes + 1),
+            np.arange(-1, self.num_object_classes + 1)))
+        self.triple_list_count = len(self.triple_list)
+        self.triple_dict = {}
+        for i, triple in enumerate(self.triple_list):
+            self.triple_dict[triple] = i
 
         if not os.path.exists(self.results_directory):
             os.makedirs(self.results_directory)
@@ -115,9 +133,39 @@ class BBNSession:
             
             return [(id, val) for (id, val) in zip(returned_ids, returned_answers)]
 
+    def force_to_missing(self, s, v, o, missing_s, missing_o, free_s, free_v, free_o):
+        """Force our answer to be consistent with missing_s and missing_o"""
+        ## Use the free_s, _v, _o vars to ensure that our three new forced answers are distinct.
+        if missing_s:
+            # S and V must be missing
+            s = -1
+            v = 0
+            # O must not be missing
+            if o == -1:
+                o = list(free_o)[0]
+                free_o.remove(o)
+        elif missing_o:
+            # O must be missing
+            o = -1
+            # S must not be missing
+            if s == -1:
+                s = list(free_s)[0]
+                free_s.remove(s)
+        else:
+            # neither S nor O can be missing
+            if s == -1:
+                s = list(free_s)[0]
+                free_s.remove(s)
+            if o == -1:
+                o = list(free_o)[0]
+                free_o.remove(o)
+        return s, v, o, free_s, free_v, free_o
+        
+
     def write_file_entries(self, filename, detection_file, classification_file, predicted_probs,
                            # red_light,
-                           red_light_score, image_novelty_score, round_id):  ##, top_layer):
+                           red_light_score, image_novelty_score,
+                           round_id, missing_s, missing_o):  ##, top_layer):
         # UMD lists the K+1 probability in position 0, ahead of the K known classes.
         # classification_probs = np.insert(
         #     predicted_probs, 0, 0.0)
@@ -131,10 +179,60 @@ class BBNSession:
         # self.history.add(filename, round_id, red_light, image_novelty_score, red_light_score,
         #                  classification_probs, top_layer)
 
+        if self.probs_debug_format:
+            output_probs = predicted_probs
+        else:
+            # TODO: pass missing_s and missing_o flags into this function
+            # and use them here to clean up bad values
+            output_vals = np.zeros(self.triple_list_count)
+            answers = ast.literal_eval(f'({predicted_probs})')
+            assert len(answers) == 3
+            free_s = set(range(1, self.num_subject_classes+1))
+            free_v = set(range(1, self.num_verb_classes+1))
+            free_o = set(range(1, self.num_object_classes+1))
+            for answer in answers:
+                s, v, o, prob = answer
+                free_s.discard(s)
+                free_v.discard(v)
+                free_o.discard(o)
+            output_triples = []
+            for answer in answers:
+                s, v, o, prob = answer
+                # for V, id 0 covers both missing and novel
+                if v == -1:
+                    v = 0
+                s, v, o, free_s, free_v, free_o = self.force_to_missing(s, v, o, missing_s, missing_o,
+                                                                        free_s, free_v, free_o)
+                triple = (s, v, o)
+                loop_count = 0
+                while triple in output_triples:
+                    # change one value randomly to avoid duplication
+                    loop_count += 1
+                    if loop_count > 3:
+                        raise Exception('Excessive looping to avoid duplicates')
+                    if s != -1:
+                        s = list(free_s)[0]
+                        free_s.remove(s)
+                    elif o != -1:
+                        o = list(free_o)[0]
+                        free_o.remove(o)
+                    else:
+                        raise Exception('One of S or O should not be missing.')
+                    triple = (s, v, o)
+                output_triples.append(triple)
+                output_vals[self.triple_dict[triple]] = prob
+            output_probs = ','.join([f'{val:e}' for val in output_vals])            
+        
         detection_file.write("%s,%e,%e\n" %
                              (filename, red_light_score, image_novelty_score))
         classification_file.write("%s,%s\n" %
-                                  (filename, predicted_probs))
+                                  (filename, output_probs))
+
+    def check_for_missing(self, image_line):
+        fields = image_line.split(',')
+        missing_s = fields[4] == '-1'
+        missing_o = fields[8] == '-1'
+        return missing_s, missing_o
 
     def run(self, detector_seed, test_ids=None, given_detection=False):
         if not test_ids:
@@ -222,6 +320,7 @@ class BBNSession:
                 if image_data == None:
                     print("==> No more rounds")
                     break
+
             else:
                 filenames_response = requests.get(
                     f"{self.url}/session/dataset?session_id={session_id}&test_id={test_id}&round_id={round_id}")
@@ -235,12 +334,28 @@ class BBNSession:
                 filenames = filenames_response.content.decode('utf-8').split('\n')
                 filenames = [x for x in filenames if x.strip("\n\t\"',.") != ""]
 
+                ## Lance
+                response_list = ast.literal_eval(filenames_response.content.decode('utf-8'))
+                image_lines = []
+                for image_data in response_list:
+                    image_path = image_data[0]
+                    bbox_info = ','.join(image_data[1])
+                    image_line = ','.join([image_path,'0', '0', bbox_info])
+                    image_lines.append(image_line)
+                image_data = '\n'.join(image_lines)
+                ## Lance
+
             detection_filename = os.path.join(
                 self.results_directory, "%s_%s_%s_detection.csv" % (session_id, test_id, round_id))
             detection_file = open(detection_filename, "w")
+            if round_id == 0:
+                detection_file.write('image_path,red_light_prob,per_image_prob\n')
             classification_filename = os.path.join(
                 self.results_directory, "%s_%s_%s_classification.csv" % (session_id, test_id, round_id))
             classification_file = open(classification_filename, "w")
+            if round_id == 0:
+                triple_labels = [f'{s}_{v}_{o}' for (s, v, o) in self.triple_list]
+                classification_file.write(f'image_path,{",".join(triple_labels)}\n')
 
             if self.osu_stubs:
                 filenames = []
@@ -248,7 +363,7 @@ class BBNSession:
                 novelty_lines = novelty_preds.splitlines()
                 svo_lines = svo_preds.splitlines()
                 
-                for (novelty_line, svo_line) in zip(novelty_lines, svo_lines):
+                for (novelty_line, svo_line, image_line) in zip(novelty_lines, svo_lines, image_lines):
                     (novelty_image_path, red_light_str, per_image_nov_str) = novelty_line.split(',')
                     (svo_image_path, svo_preds) = svo_line.split(',', 1)
                     assert novelty_image_path == svo_image_path
@@ -256,9 +371,11 @@ class BBNSession:
 
                     if float(red_light_str) > 0.5:
                         red_light_declared = True
-                    
+                        
+                    missing_s, missing_o = self.check_for_missing(image_line)
                     self.write_file_entries(novelty_image_path, detection_file, classification_file,
-                                            svo_preds, float(red_light_str), float(per_image_nov_str), round_id)
+                                            svo_preds, float(red_light_str), float(per_image_nov_str),
+                                            round_id, missing_s, missing_o)
             else:
                 pass
                 # In Phase 1, we processed images through our network in batches
