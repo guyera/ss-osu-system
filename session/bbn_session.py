@@ -185,7 +185,15 @@ class BBNSession:
             # TODO: pass missing_s and missing_o flags into this function
             # and use them here to clean up bad values
             output_vals = np.zeros(self.triple_list_count)
-            answers = ast.literal_eval(f'({predicted_probs})')
+            ## LAR
+            try:
+                predicted_probs = predicted_probs.replace('inf', '"inf"')
+                answers = ast.literal_eval(f'({predicted_probs})')
+            except ValueError:
+                print(f'Hit error on filename: {filename}')
+                print(f'predicted_probs: {predicted_probs}')
+                breakpoint()
+            ## LAR
             assert len(answers) == 3
             free_s = set(range(1, self.num_subject_classes+1))
             free_v = set(range(1, self.num_verb_classes+1))
@@ -198,6 +206,10 @@ class BBNSession:
             output_triples = []
             for answer in answers:
                 s, v, o, prob = answer
+                ## LAR
+                if prob == 'inf':
+                    prob = 0.0001
+                ## LAR
                 # for V, id 0 covers both missing and novel
                 if v == -1:
                     v = 0
@@ -274,7 +286,9 @@ class BBNSession:
 
         print(f"=> initialized session: {session_id}")
 
-        for test_id in test_ids:
+        #for test_id in test_ids:
+        ## LAR
+        for test_id in test_ids[-1:]:
             print(f"==> starting test: {test_id}")
             self.run_test(session_id, test_id, given_detection)
             # self.agent.reset()
@@ -316,10 +330,16 @@ class BBNSession:
 
             if self.api_stubs:
                 image_data = api_stubs.image_data(test_id, round_id)
-
+                
                 if image_data == None:
                     print("==> No more rounds")
                     break
+
+                ## image_lines is used below to get the missing_s and missing_o values
+                ## that are needed for hacking around the bad SCG values we were getting
+                ## It's just a list of the image_data lines.
+                
+                image_lines = image_data.split('\n')
 
             else:
                 filenames_response = requests.get(
@@ -335,6 +355,9 @@ class BBNSession:
                 filenames = [x for x in filenames if x.strip("\n\t\"',.") != ""]
 
                 ## Lance
+                # This code takes the image and bounding box info as UMD
+                # is now supplying it, as a Bytes string of Python objects,
+                # and maps it back to the older CSV lines format.
                 response_list = ast.literal_eval(filenames_response.content.decode('utf-8'))
                 image_lines = []
                 for image_data in response_list:
