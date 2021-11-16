@@ -545,18 +545,18 @@ class TopLevelApp:
 
         appearance_features = [self.batch_context.novelty_dataset.subject_appearance_features[i].view(-1) for i in all_subject_indices]
         subject_features = torch.vstack(appearance_features) if len(appearance_features) > 0 else torch.tensor([])
-        assert subject_features.shape[1] == self.NUM_APP_FEATURES
+        # assert len(appearance_features) == 0 or subject_features.shape[1] == self.NUM_APP_FEATURES
 
         spatial_features = [self.batch_context.novelty_dataset.spatial_features[i].view(-1) for i in all_verb_indices]
         spatial_features = torch.vstack(spatial_features) if len(spatial_features) > 1 else torch.tensor([])
         appearance_features = [self.batch_context.novelty_dataset.verb_appearance_features[i].view(-1) for i in all_verb_indices]
         appearance_features = torch.vstack(appearance_features) if len(appearance_features) > 0 else torch.tensor([])
         verb_features = torch.hstack([spatial_features, appearance_features])
-        assert verb_features.shape[1] == self.NUM_VERB_FEATURES
+        # assert torch.numel(appearance_features) == 0 or verb_features.shape[1] == self.NUM_VERB_FEATURES
 
         appearance_features = [self.batch_context.novelty_dataset.object_appearance_features[i].view(-1) for i in all_object_indices]
         object_features = torch.vstack(appearance_features) if len(appearance_features) > 0 else torch.tensor([])
-        assert object_features.shape[1] == self.NUM_APP_FEATURES
+        # assert len(appearance_features) == 0 or object_features.shape[1] == self.NUM_APP_FEATURES
 
         subject_novelty_scores_u = torch.tensor([self.batch_context.subject_novelty_scores_u[i] for i in all_subject_indices.tolist()])
         verb_novelty_scores_u = torch.tensor([self.batch_context.verb_novelty_scores_u[i] for i in all_verb_indices.tolist()])

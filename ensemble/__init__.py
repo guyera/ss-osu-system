@@ -22,7 +22,6 @@ class Ensemble:
         self.num_subject_classes = num_subj_classes
         self.num_verb_classes = num_verb_classes
 
-        # Initializing SCG ensemble
         self.nets = []
         for p in pathlib.Path(ensemble_path).glob('*'):
             if p.suffix != '.pt' and p.suffix != '.pth':
@@ -39,7 +38,6 @@ class Ensemble:
                 box_score_thresh=0.0,
                 distributed=False))
 
-            # Loading pretrained models
             checkpoint = torch.load(p, map_location="cpu")
             self.nets[-1].load_state_dict(checkpoint['model_state_dict'])
             self.nets[-1].cuda()
@@ -109,7 +107,7 @@ class Ensemble:
         feature_len = self.num_subject_classes + self.num_object_classes + self.num_verb_classes
         self.calibrator = LogisticRegression(input_dim=feature_len, output_dim=self.num_unique_triplets)
         self.calibrator.load_state_dict(saved_calibrator['lr'])
-
+        
     def _clean_result(self, my_net, orig_result, detections):
         num_verb_cls = my_net.interaction_head.num_classes
 
@@ -187,7 +185,7 @@ class Ensemble:
             'object_logits': torch.index_select(orig_result['object_logits'], 0, torch.IntTensor(list(
                 (map(lambda x: np.where(res_to_det_obj == x)[0][0], range(len(detections['object_boxes']))))))),
             'subject_logits': torch.index_select(orig_result['subject_logits'], 0, torch.IntTensor(list(
-                (map(lambda x: np.where(res_to_det_subj == x)[0][0], range(len(detections['subject_boxes']))))))),
+                (map(lambda x: np.where(res_to_det_subj == x)[0][0], range(len(detections['subject_boxes'])))))))
         }
         
         # Now cleaning results based on validity of boxes
@@ -209,11 +207,11 @@ class Ensemble:
         return new_result
 
     def _select_ensemble_topk(self, results):
-        assert all([results[i]['subject_scores'].shape[1] == self.num_subj_classes for i in range(len(results))])
+        assert all([results[i]['subject_scores'].shape[1] == self.num_subject_classes for i in range(len(results))])
         assert all([results[i]['verb_matrix'].shape[2] == self.num_verb_classes for i in range(len(results))])
-        assert all([results[i]['object_scores'].shape[1] == self.num_obj_classes for i in range(len(results))])
+        assert all([results[i]['object_scores'].shape[1] == self.num_object_classes for i in range(len(results))])
 
-        ens_scores = [itertools.product(range(self.num_subj_classes), range(self.num_verb_classes), range(self.num_obj_classes)) 
+        ens_scores = [itertools.product(range(self.num_subject_classes), range(self.num_verb_classes), range(self.num_object_classes)) 
                       for _ in range(len(results))]
         ens_scores = [list(map(lambda x: (x, np.product([results[ensemble_idx]['subject_scores'][0][x[0]], 
                                                          results[ensemble_idx]['verb_matrix'][0][0][x[1]],
@@ -236,8 +234,10 @@ class Ensemble:
     def _compute_features(self, data_loader, is_training):
         features = []
         labels = []
+        null_top3 = []
+        is_null_flag = []
 
-        for _, batch in enumerate(data_loader):
+        for idx, batch in enumerate(data_loader):
             inputs = batch[:-1]
             img_id = inputs[1][0]['img_id']
             inputs[1][0].pop('img_id', None)
@@ -263,7 +263,7 @@ class Ensemble:
                     inputs_copy = copy.deepcopy(inputs)
                     input_data_copy = pocket.ops.relocate_to_cuda(inputs_copy)
                     _, mod_detections, _, _ = net.preprocess(*input_data_copy) 
-
+                    
                     mod_detections = pocket.ops.relocate_to_cpu(mod_detections)
                     input_data = pocket.ops.relocate_to_cuda(inputs)
                     output = net(*input_data)
@@ -292,14 +292,42 @@ class Ensemble:
                     result = self._clean_result(net, result, mod_detections[0])
                     ensemble_results[n] = result
 
+                    if n == 0:
+                        is_subj_box_null = torch.numel(result["valid_subjects"]) == 0
+                        is_obj_box_null = torch.numel(result["valid_objects"]) == 0
+                        
+                        if is_subj_box_null:
+                            scores, o_ids = torch.topk(result['object_scores'][0], 3)
+                            top_3 = [((-1, o_id.item() + 1, 0), s.item()) for o_id, s in zip(o_ids, scores)]
+                            null_top3.append(top_3)
+                            is_null_flag.append(True)
+                        elif is_obj_box_null:
+                            all_subjs = [(s_id + 1, score) for s_id, score in enumerate(result['subject_scores'][0].numpy().tolist())]
+                            all_verbs = [(v_id + 1, score) for v_id, score in enumerate(result['verb_matrix'][0][0].numpy().tolist())]
+                            
+                            all_combs = list(map(lambda x: ((x[0][0], -1, x[1][0]), x[0][1] * x[1][1]), itertools.product(all_subjs, all_verbs)))
+                            top_3 = sorted(all_combs, key= lambda x: x[1], reverse=True)[:3]
+                            null_top3.append(top_3)
+                            is_null_flag.append(True)
+                        else:
+                            all_subjs = [(s_id + 1, score) for s_id, score in enumerate(result['subject_scores'][0].numpy().tolist())]
+                            all_verbs = [(v_id + 1, score) for v_id, score in enumerate(result['verb_matrix'][0][0].numpy().tolist())]
+                            all_objs = [(o_id + 1, score) for o_id, score in enumerate(result['object_scores'][0].numpy().tolist())]
+                            
+                            all_combs = list(map(lambda x: ((x[0][0], x[1][0], x[2][0]), x[0][1] * x[1][1] * x[2][1]), 
+                                itertools.product(all_subjs, all_verbs, all_objs)))
+                            top_3 = sorted(all_combs, key= lambda x: x[1], reverse=True)[:3]
+                            null_top3.append(top_3)
+                            is_null_flag.append(False)                        
+                        
                     feature = torch.hstack([result["subject_logits"].view(-1), 
                                             result["object_logits"].view(-1), 
                                             result["verb_matrix_logits"].view(-1)])
                     ensemble_feature += feature
                     
                 features.append(ensemble_feature)
-
-        return features, labels
+                
+        return features, labels, is_null_flag, null_top3
 
     def _calibrate(self, cal_data_loader, val_data_loader):
         cal_features, cal_labels = self._compute_features(cal_data_loader, True)
@@ -370,7 +398,7 @@ class Ensemble:
 
     def get_top3_SVOs(self, data_loader, is_training, verbose=True):
         with torch.no_grad():
-            features, labels = self._compute_features(data_loader, is_training)
+            features, labels, is_null_flag, null_top3 = self._compute_features(data_loader, is_training)
 
             features = [torch.Tensor(f) for f in features]
             features = torch.vstack(features)
@@ -381,7 +409,12 @@ class Ensemble:
             _, indices = torch.topk(probs, k=self.top_k, largest=True, dim=1)
             indices = indices.cpu().numpy()
 
-            ret = [[(self.train_tuples[indices[i, j]], probs[i, indices[i, j]].item()) for j in range(self.top_k)] for i in range(indices.shape[0])]
+            lr_top3 = [[(self.train_tuples[indices[i, j]], probs[i, indices[i, j]].item()) for j in range(self.top_k)] 
+                for i in range(indices.shape[0])]
+            invalid_null = [any([int(t[0][0]) == int(-1) or int(t[0][1]) == int(-1) or int(t[0][2]) == int(-1) for t in top3])
+                if not f else False for top3, f in zip(lr_top3, is_null_flag)]
+                
+            ret = [t2 if f or inv else t1 for t1, t2, f, inv in zip(lr_top3, null_top3, is_null_flag, invalid_null)]
 
         if is_training and verbose:
             assert labels is not None

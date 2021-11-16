@@ -132,13 +132,13 @@ class UnsupervisedNoveltyDetectionManager:
             results = self.detector(all_spatial_features, all_subject_appearance_features, 
                 all_verb_appearance_features, all_object_appearance_features, p_type_dist)
 
-        assert not any([any([torch.isnan(p[1]).item() for p in preds]) for preds in results['top3']]), "NaNs in unsupervied detector's top-3"
+        # assert not any([any([torch.isnan(p[1]).item() for p in preds]) for preds in results['top3']]), "NaNs in unsupervied detector's top-3"
                 
         for i, p in enumerate(results['top3']):
             new_p = []
             for j in range(3):
                 if j < len(p):
-                    e = (p[j][0], p[j][1].item())
+                    e = (p[j][0], 0.0 if torch.isnan(p[j][1]) or torch.isinf(p[j][1]) else p[j][1].item())
                     new_svo = list(e[0])
 
                     for k in range(3):
