@@ -63,11 +63,13 @@ def get_split_dataloaders(data):
     train_y_i = torch.flatten(y)[train_idxs]
 
     #train_nom_idxs  = list(torch.nonzero(torch.flatten(torch.tensor(train_y_i).clone().detach())))
-    train_nom_idxs  = list(torch.nonzero(torch.flatten(train_y_i.clone().detach())))
+    train_nom_idxs = list(torch.nonzero(torch.flatten(train_y_i.clone().detach())))
+    train_nom_idxs = [idx[0].tolist() for idx in train_nom_idxs] 
     train_anom_idxs = [i for i in range(len(train_y_i)) if i not in train_nom_idxs]       
 
     # squeeze here
-
+    #if len(train_nom_idxs) != 0:
+    #    import pdb; pdb.set_trace()
     train_y_i_nom = train_y_i[train_nom_idxs]
     train_y_i_anom = train_y_i[train_anom_idxs]
     train_X_i_nom = train_X_i[train_nom_idxs]
@@ -80,7 +82,8 @@ def get_split_dataloaders(data):
     val_y_i = torch.flatten(y)[val_idxs]       
 
     #val_nom_idxs  = list(torch.nonzero(torch.flatten(torch.tensor(val_y_i).clone().detach())))
-    val_nom_idxs  = list(torch.nonzero(torch.flatten(val_y_i.clone().detach())))
+    val_nom_idxs = list(torch.nonzero(torch.flatten(val_y_i.clone().detach())))
+    val_nom_idxs = [idx[0].tolist() for idx in val_nom_idxs] 
     val_anom_idxs = [i for i in range(len(val_y_i)) if i not in val_nom_idxs]
 
     val_y_i_nom = val_y_i[val_nom_idxs]
@@ -586,8 +589,8 @@ def eval_supervised(S_X, V_X, O_X, S_a, V_a, O_a, models):
 
 # For debugging and tests
 if __name__ == '__main__':
+    '''
     # TODO: Set this up with real data.
-
     num_examples = 1142
     num_features = 512
     S_X = torch.rand(num_examples, num_features)
@@ -603,10 +606,22 @@ if __name__ == '__main__':
     V_y = torch.bernoulli(V_y)
     O_y = torch.sigmoid(torch.abs(torch.normal(0,1,size=(num_examples, 1))))
     O_y = torch.ones_like(torch.bernoulli(O_y))
+    '''
+    data = torch.load('./adaptation/crash.pth')
+    S_X = data['subject_features']
+    V_X = data['verb_features']
+    O_X = data['object_features']
+    S_a = data['subject_novelty_scores']
+    V_a = data['verb_novelty_scores']
+    O_a = data['object_novelty_scores']
+    S_y = data['subject_labels']
+    V_y = data['verb_labels']
+    O_y = data['object_labels']
     AUC, scores, models = train_supervised_models(S_X,V_X,O_X,
                                           S_a,V_a,O_a,
                                           S_y,V_y,O_y)
     
+    ''' 
     S_a = [random.uniform(0,1) for _ in range(num_examples)]
     V_a = [random.uniform(0,1) for _ in range(num_examples)]
     O_a = [random.uniform(0,1) for _ in range(num_examples)]
@@ -627,6 +642,7 @@ if __name__ == '__main__':
         if i in O_none_idxs:
             O_X[i] = None
             O_a[i] = None
+    '''
 
     scores = eval_supervised(S_X, V_X, O_X, S_a, V_a, O_a, models)
     print("S Scores: {}".format(scores[0][0:5]))
