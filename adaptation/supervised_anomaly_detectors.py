@@ -621,7 +621,6 @@ if __name__ == '__main__':
                                           S_a,V_a,O_a,
                                           S_y,V_y,O_y)
     
-    ''' 
     S_a = [random.uniform(0,1) for _ in range(num_examples)]
     V_a = [random.uniform(0,1) for _ in range(num_examples)]
     O_a = [random.uniform(0,1) for _ in range(num_examples)]
@@ -642,7 +641,6 @@ if __name__ == '__main__':
         if i in O_none_idxs:
             O_X[i] = None
             O_a[i] = None
-    '''
 
     scores = eval_supervised(S_X, V_X, O_X, S_a, V_a, O_a, models)
     print("S Scores: {}".format(scores[0][0:5]))
