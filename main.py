@@ -8,8 +8,6 @@ if __name__ == "__main__":
     p.add_argument('--data-root', default='Custom')
     p.add_argument('--scg-ensemble', default='./ensemble/pretrained')
     p.add_argument('--pretrained-unsupervised-novelty-path', default='./unsupervisednoveltydetection/unsupervised_novelty_detection_module.pth')
-    p.add_argument('--cal-csv-path', default='./dataset_v3/dataset_v3_2_cal.csv')
-    p.add_argument('--val-csv-path', default='./dataset_v3/dataset_v3_2_val_modified.csv')
     p.add_argument('--api_stubs', action='store_true')
     p.add_argument('--url', default='http://localhost:6789')
     p.add_argument('--class_count', type=int, default=29)
@@ -30,16 +28,14 @@ if __name__ == "__main__":
     osu_int = OSUInterface(scg_ensemble=args.scg_ensemble, 
         data_root=args.data_root, 
         pretrained_unsupervised_novelty_path=args.pretrained_unsupervised_novelty_path, 
-        cusum_thresh=args.detection_threshold)
-
+        cusum_thresh=args.detection_threshold,
+        feedback_enabled=args.detection_feedback)
+    
     test_session = BBNSession('OND', args.domain, args.class_count, 
-        args.classification_feedback, True,
+        args.classification_feedback, args.detection_feedback,
         args.given_detection, args.data_root,
         args.sys_results_dir, args.url, args.batch_size,
         args.version, args.detection_threshold,
         args.api_stubs, osu_int)
 
     test_session.run(args.detector_seed)
-
-
-

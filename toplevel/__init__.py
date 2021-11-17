@@ -14,7 +14,7 @@ from adaptation.query_formulation import select_queries
 
 
 class TopLevelApp:
-    def __init__(self, ensemble_path, data_root, pretrained_unsupervised_module_path, th):
+    def __init__(self, ensemble_path, data_root, pretrained_unsupervised_module_path, th, feedback_enabled):
 
         if not pathlib.Path(ensemble_path).exists():
             raise Exception(f'pretrained SCG models were not found in path {ensemble_path}')
@@ -55,6 +55,8 @@ class TopLevelApp:
         self.unsupervised_aucs = None
         self.supervised_aucs = None
         
+        self.feedback_enabled = feedback_enabled
+        
     def reset(self):
         self.post_red = False
         self.p_type_dist = torch.tensor([0.2, 0.2, 0.2, 0.2, 0.2])
@@ -77,17 +79,17 @@ class TopLevelApp:
 
         self.batch_context.reset()
 
-        # Initializing data loaders
+        # Initialize data loaders
         scg_data_loader, novelty_dataset, N, image_paths = self._get_data_loaders(csv_path)
         batch_cases = self._compute_batch_cases(csv_path)
 
-        # Computing top-3 SVOs from SCG ensemble
+        # Compute top-3 SVOs from SCG ensemble
         scg_preds = self.scg_ensemble.get_top3_SVOs(scg_data_loader, False)
 
         # Unsupervised novelty scores
         unsupervised_results = self.und_manager.score(novelty_dataset, self.p_type_dist)
 
-        # Computing P_ni
+        # Compute P_ni
         subject_novelty_scores_u = unsupervised_results['subject_novelty_score']
         verb_novelty_scores_u = unsupervised_results['verb_novelty_score']
         object_novelty_scores_u = unsupervised_results['object_novelty_score']
@@ -99,7 +101,7 @@ class TopLevelApp:
 
         subject_scores_ctx, verb_scores_ctx, object_scores_ctx = self.und_manager.get_score_contexts() 
 
-        if self.post_red:
+        if self.post_red and self.feedback_enabled:
             subject_novelty_scores_u_copy = [s.clone() if s is not None else None for s in subject_novelty_scores_u]
             verb_novelty_scores_u_copy = [s.clone() if s is not None else None for s in verb_novelty_scores_u]
             object_novelty_scores_u_copy = [s.clone() if s is not None else None for s in object_novelty_scores_u]
@@ -108,7 +110,7 @@ class TopLevelApp:
             subject_novelty_scores_s, verb_novelty_scores_s, object_novelty_scores_s = self.snd_manager.score(
                 novelty_dataset, subject_novelty_scores_u_copy, verb_novelty_scores_u_copy, object_novelty_scores_u_copy)
 
-            # pick the scores from the detector with higher AUC
+            # pick the scores from the detector which had a AUC
             if self.unsupervised_aucs[0] < self.supervised_aucs[0]:
                 subject_novelty_scores = subject_novelty_scores_s
 
@@ -125,7 +127,7 @@ class TopLevelApp:
 
         p_ni = p_ni.cpu().float()
 
-        # Merging top-3 SVOs
+        # Merge top-3 SVOs
         merged = self._merge_top3_SVOs(scg_preds, unsupervised_results['top3'], p_ni)
         top_1 = [m[0][0] for m in merged]
         top_3 = [[e[0] for e in m] for m in merged]
@@ -136,7 +138,7 @@ class TopLevelApp:
         # cache previous all_p_ni
         all_p_ni_np = self.all_p_ni.numpy()
         
-        if not self.post_red:
+        if not self.post_red or not self.feedback_enabled:
             batch_query_mask = torch.zeros(N, dtype=torch.long)
             batch_feedback_mask = torch.zeros(N, dtype=torch.long)
 
@@ -185,6 +187,7 @@ class TopLevelApp:
     def select_queries(self, feedback_max_ids):
         assert self.post_red, "query selection shoudn't happen pre-red button"
         assert self.batch_context.is_set(), "no batch context."
+        assert self.feedback_enabled, "feedback is disabled"
 
         query_indices = select_queries(feedback_max_ids, self.p_type_dist, self.batch_context.p_ni, 
             self.batch_context.subject_novelty_scores_best, self.batch_context.verb_novelty_scores_best, 
@@ -204,6 +207,7 @@ class TopLevelApp:
         assert self.post_red, "query selection shoudn't happen pre-red button"
         assert self.batch_context.is_set(), "no batch context."
         assert all([f in self.batch_context.image_paths for f in feedback_results.keys()]), "query/feedback mismatch."
+        assert self.feedback_enabled, "feedback is disabled"
 
         if len(feedback_results) != len(self.batch_context.query_indices):
             print(f"\nWARNING: query/feedback mismatch, requested feedback for {len(self.batch_context.query_indices)} images but got feedback for {len(feedback_results)} images. Recalculating query mask...\n")
@@ -252,25 +256,6 @@ class TopLevelApp:
             self.unsupervised_aucs = self.und_manager.get_svo_detectors_auc()
 
     def _merge_top3_SVOs(self, top3_non_novel, top3_novel, p_ni):
-        """
-        Merges top-3 non-novel SVOs and top-3 novel SVOs
-    
-        Parameters:
-        -----------
-        top3_non_novel:
-            List of length N where each element is a list of length 3 containing tuples of following form:
-                    ((S, V, O), Probability)
-        top3_novel: 
-            List of length N where each element is a list of length 3 containing tuples of following form:
-                    ((S, V, O), Probability)
-        p_ni:
-            The Probability that each image contains novelty. A tensor with shape [N, 1]
-    
-        Returns:
-        --------
-            List of length N where each element is a list of length 3 containing tuples of following form:
-                    ((S, V, O), Probability)
-        """  
         p_ni = p_ni.view(-1).numpy()
         N = len(p_ni)
         top3_non_novel = [[(x[i][0], x[i][1], x[i][1] * (1 - y)) for i in range(3)] for x, y in zip(top3_non_novel, p_ni)]
@@ -289,9 +274,6 @@ class TopLevelApp:
 
         fn = lambda f: 0 if f is None else int(f) == 0
 
-        # s_unk = torch.tensor([fn(a[0][0]) or fn(a[1][0]) or fn(a[2][0]) for a in self.all_top_3_svo], dtype=torch.int)
-        # v_unk = torch.tensor([fn(a[0][1]) or fn(a[1][1]) or fn(a[2][1]) for a in self.all_top_3_svo], dtype=torch.int)
-        # o_unk = torch.tensor([fn(a[0][2]) or fn(a[1][2]) or fn(a[2][2]) for a in self.all_top_3_svo], dtype=torch.int)
         s_unk = torch.tensor([fn(a[0][0]) for a in self.all_top_3_svo], dtype=torch.int)
         v_unk = torch.tensor([fn(a[0][1]) for a in self.all_top_3_svo], dtype=torch.int)
         o_unk = torch.tensor([fn(a[0][2]) for a in self.all_top_3_svo], dtype=torch.int)

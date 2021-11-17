@@ -1,17 +1,17 @@
 import pathlib
-import numpy as np
 import os
 import pandas as pd
 from toplevel import TopLevelApp
 
 
 class OSUInterface:
-    def __init__(self, scg_ensemble, data_root, pretrained_unsupervised_novelty_path, cusum_thresh):
+    def __init__(self, scg_ensemble, data_root, pretrained_unsupervised_novelty_path, cusum_thresh, feedback_enabled):
 
         self.app = TopLevelApp(ensemble_path=scg_ensemble, 
             data_root=data_root, 
             pretrained_unsupervised_module_path=pretrained_unsupervised_novelty_path,
-            th=cusum_thresh)
+            th=cusum_thresh,
+            feedback_enabled=feedback_enabled)
 
         self.temp_path = pathlib.Path('./session/temp/')
         self.batch_csv_path = self.temp_path.joinpath('batch.csv')
@@ -78,6 +78,9 @@ class OSUInterface:
         top_3_str = [','.join([f'{(svo[0], svo[1], svo[2], p)}' for svo, p in zip(svos, ps)]) for svos, ps in zip(top_3, top_3_probs)]
         svo_preds = '\n'.join([f'{img}, {svo_s}' for img, svo_s in zip(df['new_image_path'].to_list(), top_3_str)])
 
+        if self.batch_csv_path.exists():
+            os.remove(self.batch_csv_path)
+            
         print(f'  ==> OSU processed round {round_id}')
         
         return (novelty_preds, svo_preds)
