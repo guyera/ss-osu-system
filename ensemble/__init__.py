@@ -236,6 +236,8 @@ class Ensemble:
         labels = []
         null_top3 = []
         is_null_flag = []
+        is_subj_null = []
+        is_obj_null = []
 
         for idx, batch in enumerate(data_loader):
             inputs = batch[:-1]
@@ -298,17 +300,21 @@ class Ensemble:
                         
                         if is_subj_box_null:
                             scores, o_ids = torch.topk(result['object_scores'][0], 3)
-                            top_3 = [((-1, o_id.item() + 1, 0), s.item()) for o_id, s in zip(o_ids, scores)]
+                            top_3 = [((-1, 0, o_id.item() + 1), s.item()) for o_id, s in zip(o_ids, scores)]
                             null_top3.append(top_3)
                             is_null_flag.append(True)
+                            is_subj_null.append(True)
+                            is_obj_null.append(False)
                         elif is_obj_box_null:
                             all_subjs = [(s_id + 1, score) for s_id, score in enumerate(result['subject_scores'][0].numpy().tolist())]
                             all_verbs = [(v_id + 1, score) for v_id, score in enumerate(result['verb_matrix'][0][0].numpy().tolist())]
                             
-                            all_combs = list(map(lambda x: ((x[0][0], -1, x[1][0]), x[0][1] * x[1][1]), itertools.product(all_subjs, all_verbs)))
+                            all_combs = list(map(lambda x: ((x[0][0], x[1][0], -1), x[0][1] * x[1][1]), itertools.product(all_subjs, all_verbs)))
                             top_3 = sorted(all_combs, key= lambda x: x[1], reverse=True)[:3]
                             null_top3.append(top_3)
                             is_null_flag.append(True)
+                            is_obj_null.append(True)
+                            is_subj_null.append(False)
                         else:
                             all_subjs = [(s_id + 1, score) for s_id, score in enumerate(result['subject_scores'][0].numpy().tolist())]
                             all_verbs = [(v_id + 1, score) for v_id, score in enumerate(result['verb_matrix'][0][0].numpy().tolist())]
@@ -318,7 +324,9 @@ class Ensemble:
                                 itertools.product(all_subjs, all_verbs, all_objs)))
                             top_3 = sorted(all_combs, key= lambda x: x[1], reverse=True)[:3]
                             null_top3.append(top_3)
-                            is_null_flag.append(False)                        
+                            is_null_flag.append(False)
+                            is_subj_null.append(False)
+                            is_obj_null.append(False)
                         
                     feature = torch.hstack([result["subject_logits"].view(-1), 
                                             result["object_logits"].view(-1), 
@@ -327,7 +335,7 @@ class Ensemble:
                     
                 features.append(ensemble_feature)
                 
-        return features, labels, is_null_flag, null_top3
+        return features, labels, is_null_flag, null_top3, is_subj_null, is_obj_null
 
     def _calibrate(self, cal_data_loader, val_data_loader):
         cal_features, cal_labels = self._compute_features(cal_data_loader, True)
@@ -398,7 +406,7 @@ class Ensemble:
 
     def get_top3_SVOs(self, data_loader, is_training, verbose=True):
         with torch.no_grad():
-            features, labels, is_null_flag, null_top3 = self._compute_features(data_loader, is_training)
+            features, labels, is_null_flag, null_top3, is_subj_null, is_obj_null = self._compute_features(data_loader, is_training)
 
             features = [torch.Tensor(f) for f in features]
             features = torch.vstack(features)
