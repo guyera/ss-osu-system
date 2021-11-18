@@ -7,7 +7,7 @@ Here is a sample invocation, to be issued from the toplevel sailon-svo directory
 python main.py \
 --data-root <path-to-images> \
 --scg-ensemble <path-to-pretrained-SCG-ensemble> \
---pretrained-unsupervised-path <path-to-pretrained-unsupervised-module> \
+--pretrained-unsupervised-novelty-path <path-to-pretrained-unsupervised-module> \
 --sys_results_dir <path-to-a-writeable-directory-for-temp-storage-of-results-to-be-sent-to-the-API> \
 --detection_feedback
 ```
