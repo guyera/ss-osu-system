@@ -133,33 +133,42 @@ class BBNSession:
             
             return [(id, val) for (id, val) in zip(returned_ids, returned_answers)]
 
-    def force_to_missing(self, s, v, o, missing_s, missing_o, free_s, free_v, free_o):
-        """Force our answer to be consistent with missing_s and missing_o"""
-        ## Use the free_s, _v, _o vars to ensure that our three new forced answers are distinct.
-        if missing_s:
-            # S and V must be missing
-            s = -1
-            v = 0
-            # O must not be missing
-            if o == -1:
-                o = list(free_o)[0]
-                free_o.remove(o)
-        elif missing_o:
-            # O must be missing
-            o = -1
-            # S must not be missing
-            if s == -1:
-                s = list(free_s)[0]
-                free_s.remove(s)
-        else:
-            # neither S nor O can be missing
-            if s == -1:
-                s = list(free_s)[0]
-                free_s.remove(s)
-            if o == -1:
-                o = list(free_o)[0]
-                free_o.remove(o)
-        return s, v, o, free_s, free_v, free_o
+    # def force_to_missing(self, s, v, o, missing_s, missing_o, free_s, free_v, free_o):
+    #     """Force our answer to be consistent with missing_s and missing_o"""
+    #     ## Use the free_s, _v, _o vars to ensure that our three new forced answers are distinct.
+    #     if missing_s:
+    #         if s != -1 or v != 0 or o == -1:
+    #             self.missing_box_problems += 1
+    #             print(f' ======> Missing box s: hypo has s or v or does not have o')
+    #         # S and V must be missing
+    #         s = -1
+    #         v = 0
+    #         # O must not be missing
+    #         if o == -1:
+    #             o = list(free_o)[0]
+    #             free_o.remove(o)
+    #     elif missing_o:
+    #         if o != -1 or s == -1:
+    #             self.missing_box_problems += 1
+    #             print(f' =======> Missing box o: hypo has o or does not have s')
+    #         # O must be missing
+    #         o = -1
+    #         # S must not be missing
+    #         if s == -1:
+    #             s = list(free_s)[0]
+    #             free_s.remove(s)
+    #     else:
+    #         if s == -1 or o == -1:
+    #             self.missing_box_problems += 1
+    #             print(f' ======> Missing box: missing hypo when nothing missing')
+    #         # neither S nor O can be missing
+    #         if s == -1:
+    #             s = list(free_s)[0]
+    #             free_s.remove(s)
+    #         if o == -1:
+    #             o = list(free_o)[0]
+    #             free_o.remove(o)
+    #     return s, v, o, free_s, free_v, free_o
         
 
     def write_file_entries(self, filename, detection_file, classification_file, predicted_probs,
@@ -182,58 +191,63 @@ class BBNSession:
         if self.probs_debug_format:
             output_probs = predicted_probs
         else:
-            # TODO: pass missing_s and missing_o flags into this function
-            # and use them here to clean up bad values
             output_vals = np.zeros(self.triple_list_count)
-            ## LAR
-            try:
-                predicted_probs = predicted_probs.replace('inf', '"inf"')
-                answers = ast.literal_eval(f'({predicted_probs})')
-            except ValueError:
-                print(f'Hit error on filename: {filename}')
-                print(f'predicted_probs: {predicted_probs}')
-                breakpoint()
-            ## LAR
+            answers = ast.literal_eval(f'({predicted_probs})')
             assert len(answers) == 3
-            free_s = set(range(1, self.num_subject_classes+1))
-            free_v = set(range(1, self.num_verb_classes+1))
-            free_o = set(range(1, self.num_object_classes+1))
             for answer in answers:
                 s, v, o, prob = answer
-                free_s.discard(s)
-                free_v.discard(v)
-                free_o.discard(o)
-            output_triples = []
-            for answer in answers:
-                s, v, o, prob = answer
-                ## LAR
-                if prob == 'inf':
-                    prob = 0.0001
-                ## LAR
-                # for V, id 0 covers both missing and novel
-                if v == -1:
-                    v = 0
-                s, v, o, free_s, free_v, free_o = self.force_to_missing(s, v, o, missing_s, missing_o,
-                                                                        free_s, free_v, free_o)
                 triple = (s, v, o)
-                loop_count = 0
-                while triple in output_triples:
-                    # change one value randomly to avoid duplication
-                    loop_count += 1
-                    if loop_count > 3:
-                        raise Exception('Excessive looping to avoid duplicates')
-                    if s != -1:
-                        s = list(free_s)[0]
-                        free_s.remove(s)
-                    elif o != -1:
-                        o = list(free_o)[0]
-                        free_o.remove(o)
-                    else:
-                        raise Exception('One of S or O should not be missing.')
-                    triple = (s, v, o)
-                output_triples.append(triple)
                 output_vals[self.triple_dict[triple]] = prob
-            output_probs = ','.join([f'{val:e}' for val in output_vals])            
+            output_probs = ','.join([f'{val:e}' for val in output_vals])
+            # ## LAR
+            # try:
+            #     predicted_probs = predicted_probs.replace('inf', '"inf"')
+            #     answers = ast.literal_eval(f'({predicted_probs})')
+            # except ValueError:
+            #     print(f'Hit error on filename: {filename}')
+            #     print(f'predicted_probs: {predicted_probs}')
+            #     breakpoint()
+            # ## LAR
+            # assert len(answers) == 3
+            # free_s = set(range(1, self.num_subject_classes+1))
+            # free_v = set(range(1, self.num_verb_classes+1))
+            # free_o = set(range(1, self.num_object_classes+1))
+            # for answer in answers:
+            #     s, v, o, prob = answer
+            #     free_s.discard(s)
+            #     free_v.discard(v)
+            #     free_o.discard(o)
+            # output_triples = []
+            # for answer in answers:
+            #     s, v, o, prob = answer
+            #     ## LAR
+            #     if prob == 'inf':
+            #         prob = 0.0001
+            #     ## LAR
+            #     # for V, id 0 covers both missing and novel
+            #     if v == -1:
+            #         v = 0
+            #     s, v, o, free_s, free_v, free_o = self.force_to_missing(s, v, o, missing_s, missing_o,
+            #                                                             free_s, free_v, free_o)
+            #     triple = (s, v, o)
+            #     loop_count = 0
+            #     while triple in output_triples:
+            #         # change one value randomly to avoid duplication
+            #         loop_count += 1
+            #         if loop_count > 3:
+            #             raise Exception('Excessive looping to avoid duplicates')
+            #         if s != -1:
+            #             s = list(free_s)[0]
+            #             free_s.remove(s)
+            #         elif o != -1:
+            #             o = list(free_o)[0]
+            #             free_o.remove(o)
+            #         else:
+            #             raise Exception('One of S or O should not be missing.')
+            #         triple = (s, v, o)
+            #     output_triples.append(triple)
+            #     output_vals[self.triple_dict[triple]] = prob
+            # output_probs = ','.join([f'{val:e}' for val in output_vals])            
         
         detection_file.write("%s,%e,%e\n" %
                              (filename, red_light_score, image_novelty_score))
@@ -286,9 +300,7 @@ class BBNSession:
 
         print(f"=> initialized session: {session_id}")
 
-        #for test_id in test_ids:
-        ## LAR
-        for test_id in test_ids[-1:]:
+        for test_id in test_ids:
             print(f"==> starting test: {test_id}")
             self.run_test(session_id, test_id, given_detection)
             # self.agent.reset()
@@ -363,6 +375,8 @@ class BBNSession:
                 for image_data in response_list:
                     image_path = image_data[0]
                     bbox_info = ','.join(image_data[1])
+                    # The image width and height used to be supplied, and so are expected,
+                    # but not used. They are supplied here as zeros. 
                     image_line = ','.join([image_path,'0', '0', bbox_info])
                     image_lines.append(image_line)
                 image_data = '\n'.join(image_lines)
@@ -506,4 +520,7 @@ class BBNSession:
             # print(f'==> test end response: {test_end_response}')
         if self.osu_stubs:
             self.osu_stubs.end_test(test_id)
+
+        ## LAR
+        #print(f' ======> Missing box problem count: {self.missing_box_problems}')
 
