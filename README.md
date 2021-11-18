@@ -1,3 +1,24 @@
+# BBN Intro
+
+This package is the BBN-Symbiant-OSU Sail-On TA2 system applied to the UMD TA1 svo-classification task.
+
+Here is a sample invocation, to be issued from the toplevel sailon-svo directory:
+$ python main.py \
+--data-root <path-to-images> \
+--sys_results_dir <path-to-a-writeable-directory-for-temp-storage-of-results-to-be-sent-to-the-API> \
+--detection_feedback
+
+There is a classification_feedback argument that could be added, but our system does not currently implement it.
+
+There is also a given_detection argument that will be supported in our final system, but is not yet supported in this version.
+
+While our system will function if the detection_feedback argument is omitted, it will apply its initial strategy throughout, rather than demonstrating adaptation.  We are assuming that the main evaluation runs will be with detection_feedback turned on. 
+
+If you have questions, please contact <lance.ramshaw@raytheon.com>.
+
+The remainder of the README is taken from the UMD repo from which this was forked early in the development
+of our system.
+
 DISCLAIMER: Most of these instructions are copied from repos mentioned in the `DISCLAIMER` file. We are declaring this
 explicitly here, again, to avoid any claims of plagiarism.
 
