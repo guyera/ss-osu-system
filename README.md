@@ -3,10 +3,14 @@
 This package is the BBN-Symbiant-OSU Sail-On TA2 system applied to the UMD TA1 svo-classification task.
 
 Here is a sample invocation, to be issued from the toplevel sailon-svo directory:
-$ python main.py \
+```bash
+python main.py \
 --data-root <path-to-images> \
+--scg-ensemble <path-to-pretrained-SCG-ensemble> \
+--pretrained-unsupervised-path <path-to-pretrained-unsupervised-module> \
 --sys_results_dir <path-to-a-writeable-directory-for-temp-storage-of-results-to-be-sent-to-the-API> \
 --detection_feedback
+```
 
 There is a classification_feedback argument that could be added, but our system does not currently implement it.
 
@@ -39,12 +43,19 @@ This is the repo for the SAIL-ON SVO. Spatially Conditioned Graphs (SCG) is the 
 
 ## Table of Contents
 
-- [Prerequisites](#prerequisites)
-- [Data Utilities](#data-utilities)
-    * [SAIL-ON Custom Data](#custom-sailon-data)
-- [Testing](#testing)
-- [Training](#training)
-- [Contact](#contact)
+- [BBN Intro](#bbn-intro)
+- [sailon-svo](#sailon-svo)
+	- [Citations](#citations)
+	- [Table of Contents](#table-of-contents)
+	- [Prerequisites](#prerequisites)
+	- [Data Utilities](#data-utilities)
+		- [Custom Sailon Data](#custom-sailon-data)
+	- [Training](#training)
+	- [Testing](#testing)
+	- [Baseline performance](#baseline-performance)
+	- [NOTE](#note)
+	- [Contact](#contact)
+	- [TODO](#todo)
 
 ## Prerequisites
 

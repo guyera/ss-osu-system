@@ -80,8 +80,7 @@ class TopLevelApp:
         self.batch_context.reset()
 
         # Initialize data loaders
-        scg_data_loader, novelty_dataset, N, image_paths = self._get_data_loaders(csv_path)
-        batch_cases = self._compute_batch_cases(csv_path)
+        scg_data_loader, novelty_dataset, N, image_paths, batch_cases = self._load_data(csv_path)
 
         # Compute top-3 SVOs from SCG ensemble
         scg_preds = self.scg_ensemble.get_top3_SVOs(scg_data_loader, False)
@@ -206,8 +205,8 @@ class TopLevelApp:
     def feedback_callback(self, feedback_results):
         assert self.post_red, "query selection shoudn't happen pre-red button"
         assert self.batch_context.is_set(), "no batch context."
-        assert all([f in self.batch_context.image_paths for f in feedback_results.keys()]), "query/feedback mismatch."
         assert self.feedback_enabled, "feedback is disabled"
+        assert all([f in self.batch_context.image_paths for f in feedback_results.keys()]), "query/feedback mismatch."
 
         if len(feedback_results) != len(self.batch_context.query_indices):
             print(f"\nWARNING: query/feedback mismatch, requested feedback for {len(self.batch_context.query_indices)} images but got feedback for {len(feedback_results)} images. Recalculating query mask...\n")
@@ -277,7 +276,7 @@ class TopLevelApp:
         s_unk = torch.tensor([fn(a[0][0]) for a in self.all_top_3_svo], dtype=torch.int)
         v_unk = torch.tensor([fn(a[0][1]) for a in self.all_top_3_svo], dtype=torch.int)
         o_unk = torch.tensor([fn(a[0][2]) for a in self.all_top_3_svo], dtype=torch.int)
-
+        
         # type-1
         case_3 = (self.all_cases == 3) * p_not_novel
         case_not_3 = (self.all_cases != 3) * s_unk * self.all_p_ni 
@@ -413,7 +412,7 @@ class TopLevelApp:
             
         return red_light_score
 
-    def _get_data_loaders(self, csv_path):
+    def _load_data(self, csv_path):
         valset = DataFactory(
             name="Custom", 
             data_root=self.data_root,
@@ -439,16 +438,20 @@ class TopLevelApp:
             num_obj_cls = self.num_object_classes,
             num_action_cls = self.num_verb_classes,
             training = False,
-            image_batch_size = 10,
+            image_batch_size = 8,
             feature_extraction_device = 'cuda:0',
             cache_to_disk = False)
 
         N = len(valset)
-
+        
         df = pd.read_csv(csv_path, index_col=0)
         image_paths = df['new_image_path'].to_list()
 
-        return scg_data_loader, novelty_dataset, N, image_paths
+        cases = df.apply(lambda row : self._compute_case(row['subject_ymin'], row['subject_xmin'], 
+            row['subject_ymax'], row['subject_xmax'], 
+            row['object_ymin'], row['object_xmin'], row['object_ymax'], row['object_xmax']), axis = 1)
+
+        return scg_data_loader, novelty_dataset, N, image_paths, torch.tensor(cases.to_numpy(), dtype=torch.long)
 
     def _compute_case(self, sbox_ymin, sbox_xmin, sbox_ymax, sbox_xmax, obox_ymin, obox_xmin, obox_ymax, obox_xmax):
         has_subject = sbox_ymin >= 0 and sbox_ymax >= 0 and sbox_xmin >= 0 and sbox_xmax >= 0
@@ -464,14 +467,6 @@ class TopLevelApp:
             return 3
 
         raise Exception(f'Invalid subject/object box coords, {has_subject}, {has_object}')
-
-    def _compute_batch_cases(self, csv_path):
-        df = pd.read_csv(csv_path, index_col=0)
-        df['case'] = df.apply(lambda row : self._compute_case(row['subject_ymin'], row['subject_xmin'], 
-            row['subject_ymax'], row['subject_xmax'], 
-            row['object_ymin'], row['object_xmin'], row['object_ymax'], row['object_xmax']), axis = 1)
-
-        return torch.tensor(df['case'].to_numpy(), dtype=torch.long)
 
     def _is_svo_type_4(self, svo):
         known_tuples = self.scg_ensemble.train_tuples
