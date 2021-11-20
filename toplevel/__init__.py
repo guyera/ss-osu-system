@@ -132,7 +132,7 @@ class TopLevelApp:
         top_3 = [[e[0] for e in m] for m in merged]
         top_3_probs = [[e[1] for e in m] for m in merged]
 
-        batch_preds_is_nc = self._is_novel_combination(top_1)
+        batch_preds_is_nc = torch.tensor([self._is_svo_type_4(t) for t in top_1], dtype=torch.long)
 
         # cache previous all_p_ni
         all_p_ni_np = self.all_p_ni.numpy()
@@ -151,7 +151,7 @@ class TopLevelApp:
             # decide which novelty detector to use
             self.supervised_aucs = self.snd_manager.get_svo_detectors_auc()
             self.unsupervised_aucs = self.und_manager.get_svo_detectors_auc()
-
+            
         self.batch_context.p_ni = p_ni
         self.batch_context.subject_novelty_scores_u = subject_novelty_scores_u
         self.batch_context.verb_novelty_scores_u = verb_novelty_scores_u
@@ -310,6 +310,7 @@ class TopLevelApp:
         self.p_type_dist = torch.nn.functional.softmax(self.p_type_dist, dim=0)
 
         assert not torch.any(torch.isnan(self.p_type_dist)), "NaNs in p_type."
+        assert not torch.any(torch.isinf(self.p_type_dist)), "Infs in p_type."
 
     def _process_feedback(self):
         # assert self.batch_context.batch_query_indices.shape[0] == self.batch_context.batch_feedback.shape[0]
@@ -484,11 +485,6 @@ class TopLevelApp:
             return 0
 
         return 1
-
-    def _is_novel_combination(self, top_1):
-        is_nc = [self._is_svo_type_4(t) for t in top_1]
-
-        return torch.tensor(is_nc, dtype=torch.long)
 
     def _accumulate(self, top_1, top_3, p_ni, batch_cases, feedback_mask, query_mask, preds_is_nc):
         self.all_top_1_svo += top_1

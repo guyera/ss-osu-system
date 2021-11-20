@@ -14,7 +14,6 @@ class OSUInterface:
             feedback_enabled=feedback_enabled)
 
         self.temp_path = pathlib.Path('./session/temp/')
-        self.batch_csv_path = self.temp_path.joinpath('batch.csv')
 
     def start_session(self, session_id, detection_feedback, classification_feedback, given_detection):
         """
@@ -52,6 +51,7 @@ class OSUInterface:
             'object_ymin', 'object_xmin', 'object_ymax', 'object_xmax'])
 
         lines = [line.split(',') for line in contents.splitlines()]
+        assert len(lines) > 0, "content was empty"
 
         create_row = lambda idx, line: [line[0], None, None, None, None, None, None, None, None, None,
             line[1], line[2], 
@@ -64,9 +64,10 @@ class OSUInterface:
             df.loc[idx] = row
             idx += 1
 
-        df.to_csv(self.batch_csv_path, index=True)
+        csv_path = self.temp_path.joinpath(f'batch_{round_id}.csv')
+        df.to_csv(csv_path, index=True)
         
-        ret = self.app.run(self.batch_csv_path)
+        ret = self.app.run(csv_path)
         p_ni = ret['p_ni']
         red_light_scores = ret['red_light_score']
         top_3 = ret['svo']
@@ -77,10 +78,10 @@ class OSUInterface:
 
         top_3_str = [','.join([f'{(svo[0], svo[1], svo[2], p)}' for svo, p in zip(svos, ps)]) for svos, ps in zip(top_3, top_3_probs)]
         svo_preds = '\n'.join([f'{img}, {svo_s}' for img, svo_s in zip(df['new_image_path'].to_list(), top_3_str)])
-
-        if self.batch_csv_path.exists():
-            os.remove(self.batch_csv_path)
-            
+                           
+        if csv_path.exists():
+            os.remove(csv_path)
+        
         print(f'  ==> OSU processed round {round_id}')
         
         return (novelty_preds, svo_preds)

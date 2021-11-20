@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import numpy as np
 
 data_dir = Path('session/data')
 test_data_dir = data_dir / 'tests'
@@ -8,7 +9,7 @@ sys_results_dir = data_dir / 'sys_results'
 sample_test_ids = [path.name.split('_')[0] for path in sorted(list(test_data_dir.iterdir()))]
 trial_size = 2500
 round_size = 100
-round_count = 25
+# round_count = 25
 feedback_max_ids = 10
 
 test_data = None
@@ -20,10 +21,12 @@ def load_test_data():
 
     for test_id in sample_test_ids:
         image_lines = open(test_data_dir / f'{test_id}_single_df.csv', 'r').read().splitlines()
-
+        
         ## throw away the header line
         image_lines = image_lines[1:]
         
+        round_count = int(np.ceil(len(image_lines) / round_size))
+
         ## select the subset of vals that the API should return
         api_lines = []
         for image_line in image_lines:
@@ -32,7 +35,7 @@ def load_test_data():
             api_vals = [vals[0]] + vals[10:]
             api_lines.append(','.join(api_vals))
 
-        test_data[test_id] = ['\n'.join(api_lines[i * round_size:(i + 1) * round_size]) for i in range(round_count)]
+        test_data[test_id] = ['\n'.join(api_lines[i * round_size: min((i + 1) * round_size, len(image_lines))]) for i in range(round_count)]
 
 def clear_results_dirs():
     for file in results_dir.iterdir():
@@ -63,7 +66,7 @@ def image_data(test_id, round_id):
 
     if test_data == None:
         load_test_data()
-    if round_id >= round_count:
+    if round_id >= len(test_data[test_id]):
         return None
 
     return test_data[test_id][int(round_id)]
