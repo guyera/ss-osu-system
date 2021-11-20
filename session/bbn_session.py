@@ -330,7 +330,7 @@ class BBNSession:
 
         round_size = metadata['round_size']
         feedback_max_ids = metadata['feedback_max_ids']
-        max_novel_classes = metadata['max_novel_classes']
+        # max_novel_classes = metadata['max_novel_classes']
         # print(f'===> Max_novel_classes: {max_novel_classes}')
         red_light_declared = False
 
