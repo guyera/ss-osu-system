@@ -4,6 +4,7 @@ import pickle
 import os
 import math
 import sklearn.metrics
+import numpy as np
 
 import noveltydetectionfeatures
 import unsupervisednoveltydetection.common
@@ -50,24 +51,52 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         object_testing_set = unsupervisednoveltydetection.common.ObjectDataset(testing_set, train = True)
         verb_testing_set = unsupervisednoveltydetection.common.VerbDataset(testing_set, train = True)
         
-        id_subject_labels = list(range(1, 3))
-        ood_subject_labels = list(range(3, 5))
-        id_object_labels = list(range(1, 6))
-        ood_object_labels = list(range(6, 13))
-        id_verb_labels = list(range(1, 5))
-        ood_verb_labels = list(range(5, 8))
-        subject_class_split = unsupervisednoveltydetection.common.ClassSplit(id_subject_labels, ood_subject_labels)
-        object_class_split = unsupervisednoveltydetection.common.ClassSplit(id_object_labels, ood_object_labels)
-        verb_class_split = unsupervisednoveltydetection.common.ClassSplit(id_verb_labels, ood_verb_labels)
+        num_id_subject = 5 // 2
+        num_id_object = 13 // 2
+        num_id_verb = 8 // 2
+        
+        # generate labels randomly and store them within self for later
+        # export
+        subject_labels = np.arange(1, 5)
+        object_labels = np.arange(1, 13)
+        verb_labels = np.arange(1, 8)
+        np.random.shuffle(subject_labels)
+        np.random.shuffle(object_labels)
+        np.random.shuffle(verb_labels)
+        subject_labels = subject_labels.tolist()
+        object_labels = object_labels.tolist()
+        verb_labels = verb_labels.tolist()
+
+        self.id_subject_labels = subject_labels[:num_id_subject]
+        self.ood_subject_labels = subject_labels[num_id_subject:]
+        self.id_object_labels = object_labels[:num_id_object]
+        self.ood_object_labels = object_labels[num_id_object:]
+        self.id_verb_labels = verb_labels[:num_id_verb]
+        self.ood_verb_labels = verb_labels[num_id_verb:]
+        
+        subject_class_split = unsupervisednoveltydetection.common.ClassSplit(self.id_subject_labels, self.ood_subject_labels)
+        object_class_split = unsupervisednoveltydetection.common.ClassSplit(self.id_object_labels, self.ood_object_labels)
+        verb_class_split = unsupervisednoveltydetection.common.ClassSplit(self.id_verb_labels, self.ood_verb_labels)
         
         id_subject_training_set, ood_subject_training_set = subject_class_split.split_dataset(subject_training_set)
         id_object_training_set, ood_object_training_set = object_class_split.split_dataset(object_training_set)
         id_verb_training_set, ood_verb_training_set = verb_class_split.split_dataset(verb_training_set)
+
+        # Remap ID training labels to [0, ..., K - 1]
+        id_subject_training_set = unsupervisednoveltydetection.common.LabelMappingDataset(id_subject_training_set, self.id_subject_labels)
+        id_object_training_set = unsupervisednoveltydetection.common.LabelMappingDataset(id_object_training_set, self.id_object_labels)
+        id_verb_training_set = unsupervisednoveltydetection.common.LabelMappingDataset(id_verb_training_set, self.id_verb_labels)
+        
+        # Upshift ID training labels to [1, ..., K], leaving 0 for novelty
+        transform = unsupervisednoveltydetection.common.UpshiftTargetTransform()
+        id_subject_training_set = unsupervisednoveltydetection.common.TransformingDataset(id_subject_training_set, target_transform = transform)
+        id_object_training_set = unsupervisednoveltydetection.common.TransformingDataset(id_object_training_set, target_transform = transform)
+        id_verb_training_set = unsupervisednoveltydetection.common.TransformingDataset(id_verb_training_set, target_transform = transform)
         
         id_subject_testing_set, ood_subject_testing_set = subject_class_split.split_dataset(subject_testing_set)
         id_object_testing_set, ood_object_testing_set = object_class_split.split_dataset(object_testing_set)
         id_verb_testing_set, ood_verb_testing_set = verb_class_split.split_dataset(verb_testing_set)
-
+        
         ood_subject_set = torch.utils.data.ConcatDataset((ood_subject_training_set, ood_subject_testing_set))
         ood_object_set = torch.utils.data.ConcatDataset((ood_object_training_set, ood_object_testing_set))
         ood_verb_set = torch.utils.data.ConcatDataset((ood_verb_training_set, ood_verb_testing_set))
@@ -116,9 +145,9 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             12544,
             12616,
             1024,
-            len(id_subject_labels) + 1, # Add 1 for anomaly label = 0
-            len(id_object_labels) + 1, # Add 1 for anomaly label = 0
-            len(id_verb_labels) + 1 # Add 1 for anomaly label = 0
+            len(self.id_subject_labels) + 1, # Add 1 for anomaly label = 0
+            len(self.id_object_labels) + 1, # Add 1 for anomaly label = 0
+            len(self.id_verb_labels) + 1 # Add 1 for anomaly label = 0
         ).to(self.device)
         
         classifier.fit(0.01, 0.0001, 300, id_subject_training_loader, id_object_training_loader, id_verb_training_loader)
@@ -132,7 +161,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         object_trues = []
         verb_scores = []
         verb_trues = []
-
+        
         for features, labels in self.subject_anomaly_detection_loader:
             subject_trues.append(labels)
             
@@ -173,40 +202,46 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         num_ood_verb = int(verb_trues.sum().item())
         num_id_verb = len(verb_trues) - num_ood_verb
 
-        # AUC is the proportion of ID-OOD pairs which are ordered correctly
-        # by their anomaly scores. To do a one-sample test of proportion,
-        # we'd need to compute the number of pairs. However, having many e.g.
-        # OOD examples while having few ID examples should not guarantee a
-        # narrow confidence interval, despite having many pairs, because the
-        # information about the distribution of scores over ID data is very
-        # limited, and so the ordering of the pairs is more likely to be biased
-        # depending on the few ID scores we have. So we use the minimum of
-        # the number of ID examples and the number of OOD examples as N in the
-        # tests of proportion. Perhaps there's a more principled statistical
-        # test for AUC, but this is sufficient for now.
-        num_subject = min(num_id_subject, num_ood_subject)
-        num_object = min(num_id_object, num_ood_object)
-        num_verb = min(num_id_verb, num_ood_verb)
-
         subject_auc = sklearn.metrics.roc_auc_score(subject_trues.numpy(), subject_scores.detach().cpu().numpy())
         object_auc = sklearn.metrics.roc_auc_score(object_trues.numpy(), object_scores.detach().cpu().numpy())
         verb_auc = sklearn.metrics.roc_auc_score(verb_trues.numpy(), verb_scores.detach().cpu().numpy())
+        partial_subject_auc = sklearn.metrics.roc_auc_score(subject_trues.numpy(), subject_scores.detach().cpu().numpy(), max_fpr = 0.25)
+        partial_object_auc = sklearn.metrics.roc_auc_score(object_trues.numpy(), object_scores.detach().cpu().numpy(), max_fpr = 0.25)
+        partial_verb_auc = sklearn.metrics.roc_auc_score(verb_trues.numpy(), verb_scores.detach().cpu().numpy(), max_fpr = 0.25)
+
+        # save self.classifier, self.XXX_labels, and XXX_auc variables
+        # in a dictionary via pickle for comparative supervised experiments.
+        results = {
+            'classifier': self.classifier.state_dict(),
+            'subject_auc': subject_auc,
+            'object_auc': object_auc,
+            'verb_auc': verb_auc,
+            'partial_subject_auc': partial_subject_auc,
+            'partial_object_auc': partial_object_auc,
+            'partial_verb_auc': partial_verb_auc,
+            'id_subject_labels': self.id_subject_labels,
+            'id_object_labels': self.id_object_labels,
+            'id_verb_labels': self.id_verb_labels,
+            'ood_subject_labels': self.ood_subject_labels,
+            'ood_object_labels': self.ood_object_labels,
+            'ood_verb_labels': self.ood_verb_labels,
+        }
+        with open(f'results.pkl', 'wb') as f:
+            pickle.dump(results, f)
         
         print(f'Subject auc: {subject_auc}')
         print(f'Object auc: {object_auc}')
         print(f'Verb auc: {verb_auc}')
+        print(f'Partial subject auc: {partial_subject_auc}')
+        print(f'Partial object auc: {partial_object_auc}')
+        print(f'Partial verb auc: {partial_verb_auc}')
         
-        # Do one-sided one-sample tests of proportion to test if estimated
-        # auc > null hypothesis auc (random guessing auc = 0.5)
-        subject_z = (subject_auc - 0.5) / math.sqrt(0.25 / num_subject)
-        object_z = (object_auc - 0.5) / math.sqrt(0.25 / num_object)
-        verb_z = (verb_auc - 0.5) / math.sqrt(0.25 / num_verb)
-        
-        # Using alpha = 0.05, z should be greater than or equal to 1.64 to
-        # reject the null hypothesis
-        self.assertTrue(subject_z >= 1.64)
-        self.assertTrue(object_z >= 1.64)
-        self.assertTrue(verb_z >= 1.64)
+        self.assertTrue(subject_auc >= 0.5)
+        self.assertTrue(object_auc >= 0.5)
+        self.assertTrue(verb_auc >= 0.5)
+        self.assertTrue(partial_subject_auc >= 0.5)
+        self.assertTrue(partial_object_auc >= 0.5)
+        self.assertTrue(partial_verb_auc >= 0.5)
         
 if __name__ == '__main__':
     unittest.main()

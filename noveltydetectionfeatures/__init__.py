@@ -133,7 +133,8 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
             data_loader = DataLoader(
                 dataset = dataset,
                 collate_fn = custom_collate,
-                batch_size = image_batch_size
+                #batch_size = image_batch_size
+                batch_size = 1
             )
             
             detector = models.fasterrcnn_resnet_fpn('resnet50', pretrained=True)
@@ -187,7 +188,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                 
                 features = backbone(images.tensors.to(feature_extraction_device))
                 features = {k: v.cpu() for k, v in features.items()}
-                
+
                 image_shapes = images.image_sizes
                 
                 for b_idx, detection in enumerate(detections):
@@ -199,9 +200,12 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                         subject_label = targets[b_idx]['subject'][0].detach()
                         object_label = targets[b_idx]['object'][0].detach()
                         verb_label = targets[b_idx]['verb'][0].detach()
-                        subject_label = None if subject_label.item() == -1 else subject_label
-                        object_label = None if object_label.item() == -1 else object_label
-                        verb_label = None if verb_label.item() == -1 else verb_label
+                        raw_subject_label = subject_label
+                        raw_object_label = object_label
+                        raw_verb_label = verb_label
+                        subject_label = None if raw_subject_label.item() == -1 else raw_subject_label
+                        object_label = None if raw_object_label.item() == -1 else raw_object_label
+                        verb_label = None if raw_subject_label.item() == -1 else raw_verb_label
                     
                     subject_labels.append(subject_label)
                     object_labels.append(object_label)
@@ -268,7 +272,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                         subject_box_features.append(None)
                         object_box_features.append(None)
                         verb_box_features.append(None)
-                
+            
             self.spatial_features = box_pair_spatial
             self.subject_labels = subject_labels
             self.object_labels = object_labels
