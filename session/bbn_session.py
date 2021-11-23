@@ -45,16 +45,16 @@ class BBNSession:
         self.osu_stubs = osu_interface
         # These are also defined in toplevel
         self.num_subject_classes = 5
-        self.num_object_classes = 13
+        self.num_object_classes = 12
         self.num_verb_classes = 8
 
         # Turn this to True to get readable (S,O,V) triples for our top-3 in classification output.
         # Default is to get the 945 floats that UMD is requesting. 
         self.probs_debug_format = False
         self.triple_list = list(itertools.product(
-            np.arange(-1, self.num_subject_classes + 1),
-            np.arange(0, self.num_verb_classes + 1),
-            np.arange(-1, self.num_object_classes + 1)))
+            np.arange(-1, self.num_subject_classes),
+            np.arange(0, self.num_verb_classes),
+            np.arange(-1, self.num_object_classes)))
         self.triple_list_count = len(self.triple_list)
         self.triple_dict = {}
         for i, triple in enumerate(self.triple_list):
