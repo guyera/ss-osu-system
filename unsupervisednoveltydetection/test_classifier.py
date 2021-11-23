@@ -19,7 +19,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 data_root = 'Custom',
                 csv_path = 'Custom/annotations/dataset_v3_val.csv',
                 num_subj_cls = 5,
-                num_obj_cls = 13,
+                num_obj_cls = 12,
                 num_action_cls = 8,
                 training = False,
                 image_batch_size = 16,
@@ -33,7 +33,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
 
         # Remove novel 0 labels
         id_subject_labels = list(range(1, 5))
-        id_object_labels = list(range(1, 13))
+        id_object_labels = list(range(1, 12))
         id_verb_labels = list(range(1, 8))
         id_subject_indices = unsupervisednoveltydetection.common.get_indices_of_labels(subject_set, id_subject_labels)
         id_object_indices = unsupervisednoveltydetection.common.get_indices_of_labels(object_set, id_object_labels)
@@ -68,7 +68,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             12616,
             1024,
             5,
-            13,
+            12,
             8
         )
         

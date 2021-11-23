@@ -9,7 +9,7 @@ import unittest
 class TestConfidenceCalibrationMethods(unittest.TestCase):
     def setUp(self):
         self.device = 'cuda:0'
-        detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(12544, 12616, 1024, 5, 13, 8)
+        detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(12544, 12616, 1024, 5, 12, 8)
         self.detector = detector.to(self.device)
 
         state_dict = torch.load('unsupervisednoveltydetection/unsupervised_novelty_detection_module.pth')
@@ -20,7 +20,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             data_root = 'Custom',
             csv_path = 'Custom/annotations/dataset_v3_val.csv',
             num_subj_cls = 5,
-            num_obj_cls = 13,
+            num_obj_cls = 12,
             num_action_cls = 8,
             training = False,
             image_batch_size = 16,

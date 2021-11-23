@@ -40,7 +40,7 @@ def parse_args():
     parser.add_argument(
         '--num-obj-cls',
         type = int,
-        default = 13
+        default = 12
     )
     parser.add_argument(
         '--num-action-cls',

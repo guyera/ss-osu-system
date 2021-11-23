@@ -21,7 +21,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 data_root = 'Custom',
                 csv_path = 'Custom/annotations/dataset_v3_train.csv',
                 num_subj_cls = 5,
-                num_obj_cls = 13,
+                num_obj_cls = 12,
                 num_action_cls = 8,
                 training = True,
                 image_batch_size = 16,
@@ -35,7 +35,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 data_root = 'Custom',
                 csv_path = 'Custom/annotations/dataset_v3_val.csv',
                 num_subj_cls = 5,
-                num_obj_cls = 13,
+                num_obj_cls = 12,
                 num_action_cls = 8,
                 training = True,
                 image_batch_size = 16,
@@ -52,13 +52,13 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         verb_testing_set = unsupervisednoveltydetection.common.VerbDataset(testing_set, train = True)
         
         num_id_subject = 5 // 2
-        num_id_object = 13 // 2
+        num_id_object = 12 // 2
         num_id_verb = 8 // 2
         
         # generate labels randomly and store them within self for later
         # export
         subject_labels = np.arange(1, 5)
-        object_labels = np.arange(1, 13)
+        object_labels = np.arange(1, 12)
         verb_labels = np.arange(1, 8)
         np.random.shuffle(subject_labels)
         np.random.shuffle(object_labels)
