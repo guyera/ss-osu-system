@@ -20,9 +20,9 @@ class TopLevelApp:
             raise Exception(f'pretrained SCG models were not found in path {ensemble_path}')
 
         self.data_root = data_root
-        self.num_subject_classes = 5
-        self.num_object_classes = 13
-        self.num_verb_classes = 8
+        self.NUM_SUBJECT_CLASSES = 5
+        self.NUM_OBJECT_CLASSES = 12
+        self.NUM_VERB_CLASSES = 8
 
         self.NUM_APP_FEATURES = 256 * 7 * 7
         self.NUM_VERB_FEATURES = self.NUM_APP_FEATURES + 2 * 36
@@ -37,13 +37,13 @@ class TopLevelApp:
         self.all_top_1_svo = []
         self.all_top_3_svo = []
 
-        self.scg_ensemble = Ensemble(ensemble_path, self.num_object_classes, self.num_subject_classes, 
-            self.num_verb_classes, data_root=None, cal_csv_path=None, val_csv_path=None)
+        self.scg_ensemble = Ensemble(ensemble_path, self.NUM_OBJECT_CLASSES, self.NUM_SUBJECT_CLASSES, 
+            self.NUM_VERB_CLASSES, data_root=None, cal_csv_path=None, val_csv_path=None)
 
         self.und_manager = UnsupervisedNoveltyDetectionManager(pretrained_unsupervised_module_path, 
-            self.num_subject_classes, 
-            self.num_object_classes, 
-            self.num_verb_classes, 
+            self.NUM_SUBJECT_CLASSES, 
+            self.NUM_OBJECT_CLASSES, 
+            self.NUM_VERB_CLASSES, 
             self.NUM_APP_FEATURES, 
             self.NUM_VERB_FEATURES)
 
@@ -109,7 +109,7 @@ class TopLevelApp:
             subject_novelty_scores_s, verb_novelty_scores_s, object_novelty_scores_s = self.snd_manager.score(
                 novelty_dataset, subject_novelty_scores_u_copy, verb_novelty_scores_u_copy, object_novelty_scores_u_copy)
 
-            # pick the scores from the detector which had a AUC
+            # pick the scores from the detector which had a higher AUC
             if self.unsupervised_aucs[0] < self.supervised_aucs[0]:
                 subject_novelty_scores = subject_novelty_scores_s
 
@@ -419,9 +419,9 @@ class TopLevelApp:
             data_root=self.data_root,
             csv_path=csv_path,
             training=False,
-            num_subj_cls=self.num_subject_classes,
-            num_obj_cls=self.num_object_classes,
-            num_action_cls=self.num_verb_classes)
+            num_subj_cls=self.NUM_SUBJECT_CLASSES,
+            num_obj_cls=self.NUM_OBJECT_CLASSES,
+            num_action_cls=self.NUM_VERB_CLASSES)
 
         scg_data_loader = DataLoader(
             dataset=valset,
@@ -435,11 +435,11 @@ class TopLevelApp:
             name = 'Custom',
             data_root = self.data_root,
             csv_path = csv_path,
-            num_subj_cls = self.num_subject_classes,
-            num_obj_cls = self.num_object_classes,
-            num_action_cls = self.num_verb_classes,
+            num_subj_cls = self.NUM_SUBJECT_CLASSES,
+            num_obj_cls = self.NUM_OBJECT_CLASSES,
+            num_action_cls = self.NUM_VERB_CLASSES,
             training = False,
-            image_batch_size = 8,
+            image_batch_size = 1,
             feature_extraction_device = 'cuda:0',
             cache_to_disk = False)
 
@@ -470,20 +470,18 @@ class TopLevelApp:
         raise Exception(f'Invalid subject/object box coords, {has_subject}, {has_object}')
 
     def _is_svo_type_4(self, svo):
-        known_tuples = self.scg_ensemble.train_tuples
-
-        # whether svo contains nulls 
-        if svo[0] == -1 or svo[1] == -1 or svo[2] == -1:
-            return 0
-
-        # this SVO is a known-combination or contains nulls
-        if svo in known_tuples:
+        # whether SV is novel or unknown
+        if svo[0] == -1 or svo[1] == -1 or svo[0] == 0 or svo[1] == 0:
             return 0
         
-        # whether svo contains novelty
-        if svo[0] == 0 or svo[1] == 0 or svo[2] == 0:
+        # whether SVO is a known-combination
+        if svo in self.scg_ensemble.train_tuples:
             return 0
 
+        # whether SVO is type-2 or type-5
+        if (svo[0], svo[1]) in self.scg_ensemble.train_SVs:
+            return 0
+            
         return 1
 
     def _accumulate(self, top_1, top_3, p_ni, batch_cases, feedback_mask, query_mask, preds_is_nc):

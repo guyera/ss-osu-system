@@ -56,16 +56,19 @@ class Ensemble:
             results = pickle.load(handle)
             self.train_tuples = results['train_tuples']
             self.num_unique_triplets = len(self.train_tuples)
+            self.train_SVs = [(svo[0], svo[1]) for svo in self.train_tuples]
 
         if not pathlib.Path(self.calibrator_path).exists():
             if cal_csv_path is None or val_csv_path is None:
-                raise Exception('if pretrained calibrator is not found, csv path to calibration/validation must be provided.')
+                raise Exception('if pretrained calibrator is not found, calibration/validation csv path must be provided instead.')
 
             if not pathlib.Path(cal_csv_path).exists():
-                raise Exception('path to calibration csv was not found.')
+                raise Exception(f'calibration csv was not found in path {cal_csv_path}.')
 
             if not pathlib.Path(val_csv_path).exists():
-                raise Exception('path to validation csv was not found.')
+                raise Exception(f'validation csv was not found in path {val_csv_path}.')
+
+            print('Calibrating...')
 
             valset = DataFactory(
                 name="Custom", 
@@ -107,6 +110,46 @@ class Ensemble:
         feature_len = self.num_subject_classes + self.num_object_classes + self.num_verb_classes
         self.calibrator = LogisticRegression(input_dim=feature_len, output_dim=self.num_unique_triplets)
         self.calibrator.load_state_dict(saved_calibrator['lr'])
+        
+    def get_top3_SVOs(self, data_loader, is_training, verbose=True):
+        with torch.no_grad():
+            features, labels, is_null_flag, null_top3, is_subj_null, is_obj_null = self._compute_features(data_loader, is_training)
+
+            features = [torch.Tensor(f) for f in features]
+            features = torch.vstack(features)
+
+            output = self.calibrator(features)
+            probs = torch.nn.functional.softmax(output, dim=1)
+
+            _, indices = torch.topk(probs, k=self.top_k, largest=True, dim=1)
+            indices = indices.cpu().numpy()
+
+            lr_top3 = [[(self.train_tuples[indices[i, j]], probs[i, indices[i, j]].item()) for j in range(self.top_k)] 
+                for i in range(indices.shape[0])]
+            invalid_null = [any([int(t[0][0]) == int(-1) or int(t[0][1]) == int(-1) or int(t[0][2]) == int(-1) for t in top3])
+                if not f else False for top3, f in zip(lr_top3, is_null_flag)]
+                
+            ret = [t2 if f or inv else t1 for t1, t2, f, inv in zip(lr_top3, null_top3, is_null_flag, invalid_null)]
+
+        if is_training and verbose:
+            assert labels is not None
+
+            count3 = 0
+            count1 = 0
+
+            for i in range(len(labels)):
+                q = sorted(ret[i], key=lambda x: x[1])
+
+                if labels[i] == q[2][0]:
+                    count1 += 1
+
+                if any([ret[i][j][0] == labels[i] for j in range(3)]):
+                    count3 += 1
+
+            print(f'top1 accuracy: {count1 / len(labels)}')
+            print(f'top3 accuracy: {count3 / len(labels)}')
+
+        return ret
         
     def _clean_result(self, my_net, orig_result, detections):
         num_verb_cls = my_net.interaction_head.num_classes
@@ -244,13 +287,6 @@ class Ensemble:
             img_id = inputs[1][0]['img_id']
             inputs[1][0].pop('img_id', None)
 
-            # This is needed to do box matching and remove the results where subjects 
-            # have been made objects. This piece of logic might get moved inside the
-            # model class in future releases 
-            # _, mod_detections, _, _ = self.nets[0].preprocess(*input_data_copy)  
-            # mod_detections = pocket.ops.relocate_to_cpu(mod_detections)
-
-            # gt_triplet expects only one box as the input and will fail otherwise        
             if is_training:
                 gt_triplet = [batch[-1][0]["subject"].item(), batch[-1][0]["verb"].item(), batch[-1][0]["object"].item()]
                 gt_subj = gt_triplet[0]
@@ -338,8 +374,8 @@ class Ensemble:
         return features, labels, is_null_flag, null_top3, is_subj_null, is_obj_null
 
     def _calibrate(self, cal_data_loader, val_data_loader):
-        cal_features, cal_labels = self._compute_features(cal_data_loader, True)
-        val_features, val_labels = self._compute_features(val_data_loader, True)
+        cal_features, cal_labels, _, _, _, _ = self._compute_features(cal_data_loader, True)
+        val_features, val_labels, _, _, _, _ = self._compute_features(val_data_loader, True)
 
         # calibration feature
         num_cal_samples = len(cal_features)
@@ -353,7 +389,7 @@ class Ensemble:
                 idx = self.train_tuples.index(cal_labels[i])
                 y_cal[i] = idx
             except ValueError:
-                print(f'Error: label {cal_labels[i]} not found in unique triplets')
+                print(f'Error: label {cal_labels[i]} was not found in train tuples')
                 raise Exception('Fatal error')
 
         # validation feature
@@ -368,7 +404,7 @@ class Ensemble:
                 idx = self.train_tuples.index(val_labels[i])
                 y_val[i] = idx
             except ValueError:
-                print(f'Error: label {val_labels[i]} not found in unique triplets')
+                print(f'Error: label {val_labels[i]} was not found in train tuples')
                 raise Exception('Fatal error')
 
         # training
@@ -404,42 +440,3 @@ class Ensemble:
 
                     print(f'loss: {loss.item()}, acc: {correct_cal.item() / num_cal_samples}, val. acc: {val_acc}')
 
-    def get_top3_SVOs(self, data_loader, is_training, verbose=True):
-        with torch.no_grad():
-            features, labels, is_null_flag, null_top3, is_subj_null, is_obj_null = self._compute_features(data_loader, is_training)
-
-            features = [torch.Tensor(f) for f in features]
-            features = torch.vstack(features)
-
-            output = self.calibrator(features)
-            probs = torch.nn.functional.softmax(output, dim=1)
-
-            _, indices = torch.topk(probs, k=self.top_k, largest=True, dim=1)
-            indices = indices.cpu().numpy()
-
-            lr_top3 = [[(self.train_tuples[indices[i, j]], probs[i, indices[i, j]].item()) for j in range(self.top_k)] 
-                for i in range(indices.shape[0])]
-            invalid_null = [any([int(t[0][0]) == int(-1) or int(t[0][1]) == int(-1) or int(t[0][2]) == int(-1) for t in top3])
-                if not f else False for top3, f in zip(lr_top3, is_null_flag)]
-                
-            ret = [t2 if f or inv else t1 for t1, t2, f, inv in zip(lr_top3, null_top3, is_null_flag, invalid_null)]
-
-        if is_training and verbose:
-            assert labels is not None
-
-            count3 = 0
-            count1 = 0
-
-            for i in range(len(labels)):
-                q = sorted(ret[i], key=lambda x: x[1])
-
-                if labels[i] == q[2][0]:
-                    count1 += 1
-
-                if any([ret[i][j][0] == labels[i] for j in range(3)]):
-                    count3 += 1
-
-            print(f'top1 accuracy: {count1 / len(labels)}')
-            print(f'top3 accuracy: {count3 / len(labels)}')
-
-        return ret

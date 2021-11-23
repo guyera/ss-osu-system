@@ -8,23 +8,15 @@ from torch.utils.data import DataLoader, DistributedSampler
 from models.scg import SpatiallyConditionedGraph as SCG
 from models.scg import CustomisedDLE
 from data.data_factory import DataFactory
-from utils import custom_collate, Timer
-
-train_timer = Timer()
+from utils import custom_collate
 
 
 class Train(object):
-    def __init__(self, net, model_name, train_loader, val_loader):
+    def __init__(self, net, train_loader, val_loader):
         self.net = net
         self.train_loader = train_loader
         self.val_loader = val_loader
-        self.func_map = {
-            'scg': self.scg,
-            'drg': self.drg,
-            'idn': self.idn,
-            'cascaded-hoi': self.cascaded_hoi,
-        }
-        self.train = self.func_map[model_name]
+        self.train = self.scg
 
     def scg(self, epoch, iteration, args):
         engine = CustomisedDLE(
@@ -33,8 +25,8 @@ class Train(object):
             self.val_loader,
             num_classes=args.num_action_cls,
             print_interval=args.print_interval,
-            cache_dir=args.cache_dir
-        )
+            cache_dir=args.cache_dir)
+            
         # Seperate backbone parameters from the rest
         param_group_1 = []
         param_group_2 = []
@@ -46,109 +38,22 @@ class Train(object):
                     param_group_2.append(v)
                 else:
                     raise KeyError(f"Unknown parameter name {k}")
+                    
         # Fine-tune backbone with lower learning rate
         optim = torch.optim.AdamW([
             {'params': param_group_1, 'lr': args.learning_rate * args.lr_decay},
-            {'params': param_group_2}
-        ], lr=args.learning_rate,
-            weight_decay=args.weight_decay
-        )
+            {'params': param_group_2}], lr=args.learning_rate,
+            weight_decay=args.weight_decay)
+            
         lambda1 = lambda epoch: 1. if epoch < args.milestones[0] else args.lr_decay
         lambda2 = lambda epoch: 1. if epoch < args.milestones[0] else args.lr_decay
-        lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-            optim, lr_lambda=[lambda1, lambda2]
-        )
+        lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=[lambda1, lambda2])
+        
         # Override optimiser and learning rate scheduler
         engine.update_state_key(optimizer=optim, lr_scheduler=lr_scheduler)
         engine.update_state_key(epoch=epoch, iteration=iteration)
 
         engine(args.num_epochs)
-
-    def drg(self, input_data):
-        raise NotImplementedError
-
-    def idn(self, epoch, iteration, args):
-        raise NotImplementedError
-        # def idn_train(net, loader, optimizer, timer, epoch):
-        #     net.train()
-        #     net.cuda()
-        #     global step
-        #     step = 0
-        #
-        #     timer.tic()
-        #     meters = {
-        #         'L_rec': AverageMeter(),
-        #         'L_cls': AverageMeter(),
-        #         'L_ae': AverageMeter(),
-        #         'loss': AverageMeter()
-        #     }
-        #     for i, batch in enumerate(loader):
-        #         n = batch['spatial'].shape[0]
-        #
-        #         batch['spatial'] = batch['spatial'].cuda(non_blocking=True)
-        #         batch['labels_s'] = batch['labels_s'].cuda(non_blocking=True)
-        #         batch['labels_r'] = batch['labels_r'].cuda(non_blocking=True)
-        #         batch['labels_ro'] = batch['labels_ro'].cuda(non_blocking=True)
-        #         batch['labels_sro'] = batch['labels_sro'].cuda(non_blocking=True)
-        #         batch['sub_vec'] = batch['sub_vec'].cuda(non_blocking=True)
-        #         batch['obj_vec'] = batch['obj_vec'].cuda(non_blocking=True)
-        #         batch['uni_vec'] = batch['uni_vec'].cuda(non_blocking=True)
-        #
-        #         output = net(batch)
-        #         loss = torch.mean(output['loss'])
-        #         optimizer.zero_grad()
-        #         loss.backward()
-        #         optimizer.step()
-        #
-        #         for key in output.keys():
-        #             if key in meters:
-        #                 meters[key].update(torch.mean(output[key]).detach().cpu().data, n)
-        #
-        #         timer.toc()
-        #         timer.tic()
-        #         if i % 2000 == 0:
-        #             print("%03d epoch, %05d iter, average time %.4f, loss %.4f" % (
-        #             epoch, i, timer.average_time, loss.detach().cpu().data))
-        #         step += 1
-        #
-        #     timer.toc()
-        #
-        #     return net, meters
-        #
-        # config = get_config(args.config_path)
-        # optimizer = optim.SGD(self.net.parameters(), lr=config.TRAIN.OPTIMIZER.lr,
-        #                       momentum=config.TRAIN.OPTIMIZER.momentum,
-        #                       weight_decay=config.TRAIN.OPTIMIZER.weight_decay)
-        #
-        # for i in range(args.num_epochs):  # config.TRAIN.MAX_EPOCH
-        #     train_str = "%03d epoch training" % i
-        #     net, train_meters = idn_train(self.net, self.train_loader, optimizer, train_timer, i)
-        #     for (key, value) in train_meters.items():
-        #         train_str += ", %s=%.4f" % (key, value.avg)
-
-    def cascaded_hoi(self, input_data):
-        raise NotImplementedError
-
-
-def get_net(args):
-    if args.net == 'scg':
-        net = SCG(
-            num_classes=args.num_action_cls,
-            num_obj_classes=args.num_obj_cls,
-            num_subject_classes=args.num_subj_cls,
-            num_iterations=args.num_iter, postprocess=False,
-            max_subject=args.max_subject, max_object=args.max_object,
-            box_score_thresh=args.box_score_thresh,
-            distributed=True
-        )
-    else:
-        raise NotImplementedError
-    # elif args.net == 'idn':
-    #     args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
-    #     HO_weight = torch.from_numpy(args_idn['HO_weight'])
-    #     config = get_config(args.config_path)
-    #     net = IDN(config.MODEL, HO_weight, num_classes=args.num_classes)
-    return net
 
 
 def main(rank, args):
@@ -159,64 +64,54 @@ def main(rank, args):
         rank=rank
     )
 
-    if args.net == 'scg':
-        trainset = DataFactory(
-            name=args.dataset,
-            data_root=args.data_root,
-            csv_path=args.csv_path,
-            num_subj_cls=args.num_subj_cls,
-            num_obj_cls=args.num_obj_cls,
-            num_action_cls=args.num_action_cls,
-            flip=True
-        )
+    trainset = DataFactory(
+        name=args.dataset,
+        data_root=args.data_root,
+        csv_path=args.csv_path,
+        num_subj_cls=args.num_subj_cls,
+        num_obj_cls=args.num_obj_cls,
+        num_action_cls=args.num_action_cls,
+        flip=True)
 
-        valset = DataFactory(
-            name=args.dataset,
-            data_root=args.data_root,
-            csv_path=args.val_csv_path,
-            num_subj_cls=args.num_subj_cls,
-            num_obj_cls=args.num_obj_cls,
-            num_action_cls=args.num_action_cls
-        )
+    valset = DataFactory(
+        name=args.dataset,
+        data_root=args.data_root,
+        csv_path=args.val_csv_path,
+        num_subj_cls=args.num_subj_cls,
+        num_obj_cls=args.num_obj_cls,
+        num_action_cls=args.num_action_cls)
 
-        train_loader = DataLoader(
-            dataset=trainset,
-            collate_fn=custom_collate, batch_size=args.batch_size,
-            num_workers=args.num_workers, pin_memory=True,
-            sampler=DistributedSampler(
-                trainset,
-                num_replicas=args.world_size,
-                rank=rank)
-        )
+    train_loader = DataLoader(
+        dataset=trainset,
+        collate_fn=custom_collate, batch_size=args.batch_size,
+        num_workers=args.num_workers, pin_memory=True,
+        sampler=DistributedSampler(
+            trainset,
+            num_replicas=args.world_size,
+            rank=rank))
 
-        val_loader = DataLoader(
-            dataset=valset,
-            collate_fn=custom_collate, batch_size=args.batch_size,
-            num_workers=args.num_workers, pin_memory=True,
-            sampler=DistributedSampler(
-                valset,
-                num_replicas=args.world_size,
-                rank=rank)
-        )
-    else:
-        raise NotImplementedError
+    val_loader = DataLoader(
+        dataset=valset,
+        collate_fn=custom_collate, batch_size=args.batch_size,
+        num_workers=args.num_workers, pin_memory=True,
+        sampler=DistributedSampler(
+            valset,
+            num_replicas=args.world_size,
+            rank=rank))
 
-    # elif args.net == 'idn':
-    #     args_idn = pickle.load(open('configs/arguments.pkl', 'rb'))
-    #     HO_weight = torch.from_numpy(args_idn['HO_weight'])
-    #     config = get_config(args.config_path)
-    #     train_set = HICO_train_set(config, split='trainval', train_mode=True)
-    #     train_loader = DataLoaderX(train_set, batch_size=config.TRAIN.DATASET.BATCH_SIZE, shuffle=True,
-    #                                collate_fn=train_set.collate_fn, pin_memory=False, drop_last=False)
-    #
-    #     val_set = HICO_test_set(config.TRAIN.DATA_DIR, split='test')
-    #     val_loader = DataLoaderX(val_set, batch_size=args.batch_size, shuffle=False, collate_fn=val_set.collate_fn,
-    #                              pin_memory=False, drop_last=False)
-    #         train_loader = val_loader
     # Fix random seed for model synchronisation
     torch.manual_seed(args.random_seed)
 
-    net = get_net(args)
+    net = SCG(
+        num_classes=args.num_action_cls,
+        num_obj_classes=args.num_obj_cls,
+        num_subject_classes=args.num_subj_cls,
+        num_iterations=args.num_iter, 
+        postprocess=False,
+        max_subject=args.max_subject, 
+        max_object=args.max_object,
+        box_score_thresh=args.box_score_thresh,
+        distributed=True)
 
     if os.path.exists(args.checkpoint_path):
         print("=> Rank {}: continue from saved checkpoint".format(
@@ -236,9 +131,7 @@ def main(rank, args):
 
     print("Data and model loaded")
 
-    # TODO: Pass model_name through args here, also implement conditional calling based on models
-
-    trainer = Train(net, args.net, train_loader, val_loader).train
+    trainer = Train(net, train_loader, val_loader).train
     trainer(epoch, iteration, args)
 
 
@@ -247,7 +140,6 @@ if __name__ == "__main__":
     parser.add_argument('--world-size', required=True, type=int,
                         help="Number of subprocesses/GPUs to use")
     parser.add_argument('--dataset', default='Custom', type=str)
-    parser.add_argument('--net', default='scg', type=str)
     parser.add_argument('--data-root', default='.', type=str, help="Give full csv path for Custom dataset")
     parser.add_argument('--csv-path', default=None, type=str, help="Csv Path is required only for Custom dataset")
     parser.add_argument('--val-csv-path', default=None, type=str, help="Csv Path is required only for Custom dataset")
@@ -264,7 +156,7 @@ if __name__ == "__main__":
                         help="The multiplier by which the learning rate is reduced")
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
     parser.add_argument('--num-subj-cls', default=5, type=int)
-    parser.add_argument('--num-obj-cls', default=13, type=int)
+    parser.add_argument('--num-obj-cls', default=12, type=int)
     parser.add_argument('--num-action-cls', default=8, type=int)
     parser.add_argument('--max-subject', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
@@ -274,8 +166,6 @@ if __name__ == "__main__":
     parser.add_argument('--print-interval', default=300, type=int)
     parser.add_argument('--checkpoint-path', default='', type=str)
     parser.add_argument('--cache-dir', type=str, default='./checkpoints')
-    parser.add_argument('--config_path', dest='config_path', help='Select config file', default='configs/IDN.yml',
-                        type=str)
 
     args = parser.parse_args()
     os.environ["MASTER_ADDR"] = "localhost"

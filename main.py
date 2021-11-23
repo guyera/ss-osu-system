@@ -5,7 +5,7 @@ from argparse import ArgumentParser
 
 if __name__ == "__main__":
     p = ArgumentParser()
-    p.add_argument('--data-root', default='Custom')
+    p.add_argument('--data-root', default='.')
     p.add_argument('--scg-ensemble', default='./ensemble/pretrained')
     p.add_argument('--pretrained-unsupervised-novelty-path', default='./unsupervisednoveltydetection/unsupervised_novelty_detection_module.pth')
     p.add_argument('--api_stubs', action='store_true')
