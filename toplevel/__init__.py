@@ -151,7 +151,7 @@ class TopLevelApp:
             # decide which novelty detector to use
             self.supervised_aucs = self.snd_manager.get_svo_detectors_auc()
             self.unsupervised_aucs = self.und_manager.get_svo_detectors_auc()
-            
+                        
         self.batch_context.p_ni = p_ni
         self.batch_context.subject_novelty_scores_u = subject_novelty_scores_u
         self.batch_context.verb_novelty_scores_u = verb_novelty_scores_u
@@ -418,10 +418,7 @@ class TopLevelApp:
             name="Custom", 
             data_root=self.data_root,
             csv_path=csv_path,
-            training=False,
-            num_subj_cls=self.NUM_SUBJECT_CLASSES,
-            num_obj_cls=self.NUM_OBJECT_CLASSES,
-            num_action_cls=self.NUM_VERB_CLASSES)
+            training=False)
 
         scg_data_loader = DataLoader(
             dataset=valset,
@@ -435,9 +432,6 @@ class TopLevelApp:
             name = 'Custom',
             data_root = self.data_root,
             csv_path = csv_path,
-            num_subj_cls = self.NUM_SUBJECT_CLASSES,
-            num_obj_cls = self.NUM_OBJECT_CLASSES,
-            num_action_cls = self.NUM_VERB_CLASSES,
             training = False,
             image_batch_size = 1,
             feature_extraction_device = 'cuda:0',

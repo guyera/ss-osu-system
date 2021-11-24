@@ -39,9 +39,6 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
             name,
             data_root,
             csv_path,
-            num_subj_cls,
-            num_obj_cls,
-            num_action_cls,
             training,
             image_batch_size,
             output_size = 7,
@@ -60,7 +57,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
             if not os.path.exists(filename):
                 print('Image features have not yet been computed. Computing image features...')
 
-                self._compute_image_features(name, data_root, csv_path, training, num_subj_cls, num_obj_cls, num_action_cls, 
+                self._compute_image_features(name, data_root, csv_path, training, 
                     image_batch_size, feature_extraction_device, output_size, sampling_ratio, image_mean, image_std, 
                     min_size, max_size)
             
@@ -89,7 +86,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                 self.object_appearance_features = data['object_appearance_features']
                 self.verb_appearance_features = data['verb_appearance_features']
         else:
-            self._compute_image_features(name, data_root, csv_path, training, num_subj_cls, num_obj_cls, num_action_cls, 
+            self._compute_image_features(name, data_root, csv_path, training, 
                 image_batch_size, feature_extraction_device, output_size, sampling_ratio, image_mean, image_std, 
                 min_size, max_size)
 
@@ -115,7 +112,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
 
         print('dataset was cached to disk.')
 
-    def _compute_image_features(self, name, data_root, csv_path, training, num_subj_cls, num_obj_cls, num_action_cls, 
+    def _compute_image_features(self, name, data_root, csv_path, training, 
         image_batch_size, feature_extraction_device, output_size, sampling_ratio, image_mean, image_std, 
         min_size, max_size):
 
@@ -124,11 +121,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                 name = name,
                 data_root = data_root,
                 csv_path = csv_path,
-                training = training,
-                num_subj_cls = num_subj_cls,
-                num_obj_cls = num_obj_cls,
-                num_action_cls = num_action_cls
-            )
+                training = training)
             
             data_loader = DataLoader(
                 dataset = dataset,

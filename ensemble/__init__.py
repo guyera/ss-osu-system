@@ -18,9 +18,9 @@ class Ensemble:
             raise Exception(f'pretrained SCG models were not found in path {ensemble_path}')
 
         self.top_k = 3
-        self.num_object_classes = num_obj_classes
-        self.num_subject_classes = num_subj_classes
-        self.num_verb_classes = num_verb_classes
+        self.NUM_OBJECT_CLASSES = num_obj_classes
+        self.NUM_SUBJECT_CLASSES = num_subj_classes
+        self.NUM_VERB_CLASSES = num_verb_classes
 
         self.nets = []
         for p in pathlib.Path(ensemble_path).glob('*'):
@@ -28,9 +28,9 @@ class Ensemble:
                 continue
 
             self.nets.append(SCG(
-                num_classes=self.num_verb_classes,
-                num_obj_classes=self.num_object_classes, 
-                num_subject_classes=self.num_subject_classes,
+                num_classes=self.NUM_VERB_CLASSES,
+                num_obj_classes=self.NUM_OBJECT_CLASSES, 
+                num_subject_classes=self.NUM_SUBJECT_CLASSES,
                 num_iterations=2, 
                 postprocess=False,
                 max_subject=15, 
@@ -74,10 +74,7 @@ class Ensemble:
                 name="Custom", 
                 data_root=data_root,
                 csv_path=cal_csv_path,
-                training=False,
-                num_subj_cls=self.num_subject_classes,
-                num_obj_cls=self.num_object_classes,
-                num_action_cls=self.num_verb_classes)
+                training=False)
 
             data_loader = DataLoader(
                 dataset=valset,
@@ -91,10 +88,7 @@ class Ensemble:
                 name="Custom", 
                 data_root=data_root,
                 csv_path=val_csv_path,
-                training=False,
-                num_subj_cls=self.num_subject_classes,
-                num_obj_cls=self.num_object_classes,
-                num_action_cls=self.num_verb_classes)
+                training=False)
 
             data_loader2 = DataLoader(
                 dataset=valset2,
@@ -107,7 +101,7 @@ class Ensemble:
             self._calibrate(data_loader, data_loader2)
 
         saved_calibrator = torch.load(self.calibrator_path)
-        feature_len = self.num_subject_classes + self.num_object_classes + self.num_verb_classes
+        feature_len = self.NUM_SUBJECT_CLASSES + self.NUM_OBJECT_CLASSES + self.NUM_VERB_CLASSES
         self.calibrator = LogisticRegression(input_dim=feature_len, output_dim=self.num_unique_triplets)
         self.calibrator.load_state_dict(saved_calibrator['lr'])
         
@@ -152,7 +146,8 @@ class Ensemble:
         return ret
         
     def _clean_result(self, my_net, orig_result, detections):
-        num_verb_cls = my_net.interaction_head.num_classes
+        # num_verb_cls = my_net.interaction_head.num_classes
+        num_verb_cls = self.NUM_VERB_CLASSES
 
         # Now getting the indices of object boxes which were not passed as subjects in input
         keep_obj_idx = np.argwhere(
@@ -294,7 +289,7 @@ class Ensemble:
                 labels.append(tuple(gt_triplet))
 
             ensemble_results = [None for _ in range(len(self.nets))]
-            ensemble_feature = torch.zeros(self.num_subject_classes + self.num_object_classes + self.num_verb_classes)
+            ensemble_feature = torch.zeros(self.NUM_SUBJECT_CLASSES + self.NUM_OBJECT_CLASSES + self.NUM_VERB_CLASSES)
         
             with torch.no_grad():
                 for n, net in enumerate(self.nets):
@@ -335,15 +330,15 @@ class Ensemble:
                         is_obj_box_null = torch.numel(result["valid_objects"]) == 0
                         
                         if is_subj_box_null:
-                            scores, o_ids = torch.topk(result['object_scores'][0], 3)
+                            scores, o_ids = torch.topk(result['object_scores'][0][1:], 3)
                             top_3 = [((-1, 0, o_id.item() + 1), s.item()) for o_id, s in zip(o_ids, scores)]
                             null_top3.append(top_3)
                             is_null_flag.append(True)
                             is_subj_null.append(True)
                             is_obj_null.append(False)
                         elif is_obj_box_null:
-                            all_subjs = [(s_id + 1, score) for s_id, score in enumerate(result['subject_scores'][0].numpy().tolist())]
-                            all_verbs = [(v_id + 1, score) for v_id, score in enumerate(result['verb_matrix'][0][0].numpy().tolist())]
+                            all_subjs = [(s_id + 1, score) for s_id, score in enumerate(result['subject_scores'][0][1:].numpy().tolist())]
+                            all_verbs = [(v_id + 1, score) for v_id, score in enumerate(result['verb_matrix'][0][0][1:].numpy().tolist())]
                             
                             all_combs = list(map(lambda x: ((x[0][0], x[1][0], -1), x[0][1] * x[1][1]), itertools.product(all_subjs, all_verbs)))
                             top_3 = sorted(all_combs, key= lambda x: x[1], reverse=True)[:3]
@@ -352,9 +347,9 @@ class Ensemble:
                             is_obj_null.append(True)
                             is_subj_null.append(False)
                         else:
-                            all_subjs = [(s_id + 1, score) for s_id, score in enumerate(result['subject_scores'][0].numpy().tolist())]
-                            all_verbs = [(v_id + 1, score) for v_id, score in enumerate(result['verb_matrix'][0][0].numpy().tolist())]
-                            all_objs = [(o_id + 1, score) for o_id, score in enumerate(result['object_scores'][0].numpy().tolist())]
+                            all_subjs = [(s_id + 1, score) for s_id, score in enumerate(result['subject_scores'][0][1:].numpy().tolist())]
+                            all_verbs = [(v_id + 1, score) for v_id, score in enumerate(result['verb_matrix'][0][0][1:].numpy().tolist())]
+                            all_objs = [(o_id + 1, score) for o_id, score in enumerate(result['object_scores'][0][1:].numpy().tolist())]
                             
                             all_combs = list(map(lambda x: ((x[0][0], x[1][0], x[2][0]), x[0][1] * x[1][1] * x[2][1]), 
                                 itertools.product(all_subjs, all_verbs, all_objs)))

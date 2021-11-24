@@ -52,10 +52,7 @@ class CustomDet(Dataset):
     def __init__(self, root: str, csv_path: str,
                  transform: Optional[Callable] = None,
                  target_transform: Optional[Callable] = None,
-                 transforms: Optional[Callable] = None,
-                 num_obj_cls: int = 0,
-                 num_subj_cls: int = 0,
-                 num_action_cls: int = 0) -> None:
+                 transforms: Optional[Callable] = None) -> None:
         super(CustomDet, self).__init__()
 
         if transforms is None:
@@ -70,10 +67,6 @@ class CustomDet(Dataset):
         self.root = root
 
         # Load annotations
-        self.num_object_cls = num_obj_cls
-        self.num_subject_cls = num_subj_cls
-        self.num_action_cls = num_action_cls
-
         self._load_annotation_and_metadata(csv_path)
 
     def __len__(self) -> int:
