@@ -31,6 +31,10 @@ class UnsupervisedNoveltyDetector:
         self.known_sv_combinations = torch.zeros(num_subj_cls - 1, num_action_cls - 1, dtype = torch.bool)
         self.known_so_combinations = torch.zeros(num_subj_cls - 1, num_obj_cls - 1, dtype = torch.bool)
         self.known_vo_combinations = torch.zeros(num_action_cls - 1, num_obj_cls - 1, dtype = torch.bool)
+        self.known_svo_set = set()
+        self.known_sv_set = set()
+        self.known_so_set = set()
+        self.known_vo_set = set()
     
     def to(self, device):
         self.device = device
@@ -42,23 +46,12 @@ class UnsupervisedNoveltyDetector:
         self.known_vo_combinations = self.known_vo_combinations.to(device)
         return self
 
-    def load_state_dict(self, state_dict):
-        classifier_state_dict = state_dict['classifier']
-        confidence_calibrator_state_dict = state_dict['confidence_calibrator']
-        known_combinations = state_dict['known_combinations']
-        known_svo = known_combinations['svo']
-        known_sv = known_combinations['sv']
-        known_so = known_combinations['so']
-        known_vo = known_combinations['vo']
-
-        self.classifier.load_state_dict(classifier_state_dict)
-        self.confidence_calibrator.load_state_dict(confidence_calibrator_state_dict)
-        
+    def _update_known_combination_tensors(self):
         self.known_svo_combinations[:] = False
         subject_indices = []
         verb_indices = []
         object_indices = []
-        for subject_index, verb_index, object_index in known_svo:
+        for subject_index, verb_index, object_index in self.known_svo_set:
             subject_indices.append(subject_index)
             verb_indices.append(verb_index)
             object_indices.append(object_index)
@@ -67,7 +60,7 @@ class UnsupervisedNoveltyDetector:
         self.known_sv_combinations[:] = False
         subject_indices = []
         verb_indices = []
-        for subject_index, verb_index in known_sv:
+        for subject_index, verb_index in self.known_sv_set:
             subject_indices.append(subject_index)
             verb_indices.append(verb_index)
         self.known_sv_combinations[(subject_indices, verb_indices)] = True
@@ -75,7 +68,7 @@ class UnsupervisedNoveltyDetector:
         self.known_so_combinations[:] = False
         subject_indices = []
         object_indices = []
-        for subject_index, object_index in known_so:
+        for subject_index, object_index in self.known_so_set:
             subject_indices.append(subject_index)
             object_indices.append(object_index)
         self.known_so_combinations[(subject_indices, object_indices)] = True
@@ -83,10 +76,50 @@ class UnsupervisedNoveltyDetector:
         self.known_vo_combinations[:] = False
         verb_indices = []
         object_indices = []
-        for verb_index, object_index in known_vo:
+        for verb_index, object_index in self.known_vo_set:
             verb_indices.append(verb_index)
             object_indices.append(object_index)
         self.known_vo_combinations[(verb_indices, object_indices)] = True
+
+    def load_state_dict(self, state_dict):
+        classifier_state_dict = state_dict['classifier']
+        confidence_calibrator_state_dict = state_dict['confidence_calibrator']
+        known_combinations = state_dict['known_combinations']
+        self.known_svo_set = known_combinations['svo']
+        self.known_sv_set = known_combinations['sv']
+        self.known_so_set = known_combinations['so']
+        self.known_vo_set = known_combinations['vo']
+        
+        self.classifier.load_state_dict(classifier_state_dict)
+        self.confidence_calibrator.load_state_dict(confidence_calibrator_state_dict)
+        
+        self._update_known_combination_tensors()
+
+    # Accepts four lists of tuples of integers, and removes those tuples from
+    # the corresponding sets of known tuples. Used for simulating type 4
+    # novelty.
+    def remove_known_tuples(self, svo_tuples = None, sv_tuples = None, so_tuples = None, vo_tuples = None):
+        if svo_tuples is not None:
+            for svo in svo_tuples:
+                if svo in self.known_svo_set:
+                    self.known_svo_set.remove(svo)
+        
+        if sv_tuples is not None:
+            for sv in sv_tuples:
+                if sv in self.known_sv_set:
+                    self.known_sv_set.remove(sv)
+        
+        if so_tuples is not None:
+            for so in so_tuples:
+                if so in self.known_so_set:
+                    self.known_so_set.remove(so)
+        
+        if vo_tuples is not None:
+            for vo in vo_tuples:
+                if vo in self.known_vo_set:
+                    self.known_vo_set.remove(vo)
+        
+        self._update_known_combination_tensors()
     
     def _case_1(self, subject_probs, object_probs, verb_probs, p_type, k):
         t1_raw_joint_probs = verb_probs.unsqueeze(1) * object_probs.unsqueeze(0)
