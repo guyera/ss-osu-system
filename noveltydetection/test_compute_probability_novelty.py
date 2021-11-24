@@ -29,36 +29,16 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         p_type = torch.tensor([0.2, 0.2, 0.2, 0.2, 0.2], device = self.device)
         probs = noveltydetection.utils.compute_probability_novelty(self.subject_scores, self.verb_scores, self.object_scores, self.p_n_t4, self.subject_score_ctx, self.verb_score_ctx, self.object_score_ctx, p_type)
         
-        self.assertTrue(probs[0] < 0.05)
-        self.assertTrue(probs[1] > 0.15)
-        self.assertTrue(probs[2] > 0.15)
-        self.assertTrue(probs[3] > 0.15)
-        self.assertTrue(probs[4] > 0.15)
-        self.assertTrue(probs[5] < 0.05)
-        self.assertTrue(probs[6] > 0.15)
-        self.assertTrue(probs[7] > 0.3) # Could be type 2 or type 5 novel verb
-        self.assertTrue(probs[8] < 0.05)
-        self.assertTrue(probs[9] > 0.15)
+        self.assertTrue(probs[0] < 0.5)
+        self.assertTrue(probs[1] > 0.5)
+        self.assertTrue(probs[2] > 0.5)
+        self.assertTrue(probs[3] > 0.5)
+        self.assertTrue(probs[4] > 0.5)
+        self.assertTrue(probs[5] < 0.5)
+        self.assertTrue(probs[6] > 0.5)
+        self.assertTrue(probs[7] > 0.5)
+        self.assertTrue(probs[8] < 0.5)
+        self.assertTrue(probs[9] > 0.5)
 
-    def test_type_5(self):
-        p_type = torch.tensor([0.0, 0.0, 0.0, 0.0, 1.0], device = self.device)
-        probs = noveltydetection.utils.compute_probability_novelty(self.subject_scores, self.verb_scores, self.object_scores, self.p_n_t4, self.subject_score_ctx, self.verb_score_ctx, self.object_score_ctx, p_type)
-        
-        # Type 5 novelty is impossible in case 1
-        self.assertTrue(probs[0] == 0.0)
-        self.assertTrue(probs[1] == 0.0)
-        self.assertTrue(probs[2] == 0.0)
-        self.assertTrue(probs[3] == 0.0)
-        self.assertTrue(probs[4] == 0.0)
-        
-        # Possible in case 2
-        self.assertTrue(probs[5] < 0.25)
-        self.assertTrue(probs[6] < 0.25)
-        self.assertTrue(probs[7] > 0.75)
-
-        # And impossible in case 3
-        self.assertTrue(probs[8] == 0.0)
-        self.assertTrue(probs[9] == 0.0)
-        
 if __name__ == '__main__':
     unittest.main()

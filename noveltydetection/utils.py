@@ -75,6 +75,9 @@ class ScoreContext:
 
         return nominal_kde, novel_kde
 
+    def get_mean_scores(self):
+        return torch.mean(self.nominal_scores), torch.mean(self.novel_scores)
+
     def state_dict(self):
         state_dict = {}
         state_dict['source'] = self.source
@@ -120,9 +123,160 @@ def compute_probability_novelty(
     nominal_verb_kde, novel_verb_kde = verb_score_ctx.fit_kdes()
     
     novel_subject_probs = []
+    mean_nominal_subject_score, mean_novel_subject_score = subject_score_ctx.get_mean_scores()
+    for score in subject_scores:
+        if score is None:
+            novel_subject_probs.append(torch.tensor(0, device = p_n_t4.device))
+            continue
+        
+        nominal_log_prob = nominal_subject_kde.score(
+            score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
+        )
+        novel_log_prob = novel_subject_kde.score(
+            score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
+        )
+
+        if nominal_log_prob == 0 and novel_log_prob == 0:
+            # Both probabilities are 0. The score is in a low-probability
+            # region. If it's below the mean nominal score, then it's very
+            # nominal, and the output should be zero. If it's above the mean
+            # novel score, then it's very novel, and the output should be 1.
+            # Otherwise, it's in between the two score distributions, and we
+            # should output 0.5.
+            if score < mean_nominal_subject_score:
+                novel_prob = torch.tensor(0.0, device = p_n_t4.device)
+            elif score > mean_novel_subject_score:
+                novel_prob = torch.tensor(1.0, device = p_n_t4.device)
+            else:
+                novel_prob = torch.tensor(0.5, device = p_n_t4.device)
+        else:
+            # We need to compute the probability densities from the log probs
+            # (by exponentiation), and then divide the novel prob by the sum
+            # of the two probs. This is equivalent to the novel component of
+            # the softmax of the two log probs.
+            log_probs = torch.tensor(
+                [nominal_log_prob, novel_log_prob],
+                device = p_n_t4.device
+            )
+            novel_prob = torch.nn.functional.softmax(log_probs, dim = 0)[1]
+        
+        novel_subject_probs.append(novel_prob)
+    
+    novel_subject_probs = torch.stack(novel_subject_probs, dim = 0)
+
+    novel_object_probs = []
+    mean_nominal_object_score, mean_novel_object_score = object_score_ctx.get_mean_scores()
+    for score in object_scores:
+        if score is None:
+            novel_object_probs.append(torch.tensor(0, device = p_n_t4.device))
+            continue
+        
+        nominal_log_prob = nominal_object_kde.score(
+            score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
+        )
+        novel_log_prob = novel_object_kde.score(
+            score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
+        )
+
+        if nominal_log_prob == 0 and novel_log_prob == 0:
+            # Both probabilities are 0. The score is in a low-probability
+            # region. If it's below the mean nominal score, then it's very
+            # nominal, and the output should be zero. If it's above the mean
+            # novel score, then it's very novel, and the output should be 1.
+            # Otherwise, it's in between the two score distributions, and we
+            # should output 0.5.
+            if score < mean_nominal_object_score:
+                novel_prob = torch.tensor(0.0, device = p_n_t4.device)
+            elif score > mean_novel_object_score:
+                novel_prob = torch.tensor(1.0, device = p_n_t4.device)
+            else:
+                novel_prob = torch.tensor(0.5, device = p_n_t4.device)
+        else:
+            # We need to compute the probability densities from the log probs
+            # (by exponentiation), and then divide the novel prob by the sum
+            # of the two probs. This is equivalent to the novel component of
+            # the softmax of the two log probs.
+            log_probs = torch.tensor(
+                [nominal_log_prob, novel_log_prob],
+                device = p_n_t4.device
+            )
+            novel_prob = torch.nn.functional.softmax(log_probs, dim = 0)[1]
+        
+        novel_object_probs.append(novel_prob)
+    
+    novel_object_probs = torch.stack(novel_object_probs, dim = 0)
+    
+    novel_verb_probs = []
+    mean_nominal_verb_score, mean_novel_verb_score = verb_score_ctx.get_mean_scores()
+    for score in verb_scores:
+        if score is None:
+            novel_verb_probs.append(torch.tensor(0, device = p_n_t4.device))
+            continue
+        
+        nominal_log_prob = nominal_verb_kde.score(
+            score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
+        )
+        novel_log_prob = novel_verb_kde.score(
+            score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
+        )
+        
+        if nominal_log_prob == 0 and novel_log_prob == 0:
+            # Both probabilities are 0. The score is in a low-probability
+            # region. If it's below the mean nominal score, then it's very
+            # nominal, and the output should be zero. If it's above the mean
+            # novel score, then it's very novel, and the output should be 1.
+            # Otherwise, it's in between the two score distributions, and we
+            # should output 0.5.
+            if score < mean_nominal_verb_score:
+                novel_prob = torch.tensor(0.0, device = p_n_t4.device)
+            elif score > mean_novel_verb_score:
+                novel_prob = torch.tensor(1.0, device = p_n_t4.device)
+            else:
+                novel_prob = torch.tensor(0.5, device = p_n_t4.device)
+        else:
+            # We need to compute the probability densities from the log probs
+            # (by exponentiation), and then divide the novel prob by the sum
+            # of the two probs. This is equivalent to the novel component of
+            # the softmax of the two log probs.
+            log_probs = torch.tensor(
+                [nominal_log_prob, novel_log_prob],
+                device = p_n_t4.device
+            )
+            novel_prob = torch.nn.functional.softmax(log_probs, dim = 0)[1]
+        
+        novel_verb_probs.append(novel_prob)
+
+    novel_verb_probs = torch.stack(novel_verb_probs, dim = 0)
+    
+    novel_probs_not_t4 = torch.stack((novel_subject_probs, novel_verb_probs, novel_object_probs), dim = 1)
+    max_novel_probs_not_t4 = torch.max(novel_probs_not_t4, dim = 1)[0]
+    max_novel_probs = torch.max(max_novel_probs_not_t4, p_n_t4)
+    
+    return max_novel_probs
+
+'''
+def compute_probability_novelty(
+        subject_scores,
+        verb_scores,
+        object_scores,
+        p_n_t4,
+        subject_score_ctx,
+        verb_score_ctx,
+        object_score_ctx,
+        p_type):
+    if not subject_score_ctx.data_available() or\
+            not verb_score_ctx.data_available() or\
+            not object_score_ctx.data_available():
+        # Missing nominal or novel data for one or more KDEs. Return 0.5.
+        return 0.5
+
+    nominal_subject_kde, novel_subject_kde = subject_score_ctx.fit_kdes()
+    nominal_object_kde, novel_object_kde = object_score_ctx.fit_kdes()
+    nominal_verb_kde, novel_verb_kde = verb_score_ctx.fit_kdes()
+    
+    novel_subject_probs = []
     novel_object_probs = []
     novel_verb_probs = []
-    case_2 = []
     for score in subject_scores:
         if score is None:
             novel_subject_probs.append(torch.tensor(0, device = p_type.device))
@@ -134,7 +288,7 @@ def compute_probability_novelty(
         novel_log_prob = novel_subject_kde.score(
             score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
         )
-
+        
         log_probs = torch.tensor(
             [nominal_log_prob, novel_log_prob],
             device = p_type.device
@@ -146,14 +300,7 @@ def compute_probability_novelty(
     for score in object_scores:
         if score is None:
             novel_object_probs.append(torch.tensor(0, device = p_type.device))
-            # Object box is missing, so case is 2, and novel t5 instance is
-            # possible.
-            case_2.append(torch.tensor(1, device = p_type.device))
             continue
-        
-        # Object box present. Novel t5 instance is impossible in anything
-        # but case 2 (object box must be missing).
-        case_2.append(torch.tensor(0, device = p_type.device))
         
         nominal_log_prob = nominal_object_kde.score(
             score.unsqueeze(0).unsqueeze(1).detach().cpu().numpy()
@@ -169,7 +316,6 @@ def compute_probability_novelty(
         novel_prob = torch.nn.functional.softmax(log_probs, dim = 0)[1]
         novel_object_probs.append(novel_prob)
     novel_object_probs = torch.stack(novel_object_probs, dim = 0)
-    case_2 = torch.stack(case_2, dim = 0)
     
     for score in verb_scores:
         if score is None:
@@ -192,14 +338,15 @@ def compute_probability_novelty(
     novel_verb_probs = torch.stack(novel_verb_probs, dim = 0)
     
     # P(subject is novel | subject can be novel) * P(subject exists) * P(type = 1)
-    p_novel_subject = novel_subject_probs * p_type[0]
+    p_novel_subject = novel_subject_probs * p_type[1]
+    # P(verb is novel | verb can be novel) * P(verb exists) * P(type = 2)
+    p_novel_verb = novel_verb_probs * (p_type[2])
     # P(object is novel | object can be novel) * P(object exists) * P(type = 3)
-    p_novel_object = novel_object_probs * p_type[2]
-    # P(verb is novel | verb can be novel) * P(verb exists) * (P(type = 2) + P(type = 5) * P(case = 2))
-    p_novel_verb = novel_verb_probs * (p_type[1] + p_type[4] * case_2)
+    p_novel_object = novel_object_probs * p_type[3]
     # P(combination is novel | combination can be novel) * P(all boxes exists) * P(type = 4)
-    p_novel_combination = p_n_t4 * p_type[3]
+    p_novel_combination = p_n_t4 * p_type[4]
     
-    p_novel = p_novel_subject + p_novel_object + p_novel_verb + p_novel_combination
+    p_novel = p_novel_subject + p_novel_verb + p_novel_object + p_novel_combination
     
     return p_novel
+'''
