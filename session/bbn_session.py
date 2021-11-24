@@ -289,7 +289,7 @@ class BBNSession:
                     'test_ids': test_ids,
                     'domain': self.domain,
                     'hints': self.hints,
-                    'detection_threshold': self.detection_threshold,
+                    'detection_threshold': 0.5, #self.detection_threshold,
                     # 'hints': ['red_light' if given_detection else '']
                 }
             })
