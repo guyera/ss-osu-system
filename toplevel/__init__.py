@@ -204,7 +204,7 @@ class TopLevelApp:
         assert self.batch_context.is_set(), "no batch context."
         assert self.feedback_enabled, "feedback is disabled"
 
-        query_indices = select_queries(feedback_max_ids, self.p_type_dist, self.batch_context.p_ni, 
+        query_indices = select_queries(feedback_max_ids, torch.tensor([0.2, 0.2, 0.2, 0.2, 0.2]), self.batch_context.p_ni, 
             self.batch_context.subject_novelty_scores_best, self.batch_context.verb_novelty_scores_best, 
             self.batch_context.object_novelty_scores_best)
 
