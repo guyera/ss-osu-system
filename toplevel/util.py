@@ -22,6 +22,9 @@ class BatchContext:
         self.top_3 = None
         self.cases = None
         self.preds_is_nc = None
+        self.s_unknown = None
+        self.v_unknown = None
+        self.o_unknown = None
 
     def reset(self):
         self.query_mask = None
@@ -40,6 +43,9 @@ class BatchContext:
         self.top_3 = None
         self.cases = None
         self.preds_is_nc = None
+        self.s_unknown = None
+        self.v_unknown = None
+        self.o_unknown = None
 
     def is_set(self):
         return self.p_ni is not None and self.subject_novelty_scores_u is not None and \
@@ -132,7 +138,7 @@ class UnsupervisedNoveltyDetectionManager:
             results = self.detector(all_spatial_features, all_subject_appearance_features, 
                 all_verb_appearance_features, all_object_appearance_features, p_type_dist)
 
-        # assert not any([any([torch.isnan(p[1]).item() for p in preds]) for preds in results['top3']]), "NaNs in unsupervied detector's top-3"
+        assert not any([any([torch.isnan(p[1]).item() for p in preds]) for preds in results['top3']]), "NaNs in unsupervied detector's top-3"
                 
         for i, p in enumerate(results['top3']):
             new_p = []
@@ -259,13 +265,18 @@ class SupervisedNoveltyDetectionManager:
         assert verb_features.shape[0] == verb_labels.shape[0], "Number of verb instances must be equal to number of verb labels"
         assert object_features.shape[0] == object_labels.shape[0], "Number of object instances must be equal to number of object labels"
 
-        assert subject_features.shape[1] == self.num_appearance_features, "Number of appearance features is invalid."
-        assert verb_features.shape[1] == self.num_verb_features, "Number of verb features is invalid."
-        assert object_features.shape[1] == self.num_appearance_features, "Number of object features is invalid."
+        assert subject_features.numel() == 0 or subject_features.shape[1] == self.num_appearance_features, "Number of appearance features is invalid."
+        assert verb_features.numel() == 0 or  verb_features.shape[1] == self.num_verb_features, "Number of verb features is invalid."
+        assert object_features.numel() == 0 or object_features.shape[1] == self.num_appearance_features, "Number of object features is invalid."
 
-        self.subject_features = torch.vstack([self.subject_features, subject_features]) if self.subject_features is not None else subject_features
-        self.verb_features = torch.vstack([self.verb_features, verb_features]) if self.verb_features is not None else verb_features
-        self.object_features = torch.vstack([self.object_features, object_features]) if self.object_features is not None else object_features
+        if subject_features.numel() > 0:
+            self.subject_features = torch.vstack([self.subject_features, subject_features]) if self.subject_features is not None else subject_features
+        
+        if verb_features.numel() > 0:
+            self.verb_features = torch.vstack([self.verb_features, verb_features]) if self.verb_features is not None else verb_features
+        
+        if object_features.numel() > 0:
+            self.object_features = torch.vstack([self.object_features, object_features]) if self.object_features is not None else object_features
 
         subject_labels = subject_labels.view(-1)
         verb_labels = verb_labels.view(-1)

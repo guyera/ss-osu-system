@@ -67,7 +67,7 @@ class OSUInterface:
         csv_path = self.temp_path.joinpath(f'batch_{round_id}.csv')
         df.to_csv(csv_path, index=True)
         
-        ret = self.app.run(csv_path)
+        ret = self.app.run(csv_path, test_id, round_id, df['new_image_path'].to_list())
         p_ni = ret['p_ni']
         red_light_scores = ret['red_light_score']
         top_3 = ret['svo']
