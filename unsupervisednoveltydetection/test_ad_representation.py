@@ -20,9 +20,6 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 name = 'Custom',
                 data_root = 'Custom',
                 csv_path = 'Custom/annotations/dataset_v3_train.csv',
-                num_subj_cls = 5,
-                num_obj_cls = 12,
-                num_action_cls = 8,
                 training = True,
                 image_batch_size = 16,
                 feature_extraction_device = self.device
@@ -34,9 +31,6 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 name = 'Custom',
                 data_root = 'Custom',
                 csv_path = 'Custom/annotations/dataset_v3_val.csv',
-                num_subj_cls = 5,
-                num_obj_cls = 12,
-                num_action_cls = 8,
                 training = True,
                 image_batch_size = 16,
                 feature_extraction_device = self.device

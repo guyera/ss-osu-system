@@ -107,26 +107,30 @@ def compute_probability_novelty(
         subject_scores,
         verb_scores,
         object_scores,
-        p_n_t4,
+        p_known_svo,
+        p_known_sv,
+        p_known_so,
+        p_known_vo,
         subject_score_ctx,
         verb_score_ctx,
-        object_score_ctx,
-        p_type):
+        object_score_ctx):
     if not subject_score_ctx.data_available() or\
             not verb_score_ctx.data_available() or\
             not object_score_ctx.data_available():
         # Missing nominal or novel data for one or more KDEs. Return 0.5.
         return 0.5
-
+    
     nominal_subject_kde, novel_subject_kde = subject_score_ctx.fit_kdes()
     nominal_object_kde, novel_object_kde = object_score_ctx.fit_kdes()
     nominal_verb_kde, novel_verb_kde = verb_score_ctx.fit_kdes()
     
     novel_subject_probs = []
+    subject_boxes_present = []
     mean_nominal_subject_score, mean_novel_subject_score = subject_score_ctx.get_mean_scores()
     for score in subject_scores:
         if score is None:
-            novel_subject_probs.append(torch.tensor(0, device = p_n_t4.device))
+            novel_subject_probs.append(torch.tensor(0.0, device = p_known_svo.device))
+            subject_boxes_present.append(torch.tensor(0.0, device = p_known_svo.device))
             continue
         
         nominal_log_prob = nominal_subject_kde.score(
@@ -144,11 +148,11 @@ def compute_probability_novelty(
             # Otherwise, it's in between the two score distributions, and we
             # should output 0.5.
             if score < mean_nominal_subject_score:
-                novel_prob = torch.tensor(0.0, device = p_n_t4.device)
+                novel_prob = torch.tensor(0.0, device = p_known_svo.device)
             elif score > mean_novel_subject_score:
-                novel_prob = torch.tensor(1.0, device = p_n_t4.device)
+                novel_prob = torch.tensor(1.0, device = p_known_svo.device)
             else:
-                novel_prob = torch.tensor(0.5, device = p_n_t4.device)
+                novel_prob = torch.tensor(0.5, device = p_known_svo.device)
         else:
             # We need to compute the probability densities from the log probs
             # (by exponentiation), and then divide the novel prob by the sum
@@ -156,19 +160,23 @@ def compute_probability_novelty(
             # the softmax of the two log probs.
             log_probs = torch.tensor(
                 [nominal_log_prob, novel_log_prob],
-                device = p_n_t4.device
+                device = p_known_svo.device
             )
             novel_prob = torch.nn.functional.softmax(log_probs, dim = 0)[1]
         
         novel_subject_probs.append(novel_prob)
+        subject_boxes_present.append(torch.tensor(1.0, device = p_known_svo.device))
     
     novel_subject_probs = torch.stack(novel_subject_probs, dim = 0)
+    subject_boxes_present = torch.stack(subject_boxes_present, dim = 0)
 
     novel_object_probs = []
+    object_boxes_present = []
     mean_nominal_object_score, mean_novel_object_score = object_score_ctx.get_mean_scores()
     for score in object_scores:
         if score is None:
-            novel_object_probs.append(torch.tensor(0, device = p_n_t4.device))
+            novel_object_probs.append(torch.tensor(0.0, device = p_known_svo.device))
+            object_boxes_present.append(torch.tensor(0.0, device = p_known_svo.device))
             continue
         
         nominal_log_prob = nominal_object_kde.score(
@@ -186,11 +194,11 @@ def compute_probability_novelty(
             # Otherwise, it's in between the two score distributions, and we
             # should output 0.5.
             if score < mean_nominal_object_score:
-                novel_prob = torch.tensor(0.0, device = p_n_t4.device)
+                novel_prob = torch.tensor(0.0, device = p_known_svo.device)
             elif score > mean_novel_object_score:
-                novel_prob = torch.tensor(1.0, device = p_n_t4.device)
+                novel_prob = torch.tensor(1.0, device = p_known_svo.device)
             else:
-                novel_prob = torch.tensor(0.5, device = p_n_t4.device)
+                novel_prob = torch.tensor(0.5, device = p_known_svo.device)
         else:
             # We need to compute the probability densities from the log probs
             # (by exponentiation), and then divide the novel prob by the sum
@@ -198,19 +206,21 @@ def compute_probability_novelty(
             # the softmax of the two log probs.
             log_probs = torch.tensor(
                 [nominal_log_prob, novel_log_prob],
-                device = p_n_t4.device
+                device = p_known_svo.device
             )
             novel_prob = torch.nn.functional.softmax(log_probs, dim = 0)[1]
         
         novel_object_probs.append(novel_prob)
+        object_boxes_present.append(torch.tensor(1.0, device = p_known_svo.device))
     
     novel_object_probs = torch.stack(novel_object_probs, dim = 0)
+    object_boxes_present = torch.stack(object_boxes_present, dim = 0)
     
     novel_verb_probs = []
     mean_nominal_verb_score, mean_novel_verb_score = verb_score_ctx.get_mean_scores()
     for score in verb_scores:
         if score is None:
-            novel_verb_probs.append(torch.tensor(0, device = p_n_t4.device))
+            novel_verb_probs.append(torch.tensor(0.0, device = p_known_svo.device))
             continue
         
         nominal_log_prob = nominal_verb_kde.score(
@@ -228,11 +238,11 @@ def compute_probability_novelty(
             # Otherwise, it's in between the two score distributions, and we
             # should output 0.5.
             if score < mean_nominal_verb_score:
-                novel_prob = torch.tensor(0.0, device = p_n_t4.device)
+                novel_prob = torch.tensor(0.0, device = p_known_svo.device)
             elif score > mean_novel_verb_score:
-                novel_prob = torch.tensor(1.0, device = p_n_t4.device)
+                novel_prob = torch.tensor(1.0, device = p_known_svo.device)
             else:
-                novel_prob = torch.tensor(0.5, device = p_n_t4.device)
+                novel_prob = torch.tensor(0.5, device = p_known_svo.device)
         else:
             # We need to compute the probability densities from the log probs
             # (by exponentiation), and then divide the novel prob by the sum
@@ -240,19 +250,75 @@ def compute_probability_novelty(
             # the softmax of the two log probs.
             log_probs = torch.tensor(
                 [nominal_log_prob, novel_log_prob],
-                device = p_n_t4.device
+                device = p_known_svo.device
             )
             novel_prob = torch.nn.functional.softmax(log_probs, dim = 0)[1]
         
         novel_verb_probs.append(novel_prob)
-
+    
     novel_verb_probs = torch.stack(novel_verb_probs, dim = 0)
     
-    novel_probs_not_t4 = torch.stack((novel_subject_probs, novel_verb_probs, novel_object_probs), dim = 1)
-    max_novel_probs_not_t4 = torch.max(novel_probs_not_t4, dim = 1)[0]
-    max_novel_probs = torch.max(max_novel_probs_not_t4, p_n_t4)
+    # P(Case = 1)
+    p_c1 = subject_boxes_present * object_boxes_present
+
+    # P(Case = 2)
+    p_c2 = subject_boxes_present * (1 - object_boxes_present)
+
+    # P(Case = 3)
+    p_c3 = (1 - subject_boxes_present) * object_boxes_present
+
+    # P(Type = 1 | case = 1)
+    p_t1_given_c1 = novel_subject_probs * (1 - novel_verb_probs) * (1 - novel_object_probs) * p_known_vo
     
-    return max_novel_probs
+    # P(Type = 1 | case = 2)
+    p_t1_given_c2 = novel_subject_probs * (1 - novel_verb_probs)
+
+    # P(Type = 1 | case = 3) = 0
+
+    # P(Type = 2 | case = 1)
+    p_t2_given_c1 = novel_verb_probs * (1 - novel_subject_probs) * (1 - novel_object_probs) * p_known_so
+    
+    # P(Type = 2 | case = 2)
+    p_t2_given_c2 = novel_verb_probs * (1 - novel_subject_probs)
+
+    # P(Type = 2 | case = 3) = 0
+
+    # P(Type = 3 | case = 1)
+    p_t3_given_c1 = novel_object_probs * (1 - novel_subject_probs) * (1 - novel_verb_probs) * p_known_sv
+
+    # P(Type = 3 | case = 2) = 0
+
+    # P(Type = 3 | case = 3)
+    p_t3_given_c3 = novel_object_probs
+
+    # P(Type = 4 | case = 1)
+    p_t4_given_c1 = (1 - novel_subject_probs) * (1 - novel_verb_probs) * (1 - novel_object_probs) * (1 - p_known_svo)
+
+    # P(Type = 4 | case = 2)
+    p_t4_given_c2 = (1 - novel_subject_probs) * (1 - novel_verb_probs) * (1 - p_known_sv)
+
+    # P(Type = 4 | case = 3) = 0
+
+    # P(Type = 1)
+    p_t1 = p_t1_given_c1 * p_c1 + p_t1_given_c2 * p_c2
+
+    # P(Type = 2)
+    p_t2 = p_t2_given_c1 * p_c1 + p_t2_given_c2 * p_c2
+
+    # P(Type = 3)
+    p_t3 = p_t3_given_c1 * p_c1 + p_t3_given_c3 * p_c3
+
+    # P(Type = 4)
+    p_t4 = p_t4_given_c1 * p_c1 + p_t4_given_c2 * p_c2
+
+    partial_p_type = torch.stack((p_t1, p_t2, p_t3, p_t4), dim = 1)
+    
+    p_n = partial_p_type.sum(dim = 1)
+    p_n_0 = 1 - p_n
+    
+    p_type = torch.cat((p_n_0.unsqueeze(1), partial_p_type), dim = 1)
+
+    return p_type, p_n
 
 '''
 def compute_probability_novelty(

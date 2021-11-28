@@ -407,13 +407,36 @@ class UnsupervisedNoveltyDetector:
         
         return example_predictions
 
+    def _compute_p_known_svo(self, subject_probs, verb_probs, object_probs):
+        svo_raw_joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
+        svo_known_joint_probs = (self.known_svo_combinations.to(torch.int)) * svo_raw_joint_probs
+        return svo_known_joint_probs.sum()
+
+    def _compute_p_known_sv(self, subject_probs, verb_probs):
+        sv_raw_joint_probs = subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
+        sv_known_joint_probs = (self.known_sv_combinations.to(torch.int)) * sv_raw_joint_probs
+        return sv_known_joint_probs.sum()
+
+    def _compute_p_known_so(self, subject_probs, object_probs):
+        so_raw_joint_probs = subject_probs.unsqueeze(1) * object_probs.unsqueeze(0)
+        so_known_joint_probs = (self.known_so_combinations.to(torch.int)) * so_raw_joint_probs
+        return so_known_joint_probs.sum()
+
+    def _compute_p_known_vo(self, verb_probs, object_probs):
+        vo_raw_joint_probs = verb_probs.unsqueeze(1) * object_probs.unsqueeze(0)
+        vo_known_joint_probs = (self.known_vo_combinations.to(torch.int)) * vo_raw_joint_probs
+        return vo_known_joint_probs.sum()
+
     def __call__(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type):
         predictions = []
         results = {}
         subject_novelty_scores = []
         object_novelty_scores = []
         verb_novelty_scores = []
-        p_n_t4 = []
+        p_known_svo = []
+        p_known_sv = []
+        p_known_so = []
+        p_known_vo = []
         for idx in range(len(spatial_features)):
             example_spatial_features = spatial_features[idx]
             example_subject_appearance_features = subject_appearance_features[idx]
@@ -462,18 +485,21 @@ class UnsupervisedNoveltyDetector:
             else:
                 verb_novelty_scores.append(None)
             
-            p_ni_t4 = torch.tensor(0, dtype = torch.float)
-            p_ni_t4 = p_ni_t4.to(self.device)
+            cur_p_known_svo = torch.tensor(0, dtype = torch.float, device = self.device)
+            cur_p_known_sv = torch.tensor(0, dtype = torch.float, device = self.device)
+            cur_p_known_so = torch.tensor(0, dtype = torch.float, device = self.device)
+            cur_p_known_vo = torch.tensor(0, dtype = torch.float, device = self.device)
             if example_subject_appearance_features is not None and example_object_appearance_features is not None:
                 # Case 1, S/V/O
                 example_predictions = self._case_1(subject_probs, object_probs, verb_probs, p_type, 3)
-                
-                t4_raw_joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
-                t4_unknown_joint_probs = (1 - self.known_svo_combinations.to(torch.int)) * t4_raw_joint_probs
-                p_ni_t4 = t4_unknown_joint_probs.sum()
+                cur_p_known_svo = self._compute_p_known_svo(subject_probs, verb_probs, object_probs)
+                cur_p_known_sv = self._compute_p_known_sv(subject_probs, verb_probs)
+                cur_p_known_so = self._compute_p_known_so(subject_probs, object_probs)
+                cur_p_known_vo = self._compute_p_known_vo(verb_probs, object_probs)
             elif example_subject_appearance_features is not None and example_object_appearance_features is None:
                 # Case 2, S/V/None
                 example_predictions = self._case_2(subject_probs, verb_probs, p_type, 3)
+                cur_p_known_sv = self._compute_p_known_sv(subject_probs, verb_probs)
             elif example_subject_appearance_features is None and example_object_appearance_features is not None:
                 # Case 3, None/None/O
                 example_predictions = self._case_3(p_type)
@@ -481,16 +507,25 @@ class UnsupervisedNoveltyDetector:
                 return NotImplemented
             
             predictions.append(example_predictions)
-            p_n_t4.append(p_ni_t4)
+            p_known_svo.append(cur_p_known_svo)
+            p_known_sv.append(cur_p_known_sv)
+            p_known_so.append(cur_p_known_so)
+            p_known_vo.append(cur_p_known_vo)
         
-        p_n_t4 = torch.stack(p_n_t4, dim = 0)
+        p_known_svo = torch.stack(p_known_svo, dim = 0)
+        p_known_sv = torch.stack(p_known_sv, dim = 0)
+        p_known_so = torch.stack(p_known_so, dim = 0)
+        p_known_vo = torch.stack(p_known_vo, dim = 0)
 
         assert len(subject_novelty_scores) == len(verb_novelty_scores) == len(object_novelty_scores)
 
         results['subject_novelty_score'] = subject_novelty_scores
         results['verb_novelty_score'] = verb_novelty_scores
         results['object_novelty_score'] = object_novelty_scores
-        results['p_n_t4'] = p_n_t4
+        results['p_known_svo'] = p_known_svo
+        results['p_known_sv'] = p_known_sv
+        results['p_known_so'] = p_known_so
+        results['p_known_vo'] = p_known_vo
         results['top3'] = predictions
 
         return results
