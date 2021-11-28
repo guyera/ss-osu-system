@@ -11,6 +11,7 @@ import noveltydetectionfeatures
 import pandas as pd
 from noveltydetection.utils import compute_probability_novelty
 from adaptation.query_formulation import select_queries
+import pickle
 
 
 class TopLevelApp:
@@ -27,13 +28,16 @@ class TopLevelApp:
         self.NUM_APP_FEATURES = 256 * 7 * 7
         self.NUM_VERB_FEATURES = self.NUM_APP_FEATURES + 2 * 36
         self.post_red = False
-        self.p_type_dist = torch.tensor([0.2, 0.2, 0.2, 0.2, 0.2])
+        self.p_type_dist = torch.tensor([0.0, 0.25, 0.25, 0.25, 0.25])
 
         self.all_query_masks = torch.tensor([])
         self.all_feedback = torch.tensor([])
         self.all_cases = torch.tensor([])
         self.all_p_ni = torch.tensor([])
         self.all_nc = torch.tensor([])
+        self.all_s_unknown = torch.tensor([])
+        self.all_v_unknown = torch.tensor([])
+        self.all_o_unknown = torch.tensor([])
         self.all_top_1_svo = []
         self.all_top_3_svo = []
 
@@ -59,21 +63,24 @@ class TopLevelApp:
         
     def reset(self):
         self.post_red = False
-        self.p_type_dist = torch.tensor([0.2, 0.2, 0.2, 0.2, 0.2])
+        self.p_type_dist = torch.tensor([0.0, 0.25, 0.25, 0.25, 0.25])
         self.unsupervised_aucs = None
         self.supervised_aucs = None
         self.all_query_masks = torch.tensor([])
         self.all_feedback = torch.tensor([])
         self.all_cases = torch.tensor([])
         self.all_p_ni = torch.tensor([])
-        self.all_nc = torch.tensor([])
+        self.all_nc = torch.tensor([], dtype=torch.long)
+        self.all_s_unknown = torch.tensor([], dtype=torch.long)
+        self.all_v_unknown = torch.tensor([], dtype=torch.long)
+        self.all_o_unknown = torch.tensor([], dtype=torch.long)
         self.all_top_1_svo = []
         self.all_top_3_svo = []
 
         self.und_manager.reset()
         self.snd_manager.reset()
 
-    def run(self, csv_path):
+    def run(self, csv_path, test_id, round_id, img_paths):
         if csv_path is None:
             raise Exception('path to csv was None')
 
@@ -100,24 +107,24 @@ class TopLevelApp:
 
         subject_scores_ctx, verb_scores_ctx, object_scores_ctx = self.und_manager.get_score_contexts() 
 
-        if self.post_red and self.feedback_enabled:
-            subject_novelty_scores_u_copy = [s.clone() if s is not None else None for s in subject_novelty_scores_u]
-            verb_novelty_scores_u_copy = [s.clone() if s is not None else None for s in verb_novelty_scores_u]
-            object_novelty_scores_u_copy = [s.clone() if s is not None else None for s in object_novelty_scores_u]
+        # if self.post_red and self.feedback_enabled:
+        #     subject_novelty_scores_u_copy = [s.clone() if s is not None else None for s in subject_novelty_scores_u]
+        #     verb_novelty_scores_u_copy = [s.clone() if s is not None else None for s in verb_novelty_scores_u]
+        #     object_novelty_scores_u_copy = [s.clone() if s is not None else None for s in object_novelty_scores_u]
 
-            # Supervised novelty scores
-            subject_novelty_scores_s, verb_novelty_scores_s, object_novelty_scores_s = self.snd_manager.score(
-                novelty_dataset, subject_novelty_scores_u_copy, verb_novelty_scores_u_copy, object_novelty_scores_u_copy)
+        #     # Supervised novelty scores
+        #     subject_novelty_scores_s, verb_novelty_scores_s, object_novelty_scores_s = self.snd_manager.score(
+        #         novelty_dataset, subject_novelty_scores_u_copy, verb_novelty_scores_u_copy, object_novelty_scores_u_copy)
 
-            # pick the scores from the detector which had a higher AUC
-            if self.unsupervised_aucs[0] < self.supervised_aucs[0]:
-                subject_novelty_scores = subject_novelty_scores_s
+        #     # pick the scores from the detector which had a higher AUC
+        #     if self.unsupervised_aucs[0] < self.supervised_aucs[0]:
+        #         subject_novelty_scores = subject_novelty_scores_s
 
-            if self.unsupervised_aucs[1] < self.supervised_aucs[1]:
-                verb_novelty_scores = verb_novelty_scores_s
+        #     if self.unsupervised_aucs[1] < self.supervised_aucs[1]:
+        #         verb_novelty_scores = verb_novelty_scores_s
             
-            if self.unsupervised_aucs[2] < self.supervised_aucs[2]:
-                object_novelty_scores = object_novelty_scores_s
+        #     if self.unsupervised_aucs[2] < self.supervised_aucs[2]:
+        #         object_novelty_scores = object_novelty_scores_s
 
         assert len(subject_novelty_scores) == len(verb_novelty_scores) == len(object_novelty_scores)
 
@@ -132,8 +139,14 @@ class TopLevelApp:
         top_3 = [[e[0] for e in m] for m in merged]
         top_3_probs = [[e[1] for e in m] for m in merged]
 
+        is_subj_novel = lambda svo: 0 if svo[0] is None else int(svo[0]) == 0
+        is_verb_novel = lambda svo: 0 if svo[1] is None or svo[0] is None else int(svo[1]) == 0 and int(svo[0]) != -1
+        is_obj_novel = lambda svo: 0 if svo[2] is None else int(svo[2]) == 0
         batch_preds_is_nc = torch.tensor([self._is_svo_type_4(t) for t in top_1], dtype=torch.long)
-
+        s_unk = torch.tensor([is_subj_novel(t) for t in top_1], dtype=torch.long)
+        v_unk = torch.tensor([is_verb_novel(t) for t in top_1], dtype=torch.long)
+        o_unk = torch.tensor([is_obj_novel(t) for t in top_1], dtype=torch.long)
+        
         # cache previous all_p_ni
         all_p_ni_np = self.all_p_ni.numpy()
         
@@ -142,7 +155,7 @@ class TopLevelApp:
             batch_feedback_mask = torch.zeros(N, dtype=torch.long)
 
             self._accumulate(top_1, top_3, p_ni, batch_cases, batch_feedback_mask, batch_query_mask, 
-                batch_preds_is_nc)
+                batch_preds_is_nc, s_unk, v_unk, o_unk)
 
             # novelty type inference
             if not torch.isclose(torch.max(self.p_type_dist), torch.ones(1))[0]:
@@ -165,6 +178,9 @@ class TopLevelApp:
         self.batch_context.top_3 = top_3
         self.batch_context.cases = batch_cases
         self.batch_context.preds_is_nc = batch_preds_is_nc
+        self.batch_context.s_unknown = s_unk
+        self.batch_context.v_unknown = v_unk
+        self.batch_context.o_unknown = o_unk
         
         # cusum
         p_ni = p_ni.numpy()
@@ -180,7 +196,7 @@ class TopLevelApp:
         ret['red_light_score'] = red_light_scores
         ret['svo'] = top_3
         ret['svo_probs'] = top_3_probs
-
+        
         return ret
 
     def select_queries(self, feedback_max_ids):
@@ -188,7 +204,7 @@ class TopLevelApp:
         assert self.batch_context.is_set(), "no batch context."
         assert self.feedback_enabled, "feedback is disabled"
 
-        query_indices = select_queries(feedback_max_ids, self.p_type_dist, self.batch_context.p_ni, 
+        query_indices = select_queries(feedback_max_ids, torch.tensor([0.2, 0.2, 0.2, 0.2, 0.2]), self.batch_context.p_ni, 
             self.batch_context.subject_novelty_scores_best, self.batch_context.verb_novelty_scores_best, 
             self.batch_context.object_novelty_scores_best)
 
@@ -234,79 +250,77 @@ class TopLevelApp:
         # adjust p_ni based on feedback 
         self.batch_context.p_ni[self.batch_context.query_indices] = feedback_t.float()
 
+        self._accumulate(self.batch_context.top_1, self.batch_context.top_3, self.batch_context.p_ni, self.batch_context.cases, 
+            self.batch_context.feedback_mask, self.batch_context.query_mask, self.batch_context.preds_is_nc, 
+            self.batch_context.s_unknown, self.batch_context.v_unknown, self.batch_context.o_unknown)
+        
         if not torch.isclose(torch.max(self.p_type_dist), torch.ones(1))[0]:
             self._type_inference()
 
-        self._accumulate(self.batch_context.top_1, self.batch_context.top_3, self.batch_context.p_ni, self.batch_context.cases, 
-            self.batch_context.feedback_mask, self.batch_context.query_mask, self.batch_context.preds_is_nc)
+        # feedback interpretation and unsupervised score contexts update
+        all_subject_indices, all_verb_indices, all_object_indices, subject_labels, verb_labels, object_labels = self._process_feedback()
 
-        # processeses feedback by:
-        # 1. interpreting feedback and updating supervised dataset accordingly
-        # 2. updating unsupervised score contexts using the supervised scores for supervised dataset
-        all_subject_indices, all_verb_indices, all_object_indices, subject_labels, verb_labels, object_labels,  \
-            subject_novelty_start_offset, verb_novelty_start_offset, object_novelty_start_offset = self._process_feedback()
+        # retrains supervised detector
+        # self._train_supervised_detector(all_subject_indices, all_verb_indices, all_object_indices, 
+        #     subject_labels, verb_labels, object_labels)
 
-        self._update_novelty_detectors(all_subject_indices, all_verb_indices, all_object_indices, 
-            subject_labels, verb_labels, object_labels, 
-            subject_novelty_start_offset, verb_novelty_start_offset, object_novelty_start_offset)
+        # if self.post_red and self.unsupervised_aucs is None:
+        #     self.supervised_aucs = self.snd_manager.get_svo_detectors_auc()
+        #     self.unsupervised_aucs = self.und_manager.get_svo_detectors_auc()
 
-        if self.post_red and self.unsupervised_aucs is None:
-            self.supervised_aucs = self.snd_manager.get_svo_detectors_auc()
-            self.unsupervised_aucs = self.und_manager.get_svo_detectors_auc()
-
-    def _merge_top3_SVOs(self, top3_non_novel, top3_novel, p_ni):
-        p_ni = p_ni.view(-1).numpy()
-        N = len(p_ni)
-        top3_non_novel = [[(x[i][0], x[i][1], x[i][1] * (1 - y)) for i in range(3)] for x, y in zip(top3_non_novel, p_ni)]
-        top3_novel = [[(x[i][0], x[i][1], x[i][1] * y) for i in range(3)] for x, y in zip(top3_novel, p_ni)]
+    def _merge_top3_SVOs(self, top3_non_novel, top3_novel, batch_p_ni):
+        batch_p_ni = batch_p_ni.view(-1).numpy()
+        N = len(batch_p_ni)
+        top3_non_novel = [[(x[i][0], x[i][1], x[i][1] * (1 - y)) for i in range(3)] for x, y in zip(top3_non_novel, batch_p_ni)]
+        top3_novel = [[(x[i][0], x[i][1], x[i][1] * y) for i in range(3)] for x, y in zip(top3_novel, batch_p_ni)]
         all_tuples = [x + y for x, y in zip(top3_non_novel, top3_novel)]
         comb_iter = [itertools.combinations(all_tuples[i], 3) for i in range(N)]
         scores = [list(map(lambda x: (x, x[0][2] + x[1][2] + x[2][2]), comb_iter[i])) for i in range(N)]
-        top_1_svo = [sorted(i, key=lambda x: x[1], reverse=True)[0] for i in scores]
-        top_1_svo = [((a[0][0][0], a[0][0][1]), (a[0][1][0], a[0][1][1]), (a[0][2][0], a[0][2][1])) 
-            for a in top_1_svo]
+        top_3_svo = [sorted(i, key=lambda x: x[1], reverse=True)[0][0] for i in scores]
+        top_3_svo = [sorted(i, key=lambda x: x[2], reverse=True) for i in top_3_svo]
+        top_3_svo = [((a[0][0], a[0][2]), (a[1][0], a[1][2]), (a[2][0], a[2][2])) for a in top_3_svo]
 
-        return top_1_svo
+        return top_3_svo
 
     def _type_inference(self):
+        EPSILON = 0.05
         p_not_novel = 1.0 - self.all_p_ni
-
-        fn = lambda f: 0 if f is None else int(f) == 0
-
-        s_unk = torch.tensor([fn(a[0][0]) for a in self.all_top_3_svo], dtype=torch.int)
-        v_unk = torch.tensor([fn(a[0][1]) for a in self.all_top_3_svo], dtype=torch.int)
-        o_unk = torch.tensor([fn(a[0][2]) for a in self.all_top_3_svo], dtype=torch.int)
+        s_known = self.all_s_unknown ^ 1
+        v_known = self.all_v_unknown ^ 1
+        o_known = self.all_o_unknown ^ 1
+        not_nc = self.all_nc ^ 1
         
-        # type-1
-        case_3 = (self.all_cases == 3) * p_not_novel
-        case_not_3 = (self.all_cases != 3) * s_unk * self.all_p_ni 
-        evidence_1 = case_3 + case_not_3
-        p_type_1 = self._infer_p_type_from_evidence(evidence_1)
+        # type-0
+        c1 = s_known * v_known * o_known * not_nc
+        c2 = c1 ^ 1
+        ev_0 = c1 + c2 * EPSILON
+        p_type_0 = self._infer_log_p_type_from_evidence(ev_0)
 
+        # type-1
+        c2 = (c1 ^ 1) * self.all_s_unknown
+        c3 = (c1 + c2) ^ 1
+        ev_1 = c1 * p_not_novel + c2 * self.all_p_ni + c3 * EPSILON
+        p_type_1 = self._infer_log_p_type_from_evidence(ev_1)
+        
         # type-2
-        case_not_3 = (self.all_cases != 3) * v_unk * self.all_p_ni
-        evidence_2 = case_3 + case_not_3
-        p_type_2 = self._infer_p_type_from_evidence(evidence_2)
+        c2 = (c1 ^ 1) * self.all_v_unknown
+        c3 = (c1 + c2) ^ 1
+        ev_2 = c1 * p_not_novel + c2 * self.all_p_ni + c3 * EPSILON
+        p_type_2 = self._infer_log_p_type_from_evidence(ev_2)
 
         # type-3
-        case_not_3 = (self.all_cases != 3) * p_not_novel
-        case_3 = (self.all_cases == 3) * o_unk * self.all_p_ni
-        evidence_3 = case_3 + case_not_3
-        p_type_3 = self._infer_p_type_from_evidence(evidence_3)
+        c2 = (c1 ^ 1) * self.all_o_unknown
+        c3 = (c1 + c2) ^ 1
+        ev_3 = c1 * p_not_novel + c2 * self.all_p_ni + c3 * EPSILON
+        p_type_3 = self._infer_log_p_type_from_evidence(ev_3)
 
         # type-4
-        case_not_2 = (self.all_cases != 2) * p_not_novel
-        case_1 = (self.all_cases == 1) * (self.all_nc == 1) * (s_unk ^ 1) * (v_unk ^ 1) * (o_unk ^ 1) * self.all_p_ni
-        evidence_4 = case_not_2 + case_1
-        p_type_4 = self._infer_p_type_from_evidence(evidence_4)
+        c2 = (c1 ^ 1) * self.all_nc
+        c3 = (c1 + c2) ^ 1
+        ev_4 = c1 * p_not_novel + c2 * self.all_p_ni + c3 * EPSILON
+        p_type_4 = self._infer_log_p_type_from_evidence(ev_4)
 
-        # type-5
-        case_not_2 = (self.all_cases != 2) * p_not_novel
-        case_2 = (self.all_cases == 2) * v_unk * self.all_p_ni
-        evidence_5 = case_not_2 + case_2
-        p_type_5 = self._infer_p_type_from_evidence(evidence_5)
-
-        self.p_type_dist = torch.tensor([p_type_1, p_type_2, p_type_3, p_type_4, p_type_5])
+        self.p_type_dist = torch.tensor([p_type_0, p_type_1, p_type_2, p_type_3, p_type_4])
         self.p_type_dist = torch.nn.functional.softmax(self.p_type_dist, dim=0)
 
         assert not torch.any(torch.isnan(self.p_type_dist)), "NaNs in p_type."
@@ -319,12 +333,28 @@ class TopLevelApp:
 
         t_star = torch.argmax(self.p_type_dist)
         use_hard_labels = torch.isclose(self.p_type_dist[t_star], torch.ones(1))[0]
-        t_star += 1
 
         batch_feedback = self.batch_context.feedback_mask[self.batch_context.query_indices]
 
         novel_indices_mask = (batch_feedback == 1).long()
         non_novel_indices_mask = (batch_feedback == 0).long()
+        
+        nominal_indices = query_indices[non_novel_indices_mask == 1]
+        novel_indices = query_indices[novel_indices_mask == 1]
+        
+        subject_novelty_scores_u_nominal = torch.tensor([self.batch_context.subject_novelty_scores_u[i] for i in nominal_indices])
+        subject_novelty_scores_u_novel = torch.tensor([self.batch_context.subject_novelty_scores_u[i] for i in novel_indices])
+        
+        object_novelty_scores_u_nominal = torch.tensor([self.batch_context.object_novelty_scores_u[i] for i in nominal_indices])
+        object_novelty_scores_u_novel = torch.tensor([self.batch_context.object_novelty_scores_u[i] for i in novel_indices])
+        
+        verb_novelty_scores_u_nominal = torch.tensor([self.batch_context.verb_novelty_scores_u[i] for i in nominal_indices])
+        verb_novelty_scores_u_novel = torch.tensor([self.batch_context.verb_novelty_scores_u[i] for i in novel_indices])
+
+        # update score contexts for unsueprvised novelty detector
+        self.und_manager.feedback_callback(subject_novelty_scores_u_nominal, subject_novelty_scores_u_novel,
+            verb_novelty_scores_u_nominal, verb_novelty_scores_u_novel,
+            object_novelty_scores_u_nominal, object_novelty_scores_u_novel)
 
         case_1_mask = (self.batch_context.cases[query_indices] == 1).long()
         case_2_mask = (self.batch_context.cases[query_indices] == 2).long()
@@ -377,13 +407,7 @@ class TopLevelApp:
         all_verb_indices = torch.cat([negative_verb_indices, positive_verb_indices])
         all_object_indices = torch.cat([negative_object_indices, positive_object_indices])
 
-        subject_novelty_start_offset = len(negative_subject_indices)
-        verb_novelty_start_offset = len(negative_verb_indices)
-        object_novelty_start_offset = len(negative_object_indices)
-
-        return all_subject_indices, all_verb_indices, all_object_indices, \
-            subject_labels, verb_labels, object_labels,  \
-            subject_novelty_start_offset, verb_novelty_start_offset, object_novelty_start_offset
+        return all_subject_indices, all_verb_indices, all_object_indices, subject_labels, verb_labels, object_labels
 
     def _cusum(self, p_nis):
         t = p_nis.shape[0]
@@ -478,7 +502,7 @@ class TopLevelApp:
             
         return 1
 
-    def _accumulate(self, top_1, top_3, p_ni, batch_cases, feedback_mask, query_mask, preds_is_nc):
+    def _accumulate(self, top_1, top_3, p_ni, batch_cases, feedback_mask, query_mask, preds_is_nc, s_unk, v_unk, o_unk):
         self.all_top_1_svo += top_1
         self.all_top_3_svo += top_3
         self.all_p_ni = torch.cat([self.all_p_ni, p_ni])
@@ -486,10 +510,14 @@ class TopLevelApp:
         self.all_feedback = torch.cat([self.all_feedback, feedback_mask])
         self.all_query_masks = torch.cat([self.all_query_masks, query_mask])
         self.all_nc = torch.cat([self.all_nc, preds_is_nc])
+        self.all_s_unknown = torch.cat([self.all_s_unknown, s_unk])        
+        self.all_v_unknown = torch.cat([self.all_v_unknown, v_unk])
+        self.all_o_unknown = torch.cat([self.all_o_unknown, o_unk])
 
         assert self.all_p_ni.shape == self.all_cases.shape == self.all_feedback.shape == self.all_query_masks.shape == self.all_nc.shape
+        assert self.all_nc.shape == self.all_s_unknown.shape == self.all_v_unknown.shape == self.all_o_unknown.shape
 
-    def _infer_p_type_from_evidence(self, evidence):
+    def _infer_log_p_type_from_evidence(self, evidence):
         LARGE_NEG_CONSTANT = -50.0
 
         zero_indices = torch.nonzero(torch.isclose(evidence, torch.zeros_like(evidence))).view(-1)
@@ -502,9 +530,8 @@ class TopLevelApp:
 
         return p_type
 
-    def _update_novelty_detectors(self, all_subject_indices, all_verb_indices, all_object_indices,
-        subject_labels, verb_labels, object_labels,
-        subject_novelty_start_offset, verb_novelty_start_offset, object_novelty_start_offset):
+    def _train_supervised_detector(self, all_subject_indices, all_verb_indices, all_object_indices,
+        subject_labels, verb_labels, object_labels):
 
         assert self.batch_context.is_set(), "no batch context"
 
@@ -537,10 +564,4 @@ class TopLevelApp:
             subject_labels, verb_labels, object_labels)
 
         # train supervised novelty detector for the whole data
-        S_nov_scores, V_nov_scores, O_nov_scores = self.snd_manager.train()
-
-        # update score contexts for unsueprvised novelty detector
-        self.und_manager.feedback_callback(S_nov_scores[:subject_novelty_start_offset], S_nov_scores[:subject_novelty_start_offset],
-            V_nov_scores[verb_novelty_start_offset:], V_nov_scores[:verb_novelty_start_offset],
-            O_nov_scores[object_novelty_start_offset:], O_nov_scores[:object_novelty_start_offset])
-        
+        self.snd_manager.train()        
