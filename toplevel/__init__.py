@@ -55,7 +55,7 @@ class TopLevelApp:
         self.snd_manager = SupervisedNoveltyDetectionManager(self.NUM_APP_FEATURES, self.NUM_VERB_FEATURES)
 
         self.threshold = th
-        self.TAU = 0.6
+        self.TAU = 0.58
         self.post_red_base = -1
         self.batch_context = BatchContext()
 
@@ -212,15 +212,13 @@ class TopLevelApp:
         # cusum
         p_ni = p_ni.numpy()
         red_light_scores = [self._cusum(np.concatenate([all_p_ni_np, p_ni[:i]])) for i in range(1, p_ni.shape[0] + 1)]
-        assert len(red_light_scores) == p_ni.shape[0]
 
         if not self.post_red:
             if not self.given_detection:
                 self.post_red = any([score > 0.5 for score in red_light_scores])
+                self.post_red_base = all_p_ni_np.shape[0]
             elif self.curr_round_id == self.hint_round:
                 self.post_red = True
-            
-            if self.post_red:
                 self.post_red_base = all_p_ni_np.shape[0]
             
         # dictionary containing return values
@@ -304,7 +302,7 @@ class TopLevelApp:
     def red_light_hint_callback(self, first_novelty_img_path):
         assert self.hint_round == -1, "red-light hint was previously set"
         assert self.curr_test_id != -1 and self.curr_round_id != -1
-        self.hint_round = self.curr_round_id + 2
+        self.hint_round = self.curr_round_id + 1
         self.hint_img_path = first_novelty_img_path
 
     def _merge_top3_SVOs(self, top3_non_novel, top3_novel, batch_p_ni):
@@ -345,80 +343,16 @@ class TopLevelApp:
         assert not torch.any(torch.isnan(self.p_type_dist)), "NaNs in p_type."
         assert not torch.any(torch.isinf(self.p_type_dist)), "Infs in p_type."
 
-    def _process_feedback(self):
-        # assert self.batch_context.batch_query_indices.shape[0] == self.batch_context.batch_feedback.shape[0]
-        # assert all([i < N for i in batch_query_indices]), "Batch index was out of bound."
-        query_indices = torch.tensor(self.batch_context.query_indices, dtype=torch.long)
+    def _infer_log_p_type(self, evidence):
+        LARGE_NEG_CONSTANT = -50.0
 
-        t_star = torch.argmax(self.p_type_dist)
-        use_hard_labels = torch.isclose(self.p_type_dist[t_star], torch.ones(1, dtype=torch.float32))[0]
-        t_star += 1
+        zero_indices = torch.nonzero(torch.isclose(evidence, torch.zeros_like(evidence))).view(-1)
+        log_ev = torch.log(evidence)
+        log_ev[zero_indices] = LARGE_NEG_CONSTANT
+        evidence = torch.sum(log_ev)
+        p_type = np.log(0.2) + evidence
 
-        batch_feedback = self.batch_context.feedback_mask[self.batch_context.query_indices]
-
-        novel_indices_mask = (batch_feedback == 1).long()
-        non_novel_indices_mask = (batch_feedback == 0).long()
-        
-        nominal_indices = query_indices[non_novel_indices_mask == 1]
-        novel_indices = query_indices[novel_indices_mask == 1]
-        
-        subject_novelty_scores_u_nominal = torch.tensor([self.batch_context.subject_novelty_scores_u[i] for i in nominal_indices])
-        subject_novelty_scores_u_novel = torch.tensor([self.batch_context.subject_novelty_scores_u[i] for i in novel_indices])
-                
-        verb_novelty_scores_u_nominal = torch.tensor([self.batch_context.verb_novelty_scores_u[i] for i in nominal_indices])
-        verb_novelty_scores_u_novel = torch.tensor([self.batch_context.verb_novelty_scores_u[i] for i in novel_indices])
-
-        object_novelty_scores_u_nominal = torch.tensor([self.batch_context.object_novelty_scores_u[i] for i in nominal_indices])
-        object_novelty_scores_u_novel = torch.tensor([self.batch_context.object_novelty_scores_u[i] for i in novel_indices])
-
-        # update score contexts for unsueprvised novelty detector
-        self.und_manager.feedback_callback(subject_novelty_scores_u_nominal, subject_novelty_scores_u_novel,
-            verb_novelty_scores_u_nominal, verb_novelty_scores_u_novel,
-            object_novelty_scores_u_nominal, object_novelty_scores_u_novel)
-
-        case_1_mask = (self.batch_context.cases[query_indices] == 1).long()
-        case_2_mask = (self.batch_context.cases[query_indices] == 2).long()
-        case_1_or_2_mask = case_1_mask + case_2_mask
-        case_1_or_3_mask = case_1_mask + (self.batch_context.cases[query_indices] == 3).long()
-
-        # negative samples
-        negative_subject_indices = query_indices[(non_novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
-        subject_labels = torch.zeros(negative_subject_indices.shape[0])
-
-        negative_verb_indices = query_indices[(non_novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
-        verb_labels = torch.zeros(negative_verb_indices.shape[0])
-
-        negative_object_indices = query_indices[(non_novel_indices_mask == 1) & (case_1_or_3_mask == 1)]
-        object_labels = torch.zeros(negative_object_indices.shape[0])
-
-        # positive samples
-        if use_hard_labels:
-            positive_subject_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)] if t_star == 1 else \
-                torch.tensor([], dtype=torch.long)
-            subject_labels = torch.cat([subject_labels, torch.ones(positive_subject_indices.shape[0])])
-
-            positive_verb_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)] if t_star == 2 else \
-                torch.tensor([], dtype=torch.long)
-            verb_labels = torch.cat([verb_labels, torch.ones(positive_verb_indices.shape[0])])
-
-            positive_object_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_3_mask == 1)] if t_star == 3 else \
-                torch.tensor([], dtype=torch.long)
-            object_labels = torch.cat([object_labels, torch.ones(positive_object_indices.shape[0])])
-        else:
-            positive_subject_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
-            subject_labels = torch.cat([subject_labels, torch.ones(positive_subject_indices.shape[0]) * self.p_type_dist[0]])
-
-            positive_verb_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
-            verb_labels = torch.cat([verb_labels, torch.ones(positive_verb_indices.shape[0]) * self.p_type_dist[1]])
-
-            positive_object_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_3_mask == 1)]
-            object_labels = torch.cat([object_labels, torch.ones(positive_object_indices.shape[0]) * self.p_type_dist[2]])
-            
-        all_subject_indices = torch.cat([negative_subject_indices, positive_subject_indices])
-        all_verb_indices = torch.cat([negative_verb_indices, positive_verb_indices])
-        all_object_indices = torch.cat([negative_object_indices, positive_object_indices])
-
-        return all_subject_indices, all_verb_indices, all_object_indices, subject_labels, verb_labels, object_labels
+        return p_type
 
     def _cusum(self, p_nis):
         t = p_nis.shape[0]
@@ -529,16 +463,80 @@ class TopLevelApp:
         # assert self.all_p_ni.shape == self.all_cases.shape == self.all_feedback.shape == self.all_query_masks.shape == self.all_nc.shape
         assert self.all_nc.shape == self.all_s_unknown.shape == self.all_v_unknown.shape == self.all_o_unknown.shape
 
-    def _infer_log_p_type(self, evidence):
-        LARGE_NEG_CONSTANT = -50.0
+    def _process_feedback(self):
+        # assert self.batch_context.batch_query_indices.shape[0] == self.batch_context.batch_feedback.shape[0]
+        # assert all([i < N for i in batch_query_indices]), "Batch index was out of bound."
+        query_indices = torch.tensor(self.batch_context.query_indices, dtype=torch.long)
 
-        zero_indices = torch.nonzero(torch.isclose(evidence, torch.zeros_like(evidence))).view(-1)
-        log_ev = torch.log(evidence)
-        log_ev[zero_indices] = LARGE_NEG_CONSTANT
-        evidence = torch.sum(log_ev)
-        p_type = np.log(0.2) + evidence
+        t_star = torch.argmax(self.p_type_dist)
+        use_hard_labels = torch.isclose(self.p_type_dist[t_star], torch.ones(1, dtype=torch.float32))[0]
+        t_star += 1
 
-        return p_type
+        batch_feedback = self.batch_context.feedback_mask[self.batch_context.query_indices]
+
+        novel_indices_mask = (batch_feedback == 1).long()
+        non_novel_indices_mask = (batch_feedback == 0).long()
+        
+        nominal_indices = query_indices[non_novel_indices_mask == 1]
+        novel_indices = query_indices[novel_indices_mask == 1]
+        
+        subject_novelty_scores_u_nominal = torch.tensor([self.batch_context.subject_novelty_scores_u[i] for i in nominal_indices])
+        subject_novelty_scores_u_novel = torch.tensor([self.batch_context.subject_novelty_scores_u[i] for i in novel_indices])
+                
+        verb_novelty_scores_u_nominal = torch.tensor([self.batch_context.verb_novelty_scores_u[i] for i in nominal_indices])
+        verb_novelty_scores_u_novel = torch.tensor([self.batch_context.verb_novelty_scores_u[i] for i in novel_indices])
+
+        object_novelty_scores_u_nominal = torch.tensor([self.batch_context.object_novelty_scores_u[i] for i in nominal_indices])
+        object_novelty_scores_u_novel = torch.tensor([self.batch_context.object_novelty_scores_u[i] for i in novel_indices])
+
+        # update score contexts for unsueprvised novelty detector
+        self.und_manager.feedback_callback(subject_novelty_scores_u_nominal, subject_novelty_scores_u_novel,
+            verb_novelty_scores_u_nominal, verb_novelty_scores_u_novel,
+            object_novelty_scores_u_nominal, object_novelty_scores_u_novel)
+
+        case_1_mask = (self.batch_context.cases[query_indices] == 1).long()
+        case_2_mask = (self.batch_context.cases[query_indices] == 2).long()
+        case_1_or_2_mask = case_1_mask + case_2_mask
+        case_1_or_3_mask = case_1_mask + (self.batch_context.cases[query_indices] == 3).long()
+
+        # negative samples
+        negative_subject_indices = query_indices[(non_novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
+        subject_labels = torch.zeros(negative_subject_indices.shape[0])
+
+        negative_verb_indices = query_indices[(non_novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
+        verb_labels = torch.zeros(negative_verb_indices.shape[0])
+
+        negative_object_indices = query_indices[(non_novel_indices_mask == 1) & (case_1_or_3_mask == 1)]
+        object_labels = torch.zeros(negative_object_indices.shape[0])
+
+        # positive samples
+        if use_hard_labels:
+            positive_subject_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)] if t_star == 1 else \
+                torch.tensor([], dtype=torch.long)
+            subject_labels = torch.cat([subject_labels, torch.ones(positive_subject_indices.shape[0])])
+
+            positive_verb_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)] if t_star == 2 else \
+                torch.tensor([], dtype=torch.long)
+            verb_labels = torch.cat([verb_labels, torch.ones(positive_verb_indices.shape[0])])
+
+            positive_object_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_3_mask == 1)] if t_star == 3 else \
+                torch.tensor([], dtype=torch.long)
+            object_labels = torch.cat([object_labels, torch.ones(positive_object_indices.shape[0])])
+        else:
+            positive_subject_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
+            subject_labels = torch.cat([subject_labels, torch.ones(positive_subject_indices.shape[0]) * self.p_type_dist[0]])
+
+            positive_verb_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
+            verb_labels = torch.cat([verb_labels, torch.ones(positive_verb_indices.shape[0]) * self.p_type_dist[1]])
+
+            positive_object_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_3_mask == 1)]
+            object_labels = torch.cat([object_labels, torch.ones(positive_object_indices.shape[0]) * self.p_type_dist[2]])
+            
+        all_subject_indices = torch.cat([negative_subject_indices, positive_subject_indices])
+        all_verb_indices = torch.cat([negative_verb_indices, positive_verb_indices])
+        all_object_indices = torch.cat([negative_object_indices, positive_object_indices])
+
+        return all_subject_indices, all_verb_indices, all_object_indices, subject_labels, verb_labels, object_labels
 
     def _train_supervised_detector(self, all_subject_indices, all_verb_indices, all_object_indices,
         subject_labels, verb_labels, object_labels):
