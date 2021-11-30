@@ -129,7 +129,7 @@ class UnsupervisedNoveltyDetector:
             t1_conditional_joint_probs = t1_known_joint_probs
         else:
             t1_conditional_joint_probs = t1_known_joint_probs / t1_known_joint_probs_sum
-        t1_joint_probs = t1_conditional_joint_probs * p_type[1]
+        t1_joint_probs = t1_conditional_joint_probs * p_type[0]
         
         t2_raw_joint_probs = subject_probs.unsqueeze(1) * object_probs.unsqueeze(0)
         t2_known_joint_probs = self.known_so_combinations.to(torch.int) * t2_raw_joint_probs
@@ -138,7 +138,7 @@ class UnsupervisedNoveltyDetector:
             t2_conditional_joint_probs = t2_known_joint_probs
         else:
             t2_conditional_joint_probs = t2_known_joint_probs / t2_known_joint_probs_sum
-        t2_joint_probs = t2_conditional_joint_probs * p_type[2]
+        t2_joint_probs = t2_conditional_joint_probs * p_type[1]
         
         t3_raw_joint_probs = subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
         t3_known_joint_probs = self.known_sv_combinations.to(torch.int) * t3_raw_joint_probs
@@ -147,7 +147,7 @@ class UnsupervisedNoveltyDetector:
             t3_conditional_joint_probs = t3_known_joint_probs
         else:
             t3_conditional_joint_probs = t3_known_joint_probs / t3_known_joint_probs_sum
-        t3_joint_probs = t3_conditional_joint_probs * p_type[3]
+        t3_joint_probs = t3_conditional_joint_probs * p_type[2]
         
         t4_raw_joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
         t4_unknown_joint_probs = (1 - self.known_svo_combinations.to(torch.int)) * t4_raw_joint_probs
@@ -156,7 +156,7 @@ class UnsupervisedNoveltyDetector:
             t4_conditional_joint_probs = t4_unknown_joint_probs
         else:
             t4_conditional_joint_probs = t4_unknown_joint_probs / t4_unknown_joint_probs_sum
-        t4_joint_probs = t4_conditional_joint_probs * p_type[4]
+        t4_joint_probs = t4_conditional_joint_probs * p_type[3]
         
         # We've computed P(Correct | N_i), but we also have the case information.
         # We need to compute:
@@ -172,7 +172,7 @@ class UnsupervisedNoveltyDetector:
         # So divide each joint probability by the type normalizer, or sum of
         # probabilities of possible types.
         
-        type_normalizer = p_type[1] + p_type[2] + p_type[3] + p_type[4]
+        type_normalizer = p_type[0] + p_type[1] + p_type[2] + p_type[3]
         
         if type_normalizer > 0:
             t1_joint_probs /= type_normalizer
@@ -274,7 +274,7 @@ class UnsupervisedNoveltyDetector:
 
     def _case_2(self, subject_probs, verb_probs, p_type, k):
         t1_raw_joint_probs = verb_probs
-        t1_joint_probs = t1_raw_joint_probs * p_type[1]
+        t1_joint_probs = t1_raw_joint_probs * p_type[0]
         
         t2_raw_joint_probs = subject_probs
         # Type 2 and 5 instances are indistinguishable in case 2; a tuple of
@@ -283,7 +283,7 @@ class UnsupervisedNoveltyDetector:
         #   P(Correct | valid) * P(valid)
         # = P(Correct | valid) * P(type = 2 or type = 5)
         # = P(Correct | valid) * (P(type = 2) + P(type = 5))
-        t2_joint_probs = t2_raw_joint_probs * p_type[2]
+        t2_joint_probs = t2_raw_joint_probs * p_type[1]
         
         # We've computed P(Correct | N_i), but we also have the case information.
         # We need to compute:
@@ -300,7 +300,7 @@ class UnsupervisedNoveltyDetector:
         # So divide each joint probability by the type normalizer, or sum of
         # probabilities of possible types.
         
-        type_normalizer = p_type[1] + p_type[2]
+        type_normalizer = p_type[0] + p_type[1]
         
         if type_normalizer > 0:
             t1_joint_probs /= type_normalizer
@@ -407,13 +407,36 @@ class UnsupervisedNoveltyDetector:
         
         return example_predictions
 
+    def _compute_p_known_svo(self, subject_probs, verb_probs, object_probs):
+        svo_raw_joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
+        svo_known_joint_probs = (self.known_svo_combinations.to(torch.int)) * svo_raw_joint_probs
+        return svo_known_joint_probs.sum()
+
+    def _compute_p_known_sv(self, subject_probs, verb_probs):
+        sv_raw_joint_probs = subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
+        sv_known_joint_probs = (self.known_sv_combinations.to(torch.int)) * sv_raw_joint_probs
+        return sv_known_joint_probs.sum()
+
+    def _compute_p_known_so(self, subject_probs, object_probs):
+        so_raw_joint_probs = subject_probs.unsqueeze(1) * object_probs.unsqueeze(0)
+        so_known_joint_probs = (self.known_so_combinations.to(torch.int)) * so_raw_joint_probs
+        return so_known_joint_probs.sum()
+
+    def _compute_p_known_vo(self, verb_probs, object_probs):
+        vo_raw_joint_probs = verb_probs.unsqueeze(1) * object_probs.unsqueeze(0)
+        vo_known_joint_probs = (self.known_vo_combinations.to(torch.int)) * vo_raw_joint_probs
+        return vo_known_joint_probs.sum()
+
     def __call__(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type):
         predictions = []
         results = {}
         subject_novelty_scores = []
         object_novelty_scores = []
         verb_novelty_scores = []
-        p_n_t4 = []
+        p_known_svo = []
+        p_known_sv = []
+        p_known_so = []
+        p_known_vo = []
         for idx in range(len(spatial_features)):
             example_spatial_features = spatial_features[idx]
             example_subject_appearance_features = subject_appearance_features[idx]
@@ -462,18 +485,21 @@ class UnsupervisedNoveltyDetector:
             else:
                 verb_novelty_scores.append(None)
             
-            p_ni_t4 = torch.tensor(0, dtype = torch.float)
-            p_ni_t4 = p_ni_t4.to(self.device)
+            cur_p_known_svo = torch.tensor(0, dtype = torch.float, device = self.device)
+            cur_p_known_sv = torch.tensor(0, dtype = torch.float, device = self.device)
+            cur_p_known_so = torch.tensor(0, dtype = torch.float, device = self.device)
+            cur_p_known_vo = torch.tensor(0, dtype = torch.float, device = self.device)
             if example_subject_appearance_features is not None and example_object_appearance_features is not None:
                 # Case 1, S/V/O
                 example_predictions = self._case_1(subject_probs, object_probs, verb_probs, p_type, 3)
-                
-                t4_raw_joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
-                t4_unknown_joint_probs = (1 - self.known_svo_combinations.to(torch.int)) * t4_raw_joint_probs
-                p_ni_t4 = t4_unknown_joint_probs.sum()
+                cur_p_known_svo = self._compute_p_known_svo(subject_probs, verb_probs, object_probs)
+                cur_p_known_sv = self._compute_p_known_sv(subject_probs, verb_probs)
+                cur_p_known_so = self._compute_p_known_so(subject_probs, object_probs)
+                cur_p_known_vo = self._compute_p_known_vo(verb_probs, object_probs)
             elif example_subject_appearance_features is not None and example_object_appearance_features is None:
                 # Case 2, S/V/None
                 example_predictions = self._case_2(subject_probs, verb_probs, p_type, 3)
+                cur_p_known_sv = self._compute_p_known_sv(subject_probs, verb_probs)
             elif example_subject_appearance_features is None and example_object_appearance_features is not None:
                 # Case 3, None/None/O
                 example_predictions = self._case_3(p_type)
@@ -481,16 +507,25 @@ class UnsupervisedNoveltyDetector:
                 return NotImplemented
             
             predictions.append(example_predictions)
-            p_n_t4.append(p_ni_t4)
+            p_known_svo.append(cur_p_known_svo)
+            p_known_sv.append(cur_p_known_sv)
+            p_known_so.append(cur_p_known_so)
+            p_known_vo.append(cur_p_known_vo)
         
-        p_n_t4 = torch.stack(p_n_t4, dim = 0)
+        p_known_svo = torch.stack(p_known_svo, dim = 0)
+        p_known_sv = torch.stack(p_known_sv, dim = 0)
+        p_known_so = torch.stack(p_known_so, dim = 0)
+        p_known_vo = torch.stack(p_known_vo, dim = 0)
 
         assert len(subject_novelty_scores) == len(verb_novelty_scores) == len(object_novelty_scores)
 
         results['subject_novelty_score'] = subject_novelty_scores
         results['verb_novelty_score'] = verb_novelty_scores
         results['object_novelty_score'] = object_novelty_scores
-        results['p_n_t4'] = p_n_t4
+        results['p_known_svo'] = p_known_svo
+        results['p_known_sv'] = p_known_sv
+        results['p_known_so'] = p_known_so
+        results['p_known_vo'] = p_known_vo
         results['top3'] = predictions
 
         return results

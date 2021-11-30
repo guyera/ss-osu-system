@@ -17,28 +17,48 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         verb_novel_scores = torch.randn(100) * 1 + 30
         self.verb_score_ctx = noveltydetection.utils.ScoreContext(noveltydetection.utils.ScoreContext.Source.UNSUPERVISED, verb_nominal_scores, verb_novel_scores).to(self.device)
         
-        subject_scores =           [1.0,  29.0, -1.0, 0.0,  2.0,  1.0,  30.0, 0.0,  None, None]
-        object_scores =            [9.0,  11.0, 37.0, 8.0,  10.0, None, None, None, 10.0, 41.0]
-        verb_scores =              [20.0, 19.5, 21.0, 30.5, 21.0, 20.0, 18.0, 32.0, None, None]
-        self.p_n_t4 = torch.tensor([0.01, 0.02, 0.01, 0.01, 0.98, 0.00, 0.0,  0.0,  0.0,  0.0 ], device = self.device)
+        subject_scores =                [1.0,  29.0, -1.0, 0.0,  2.0,  1.0,  30.0, 0.0,  1.0,  None, None]
+        verb_scores =                   [20.0, 19.5, 30.5, 21.0, 21.0, 20.0, 18.0, 32.0, 20.0, None, None]
+        object_scores =                 [9.0,  11.0, 8.0,  37.0, 10.0, None, None, None, None, 10.0, 41.0]
+        self.p_known_svo = torch.tensor([0.99, 0.99, 0.99, 0.99, 0.01, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00], device = self.device)
+        self.p_known_sv =  torch.tensor([0.99, 0.99, 0.99, 0.99, 0.01, 0.99, 0.99, 0.99, 0.01, 0.00, 0.00], device = self.device)
+        self.p_known_so =  torch.tensor([0.99, 0.99, 0.99, 0.99, 0.99, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00], device = self.device)
+        self.p_known_vo =  torch.tensor([0.99, 0.99, 0.99, 0.99, 0.99, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00], device = self.device)
         self.subject_scores = [torch.tensor(x, device = self.device) if x is not None else None for x in subject_scores]
         self.object_scores = [torch.tensor(x, device = self.device) if x is not None else None for x in object_scores]
         self.verb_scores = [torch.tensor(x, device = self.device) if x is not None else None for x in verb_scores]
 
-    def test_uniform_p_type(self):
-        p_type = torch.tensor([0.2, 0.2, 0.2, 0.2, 0.2], device = self.device)
-        probs = noveltydetection.utils.compute_probability_novelty(self.subject_scores, self.verb_scores, self.object_scores, self.p_n_t4, self.subject_score_ctx, self.verb_score_ctx, self.object_score_ctx, p_type)
+    def test_all(self):
+        p_type, p_n = noveltydetection.utils.compute_probability_novelty(self.subject_scores, self.verb_scores, self.object_scores, self.p_known_svo, self.p_known_sv, self.p_known_so, self.p_known_vo, self.subject_score_ctx, self.verb_score_ctx, self.object_score_ctx)
         
-        self.assertTrue(probs[0] < 0.5)
-        self.assertTrue(probs[1] > 0.5)
-        self.assertTrue(probs[2] > 0.5)
-        self.assertTrue(probs[3] > 0.5)
-        self.assertTrue(probs[4] > 0.5)
-        self.assertTrue(probs[5] < 0.5)
-        self.assertTrue(probs[6] > 0.5)
-        self.assertTrue(probs[7] > 0.5)
-        self.assertTrue(probs[8] < 0.5)
-        self.assertTrue(probs[9] > 0.5)
+        self.assertTrue(p_n[0] < 0.5)
+        self.assertTrue(p_n[1] > 0.5)
+        self.assertTrue(p_n[2] > 0.5)
+        self.assertTrue(p_n[3] > 0.5)
+        self.assertTrue(p_n[4] > 0.5)
+        self.assertTrue(p_n[5] < 0.5)
+        self.assertTrue(p_n[6] > 0.5)
+        self.assertTrue(p_n[7] > 0.5)
+        self.assertTrue(p_n[8] > 0.5)
+        self.assertTrue(p_n[9] < 0.5)
+        self.assertTrue(p_n[10] > 0.5)
+
+        p_type_sums = p_type.sum(dim = 1)
+        self.assertTrue(torch.all(p_type_sums == 1.0))
+        self.assertFalse(torch.any(p_type < 0.0))
+        self.assertFalse(torch.any(p_type > 1.0))
+
+        self.assertTrue(torch.max(p_type[0], dim = 0)[0] == 0.25)
+        self.assertTrue(p_type[1][0] > 0.5)
+        self.assertTrue(p_type[2][1] > 0.5)
+        self.assertTrue(p_type[3][2] > 0.5)
+        self.assertTrue(p_type[4][3] > 0.5)
+        self.assertTrue(torch.max(p_type[5], dim = 0)[0] == 0.25)
+        self.assertTrue(p_type[6][0] > 0.5)
+        self.assertTrue(p_type[7][1] > 0.5)
+        self.assertTrue(p_type[8][3] > 0.5)
+        self.assertTrue(torch.max(p_type[9], dim = 0)[0] == 0.25)
+        self.assertTrue(p_type[10][2] > 0.5)
 
 if __name__ == '__main__':
     unittest.main()

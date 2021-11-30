@@ -29,7 +29,8 @@ if __name__ == "__main__":
         data_root=args.data_root, 
         pretrained_unsupervised_novelty_path=args.pretrained_unsupervised_novelty_path, 
         cusum_thresh=args.detection_threshold,
-        feedback_enabled=args.detection_feedback)
+        feedback_enabled=args.detection_feedback,
+        given_detection=args.given_detection)
     
     test_session = BBNSession('OND', args.domain, args.class_count, 
         args.classification_feedback, args.detection_feedback,
