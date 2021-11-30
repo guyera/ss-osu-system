@@ -104,7 +104,7 @@ def get_split_dataloaders(data):
         dataset=train_dataset_nom,
         batch_size=img_batch_size,
         num_workers=num_workers, 
-        drop_last=False #True
+        drop_last=True
     )
     
     train_Xa_i_anom = torch.hstack((train_X_i_anom,torch.unsqueeze(train_a_i_anom,1)))
@@ -113,7 +113,7 @@ def get_split_dataloaders(data):
         dataset=train_dataset_anom,
         batch_size=img_batch_size,
         num_workers=num_workers, 
-        drop_last=False #True
+        drop_last=True
     )
        
     val_Xa_i_nom = torch.hstack((val_X_i_nom,torch.unsqueeze(val_a_i_nom,1)))
@@ -122,7 +122,7 @@ def get_split_dataloaders(data):
         dataset=val_dataset_nom,
         batch_size=img_batch_size,
         num_workers=num_workers, 
-        drop_last=False #True
+        drop_last=True
     )
 
     val_Xa_i_anom = torch.hstack((val_X_i_anom,torch.unsqueeze(val_a_i_anom,1)))
@@ -131,7 +131,7 @@ def get_split_dataloaders(data):
         dataset=val_dataset_anom,
         batch_size=img_batch_size,
         num_workers=num_workers, 
-        drop_last=False #True
+        drop_last=True
     )
 
     val_Xa_i = torch.hstack((val_X_i,torch.unsqueeze(val_a_i,1)))
@@ -140,7 +140,7 @@ def get_split_dataloaders(data):
         dataset=val_dataset,
         batch_size=img_batch_size,
         num_workers=num_workers,
-        drop_last=False #True
+        drop_last=True
     )
     
     return train_dataloader_nom, train_dataloader_anom, val_dataloader_nom, val_dataloader_anom, val_dataloader
@@ -177,7 +177,7 @@ def get_dataloaders(data):
         dataset=train_dataset,
         batch_size=img_batch_size,
         num_workers=num_workers, 
-        drop_last=False #True
+        drop_last=True
     )
         
     val_Xa_i    = torch.hstack((val_X_i,val_a_i))
@@ -186,7 +186,7 @@ def get_dataloaders(data):
         dataset=val_dataset,
         batch_size=img_batch_size,
         num_workers=num_workers, 
-        drop_last=False #True
+        drop_last=True
     )
 
     return train_dataloader, val_dataloader
@@ -389,11 +389,9 @@ def test_nom_anom(model, test_loader, test_nom_loader, test_anom_loader, data_pa
         nom_correct, nom_total = 0, 0
         anom_correct, anom_total = 0, 0
         y_hat, y = torch.tensor([]).to(device), torch.tensor([]).to(device)     
-        y_hat_nom, y_nom = torch.tensor([]).to(device), torch.tensor([]).to(device)
+        y_hat_nom, y_nom = torch.tensor([]).to(device), torch.tensor([]).to(device)     
         y_hat_anom, y_anom = torch.tensor([]).to(device), torch.tensor([]).to(device)     
 
-        # d
-        #tracer = 1
         for images, labels in test_nom_loader:
             images, labels = images.to(device), labels.to(device)
             outputs = model(images)
@@ -406,13 +404,7 @@ def test_nom_anom(model, test_loader, test_nom_loader, test_anom_loader, data_pa
           
             y_hat_nom = torch.cat((y_hat_nom, outputs))
             y_nom     = torch.cat((y_nom, labels)) 
-            
-            #print(f'y_hat_nom length is {y_hat_nom.shape[0]}')
-            #print(f'{tracer} iterations through test nom loader loop')
-            #tracer += 1
 
-        # d
-        #tracer = 1
         for images, labels in test_anom_loader:
             images, labels = images.to(device), labels.to(device)
             outputs = model(images)
@@ -425,10 +417,6 @@ def test_nom_anom(model, test_loader, test_nom_loader, test_anom_loader, data_pa
           
             y_hat_anom = torch.cat((y_hat_anom, outputs))
             y_anom     = torch.cat((y_anom, labels)) 
-
-            #print(f'y_hat_anom length is {y_hat_anom.shape[0]}')
-            #print(f'{tracer} iterations through test anom loader loop')
-            #tracer += 1
 
         for images, labels in test_loader:
             images, labels = images.to(device), labels.to(device)
@@ -460,7 +448,7 @@ def test_nom_anom(model, test_loader, test_nom_loader, test_anom_loader, data_pa
         #print(f"Accuracy of the supervised ensemble member on the {total} " + f"test images: {100 * correct / total}%")
 
         #print(f"AUROC (at fpr=0.25) of the supervised ensemble member on the {total} " +  f"test images: {auc}")
-    
+ 
     return nom_scores, anom_scores
 
 
@@ -497,7 +485,7 @@ def train_supervised_model(X, anom_scores, y, verbose=False):
     lrate = 0.0546 
     mu = 0.9    
 
-    scores = None
+    scores  = None
     labels = None
     aucs   = [] 
     models = []   
@@ -515,7 +503,7 @@ def train_supervised_model(X, anom_scores, y, verbose=False):
             num_epochs=num_epochs,
             device=device
         )
-   
+
         # Load the data
         dataloaders = get_split_dataloaders(data_params)
         
@@ -539,17 +527,16 @@ def train_supervised_model(X, anom_scores, y, verbose=False):
 
         # Compute the AUC with max_fpr at 0.25
         ##auc, scores_split_i = test(model_i, val_dl, val_nom_dl, val_anom_dl, data_params)        
-        
         labels_split_i, scores_split_i = \
             test(model_i, val_dl, val_nom_dl, val_anom_dl, data_params)
 
         # Store the model and AUC for this split
-        if scores is None:
+        if nom_scores is None:
             scores = scores_split_i
             labels = labels_split_i
         else:
-            scores = torch.vstack((scores.cpu(),scores_split_i.cpu()))
-            labels = torch.vstack((labels.cpu(),labels_split_i.cpu()))
+            scores  = torch.vstack((scores,scores_split_i))
+            labels  = torch.vstack((labels,labels_split_i))
         #aucs.append(auc)
         models.append(model_i)
 
@@ -585,7 +572,7 @@ def train_supervised_model_nom_anom(X, anom_scores, y, verbose=False):
     nom_scores  = None
     anomaly_scores = None
     aucs   = [] 
-    models = []
+    models = []   
  
     # Doing 5-fold cross-validation
     # and then averaging each member of the ensemble to 
@@ -600,8 +587,6 @@ def train_supervised_model_nom_anom(X, anom_scores, y, verbose=False):
             num_epochs=num_epochs,
             device=device
         )
-
-        #import pdb; pdb.set_trace()
 
         # Load the data
         dataloaders = get_split_dataloaders(data_params)
@@ -625,8 +610,7 @@ def train_supervised_model_nom_anom(X, anom_scores, y, verbose=False):
         train(model_i, train_nom_dl, train_anom_dl, criterion, optimizer, data_params, verbose=verbose)
 
         # Compute the AUC with max_fpr at 0.25
-        ##auc, scores_split_i = test(model_i, val_dl, val_nom_dl, val_anom_dl, data_params)
-        ###print(val_nom_dl.__dict__['dataset'].__dict__['tensors'][0].shape)
+        ##auc, scores_split_i = test(model_i, val_dl, val_nom_dl, val_anom_dl, data_params)        
         nom_scores_split_i, anom_scores_split_i = \
             test_nom_anom(model_i, val_dl, val_nom_dl, val_anom_dl, data_params)
         
@@ -635,8 +619,8 @@ def train_supervised_model_nom_anom(X, anom_scores, y, verbose=False):
             nom_scores  = nom_scores_split_i
             anomaly_scores = anom_scores_split_i
         else:
-            nom_scores  = torch.vstack((nom_scores.cpu(),nom_scores_split_i.cpu()))
-            anomaly_scores = torch.vstack((anomaly_scores.cpu(),anom_scores_split_i.cpu()))
+            nom_scores  = torch.vstack((nom_scores,nom_scores_split_i))
+            anomaly_scores = torch.vstack((anomaly_scores,anom_scores_split_i))
         #aucs.append(auc)
         models.append(model_i)
 
@@ -645,7 +629,7 @@ def train_supervised_model_nom_anom(X, anom_scores, y, verbose=False):
     # Compute Overall AUC here
     auc = compute_partial_auc(anomaly_scores, nom_scores)    
     
-    return auc, nom_scores, anomaly_scores, models
+    return auc, nom_scores, anom_scores, models
     
 
 def train_supervised_models(S_X, V_X, O_X, S_a, V_a, O_a, S_y, V_y, O_y, verbose=False):

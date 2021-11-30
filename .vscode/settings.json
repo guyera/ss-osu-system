@@ -1,0 +1,4 @@
+{
+    "jupyter.jupyterServerType": "local",
+    "python.pythonPath": "/scratch/noelt/envs/ood/bin/python"
+}
