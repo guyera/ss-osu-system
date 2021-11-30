@@ -5,13 +5,15 @@ from toplevel import TopLevelApp
 
 
 class OSUInterface:
-    def __init__(self, scg_ensemble, data_root, pretrained_unsupervised_novelty_path, cusum_thresh, feedback_enabled):
+    def __init__(self, scg_ensemble, data_root, pretrained_unsupervised_novelty_path, cusum_thresh, feedback_enabled, 
+        given_detection):
 
         self.app = TopLevelApp(ensemble_path=scg_ensemble, 
             data_root=data_root, 
             pretrained_unsupervised_module_path=pretrained_unsupervised_novelty_path,
             th=cusum_thresh,
-            feedback_enabled=feedback_enabled)
+            feedback_enabled=feedback_enabled,
+            given_detection=given_detection)
 
         self.temp_path = pathlib.Path('./session/temp/')
 
@@ -42,7 +44,7 @@ class OSUInterface:
         :param red_light_image_path
         :return: None
         """
-        pass
+        self.app.red_light_hint_callback(red_light_image_path)
 
     def process_round(self, test_id, round_id, contents):
         """
