@@ -34,6 +34,7 @@ class BBNSession:
         self.detection_threshold = detection_threshold
         self.image_directory = image_directory
         self.results_directory = results_directory
+        self.given_detect_red_light_round = None
         # self.characterization = characterization
         # self.bbn_max_clusters = config['bbnmaxclusters']
         # self.bbn_min_novel_frac = config["bbnminnovelfrac"]
@@ -311,6 +312,10 @@ class BBNSession:
         print(f"=> initialized session: {session_id}")
 
         for test_id in test_ids:
+            ## GDD
+            # if test_id == 'OND.100.000':
+            #     print(f'==> skipping test: {test_id}')
+            #     continue
             print(f"==> starting test: {test_id}")
             self.run_test(session_id, test_id)
             # self.agent.reset()
@@ -401,7 +406,12 @@ class BBNSession:
                 ## Lance
 
                 ## GD
-                given_detect_red_light_round = self.given_detection and (red_light_image in image_paths)
+                if self.given_detect_red_light_round is None and self.given_detection and (red_light_image in image_paths):
+                    self.given_detect_red_light_round = round_id
+                    
+                ## GDD
+                # if self.given_detect_red_light_round == round_id:
+                #     print(f' **** Turned on given_detect_red_light_round on round {round_id}')
 
             detection_filename = os.path.join(
                 self.results_directory, "%s_%s_%s_detection.csv" % (session_id, test_id, round_id))
@@ -419,8 +429,10 @@ class BBNSession:
                 ## GD
                 # If we're in a given detection trial and this round contains the red light,
                 # inform the OSU code of that, passing them the red light image path.
-                if given_detect_red_light_round:
+                if self.given_detect_red_light_round == round_id:
                     self.osu_stubs.given_detect_red_light(red_light_image)
+                    # GDD
+                    # print(f' **** Called osu_stubs.given_detect_red_light during round {round_id}')
                 novelty_preds, svo_preds = self.osu_stubs.process_round(test_id, round_id, image_data)
                 novelty_lines = novelty_preds.splitlines()
                 svo_lines = svo_preds.splitlines()
@@ -433,9 +445,11 @@ class BBNSession:
                     filenames.append(novelty_image_path)
 
                     if self.given_detection:
-                        if self.given_detect_red_light_round:
+                        if self.given_detect_red_light_round == round_id:
                             if novelty_image_path == red_light_image:
                                 red_light_declared = True
+                                # GDD
+                                # print(f' **** Turning on red_light_declared due to GD')
                     else:
                         if float(red_light_str) > 0.5:
                             red_light_declared = True
@@ -485,7 +499,11 @@ class BBNSession:
                 # else:
                 #     feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
                 #                                                           filenames, feedback_max_ids)
-                
+
+                # GDD
+                # if self.given_detection:
+                #     print(f' **** About to call choose_detection_feedback_ids, round {round_id}')
+
                 feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
                                                                            filenames, feedback_max_ids)
                 detection_feedback_results = self.request_detection_feedback(session_id, test_id, round_id,
