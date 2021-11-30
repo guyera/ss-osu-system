@@ -267,56 +267,42 @@ def compute_probability_novelty(
     # P(Case = 3)
     p_c3 = (1 - subject_boxes_present) * object_boxes_present
 
-    # P(Type = 1 | case = 1)
-    p_t1_given_c1 = novel_subject_probs * (1 - novel_verb_probs) * (1 - novel_object_probs) * p_known_vo
+    # For invalid cases, p_known_XXX are all 0. Otherwise, they are non-zero.
+    # p_t4 is (1 - p_known_svo) in case 1, (1 - p_known_sv) in case 2,
+    # and 0 otherwise. This can be computed as follows:
+    p_t4 = p_c1 * (1 - p_known_svo) + p_c2 * (1 - p_known_sv)
     
-    # P(Type = 1 | case = 2)
-    p_t1_given_c2 = novel_subject_probs * (1 - novel_verb_probs)
+    # Now compute P_Ni for each i as
+    # max(p_t1, p_t2, p_t3, p_t4).
+    p_n, max_indices = torch.max(torch.stack((novel_subject_probs, novel_verb_probs, novel_object_probs, p_t4), dim = 1), dim = 1)
 
-    # P(Type = 1 | case = 3) = 0
-
-    # P(Type = 2 | case = 1)
-    p_t2_given_c1 = novel_verb_probs * (1 - novel_subject_probs) * (1 - novel_object_probs) * p_known_so
+    # We want the max novelty probability prior to normalization to also be
+    # the max novelty type in p_type after normalization. If the max is less
+    # than 0.25, then this won't be the case. So we have to consider two cases.
+    # First, consider the case where it is greater than 0.25:
     
-    # P(Type = 2 | case = 2)
-    p_t2_given_c2 = novel_verb_probs * (1 - novel_subject_probs)
+    # Compute remainder after accounting for p_Ni for each i, i.e. 1 - p_n
+    remainder = 1 - p_n
 
-    # P(Type = 2 | case = 3) = 0
+    # Distribute remainder among the three non-max probabilities
+    distributed_remainder = remainder / 3.0
 
-    # P(Type = 3 | case = 1)
-    p_t3_given_c1 = novel_object_probs * (1 - novel_subject_probs) * (1 - novel_verb_probs) * p_known_sv
-
-    # P(Type = 3 | case = 2) = 0
-
-    # P(Type = 3 | case = 3)
-    p_t3_given_c3 = novel_object_probs
-
-    # P(Type = 4 | case = 1)
-    p_t4_given_c1 = (1 - novel_subject_probs) * (1 - novel_verb_probs) * (1 - novel_object_probs) * (1 - p_known_svo)
-
-    # P(Type = 4 | case = 2)
-    p_t4_given_c2 = (1 - novel_subject_probs) * (1 - novel_verb_probs) * (1 - p_known_sv)
-
-    # P(Type = 4 | case = 3) = 0
-
-    # P(Type = 1)
-    p_t1 = p_t1_given_c1 * p_c1 + p_t1_given_c2 * p_c2
-
-    # P(Type = 2)
-    p_t2 = p_t2_given_c1 * p_c1 + p_t2_given_c2 * p_c2
-
-    # P(Type = 3)
-    p_t3 = p_t3_given_c1 * p_c1 + p_t3_given_c3 * p_c3
-
-    # P(Type = 4)
-    p_t4 = p_t4_given_c1 * p_c1 + p_t4_given_c2 * p_c2
-
-    partial_p_type = torch.stack((p_t1, p_t2, p_t3, p_t4), dim = 1)
+    # Construct p_type as tensor of size [N, 4], full of distributed_remainder values
+    p_type_gt = distributed_remainder.unsqueeze(1).repeat(1, 4)
     
-    p_n = partial_p_type.sum(dim = 1)
-    p_n_0 = 1 - p_n
-    
-    p_type = torch.cat((p_n_0.unsqueeze(1), partial_p_type), dim = 1)
+    # Set the appropriate value of p_type for each data point to be equal to
+    # the corresponding p_ni value.
+    data_indices = torch.arange(len(p_n), device = p_known_svo.device)
+    # Use tuple for this kind of indexing
+    idx_tuple = (data_indices, max_indices)
+    p_type_gt[idx_tuple] = p_n
+
+    # Next, we have to consider the case where the greatest novelty type 
+    # probability is less than 0.25. In that case, we'll just set p_type to
+    # be the uniform distribution, i.e. [0.25, 0.25, 0.25, 0.25]. So let's
+    # combine them now:
+    gt_mask = (p_n >= 0.25).to(torch.int)
+    p_type = gt_mask.unsqueeze(1) * p_type_gt + (1 - gt_mask).unsqueeze(1) * 0.25
 
     return p_type, p_n
 

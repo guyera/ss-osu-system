@@ -103,6 +103,8 @@ auc_verb_trues = torch.cat((torch.zeros_like(nominal_verb_scores), torch.ones_li
 verb_auc = sklearn.metrics.roc_auc_score(auc_verb_trues.detach().cpu().numpy(), auc_verb_scores.detach().cpu().numpy())
 print(f'Verb AUC: {verb_auc}')
 
+print()
+
 subject_score_ctx = noveltydetection.utils.ScoreContext(noveltydetection.utils.ScoreContext.Source.UNSUPERVISED)
 subject_score_ctx.load_state_dict(state_dict['subject_score_context'])
 
@@ -115,27 +117,88 @@ verb_score_ctx.load_state_dict(state_dict['verb_score_context'])
 p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, p_known_svo, p_known_sv, p_known_so, p_known_vo, subject_score_ctx, verb_score_ctx, object_score_ctx)
 
 type_1_p_n = []
+type_1_subject_scores = []
+
 type_3_p_n = []
+type_3_object_scores = []
+
 type_2_p_n = []
+type_2_verb_scores = []
+
 nominal_p_n = []
+nominal_subject_scores = []
+nominal_verb_scores = []
+nominal_object_scores = []
 for idx in range(len(p_n)):
     if subject_labels[idx] == 0 and object_labels[idx] != 0 and verb_labels[idx] != 0:
         type_1_p_n.append(p_n[idx])
-    elif object_labels[idx] == 0 and subject_labels[idx] != 0 and (verb_labels[idx] != 0 or subject_labels[idx] == -1):
+        type_1_subject_scores.append(subject_scores[idx])
+    elif object_labels[idx] == 0 and subject_labels[idx] != 0 and (verb_labels[idx] != 0 or subject_labels[idx] is None):
         type_3_p_n.append(p_n[idx])
+        type_3_object_scores.append(object_scores[idx])
     elif subject_labels[idx] is not None and verb_labels[idx] == 0 and subject_labels[idx] != 0 and object_labels[idx] != 0:
         type_2_p_n.append(p_n[idx])
-    elif subject_labels[idx] != 0 and object_labels[idx] != 0 and (verb_labels[idx] != 0 or subject_labels[idx] == -1):
+        type_2_verb_scores.append(verb_scores[idx])
+    elif subject_labels[idx] != 0 and object_labels[idx] != 0 and (verb_labels[idx] != 0 or subject_labels[idx] is None):
         nominal_p_n.append(p_n[idx])
+        if subject_labels[idx] is not None:
+            nominal_subject_scores.append(subject_scores[idx])
+            nominal_verb_scores.append(verb_scores[idx])
+        if object_labels[idx] is not None:
+            nominal_object_scores.append(object_scores[idx])
+
 type_1_p_n = torch.stack(type_1_p_n, dim = 0)
+type_1_subject_scores = torch.stack(type_1_subject_scores, dim = 0)
+
 type_3_p_n = torch.stack(type_3_p_n, dim = 0)
+type_3_object_scores = torch.stack(type_3_object_scores, dim = 0)
+
 type_2_p_n = torch.stack(type_2_p_n, dim = 0)
+type_2_verb_scores = torch.stack(type_2_verb_scores, dim = 0)
+
 nominal_p_n = torch.stack(nominal_p_n, dim = 0)
+nominal_subject_scores = torch.stack(nominal_subject_scores, dim = 0)
+nominal_object_scores = torch.stack(nominal_object_scores, dim = 0)
+nominal_verb_scores = torch.stack(nominal_verb_scores, dim = 0)
 
 nominal_x = torch.ones_like(nominal_p_n) * 0
 type_1_x = torch.ones_like(type_1_p_n) * 1
 type_2_x = torch.ones_like(type_2_p_n) * 2
 type_3_x = torch.ones_like(type_3_p_n) * 3
+
+scores = torch.cat((nominal_subject_scores, type_1_subject_scores), dim = 0)
+trues = torch.cat((torch.zeros_like(nominal_subject_scores), torch.ones_like(type_1_subject_scores)), dim = 0)
+auc = sklearn.metrics.roc_auc_score(trues.detach().cpu().numpy(), scores.detach().cpu().numpy())
+print(f'Type 1 subject score AUC: {auc}')
+
+scores = torch.cat((nominal_verb_scores, type_2_verb_scores), dim = 0)
+trues = torch.cat((torch.zeros_like(nominal_verb_scores), torch.ones_like(type_2_verb_scores)), dim = 0)
+auc = sklearn.metrics.roc_auc_score(trues.detach().cpu().numpy(), scores.detach().cpu().numpy())
+print(f'Type 2 verb score AUC: {auc}')
+
+scores = torch.cat((nominal_object_scores, type_3_object_scores), dim = 0)
+trues = torch.cat((torch.zeros_like(nominal_object_scores), torch.ones_like(type_3_object_scores)), dim = 0)
+auc = sklearn.metrics.roc_auc_score(trues.detach().cpu().numpy(), scores.detach().cpu().numpy())
+print(f'Type 3 object score AUC: {auc}')
+
+print()
+
+scores = torch.cat((nominal_p_n, type_1_p_n), dim = 0)
+trues = torch.cat((torch.zeros_like(nominal_p_n), torch.ones_like(type_1_p_n)), dim = 0)
+auc = sklearn.metrics.roc_auc_score(trues.detach().cpu().numpy(), scores.detach().cpu().numpy())
+print(f'Type 1 P_N AUC: {auc}')
+
+scores = torch.cat((nominal_p_n, type_2_p_n), dim = 0)
+trues = torch.cat((torch.zeros_like(nominal_p_n), torch.ones_like(type_2_p_n)), dim = 0)
+auc = sklearn.metrics.roc_auc_score(trues.detach().cpu().numpy(), scores.detach().cpu().numpy())
+print(f'Type 2 P_N AUC: {auc}')
+
+scores = torch.cat((nominal_p_n, type_3_p_n), dim = 0)
+trues = torch.cat((torch.zeros_like(nominal_p_n), torch.ones_like(type_3_p_n)), dim = 0)
+auc = sklearn.metrics.roc_auc_score(trues.detach().cpu().numpy(), scores.detach().cpu().numpy())
+print(f'Type 3 P_N AUC: {auc}')
+
+print()
 
 print(f'Average P(N_i) over nominals: {nominal_p_n.mean()}')
 print(f'Average P(N_i) over type 1 novelty: {type_1_p_n.mean()}')
