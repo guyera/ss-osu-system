@@ -373,7 +373,7 @@ def test(model, test_loader, test_nom_loader, test_anom_loader, data_params):
 
         #print(f"AUROC (at fpr=0.25) of the supervised ensemble member on the {total} " +  f"test images: {auc}")
  
-    return total_labels, scores
+    return torch.reshape(total_labels, (-1,1)), scores
 
 
 def test_nom_anom(model, test_loader, test_nom_loader, test_anom_loader, data_params):                                                                   
@@ -554,11 +554,29 @@ def train_supervised_model(X, anom_scores, y, verbose=False):
         models.append(model_i)
 
     #mean_AUC = sum(aucs) / len(aucs)
-    
+
+    if no_nominals(labels):
+        scores = torch.vstack((scores.cpu(), torch.tensor([[0.]]).cpu()))
+        labels = torch.vstack((labels.cpu(), torch.tensor([[1.]]).cpu()))
+
+    if no_anomalies(labels):
+        scores = torch.vstack((scores.cpu(), torch.tensor([[1.]]).cpu()))
+        labels = torch.vstack((labels.cpu(), torch.tensor([[0.]]).cpu()))
+
     # Compute Overall AUC here
     auc = roc_auc_score(labels, scores, max_fpr = 0.25) #compute_partial_auc(anomaly_scores, nom_scores)    
     
     return auc, scores, models
+
+
+def no_nominals(labels):
+    targets = labels.T.tolist()[0]
+    return not (1 in targets)
+
+
+def no_anomalies(labels):
+    targets = labels.T.tolist()[0]
+    return not (0 in targets)
 
 
 def train_supervised_model_nom_anom(X, anom_scores, y, verbose=False):

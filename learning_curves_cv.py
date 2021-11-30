@@ -43,7 +43,7 @@ dataset.__dict__['object_appearance_features'] = [dataset.__dict__['object_appea
 dataset.__dict__['verb_appearance_features'] = [dataset.__dict__['verb_appearance_features'][i] for i in mask] 
 
 ci_confidence = 0.99
-num_splits = 1 #5
+num_splits = 5
 meta_partial_subj_aucs = []
 meta_partial_verb_aucs = []
 meta_partial_obj_aucs  = []
