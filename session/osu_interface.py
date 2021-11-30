@@ -34,6 +34,16 @@ class OSUInterface:
 
         print(f'==> OSU got start test {test_id}')
 
+    def given_detect_red_light(self, red_light_image_path):
+        """
+        Called by bbn_session during given_detectinon trials at the beginning
+        of the round in which the red light image occurs,
+        and passing the path of that red light image.
+        :param red_light_image_path
+        :return: None
+        """
+        pass
+
     def process_round(self, test_id, round_id, contents):
         """
         :param test_id:
