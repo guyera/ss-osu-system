@@ -25,6 +25,7 @@ class BatchContext:
         self.s_unknown = None
         self.v_unknown = None
         self.o_unknown = None
+        self.p_type = None
 
     def reset(self):
         self.query_mask = None
@@ -46,6 +47,7 @@ class BatchContext:
         self.s_unknown = None
         self.v_unknown = None
         self.o_unknown = None
+        self.p_type = None
 
     def is_set(self):
         return self.p_ni is not None and self.subject_novelty_scores_u is not None and \
@@ -122,7 +124,7 @@ class UnsupervisedNoveltyDetectionManager:
         self.object_score_context.add_nominal_scores(object_novelty_scores_non_novel.cpu().view(-1))
         self.object_score_context.add_novel_scores(object_novelty_scores_novel.cpu().view(-1))
 
-    def score(self, dataset, p_type_dist):
+    def score(self, dataset, p_type):
         all_spatial_features = []
         all_subject_appearance_features = []
         all_object_appearance_features = []
@@ -136,7 +138,7 @@ class UnsupervisedNoveltyDetectionManager:
 
         with torch.no_grad():
             results = self.detector(all_spatial_features, all_subject_appearance_features, 
-                all_verb_appearance_features, all_object_appearance_features, p_type_dist)
+                all_verb_appearance_features, all_object_appearance_features, p_type)
 
         assert not any([any([torch.isnan(p[1]).item() for p in preds]) for preds in results['top3']]), "NaNs in unsupervied detector's top-3"
                 
