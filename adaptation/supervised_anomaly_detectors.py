@@ -354,6 +354,84 @@ def test(model, test_loader, test_nom_loader, test_anom_loader, data_params):
             y     = torch.cat((y, labels)) 
         
         scores = y_hat
+        total_labels = y
+        
+        nom_scores  = y_hat_nom
+        anom_scores = y_hat_anom
+
+        if len(nom_scores) == 0:
+            nom_scores = torch.tensor([[0]])
+
+        if len(anom_scores) == 0:
+            anom_scores = torch.tensor([[1]]) 
+
+        # Since anomalies are zero, these are put in an
+        # order contrary to the method signature.
+        ##auc = compute_partial_auc(anom_scores, nom_scores) 
+
+        #print(f"Accuracy of the supervised ensemble member on the {total} " + f"test images: {100 * correct / total}%")
+
+        #print(f"AUROC (at fpr=0.25) of the supervised ensemble member on the {total} " +  f"test images: {auc}")
+ 
+    return total_labels, scores
+
+
+def test_nom_anom(model, test_loader, test_nom_loader, test_anom_loader, data_params):                                                                   
+    ''' Test the model on the test set '''
+    device = data_params['device']
+
+    model.eval()
+    # NOTE: If testing is done multiple times throughout training, need to make 
+    # sure that model.train() is called somewhere before continuing to train.
+
+    with torch.no_grad():
+        correct, total = 0, 0
+        nom_correct, nom_total = 0, 0
+        anom_correct, anom_total = 0, 0
+        y_hat, y = torch.tensor([]).to(device), torch.tensor([]).to(device)     
+        y_hat_nom, y_nom = torch.tensor([]).to(device), torch.tensor([]).to(device)     
+        y_hat_anom, y_anom = torch.tensor([]).to(device), torch.tensor([]).to(device)     
+
+        for images, labels in test_nom_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            # torch.round since binary classification
+            #_, predicted = torch.max(outputs.data, 1)
+            predicted = torch.round(outputs.data).T[0]
+            nom_total += labels.size(0)
+            labels = labels.float()
+            nom_correct += (predicted == torch.round(labels.T)).sum().item()
+          
+            y_hat_nom = torch.cat((y_hat_nom, outputs))
+            y_nom     = torch.cat((y_nom, labels)) 
+
+        for images, labels in test_anom_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            # torch.round since binary classification
+            #_, predicted = torch.max(outputs.data, 1)
+            predicted = torch.round(outputs.data).T[0]
+            anom_total += labels.size(0)
+            labels = labels.float()
+            anom_correct += (predicted == torch.round(labels.T)).sum().item()
+          
+            y_hat_anom = torch.cat((y_hat_anom, outputs))
+            y_anom     = torch.cat((y_anom, labels)) 
+
+        for images, labels in test_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            # torch.round since binary classification
+            #_, predicted = torch.max(outputs.data, 1)
+            predicted = torch.round(outputs.data).T[0]
+            total += labels.size(0)
+            labels = labels.float()
+            correct += (predicted == torch.round(labels.T)).sum().item()
+          
+            y_hat = torch.cat((y_hat, outputs))
+            y     = torch.cat((y, labels)) 
+        
+        scores = y_hat
         nom_scores  = y_hat_nom
         anom_scores = y_hat_anom
 
@@ -407,8 +485,92 @@ def train_supervised_model(X, anom_scores, y, verbose=False):
     lrate = 0.0546 
     mu = 0.9    
 
+    scores  = None
+    labels = None
+    aucs   = [] 
+    models = []   
+ 
+    # Doing 5-fold cross-validation
+    # and then averaging each member of the ensemble to 
+    # get a score.
+    for i in range(num_folds):   
+        data_params = dict(
+            i=i, num_folds=num_folds,
+            num_examples=num_examples,
+            X=X, anom_scores=anom_scores, y=y,
+            img_batch_size=img_batch_size,
+            num_workers=num_workers,
+            num_epochs=num_epochs,
+            device=device
+        )
+
+        # Load the data
+        dataloaders = get_split_dataloaders(data_params)
+        
+        train_nom_dl = dataloaders[0]
+        train_anom_dl = dataloaders[1]
+        val_nom_dl = dataloaders[2]
+        val_anom_dl = dataloaders[3]     
+        val_dl = dataloaders[4]  
+ 
+        # Get the model
+        model_i = MLP_Fusion(n=num_features)        
+        model_i.train()
+        model_i.to(device)       
+ 
+        # Define the loss function and the optimizer
+        criterion = nn.BCELoss()
+        optimizer = optim.SGD(model_i.parameters(), lr=lrate, momentum=mu)
+        
+        # Train the model
+        train(model_i, train_nom_dl, train_anom_dl, criterion, optimizer, data_params, verbose=verbose)
+
+        # Compute the AUC with max_fpr at 0.25
+        ##auc, scores_split_i = test(model_i, val_dl, val_nom_dl, val_anom_dl, data_params)        
+        labels_split_i, scores_split_i = \
+            test(model_i, val_dl, val_nom_dl, val_anom_dl, data_params)
+
+        # Store the model and AUC for this split
+        if nom_scores is None:
+            scores = scores_split_i
+            labels = labels_split_i
+        else:
+            scores  = torch.vstack((scores,scores_split_i))
+            labels  = torch.vstack((labels,labels_split_i))
+        #aucs.append(auc)
+        models.append(model_i)
+
+    #mean_AUC = sum(aucs) / len(aucs)
+    
+    # Compute Overall AUC here
+    auc = roc_auc_score(labels, scores, max_fpr = 0.25) #compute_partial_auc(anomaly_scores, nom_scores)    
+    
+    return auc, scores, models
+
+
+def train_supervised_model_nom_anom(X, anom_scores, y, verbose=False):
+    ''' 
+    Train a supervised MLP anomaly detector
+    using X, a, and y
+    '''  
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")     
+
+    num_folds = 5
+    num_examples = len(X)
+    num_folds = num_examples if num_examples < num_folds else num_folds
+    if num_folds == 0:
+        return 0.5, torch.empty(0, 1, device = device), []
+    num_features = len(X[0])
+    num_workers = 0 #1
+    img_batch_size= 64
+    
+    num_epochs = 15
+    lrate = 0.0546 
+    mu = 0.9    
+
     nom_scores  = None
-    anom_scores = None
+    anomaly_scores = None
     aucs   = [] 
     models = []   
  
@@ -450,24 +612,24 @@ def train_supervised_model(X, anom_scores, y, verbose=False):
         # Compute the AUC with max_fpr at 0.25
         ##auc, scores_split_i = test(model_i, val_dl, val_nom_dl, val_anom_dl, data_params)        
         nom_scores_split_i, anom_scores_split_i = \
-            test(model_i, val_dl, val_nom_dl, val_anom_dl, data_params)
+            test_nom_anom(model_i, val_dl, val_nom_dl, val_anom_dl, data_params)
 
         # Store the model and AUC for this split
         if nom_scores is None:
             nom_scores  = nom_scores_split_i
-            anom_scores = anom_scores_split_i
+            anomaly_scores = anom_scores_split_i
         else:
             nom_scores  = torch.vstack((nom_scores,nom_scores_split_i))
-            anom_scores = torch.vstack((anom_scores,anom_scores_split_i))
+            anomaly_scores = torch.vstack((anomaly_scores,anom_scores_split_i))
         #aucs.append(auc)
         models.append(model_i)
 
     #mean_AUC = sum(aucs) / len(aucs)
     
     # Compute Overall AUC here
-    auc = compute_partial_auc(anom_scores, nom_scores)    
+    auc = compute_partial_auc(anomaly_scores, nom_scores)    
     
-    return auc, scores, models    
+    return auc, nom_scores, anom_scores, models
     
 
 def train_supervised_models(S_X, V_X, O_X, S_a, V_a, O_a, S_y, V_y, O_y, verbose=False):
@@ -480,12 +642,33 @@ def train_supervised_models(S_X, V_X, O_X, S_a, V_a, O_a, S_y, V_y, O_y, verbose
     Returns: S_AUC_scores, V_AUC_scores, O_AUC_scores 
     '''
 
-    S_auc, S_nov_scores, S_models = train_supervised_model(S_X, S_a, S_y, verbose=verbose)
-    V_auc, V_nov_scores, V_models = train_supervised_model(V_X, V_a, V_y, verbose=verbose)
-    O_auc, O_nov_scores, O_models = train_supervised_model(O_X, O_a, O_y, verbose=verbose)
+    S_auc, S_scores, S_models = train_supervised_model(S_X, S_a, S_y, verbose=verbose)
+    V_auc, V_scores, V_models = train_supervised_model(V_X, V_a, V_y, verbose=verbose)
+    O_auc, O_scores, O_models = train_supervised_model(O_X, O_a, O_y, verbose=verbose)
 
     return ((S_auc, V_auc, O_auc),
-            (S_nov_scores, V_nov_scores, O_nov_scores),
+            (S_scores, V_scores, O_scores),
+            (S_models, V_models, O_models))
+
+
+def train_supervised_models_nom_anom(S_X, V_X, O_X, S_a, V_a, O_a, S_y, V_y, O_y, verbose=False):
+    ''' 
+    Expects feature tensors {S,V,O}_X, unsupervised novelty score 
+    vectors (tensors) {S,V,O}_a, and target vectors (tensors) {S,V,O}_y. 
+    Trains an MLP model for each S, V, and O and returns supervised 
+    anomaly scores for each instance.
+
+    Returns: S_AUC_scores, V_AUC_scores, O_AUC_scores 
+    '''
+
+    S_auc, S_nom_scores, S_anom_scores, S_models = train_supervised_model_nom_anom(S_X, S_a, S_y, verbose=verbose)
+    V_auc, V_nom_scores, V_anom_scores, V_models = train_supervised_model_nom_anom(V_X, V_a, V_y, verbose=verbose)
+    O_auc, O_nom_scores, O_anom_scores, O_models = train_supervised_model_nom_anom(O_X, O_a, O_y, verbose=verbose)
+
+    return ((S_auc, V_auc, O_auc),
+            ((S_nom_scores,S_anom_scores), 
+             (V_nom_scores,V_anom_scores), 
+             (O_nom_scores,O_anom_scores)),
             (S_models, V_models, O_models))
 
 
