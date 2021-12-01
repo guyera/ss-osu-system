@@ -406,7 +406,8 @@ class UnsupervisedNoveltyDetector:
             example_predictions.append(((-1, 0, object_index + 1), sorted_object_probs[i]))
         
         return example_predictions
-
+    
+    """
     def _compute_p_known_svo(self, subject_probs, verb_probs, object_probs):
         svo_raw_joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
         svo_known_joint_probs = (self.known_svo_combinations.to(torch.int)) * svo_raw_joint_probs
@@ -426,6 +427,51 @@ class UnsupervisedNoveltyDetector:
         vo_raw_joint_probs = verb_probs.unsqueeze(1) * object_probs.unsqueeze(0)
         vo_known_joint_probs = (self.known_vo_combinations.to(torch.int)) * vo_raw_joint_probs
         return vo_known_joint_probs.sum()
+    """
+
+    def _compute_p_known_svo(self, subject_probs, verb_probs, object_probs):
+        svo_raw_joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
+        flattened_svo_raw_joint_probs = torch.flatten(svo_raw_joint_probs)
+        flattened_known_svo_combinations = torch.flatten(self.known_svo_combinations)
+        max_prob, max_prob_idx = torch.max(flattened_svo_raw_joint_probs, dim = 0)
+        max_prob_is_known = flattened_known_svo_combinations[max_prob_idx]
+        if max_prob_is_known:
+            return max_prob * 0 + 1 # i.e. return 1
+        else:
+            return 1 - max_prob # And we'll take 1 - this in compute_probability_novelty
+
+    def _compute_p_known_sv(self, subject_probs, verb_probs):
+        sv_raw_joint_probs = subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
+        flattened_sv_raw_joint_probs = torch.flatten(sv_raw_joint_probs)
+        flattened_known_sv_combinations = torch.flatten(self.known_sv_combinations)
+        max_prob, max_prob_idx = torch.max(flattened_sv_raw_joint_probs, dim = 0)
+        max_prob_is_known = flattened_known_sv_combinations[max_prob_idx]
+        if max_prob_is_known:
+            return max_prob * 0 + 1 # i.e. return 1
+        else:
+            return 1 - max_prob # And we'll take 1 - this in compute_probability_novelty
+
+    def _compute_p_known_so(self, subject_probs, object_probs):
+        so_raw_joint_probs = subject_probs.unsqueeze(1) * object_probs.unsqueeze(0)
+        flattened_so_raw_joint_probs = torch.flatten(so_raw_joint_probs)
+        flattened_known_so_combinations = torch.flatten(self.known_so_combinations)
+        max_prob, max_prob_idx = torch.max(flattened_so_raw_joint_probs, dim = 0)
+        max_prob_is_known = flattened_known_so_combinations[max_prob_idx]
+        if max_prob_is_known:
+            return max_prob * 0 + 1 # i.e. return 1
+        else:
+            return 1 - max_prob # And we'll take 1 - this in compute_probability_novelty
+
+    def _compute_p_known_vo(self, verb_probs, object_probs):
+        vo_raw_joint_probs = verb_probs.unsqueeze(1) * object_probs.unsqueeze(0)
+        flattened_vo_raw_joint_probs = torch.flatten(vo_raw_joint_probs)
+        flattened_known_vo_combinations = torch.flatten(self.known_vo_combinations)
+        max_prob, max_prob_idx = torch.max(flattened_vo_raw_joint_probs, dim = 0)
+        max_prob_is_known = flattened_known_vo_combinations[max_prob_idx]
+        if max_prob_is_known:
+            return max_prob * 0 + 1 # i.e. return scalar tensor 1
+        else:
+            return 1 - max_prob # And we'll take 1 - this in compute_probability_novelty
 
     def __call__(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type):
         predictions = []
