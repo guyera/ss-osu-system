@@ -9,22 +9,12 @@ def parse_args():
     
     # Model persistence parameters
     parser.add_argument(
-        '--classifier-load-file',
+        '--detector-load-file',
         type = str,
         required = True
     )
     parser.add_argument(
-        '--confidence-calibrator-load-file',
-        type = str,
-        required = True
-    )
-    parser.add_argument(
-        '--score-contexts-load-file',
-        type = str,
-        required = True
-    )
-    parser.add_argument(
-        '--known-combinations-load-file',
+        '--calibration-logistic-regressions-load-file',
         type = str,
         required = True
     )
@@ -41,22 +31,14 @@ def parse_args():
 def main():
     args = parse_args()
     
-    classifier_state_dict = torch.load(args.classifier_load_file)
-    confidence_calibrator_state_dict = torch.load(args.confidence_calibrator_load_file)
-    score_context_state_dict = torch.load(args.score_contexts_load_file)
-    with open(args.known_combinations_load_file, 'rb') as f:
-        known_combinations = pickle.load(f)
-
-    module_state_dict = {}
-    module_state_dict['classifier'] = classifier_state_dict
-    module_state_dict['confidence_calibrator'] = confidence_calibrator_state_dict
-    module_state_dict['known_combinations'] = known_combinations
+    detector_state_dict = torch.load(args.detector_load_file)
+    calibration_logistic_regressions_state_dict = torch.load(args.calibration_logistic_regressions_load_file)
 
     state_dict = {}
-    state_dict['module'] = module_state_dict
-    state_dict['subject_score_context'] = score_context_state_dict['subject_score_context']
-    state_dict['object_score_context'] = score_context_state_dict['object_score_context']
-    state_dict['verb_score_context'] = score_context_state_dict['verb_score_context']
+    state_dict['module'] = detector_state_dict
+    state_dict['case_1_logistic_regression'] = calibration_logistic_regressions_state_dict['case_1_logistic_regression']
+    state_dict['case_2_logistic_regression'] = calibration_logistic_regressions_state_dict['case_2_logistic_regression']
+    state_dict['case_3_logistic_regression'] = calibration_logistic_regressions_state_dict['case_3_logistic_regression']
 
     torch.save(state_dict, args.module_save_file)
 

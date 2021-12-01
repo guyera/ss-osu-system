@@ -105,16 +105,19 @@ print(f'Verb AUC: {verb_auc}')
 
 print()
 
-subject_score_ctx = noveltydetection.utils.ScoreContext(noveltydetection.utils.ScoreContext.Source.UNSUPERVISED)
-subject_score_ctx.load_state_dict(state_dict['subject_score_context'])
+case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression()
+case_1_logistic_regression.load_state_dict(state_dict['case_1_logistic_regression'])
+case_1_logistic_regression = case_1_logistic_regression.to(device)
 
-object_score_ctx = noveltydetection.utils.ScoreContext(noveltydetection.utils.ScoreContext.Source.UNSUPERVISED)
-object_score_ctx.load_state_dict(state_dict['object_score_context'])
+case_2_logistic_regression = noveltydetection.utils.Case2LogisticRegression()
+case_2_logistic_regression.load_state_dict(state_dict['case_2_logistic_regression'])
+case_2_logistic_regression = case_2_logistic_regression.to(device)
 
-verb_score_ctx = noveltydetection.utils.ScoreContext(noveltydetection.utils.ScoreContext.Source.UNSUPERVISED)
-verb_score_ctx.load_state_dict(state_dict['verb_score_context'])
+case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression()
+case_3_logistic_regression.load_state_dict(state_dict['case_3_logistic_regression'])
+case_3_logistic_regression = case_3_logistic_regression.to(device)
 
-p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, p_known_svo, p_known_sv, p_known_so, p_known_vo, subject_score_ctx, verb_score_ctx, object_score_ctx)
+p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression)
 
 type_1_p_n = []
 type_1_subject_scores = []
@@ -180,6 +183,7 @@ scores = torch.cat((nominal_object_scores, type_3_object_scores), dim = 0)
 trues = torch.cat((torch.zeros_like(nominal_object_scores), torch.ones_like(type_3_object_scores)), dim = 0)
 auc = sklearn.metrics.roc_auc_score(trues.detach().cpu().numpy(), scores.detach().cpu().numpy())
 print(f'Type 3 object score AUC: {auc}')
+print(type_3_object_scores)
 
 print()
 
