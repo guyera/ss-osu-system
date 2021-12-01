@@ -118,32 +118,42 @@ case_3_logistic_regression.load_state_dict(state_dict['case_3_logistic_regressio
 case_3_logistic_regression = case_3_logistic_regression.to(device)
 
 p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression)
+print(p_type.shape)
+print(p_n.shape)
 
 type_1_p_n = []
+type_1_p_type = []
 type_1_subject_scores = []
 
 type_3_p_n = []
+type_3_p_type = []
 type_3_object_scores = []
 
 type_2_p_n = []
+type_2_p_type = []
 type_2_verb_scores = []
 
 nominal_p_n = []
+nominal_p_type = []
 nominal_subject_scores = []
 nominal_verb_scores = []
 nominal_object_scores = []
 for idx in range(len(p_n)):
     if subject_labels[idx] == 0 and object_labels[idx] != 0 and verb_labels[idx] != 0:
         type_1_p_n.append(p_n[idx])
+        type_1_p_type.append(p_type[idx])
         type_1_subject_scores.append(subject_scores[idx])
     elif object_labels[idx] == 0 and subject_labels[idx] != 0 and (verb_labels[idx] != 0 or subject_labels[idx] is None):
         type_3_p_n.append(p_n[idx])
+        type_3_p_type.append(p_type[idx])
         type_3_object_scores.append(object_scores[idx])
     elif subject_labels[idx] is not None and verb_labels[idx] == 0 and subject_labels[idx] != 0 and object_labels[idx] != 0:
         type_2_p_n.append(p_n[idx])
+        type_2_p_type.append(p_type[idx])
         type_2_verb_scores.append(verb_scores[idx])
     elif subject_labels[idx] != 0 and object_labels[idx] != 0 and (verb_labels[idx] != 0 or subject_labels[idx] is None):
         nominal_p_n.append(p_n[idx])
+        nominal_p_type.append(p_type[idx])
         if subject_labels[idx] is not None:
             nominal_subject_scores.append(subject_scores[idx])
             nominal_verb_scores.append(verb_scores[idx])
@@ -151,18 +161,45 @@ for idx in range(len(p_n)):
             nominal_object_scores.append(object_scores[idx])
 
 type_1_p_n = torch.stack(type_1_p_n, dim = 0)
+type_1_p_type = torch.stack(type_1_p_type, dim = 0)
 type_1_subject_scores = torch.stack(type_1_subject_scores, dim = 0)
 
 type_3_p_n = torch.stack(type_3_p_n, dim = 0)
+type_3_p_type = torch.stack(type_3_p_type, dim = 0)
 type_3_object_scores = torch.stack(type_3_object_scores, dim = 0)
 
 type_2_p_n = torch.stack(type_2_p_n, dim = 0)
+type_2_p_type = torch.stack(type_2_p_type, dim = 0)
 type_2_verb_scores = torch.stack(type_2_verb_scores, dim = 0)
 
 nominal_p_n = torch.stack(nominal_p_n, dim = 0)
+nominal_p_type = torch.stack(nominal_p_type, dim = 0)
 nominal_subject_scores = torch.stack(nominal_subject_scores, dim = 0)
 nominal_object_scores = torch.stack(nominal_object_scores, dim = 0)
 nominal_verb_scores = torch.stack(nominal_verb_scores, dim = 0)
+
+argmax_type_1_p_type = torch.argmax(type_1_p_type, dim = 1)
+argmax_type_2_p_type = torch.argmax(type_2_p_type, dim = 1)
+argmax_type_3_p_type = torch.argmax(type_3_p_type, dim = 1)
+argmax_nominal_p_type = torch.argmax(nominal_p_type, dim = 1)
+
+print(f'type_1_p_type: {type_1_p_type}')
+print(f'type_2_p_type: {type_2_p_type}')
+print(f'type_3_p_type: {type_3_p_type}')
+print(f'nominal_p_type: {nominal_p_type}')
+
+print(f'Predicted novelty types for type 1 data: {argmax_type_1_p_type + 1}')
+print(f'Predicted novelty types for type 2 data: {argmax_type_2_p_type + 1}')
+print(f'Predicted novelty types for type 3 data: {argmax_type_3_p_type + 1}')
+print(f'Predicted novelty types for nominal data: {argmax_nominal_p_type + 1}')
+
+accuracy_argmax_type_1_p_type = (argmax_type_1_p_type == 0).int().sum() / float(len(argmax_type_1_p_type))
+accuracy_argmax_type_2_p_type = (argmax_type_2_p_type == 1).int().sum() / float(len(argmax_type_2_p_type))
+accuracy_argmax_type_3_p_type = (argmax_type_3_p_type == 2).int().sum() / float(len(argmax_type_3_p_type))
+
+print(f'Predicted novelty type accuracy for type 1 data: {accuracy_argmax_type_1_p_type}')
+print(f'Predicted novelty type accuracy for type 2 data: {accuracy_argmax_type_2_p_type}')
+print(f'Predicted novelty type accuracy for type 3 data: {accuracy_argmax_type_3_p_type}')
 
 nominal_x = torch.ones_like(nominal_p_n) * 0
 type_1_x = torch.ones_like(type_1_p_n) * 1
