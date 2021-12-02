@@ -113,8 +113,28 @@ class UnsupervisedNoveltyDetectionManager:
             all_verb_appearance_features.append(verb_app_features)
 
         with torch.no_grad():
-            results = self.detector(all_spatial_features, all_subject_appearance_features, 
-                all_verb_appearance_features, all_object_appearance_features, p_type)
+            # results = self.detector(all_spatial_features, all_subject_appearance_features, 
+            #     all_verb_appearance_features, all_object_appearance_features, p_type)
+            results = self.detector.score(all_spatial_features, all_subject_appearance_features, 
+                all_verb_appearance_features, all_object_appearance_features)
+
+        return results
+        
+    def get_top3(self, dataset, batch_p_type):
+        all_spatial_features = []
+        all_subject_appearance_features = []
+        all_object_appearance_features = []
+        all_verb_appearance_features = []
+
+        for spatial_features, subj_app_features, obj_app_features, verb_app_features, _, _, _ in dataset:
+            all_spatial_features.append(spatial_features)
+            all_subject_appearance_features.append(subj_app_features)
+            all_object_appearance_features.append(obj_app_features)
+            all_verb_appearance_features.append(verb_app_features)
+
+        with torch.no_grad():
+            results = self.detector.top3(all_spatial_features, all_subject_appearance_features, 
+                all_verb_appearance_features, all_object_appearance_features, batch_p_type)
 
         assert not any([any([torch.isnan(p[1]).item() for p in preds]) for preds in results['top3']]), "NaNs in unsupervied detector's top-3"
                 
@@ -138,8 +158,8 @@ class UnsupervisedNoveltyDetectionManager:
 
             results['top3'][i] = new_p
 
-        return results
-
+        return results['top3']
+        
 
 class SupervisedNoveltyDetectionManager:
     def __init__(self, num_appearance_features, num_verb_features):

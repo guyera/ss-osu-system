@@ -117,9 +117,6 @@ class TopLevelApp:
         subject_novelty_scores_u = unsupervised_results['subject_novelty_score']
         verb_novelty_scores_u = unsupervised_results['verb_novelty_score']
         object_novelty_scores_u = unsupervised_results['object_novelty_score']
-        subject_novelty_scores_u = unsupervised_results['subject_novelty_score']
-        verb_novelty_scores_u = unsupervised_results['verb_novelty_score']
-        object_novelty_scores = unsupervised_results['object_novelty_score']
 
         subject_novelty_scores = subject_novelty_scores_u
         verb_novelty_scores = verb_novelty_scores_u
@@ -164,7 +161,9 @@ class TopLevelApp:
             p_ni[first_novelty] = 1.0
 
         # Merge top-3 SVOs
-        merged = self._merge_top3_SVOs(scg_preds, unsupervised_results['top3'], p_ni)
+        top3_und = self.und_manager.get_top3(novelty_dataset, batch_p_type)        
+        merged = self._merge_top3_SVOs(scg_preds, top3_und, p_ni)
+        # merged = self._merge_top3_SVOs(scg_preds, unsupervised_results['top3'], p_ni)
         top_1 = [m[0][0] for m in merged]
         top_3 = [[e[0] for e in m] for m in merged]
         top_3_probs = [[e[1] for e in m] for m in merged]
@@ -239,7 +238,7 @@ class TopLevelApp:
         assert self.batch_context.is_set(), "no batch context."
         assert self.feedback_enabled, "feedback is disabled"
 
-        query_indices = select_queries(feedback_max_ids, self.p_type_dist, self.batch_context.p_ni, 
+        query_indices = select_queries(feedback_max_ids, torch.tensor([1/3, 1/3, 1/3, 0]), self.batch_context.p_ni, 
             self.batch_context.subject_novelty_scores_best, self.batch_context.verb_novelty_scores_best, 
             self.batch_context.object_novelty_scores_best)
 
@@ -353,6 +352,17 @@ class TopLevelApp:
         self.p_type_dist = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4])
         self.p_type_dist = torch.nn.functional.softmax(self.p_type_dist, dim=0).float()
         
+        print(f'p_type (product): {self.p_type_dist}')
+        
+        summed_p_type_1 = torch.sum(filtered[:, 0])
+        summed_p_type_2 = torch.sum(filtered[:, 1])
+        summed_p_type_3 = torch.sum(filtered[:, 2])
+        
+        sum_all = summed_p_type_1 + summed_p_type_2 + summed_p_type_3
+        
+        p_type_sum = torch.tensor([summed_p_type_1 / sum_all, summed_p_type_2 / sum_all, summed_p_type_3 / sum_all])
+        print(f'p_type (sum): {p_type_sum}')
+        
         assert not torch.any(torch.isnan(self.p_type_dist)), "NaNs in p_type."
         assert not torch.any(torch.isinf(self.p_type_dist)), "Infs in p_type."
 
@@ -449,9 +459,9 @@ class TopLevelApp:
     def _build_supervised_samples(self):
         query_indices = torch.tensor(self.batch_context.query_indices, dtype=torch.long)
 
-        t_star = torch.argmax(self.p_type_dist)
-        use_hard_labels = torch.isclose(self.p_type_dist[t_star], torch.ones(1, dtype=torch.float32))[0]
-        t_star += 1
+        # t_star = torch.argmax(self.p_type_dist)
+        # use_hard_labels = torch.isclose(self.p_type_dist[t_star], torch.ones(1, dtype=torch.float32))[0]
+        # t_star += 1
 
         batch_feedback = self.batch_context.feedback_mask[self.batch_context.query_indices]
 
@@ -474,28 +484,38 @@ class TopLevelApp:
         object_labels = torch.zeros(negative_object_indices.shape[0])
 
         # positive samples
-        if use_hard_labels:
-            positive_subject_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)] if t_star == 1 else \
-                torch.tensor([], dtype=torch.long)
-            subject_labels = torch.cat([subject_labels, torch.ones(positive_subject_indices.shape[0])])
+        # if use_hard_labels:
+        #     positive_subject_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)] if t_star == 1 else \
+        #         torch.tensor([], dtype=torch.long)
+        #     subject_labels = torch.cat([subject_labels, torch.ones(positive_subject_indices.shape[0])])
 
-            positive_verb_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)] if t_star == 2 else \
-                torch.tensor([], dtype=torch.long)
-            verb_labels = torch.cat([verb_labels, torch.ones(positive_verb_indices.shape[0])])
+        #     positive_verb_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)] if t_star == 2 else \
+        #         torch.tensor([], dtype=torch.long)
+        #     verb_labels = torch.cat([verb_labels, torch.ones(positive_verb_indices.shape[0])])
 
-            positive_object_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_3_mask == 1)] if t_star == 3 else \
-                torch.tensor([], dtype=torch.long)
-            object_labels = torch.cat([object_labels, torch.ones(positive_object_indices.shape[0])])
-        else:
-            positive_subject_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
-            subject_labels = torch.cat([subject_labels, torch.ones(positive_subject_indices.shape[0]) * self.p_type_dist[0]])
+        #     positive_object_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_3_mask == 1)] if t_star == 3 else \
+        #         torch.tensor([], dtype=torch.long)
+        #     object_labels = torch.cat([object_labels, torch.ones(positive_object_indices.shape[0])])
+        # else:
+        #     positive_subject_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
+        #     subject_labels = torch.cat([subject_labels, torch.ones(positive_subject_indices.shape[0]) * self.p_type_dist[0]])
 
-            positive_verb_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
-            verb_labels = torch.cat([verb_labels, torch.ones(positive_verb_indices.shape[0]) * self.p_type_dist[1]])
+        #     positive_verb_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
+        #     verb_labels = torch.cat([verb_labels, torch.ones(positive_verb_indices.shape[0]) * self.p_type_dist[1]])
 
-            positive_object_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_3_mask == 1)]
-            object_labels = torch.cat([object_labels, torch.ones(positive_object_indices.shape[0]) * self.p_type_dist[2]])
+        #     positive_object_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_3_mask == 1)]
+        #     object_labels = torch.cat([object_labels, torch.ones(positive_object_indices.shape[0]) * self.p_type_dist[2]])
             
+        
+        positive_subject_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
+        subject_labels = torch.cat([subject_labels, torch.ones(positive_subject_indices.shape[0])])
+
+        positive_verb_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
+        verb_labels = torch.cat([verb_labels, torch.ones(positive_verb_indices.shape[0])])
+
+        positive_object_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_3_mask == 1)]
+        object_labels = torch.cat([object_labels, torch.ones(positive_object_indices.shape[0])])
+        
         all_subject_indices = torch.cat([negative_subject_indices, positive_subject_indices])
         all_verb_indices = torch.cat([negative_verb_indices, positive_verb_indices])
         all_object_indices = torch.cat([negative_object_indices, positive_object_indices])
