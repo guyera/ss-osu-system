@@ -51,7 +51,7 @@ class TopLevelApp:
 
         self.snd_manager = SupervisedNoveltyDetectionManager(self.NUM_APP_FEATURES, self.NUM_VERB_FEATURES)
 
-        self.red_button_th = 0.6870563
+        self.red_button_th = 0.7
         self.p_type_th = 0.75
         self.post_red_base = None
         self.batch_context = BatchContext()
