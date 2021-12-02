@@ -103,6 +103,30 @@ auc_verb_trues = torch.cat((torch.zeros_like(nominal_verb_scores), torch.ones_li
 verb_auc = sklearn.metrics.roc_auc_score(auc_verb_trues.detach().cpu().numpy(), auc_verb_scores.detach().cpu().numpy())
 print(f'Verb AUC: {verb_auc}')
 
+novel_subject_mask = filtered_subject_labels == 0
+novel_subject_scores = filtered_subject_scores[novel_subject_mask]
+nominal_subject_scores = filtered_subject_scores[~novel_subject_mask]
+auc_subject_scores = torch.cat((nominal_subject_scores, novel_subject_scores), dim = 0)
+auc_subject_trues = torch.cat((torch.zeros_like(nominal_subject_scores), torch.ones_like(novel_subject_scores)), dim = 0)
+subject_auc = sklearn.metrics.roc_auc_score(auc_subject_trues.detach().cpu().numpy(), auc_subject_scores.detach().cpu().numpy(), max_fpr = 0.25)
+print(f'Subject partial AUC: {subject_auc}')
+
+novel_object_mask = filtered_object_labels == 0
+novel_object_scores = filtered_object_scores[novel_object_mask]
+nominal_object_scores = filtered_object_scores[~novel_object_mask]
+auc_object_scores = torch.cat((nominal_object_scores, novel_object_scores), dim = 0)
+auc_object_trues = torch.cat((torch.zeros_like(nominal_object_scores), torch.ones_like(novel_object_scores)), dim = 0)
+object_auc = sklearn.metrics.roc_auc_score(auc_object_trues.detach().cpu().numpy(), auc_object_scores.detach().cpu().numpy(), max_fpr = 0.25)
+print(f'Object partial AUC: {object_auc}')
+
+novel_verb_mask = filtered_verb_labels == 0
+novel_verb_scores = filtered_verb_scores[novel_verb_mask]
+nominal_verb_scores = filtered_verb_scores[~novel_verb_mask]
+auc_verb_scores = torch.cat((nominal_verb_scores, novel_verb_scores), dim = 0)
+auc_verb_trues = torch.cat((torch.zeros_like(nominal_verb_scores), torch.ones_like(novel_verb_scores)), dim = 0)
+verb_auc = sklearn.metrics.roc_auc_score(auc_verb_trues.detach().cpu().numpy(), auc_verb_scores.detach().cpu().numpy(), max_fpr = 0.25)
+print(f'Verb partial AUC: {verb_auc}')
+
 print()
 
 case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression()

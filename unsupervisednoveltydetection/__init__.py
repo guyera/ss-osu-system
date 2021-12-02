@@ -575,6 +575,91 @@ class UnsupervisedNoveltyDetector:
         results['top3'] = predictions
 
         return results
+    
+    # Note: p_type should be a tensor of size [N, 4]; it's per-image p_type
+    def top3(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type):
+        predictions = []
+        results = {}
+        p_known_svo = []
+        p_known_sv = []
+        p_known_so = []
+        p_known_vo = []
+        for idx in range(len(spatial_features)):
+            example_spatial_features = spatial_features[idx]
+            example_subject_appearance_features = subject_appearance_features[idx]
+            example_object_appearance_features = object_appearance_features[idx]
+            example_verb_appearance_features = verb_appearance_features[idx]
+            cur_p_type = p_type[idx]
+            
+            if example_subject_appearance_features is not None:
+                example_subject_features = torch.flatten(example_subject_appearance_features).to(self.device)
+
+                subject_logits, subject_score = self.classifier.predict_score_subject(example_subject_features.unsqueeze(0))
+                
+                subject_score = subject_score.squeeze(0)
+
+                subject_probs = self.confidence_calibrator.calibrate_subject(subject_logits)
+                subject_probs = subject_probs.squeeze(0)
+
+            if example_object_appearance_features is not None:
+                example_object_features = torch.flatten(example_object_appearance_features).to(self.device)
+                
+                object_logits, object_score = self.classifier.predict_score_object(example_object_features.unsqueeze(0))
+                
+                object_score = object_score.squeeze(0)
+                
+                object_probs = self.confidence_calibrator.calibrate_object(object_logits)
+                object_probs = object_probs.squeeze(0)
+            
+            if example_verb_appearance_features is not None:
+                example_verb_features = torch.cat((torch.flatten(example_spatial_features), torch.flatten(example_verb_appearance_features))).to(self.device)
+                
+                verb_logits, verb_score = self.classifier.predict_score_verb(example_verb_features.unsqueeze(0))
+                
+                verb_score = verb_score.squeeze(0)
+
+                verb_probs = self.confidence_calibrator.calibrate_verb(verb_logits)
+                verb_probs = verb_probs.squeeze(0)
+                
+            cur_p_known_svo = torch.tensor(0, dtype = torch.float, device = self.device)
+            cur_p_known_sv = torch.tensor(0, dtype = torch.float, device = self.device)
+            cur_p_known_so = torch.tensor(0, dtype = torch.float, device = self.device)
+            cur_p_known_vo = torch.tensor(0, dtype = torch.float, device = self.device)
+            if example_subject_appearance_features is not None and example_object_appearance_features is not None:
+                # Case 1, S/V/O
+                example_predictions = self._case_1(subject_probs, object_probs, verb_probs, cur_p_type, 3)
+                cur_p_known_svo = self._compute_p_known_svo(subject_probs, verb_probs, object_probs)
+                cur_p_known_sv = self._compute_p_known_sv(subject_probs, verb_probs)
+                cur_p_known_so = self._compute_p_known_so(subject_probs, object_probs)
+                cur_p_known_vo = self._compute_p_known_vo(verb_probs, object_probs)
+            elif example_subject_appearance_features is not None and example_object_appearance_features is None:
+                # Case 2, S/V/None
+                example_predictions = self._case_2(subject_probs, verb_probs, cur_p_type, 3)
+                cur_p_known_sv = self._compute_p_known_sv(subject_probs, verb_probs)
+            elif example_subject_appearance_features is None and example_object_appearance_features is not None:
+                # Case 3, None/None/O
+                example_predictions = self._case_3(cur_p_type)
+            else:
+                return NotImplemented
+            
+            predictions.append(example_predictions)
+            p_known_svo.append(cur_p_known_svo)
+            p_known_sv.append(cur_p_known_sv)
+            p_known_so.append(cur_p_known_so)
+            p_known_vo.append(cur_p_known_vo)
+        
+        p_known_svo = torch.stack(p_known_svo, dim = 0)
+        p_known_sv = torch.stack(p_known_sv, dim = 0)
+        p_known_so = torch.stack(p_known_so, dim = 0)
+        p_known_vo = torch.stack(p_known_vo, dim = 0)
+
+        results['p_known_svo'] = p_known_svo
+        results['p_known_sv'] = p_known_sv
+        results['p_known_so'] = p_known_so
+        results['p_known_vo'] = p_known_vo
+        results['top3'] = predictions
+
+        return results
 
     def known_top3(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features):
         predictions = []
