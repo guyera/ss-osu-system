@@ -44,7 +44,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             object_appearance_features.append(example_object_appearance_features)
             verb_appearance_features.append(example_verb_appearance_features)
         
-        results = self.detector(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, torch.tensor([1.0, 0.0, 0.0, 0.0], device = self.device))
+        results = self.detector.top3(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, torch.tensor([1.0, 0.0, 0.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
         for top3 in results['top3']:
             previous_confidence = 1.0
             for prediction in top3:
@@ -73,7 +73,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             object_appearance_features.append(example_object_appearance_features)
             verb_appearance_features.append(example_verb_appearance_features)
         
-        results = self.detector(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, torch.tensor([0.0, 2.0, 0.0, 0.0], device = self.device))
+        results = self.detector.top3(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, torch.tensor([0.0, 2.0, 0.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
         for top3 in results['top3']:
             previous_confidence = 1.0
             for prediction in top3:
@@ -102,7 +102,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             object_appearance_features.append(example_object_appearance_features)
             verb_appearance_features.append(example_verb_appearance_features)
         
-        results = self.detector(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, torch.tensor([0.0, 0.0, 1.0, 0.0], device = self.device))
+        results = self.detector.top3(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, torch.tensor([0.0, 0.0, 1.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
         for top3 in results['top3']:
             previous_confidence = 1.0
             for prediction in top3:
@@ -132,7 +132,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             object_appearance_features.append(example_object_appearance_features)
             verb_appearance_features.append(example_verb_appearance_features)
         
-        results = self.detector(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, torch.tensor([0.0, 0.0, 0.0, 1.0], device = self.device))
+        results = self.detector.top3(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, torch.tensor([0.0, 0.0, 0.0, 1.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
         for top3 in results['top3']:
             previous_confidence = 1.0
             for prediction in top3:
@@ -161,7 +161,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             object_appearance_features.append(example_object_appearance_features)
             verb_appearance_features.append(example_verb_appearance_features)
             
-        results = self.detector(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, torch.tensor([0.33, 0.33, 0.34, 0.0], device = self.device))
+        results = self.detector.top3(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, torch.tensor([0.33, 0.33, 0.34, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
         for top3 in results['top3']:
             previous_confidence = 1.0
             for prediction in top3:
