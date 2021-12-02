@@ -5,7 +5,7 @@ import os
 from argparse import ArgumentParser
 import requests
 from seaborn.distributions import ecdfplot
-from session import api_stubs
+from session.api_stubs import APIStubs
 import itertools
 import numpy as np
 
@@ -14,7 +14,7 @@ class BBNSession:
     def __init__(self, protocol, domain, class_count, class_fb, detection_fb, given_detection,
                  image_directory, results_directory, api_url,
                  batch_size, version, detection_threshold,
-                 api_stubs_flag, osu_interface):
+                 api_stubs, osu_interface):
 
         # self.agent = Agent(config['detectormodelpath'],
         #                    config['classifiermodelpath'],
@@ -42,7 +42,7 @@ class BBNSession:
         # self.test_count = test_count
         self.batch_size = batch_size
         self.history = None  # TestHistory for current test
-        self.api_stubs = api_stubs_flag
+        self.api_stubs = api_stubs
         self.osu_stubs = osu_interface
         # These are also defined in toplevel
         self.num_subject_classes = 5
@@ -66,7 +66,6 @@ class BBNSession:
 
         if self.api_stubs:
             api_stubs.clear_results_dirs()
-
 
     def request_class_feedback(self, session_id, test_id, round_id, feedback_ids):
         print(f'====> Requesting class feedback on round {round_id} for {len(feedback_ids)} images.')
@@ -103,8 +102,8 @@ class BBNSession:
 
     def request_detection_feedback(self, session_id, test_id, round_id, feedback_ids):
         # print(f'====> Requesting detection feedback on round {round_id} for {len(feedback_ids)} images.')
-        if api_stubs:
-            return api_stubs.detection_feedback(test_id, round_id, feedback_ids)
+        if self.api_stubs:
+            return self.api_stubs.detection_feedback(test_id, round_id, feedback_ids)
         else:
             response = requests.get(
                 f'{self.url}/session/feedback',
@@ -275,7 +274,7 @@ class BBNSession:
             ### To test if UMD eval would work.
             ### self.domain = 'image_classification'
             if self.api_stubs:
-                test_ids = api_stubs.test_ids()
+                test_ids = self.api_stubs.test_ids()
             else:
                 result = requests.get(
                     f"{self.url}/test/ids?protocol={self.protocol}&detector_seed={detector_seed}&domain={self.domain}")
@@ -291,7 +290,7 @@ class BBNSession:
         if self.given_detection:
             self.hints.append('red_light')
         if self.api_stubs:
-            session_id = api_stubs.session_id()
+            session_id = self.api_stubs.session_id()
         else:
             response = requests.post(f"{self.url}/session", json={
                 'configuration': {
@@ -334,7 +333,7 @@ class BBNSession:
         # self.history = TestHistory()
 
         if self.api_stubs:
-            metadata = api_stubs.metadata()
+            metadata = self.api_stubs.get_metadata(test_id)
         else:
             metadata = ast.literal_eval(requests.get(
                 f"{self.url}/test/metadata?session_id={session_id}&test_id={test_id}")
@@ -360,7 +359,7 @@ class BBNSession:
             filenames = None
 
             if self.api_stubs:
-                image_data = api_stubs.image_data(test_id, round_id)
+                image_data = self.api_stubs.image_data(test_id, round_id)
                 
                 if image_data == None:
                     print("==> No more rounds")
@@ -542,7 +541,7 @@ class BBNSession:
         #     print('==> sent characterization file')
 
         if self.api_stubs:
-            api_stubs.finish_test(test_id)
+            self.api_stubs.finish_test(test_id)
             print('api_stubs.finish_test')
         else:
             test_end_response = requests.delete(
