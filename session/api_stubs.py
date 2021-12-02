@@ -1,92 +1,117 @@
-from pathlib import Path
-import os
+import pathlib
 import numpy as np
+import pathlib
+import json
+import pandas as pd
 
-data_dir = Path('session/data')
-test_data_dir = data_dir / 'tests'
-results_dir = data_dir / 'results'
-sys_results_dir = data_dir / 'sys_results'
-sample_test_ids = [path.name.split('_')[0] for path in sorted(list(test_data_dir.iterdir()))]
-trial_size = 2500
-round_size = 100
-# round_count = 25
-feedback_max_ids = 10
 
-test_data = None
+class APIStubs:
+    def __init__(self, path_to_metadata_dir, path_to_csv_dir):
+        self.path_to_metadata_dir = pathlib.Path(path_to_metadata_dir)
+        self.path_to_csv_dir = pathlib.Path(path_to_csv_dir)
+    
+        self.metadata = {}
+        self.csvs = {}
+    
+        if not self.path_to_metadata_dir.exists():
+            raise Exception(f'metadata path {path_to_metadata_dir} was not found.')
 
-## Supporting functions
-def load_test_data():
-    global test_data
-    test_data = {}
+        if not self.path_to_csv_dir.exists():
+            raise Exception(f'metadata path {path_to_csv_dir} was not found.')
+            
+        for p in self.path_to_metadata_dir.glob('*'):
+            if p.suffix != '.json':
+                continue
+                
+            with open(p, 'rb') as f:
+                j = json.load(f)
+                
+                test_name = p.name.split('_')[0]
+                self.metadata[test_name] = j
 
-    for test_id in sample_test_ids:
-        image_lines = open(test_data_dir / f'{test_id}_single_df.csv', 'r').read().splitlines()
+        for p in self.path_to_csv_dir.glob('*'):
+            if p.suffix != '.csv':
+                continue
+                
+            test_name = p.name.split('_')[0]
+            self.csvs[test_name] = p
+            
+        assert set([k for k in self.csvs.keys()]) == set([k for k in self.metadata.keys()]) 
         
-        ## throw away the header line
-        image_lines = image_lines[1:]
+        self.cache = {}
+        self.cache['last_csv'] = None
+        self.cache['df'] = None
+        self.cache['csv_data'] = None
+
+    def session_id(self):
+        return '82b41225-f802-4ea0-ab53-648302261475'
+
+    def test_ids(self):
+        return [k for k in self.csvs.keys()]
+
+    def get_metadata(self, test_id):
+        if test_id not in self.metadata:
+            raise Exception(f'unknown test id {test_id}')
+            
+        m = self.metadata[test_id]
+    
+        return {'round_size' : m['round_size'],
+                'feedback_max_ids' : m['feedback_max_ids'],
+                'red_light' : m['red_light']}
+    
+    def image_data(self, test_id, round_id):
+        if test_id not in self.metadata:
+            raise Exception(f'unknown test id {test_id}')
+            
+        if self.cache['last_csv'] != test_id:
+            self._update_cache(test_id)
         
-        round_count = int(np.ceil(len(image_lines) / round_size))
+        data = self.cache['csv_data']
+            
+        if round_id >= len(data):
+            return None
+            
+        return data[round_id]
 
-        ## select the subset of vals that the API should return
-        api_lines = []
-        for image_line in image_lines:
-            vals = image_line.split(',')
-            ## We just want the name and then image size and bounding box info
-            api_vals = [vals[0]] + vals[10:]
-            api_lines.append(','.join(api_vals))
+    def detection_feedback(self, test_id, round_id, image_paths):
+        if test_id not in self.metadata:
+            raise Exception(f'unknown test id {test_id}')
+            
+        if self.cache['last_csv'] != test_id:
+            self._update_cache(test_id)
+            
+        df = self.cache['df']
+        
+        return [(image_path, df[df['new_image_path'] == image_path]['novel'].to_list()[0]) for image_path in image_paths]
 
-        test_data[test_id] = ['\n'.join(api_lines[i * round_size: min((i + 1) * round_size, len(image_lines))]) for i in range(round_count)]
+    def _update_cache(self, test_id):
+        if test_id not in self.metadata:
+            raise Exception(f'unknown test id {test_id}')
+            
+        m = self.metadata[test_id]
+        round_size = m['round_size']        
+        
+        self.cache['last_csv'] = test_id
+        self.cache['df'] = pd.read_csv(self.csvs[test_id])
 
-def clear_results_dirs():
-    for file in results_dir.iterdir():
-        os.remove(file)
-    for file in sys_results_dir.iterdir():
-        os.remove(file)
+        with open(self.csvs[test_id], 'r') as f:
+            image_lines = f.read().splitlines()
+            image_lines = image_lines[1:]
+            round_count = int(np.ceil(len(image_lines) / round_size))
+    
+            api_lines = []
+            for image_line in image_lines:
+                vals = image_line.split(',')
+                api_vals = [vals[0]] + vals[10:-1]
+                api_lines.append(','.join(api_vals))
 
-def novel_p(image_path):
-    substrings = ['novel_val', 'imgs', 'verb_dataset', 'obj_dataset', 'sub_dataset']
-    return any([substring in image_path for substring in substrings])
+        self.cache['csv_data'] = ['\n'.join(api_lines[i * round_size: min((i + 1) * round_size, len(image_lines))]) for i in range(round_count)]
+    
+    def clear_results_dirs(self):
+        pass
 
-## API stubs
+    def record_results(self, test_id, round_id, detection_file, classification_file):
+        pass
 
-def test_ids():
-    return sample_test_ids
-
-def session_id():
-    return '82b41225-f802-4ea0-ab53-648302261475'
-
-def metadata():
-    return {'round_size' : round_size,
-            'feedback_max_ids' : feedback_max_ids,
-            'max_novel_classes' : 5,
-            }
-
-def image_data(test_id, round_id):
-    global test_data
-
-    if test_data == None:
-        load_test_data()
-    if round_id >= len(test_data[test_id]):
-        return None
-
-    return test_data[test_id][int(round_id)]
-
-def detection_feedback(test_id, round_id, image_paths):
-    return [(image_path, novel_p(image_path)) for image_path in image_paths]
-
-def record_results(test_id, round_id, detection_file, classification_file):
-    open(results_dir / f'{test_id}_{round_id:03d}_detection.csv', 'w').write(detection_file)
-    open(results_dir / f'{test_id}_{round_id:03d}_classification.csv', 'w').write(classification_file)
-
-def finish_test(test_id):
-    """
-    Cancatenate the by-round results into one detection and one classification file for the test
-    """
-    for file_type in ['detection', 'classification']:
-        round_files = sorted(list(results_dir.glob(f'{test_id}*{file_type}.csv')))
-        with open(results_dir / f'{test_id}_{file_type}.csv', 'w') as ofile:
-            for round_file in round_files:
-                with open(round_file, 'r') as infile:
-                    ofile.write(infile.read())
-
-                round_file.unlink()
+    def finish_test(self, test_id):
+        pass

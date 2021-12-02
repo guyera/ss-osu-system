@@ -1,5 +1,6 @@
 import torch
 from session.bbn_session import BBNSession
+from session.api_stubs import APIStubs
 from session.osu_interface import OSUInterface
 from argparse import ArgumentParser
 
@@ -20,6 +21,8 @@ if __name__ == "__main__":
     p.add_argument('--version', default='101')
     p.add_argument('--sys_results_dir', default='./session/temp/sys_results')
     p.add_argument('--detection_threshold', type=float, default=0.65)
+    p.add_argument('--api-dir', default='./session/api')
+    p.add_argument('--tests-dir', default='./session/tests')
     
     args = p.parse_args()
 
@@ -32,11 +35,13 @@ if __name__ == "__main__":
         feedback_enabled=args.detection_feedback,
         given_detection=args.given_detection)
     
+    api = APIStubs(args.api_dir, args.tests_dir) if args.api_stubs else None
+    
     test_session = BBNSession('OND', args.domain, args.class_count, 
         args.classification_feedback, args.detection_feedback,
         args.given_detection, args.data_root,
         args.sys_results_dir, args.url, args.batch_size,
         args.version, args.detection_threshold,
-        args.api_stubs, osu_int)
+        api, osu_int)
 
     test_session.run(args.detector_seed)

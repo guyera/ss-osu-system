@@ -564,6 +564,8 @@ def train_supervised_model(X, anom_scores, y, verbose=False):
         labels = torch.vstack((labels.cpu(), torch.tensor([[0.]]).cpu()))
 
     # Compute Overall AUC here
+    # print(f'labels with shape {labels.shape}: {labels}, scores with shape {scores.shape}: {scores}')
+    labels = (labels > 0.5).long()
     auc = roc_auc_score(labels, scores, max_fpr = 0.25) #compute_partial_auc(anomaly_scores, nom_scores)    
     
     return auc, scores, models
