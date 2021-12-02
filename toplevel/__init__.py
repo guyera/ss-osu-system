@@ -28,7 +28,7 @@ class TopLevelApp:
         self.NUM_APP_FEATURES = 256 * 7 * 7
         self.NUM_VERB_FEATURES = self.NUM_APP_FEATURES + 2 * 36
         self.post_red = False
-        self.p_type_dist = torch.tensor([0.25, 0.25, 0.25, 0.25])
+        self.p_type_dist = torch.tensor([1/3, 1/3, 1/3, 0.0])
 
         self.all_query_masks = torch.tensor([])
         self.all_feedback = torch.tensor([])
@@ -76,7 +76,7 @@ class TopLevelApp:
     
     def reset(self):
         self.post_red = False
-        self.p_type_dist = torch.tensor([0.25, 0.25, 0.25, 0.25])
+        self.p_type_dist = torch.tensor([1/3, 1/3, 1/3, 0.0])
         self.unsupervised_aucs = [None, None, None]
         self.supervised_aucs = [None, None, None]
         self.all_query_masks = torch.tensor([])
@@ -122,27 +122,27 @@ class TopLevelApp:
         verb_novelty_scores = verb_novelty_scores_u
         object_novelty_scores = object_novelty_scores_u
 
-        if self.post_red and self.feedback_enabled:
-            subject_novelty_scores_u_copy = [s.clone() if s is not None else None for s in subject_novelty_scores_u]
-            verb_novelty_scores_u_copy = [s.clone() if s is not None else None for s in verb_novelty_scores_u]
-            object_novelty_scores_u_copy = [s.clone() if s is not None else None for s in object_novelty_scores_u]
+        # if self.post_red and self.feedback_enabled:
+        #     subject_novelty_scores_u_copy = [s.clone() if s is not None else None for s in subject_novelty_scores_u]
+        #     verb_novelty_scores_u_copy = [s.clone() if s is not None else None for s in verb_novelty_scores_u]
+        #     object_novelty_scores_u_copy = [s.clone() if s is not None else None for s in object_novelty_scores_u]
 
-            # Supervised novelty scores
-            subject_novelty_scores_s, verb_novelty_scores_s, object_novelty_scores_s = self.snd_manager.score(
-                novelty_dataset, subject_novelty_scores_u_copy, verb_novelty_scores_u_copy, object_novelty_scores_u_copy)
+        #     # Supervised novelty scores
+        #     subject_novelty_scores_s, verb_novelty_scores_s, object_novelty_scores_s = self.snd_manager.score(
+        #         novelty_dataset, subject_novelty_scores_u_copy, verb_novelty_scores_u_copy, object_novelty_scores_u_copy)
 
-            self.supervised_aucs = self.snd_manager.get_svo_detectors_auc()
-            self.unsupervised_aucs = self.und_manager.get_svo_detectors_auc()
+        #     self.supervised_aucs = self.snd_manager.get_svo_detectors_auc()
+        #     self.unsupervised_aucs = self.und_manager.get_svo_detectors_auc()
 
-            # pick the scores from the detector which had a higher AUC
-            if self.unsupervised_aucs[0] < self.supervised_aucs[0]:
-                subject_novelty_scores = subject_novelty_scores_s
+        #     # pick the scores from the detector which had a higher AUC
+        #     if self.unsupervised_aucs[0] < self.supervised_aucs[0]:
+        #         subject_novelty_scores = subject_novelty_scores_s
 
-            if self.unsupervised_aucs[1] < self.supervised_aucs[1]:
-                verb_novelty_scores = verb_novelty_scores_s
+        #     if self.unsupervised_aucs[1] < self.supervised_aucs[1]:
+        #         verb_novelty_scores = verb_novelty_scores_s
             
-            if self.unsupervised_aucs[2] < self.supervised_aucs[2]:
-                object_novelty_scores = object_novelty_scores_s
+        #     if self.unsupervised_aucs[2] < self.supervised_aucs[2]:
+        #         object_novelty_scores = object_novelty_scores_s
 
         assert len(subject_novelty_scores) == len(verb_novelty_scores) == len(object_novelty_scores)
 
@@ -163,7 +163,6 @@ class TopLevelApp:
         # Merge top-3 SVOs
         top3_und = self.und_manager.get_top3(novelty_dataset, batch_p_type)        
         merged = self._merge_top3_SVOs(scg_preds, top3_und, p_ni)
-        # merged = self._merge_top3_SVOs(scg_preds, unsupervised_results['top3'], p_ni)
         top_1 = [m[0][0] for m in merged]
         top_3 = [[e[0] for e in m] for m in merged]
         top_3_probs = [[e[1] for e in m] for m in merged]
@@ -175,10 +174,6 @@ class TopLevelApp:
             batch_feedback_mask = torch.zeros(N, dtype=torch.long)
 
             self._accumulate(top_1, top_3, p_ni, batch_cases, batch_preds_is_nc, batch_feedback_mask, batch_query_mask, batch_p_type)
-        else:
-            # decide which novelty detector to use
-            self.supervised_aucs = self.snd_manager.get_svo_detectors_auc()
-            self.unsupervised_aucs = self.und_manager.get_svo_detectors_auc()
                         
         self.batch_context.p_ni = p_ni
         self.batch_context.subject_novelty_scores_u = subject_novelty_scores_u
@@ -290,15 +285,14 @@ class TopLevelApp:
             self.batch_context.preds_is_nc, self.batch_context.feedback_mask, self.batch_context.query_mask, 
             self.batch_context.p_type)
         
-        # if not torch.isclose(torch.max(self.p_type_dist), torch.ones(1, dtype=torch.float32))[0]:
         self._type_inference()
 
         # feedback interpretation and unsupervised score contexts update
-        all_subject_indices, all_verb_indices, all_object_indices, subject_labels, verb_labels, object_labels = self._build_supervised_samples()
+        # all_subject_indices, all_verb_indices, all_object_indices, subject_labels, verb_labels, object_labels = self._build_supervised_samples()
 
         # retrains supervised detector
-        self._train_supervised_detector(all_subject_indices, all_verb_indices, all_object_indices, 
-            subject_labels, verb_labels, object_labels)
+        # self._train_supervised_detector(all_subject_indices, all_verb_indices, all_object_indices, 
+        #     subject_labels, verb_labels, object_labels)
 
     def red_light_hint_callback(self, first_novelty_img_path):
         assert self.hint_round is None, "red-light hint was previously set"
@@ -347,9 +341,9 @@ class TopLevelApp:
         log_p_type_1 = self._infer_log_p_type(filtered[:, 0])
         log_p_type_2 = self._infer_log_p_type(filtered[:, 1])
         log_p_type_3 = self._infer_log_p_type(filtered[:, 2])
-        log_p_type_4 = self._infer_log_p_type(filtered[:, 3])
+        # log_p_type_4 = self._infer_log_p_type(filtered[:, 3])
     
-        self.p_type_dist = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4])
+        self.p_type_dist = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3])
         self.p_type_dist = torch.nn.functional.softmax(self.p_type_dist, dim=0).float()
         
         print(f'p_type (product): {self.p_type_dist}')
@@ -373,7 +367,7 @@ class TopLevelApp:
         log_ev = torch.log(evidence)
         log_ev[zero_indices] = LARGE_NEG_CONSTANT
         evidence = torch.sum(log_ev)
-        log_p_type = np.log(0.25) + evidence
+        log_p_type = np.log(1/3) + evidence
 
         return log_p_type
 

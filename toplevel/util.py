@@ -113,8 +113,6 @@ class UnsupervisedNoveltyDetectionManager:
             all_verb_appearance_features.append(verb_app_features)
 
         with torch.no_grad():
-            # results = self.detector(all_spatial_features, all_subject_appearance_features, 
-            #     all_verb_appearance_features, all_object_appearance_features, p_type)
             results = self.detector.score(all_spatial_features, all_subject_appearance_features, 
                 all_verb_appearance_features, all_object_appearance_features)
 

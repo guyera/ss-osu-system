@@ -65,7 +65,7 @@ class BBNSession:
             os.makedirs(self.results_directory)
 
         if self.api_stubs:
-            api_stubs.clear_results_dirs()
+            self.api_stubs.clear_results_dirs()
 
     def request_class_feedback(self, session_id, test_id, round_id, feedback_ids):
         print(f'====> Requesting class feedback on round {round_id} for {len(feedback_ids)} images.')
@@ -468,7 +468,7 @@ class BBNSession:
             # print(f'===> Submitting results with test_type: {self.history.test_type}')
 
             if self.api_stubs:
-                api_stubs.record_results(test_id, round_id,
+                self.api_stubs.record_results(test_id, round_id,
                                          open(detection_filename, 'r').read(),
                                          open(classification_filename, 'r').read())
             else:
