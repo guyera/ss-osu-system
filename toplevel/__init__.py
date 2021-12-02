@@ -194,7 +194,6 @@ class TopLevelApp:
         
         if not self.post_red:
             red_light_scores = self._compute_moving_avg(self.all_p_ni, N)
-            first_novelty_instance_idx = None
         
             if not self.given_detection:
                 EPS = 1e-3
@@ -206,16 +205,15 @@ class TopLevelApp:
                 self.post_red = True
                 first_novelty_instance_idx = self.hint_round
                 self.post_red_base = self.all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx
-            else:
-                first_novelty_instance_idx = red_light_scores.shape[0]
-                
-            red_light_scores_pre = [self.pre_red_transform[0] * p + self.pre_red_transform[1] for p in red_light_scores[:first_novelty_instance_idx]]
-            red_light_scores_post = [self.post_red_transform[0] * p + self.post_red_transform[1] for p in red_light_scores[first_novelty_instance_idx:]]
-            red_light_scores = red_light_scores_pre + red_light_scores_post            
         else:
             all_p_ni = np.concatenate([self.all_p_ni.numpy(), p_ni])
             red_light_scores = self._compute_moving_avg(all_p_ni, N)
-            red_light_scores = [self.post_red_transform[0] * p + self.post_red_transform[1] for p in red_light_scores]
+            
+        for i in range(len(red_light_scores)):
+            if red_light_scores[i] <= self.red_button_th:
+                red_light_scores[i] = self.pre_red_transform[0] * red_light_scores[i] + self.pre_red_transform[1]
+            else:
+                red_light_scores[i] = self.post_red_transform[0] * red_light_scores[i] + self.post_red_transform[1]
          
         red_light_scores = np.clip(red_light_scores, 0.0, 1.0)
          
