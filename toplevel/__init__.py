@@ -51,7 +51,6 @@ class TopLevelApp:
 
         self.snd_manager = SupervisedNoveltyDetectionManager(self.NUM_APP_FEATURES, self.NUM_VERB_FEATURES)
 
-        self.red_button_th = 0.7
         self.p_type_th = 0.75
         self.post_red_base = None
         self.batch_context = BatchContext()
@@ -66,14 +65,11 @@ class TopLevelApp:
 
         self.feedback_enabled = feedback_enabled
         self.given_detection = given_detection
+            
+        self.red_light_th = None
+        self.pre_red_transform = None
+        self.post_red_transform = None
         
-        self.pre_red_transform = np.array([0.5 / self.red_button_th, 0])
-        
-        a = np.array([[self.red_button_th, 1], [1, 1]])
-        b = np.array([0.5, 1])
-        x = np.linalg.solve(a, b)
-        self.post_red_transform = np.array([x[0], x[1]])
-    
     def reset(self):
         self.post_red = False
         self.p_type_dist = torch.tensor([1/3, 1/3, 1/3, 0.0])
@@ -95,6 +91,9 @@ class TopLevelApp:
         self.curr_round_id = None
         self.hint_round = None
         self.hint_img_path = None
+        self.red_light_th = None
+        self.pre_red_transform = None
+        self.post_red_transform = None
 
     def run(self, csv_path, test_id, round_id, img_paths):
         if csv_path is None:
@@ -191,33 +190,48 @@ class TopLevelApp:
         self.batch_context.p_type = batch_p_type
         
         p_ni = p_ni.numpy()
+        red_light_scores = np.zeros(N)
         
         if not self.post_red:
-            red_light_scores = self._compute_moving_avg(self.all_p_ni, N)
-        
-            if not self.given_detection:
-                EPS = 1e-3
-                p_gt_th = np.nonzero([p > self.red_button_th + EPS for p in red_light_scores])[0]
-                self.post_red = p_gt_th.shape[0] > 0
-                first_novelty_instance_idx = p_gt_th[0] if self.post_red else red_light_scores.shape[0]
-                self.post_red_base = self.all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx if self.post_red else None
-            elif self.curr_round_id == self.hint_round:
-                self.post_red = True
-                first_novelty_instance_idx = self.hint_round
-                self.post_red_base = self.all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx
+            if self.all_p_ni.shape[0] >= 60:    
+                red_light_scores = self._compute_moving_avg(self.all_p_ni, N)
+                start = self.all_p_ni.shape[0] - N
+                mask = np.array([start + i for i in range(N)])
+                mask = (mask > 60).astype(np.int)
+                red_light_scores *= mask
+            
+                if not self.given_detection:
+                    EPS = 1e-3
+                    
+                    if self.red_light_th is None:
+                        self._compute_red_light_thresh()
+                        self._compute_score_transforms()
+                        
+                    p_gt_th = np.nonzero([p > self.red_light_th + EPS for p in red_light_scores])[0]
+                    self.post_red = p_gt_th.shape[0] > 0
+                    first_novelty_instance_idx = p_gt_th[0] if self.post_red else red_light_scores.shape[0]
+                    self.post_red_base = self.all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx if self.post_red else None
+                elif self.curr_round_id == self.hint_round:
+                    self.post_red = True
+                    first_novelty_instance_idx = self.hint_round
+                    self.post_red_base = self.all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx
         else:
             all_p_ni = np.concatenate([self.all_p_ni.numpy(), p_ni])
             red_light_scores = self._compute_moving_avg(all_p_ni, N)
             
-        for i in range(len(red_light_scores)):
-            if red_light_scores[i] <= self.red_button_th:
-                red_light_scores[i] = self.pre_red_transform[0] * red_light_scores[i] + self.pre_red_transform[1]
-            else:
-                red_light_scores[i] = self.post_red_transform[0] * red_light_scores[i] + self.post_red_transform[1]
+        if self.all_p_ni.shape[0] > 60:
+            assert self.pre_red_transform is not None
+            assert self.post_red_transform is not None
+        
+            for i in range(len(red_light_scores)):
+                if red_light_scores[i] <= self.red_light_th:
+                    red_light_scores[i] = self.pre_red_transform[0] * red_light_scores[i] + self.pre_red_transform[1]
+                else:
+                    red_light_scores[i] = self.post_red_transform[0] * red_light_scores[i] + self.post_red_transform[1]
          
         red_light_scores = np.clip(red_light_scores, 0.0, 1.0)
          
-        # dictionary containing return values
+        # dictionary containing the return values
         ret = {}
         ret['p_ni'] = p_ni.tolist()
         ret['red_light_score'] = red_light_scores
@@ -308,6 +322,30 @@ class TopLevelApp:
                 res[i - base_offset] = p_n[:i + 1][-8:].mean()
                 
         return res
+    
+    def _compute_red_light_thresh(self):
+        assert self.all_p_ni.shape[0] >= 60
+        
+        s = self.all_p_ni[:60]
+        s = np.concatenate([s for _ in range(10)], axis=0)
+        assert s.shape[0] == 600
+        
+        th = 0.0
+        for _ in range(50):
+            np.random.shuffle(s)
+            moving_avgs = self._compute_moving_avg(s, s.shape[0])
+            th = max(th, np.amax(moving_avgs))
+            
+        self.red_light_th = th
+    
+    def _compute_score_transforms(self):
+        assert self.red_light_th is not None, "red-light threshold hasn't been computed yet."
+        self.pre_red_transform = np.array([0.5 / self.red_light_th, 0])
+        
+        a = np.array([[self.red_light_th, 1], [1, 1]])
+        b = np.array([0.5, 1])
+        x = np.linalg.solve(a, b)
+        self.post_red_transform = np.array([x[0], x[1]])
 
     def _merge_top3_SVOs(self, top3_non_novel, top3_novel, batch_p_ni):
         batch_p_ni = batch_p_ni.view(-1).numpy()
@@ -543,10 +581,10 @@ class TopLevelApp:
         assert verb_features.shape[0] == verb_labels.shape[0]
         assert object_features.shape[0] == object_labels.shape[0]
 
-        # update supervised novelty dataset
+        # update the supervised novelty dataset
         self.snd_manager.feedback_callback(subject_features, verb_features, object_features, 
             subject_novelty_scores_u, verb_novelty_scores_u, object_novelty_scores_u, 
             subject_labels, verb_labels, object_labels)
 
-        # train supervised novelty detector for the whole data
+        # retrain
         self.snd_manager.train()        

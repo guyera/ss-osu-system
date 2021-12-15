@@ -76,7 +76,7 @@ class OSUInterface:
             df.loc[idx] = row
             idx += 1
 
-        csv_path = self.temp_path.joinpath(f'batch_{round_id}.csv')
+        csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}.csv')
         df.to_csv(csv_path, index=True)
         
         ret = self.app.run(csv_path, test_id, round_id, df['new_image_path'].to_list())

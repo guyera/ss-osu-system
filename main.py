@@ -26,22 +26,25 @@ if __name__ == "__main__":
     
     args = p.parse_args()
 
-    torch.backends.cudnn.benchmark = False
-
-    osu_int = OSUInterface(scg_ensemble=args.scg_ensemble, 
-        data_root=args.data_root, 
-        pretrained_unsupervised_novelty_path=args.pretrained_unsupervised_novelty_path, 
-        cusum_thresh=args.detection_threshold,
-        feedback_enabled=args.detection_feedback,
-        given_detection=args.given_detection)
+    if args.given_detection:
+        print("Given Detection is not currently supported. Exiting...")
+    else:
+        torch.backends.cudnn.benchmark = False
     
-    api = APIStubs(args.api_dir, args.tests_dir) if args.api_stubs else None
-    
-    test_session = BBNSession('OND', args.domain, args.class_count, 
-        args.classification_feedback, args.detection_feedback,
-        args.given_detection, args.data_root,
-        args.sys_results_dir, args.url, args.batch_size,
-        args.version, args.detection_threshold,
-        api, osu_int)
-
-    test_session.run(args.detector_seed)
+        osu_int = OSUInterface(scg_ensemble=args.scg_ensemble, 
+            data_root=args.data_root, 
+            pretrained_unsupervised_novelty_path=args.pretrained_unsupervised_novelty_path, 
+            cusum_thresh=args.detection_threshold,
+            feedback_enabled=args.detection_feedback,
+            given_detection=False)
+        
+        api = APIStubs(args.api_dir, args.tests_dir) if args.api_stubs else None
+        
+        test_session = BBNSession('OND', args.domain, args.class_count, 
+            args.classification_feedback, args.detection_feedback,
+            False, args.data_root,
+            args.sys_results_dir, args.url, args.batch_size,
+            args.version, args.detection_threshold,
+            api, osu_int)
+            
+        test_session.run(args.detector_seed)
