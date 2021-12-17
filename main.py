@@ -23,7 +23,7 @@ if __name__ == "__main__":
     p.add_argument('--detection_threshold', type=float, default=0.65)
     p.add_argument('--api-dir', default='./session/api')
     p.add_argument('--tests-dir', default='./session/tests')
-    p.add_argument('--test_ids')
+    p.add_argument('--test_ids', nargs="+", default=None)
     
     args = p.parse_args()
 

@@ -281,8 +281,8 @@ class BBNSession:
 
                 test_ids = result.content.decode('utf-8').split('\n')
 
-        # Need to remove possible final empty strings
-        test_ids = [test_id for test_id in test_ids if test_id.strip("\n\t\"',.") != ""]
+                # Need to remove possible final empty strings
+                test_ids = [test_id for test_id in test_ids if test_id.strip("\n\t\"',.") != ""]
 
         self.hints = []
         if self.detection_fb:
