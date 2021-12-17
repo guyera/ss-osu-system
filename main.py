@@ -23,6 +23,7 @@ if __name__ == "__main__":
     p.add_argument('--detection_threshold', type=float, default=0.65)
     p.add_argument('--api-dir', default='./session/api')
     p.add_argument('--tests-dir', default='./session/tests')
+    p.add_argument('--test_ids')
     
     args = p.parse_args()
 
@@ -47,4 +48,4 @@ if __name__ == "__main__":
             args.version, args.detection_threshold,
             api, osu_int)
             
-        test_session.run(args.detector_seed)
+        test_session.run(args.detector_seed, args.test_ids)
