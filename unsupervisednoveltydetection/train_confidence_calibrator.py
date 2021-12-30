@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument(
         '--csv-path',
         type = str,
-        default = 'Custom/annotations/dataset_v3_train.csv'
+        default = 'Custom/annotations/dataset_v4_train.csv'
     )
     parser.add_argument(
         '--num-subj-cls',
@@ -121,9 +121,6 @@ def main():
             name = args.dataset_name,
             data_root = args.data_root,
             csv_path = args.csv_path,
-            num_subj_cls = args.num_subj_cls,
-            num_obj_cls = args.num_obj_cls,
-            num_action_cls = args.num_action_cls,
             training = True,
             image_batch_size = args.image_batch_size,
             feature_extraction_device = args.device

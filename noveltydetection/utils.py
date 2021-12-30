@@ -4,6 +4,8 @@ import sklearn.neighbors
 import math
 import sys
 
+from tqdm import tqdm
+
 from enum import Enum
 
 def compute_partial_auc(nominal_scores, novel_scores):
@@ -182,3 +184,127 @@ def compute_probability_novelty(
     p_n = torch.stack(p_n, dim = 0)
     
     return p_type, p_n
+
+def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000, quiet = True):
+    criterion = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.SGD(logistic_regression.parameters(), lr = 0.01, momentum = 0.9)
+    
+    progress = None
+    if not quiet:
+        progress = tqdm(total = epochs)
+    for epoch in range(epochs):
+        optimizer.zero_grad()
+        logits = logistic_regression(scores)
+        loss = criterion(logits, labels)
+        loss.backward()
+        optimizer.step()
+
+        if not quiet:
+            progress.set_description(f'Loss: {loss.detach().cpu().item()}')
+            progress.update()
+    if not quiet:
+        progress.close()
+
+'''
+Parameters:
+    case_1_logistic_regression:
+        Loaded from unsupervised_novelty_detection_module.pth via key
+        'case_1_logistic_regression'
+    case_2_logistic_regression:
+        Loaded from unsupervised_novelty_detection_module.pth via key
+        'case_2_logistic_regression'
+    case_3_logistic_regression:
+        Loaded from unsupervised_novelty_detection_module.pth via key
+        'case_3_logistic_regression'
+    case_1_scores:
+        Loaded from unsupervised_novelty_detection_module.pth via key
+        'case_1_scores'
+    case_2_scores:
+        Loaded from unsupervised_novelty_detection_module.pth via key
+        'case_2_scores'
+    case_3_scores:
+        Loaded from unsupervised_novelty_detection_module.pth via key
+        'case_3_scores'
+    case_1_labels:
+        Loaded from unsupervised_novelty_detection_module.pth via key
+        'case_1_labels'
+    case_2_labels:
+        Loaded from unsupervised_novelty_detection_module.pth via key
+        'case_2_labels'
+    case_3_labels:
+        Loaded from unsupervised_novelty_detection_module.pth via key
+        'case_3_labels'
+    first_60_subject_novelty_scores:
+        List of length 60, containing the 60 subject novelty scores output by
+        UnsupervisedNoveltyDetectionModule.score() or
+        UnsupervisedNoveltyDetectionModule.__call__() on the first 60 examples
+        of the trial, guaranteed to be nominal (type 0).
+    first_60_verb_novelty_scores:
+        List of length 60, containing the 60 verb novelty scores output by
+        UnsupervisedNoveltyDetectionModule.score() or
+        UnsupervisedNoveltyDetectionModule.__call__() on the first 60 examples
+        of the trial, guaranteed to be nominal (type 0).
+    first_60_object_novelty_scores:
+        List of length 60, containing the 60 object novelty scores output by
+        UnsupervisedNoveltyDetectionModule.score() or
+        UnsupervisedNoveltyDetectionModule.__call__() on the first 60 examples
+        of the trial, guaranteed to be nominal (type 0).
+
+Preconditions:
+    All arguments must be located on the same device. This includes
+    all logistic regression models and tensors.
+'''
+def tune_logistic_regressions(
+        case_1_logistic_regression,
+        case_2_logistic_regression,
+        case_3_logistic_regression,
+        case_1_scores,
+        case_2_scores,
+        case_3_scores,
+        case_1_labels,
+        case_2_labels,
+        case_3_labels,
+        first_60_subject_novelty_scores,
+        first_60_verb_novelty_scores,
+        first_60_object_novelty_scores,
+        epochs = 3000,
+        quiet = True):
+    # Separate first 60 score tuples into case 1, 2, and 3.
+    first_60_case_1_scores = []
+    first_60_case_2_scores = []
+    first_60_case_3_scores = []
+    for idx in range(len(first_60_subject_novelty_scores)):
+        subject_score = first_60_subject_novelty_scores[idx]
+        object_score = first_60_object_novelty_scores[idx]
+        verb_score = first_60_verb_novelty_scores[idx]
+        
+        # Add the scores to the appropriate case tensors
+        if subject_score is not None and object_score is not None:
+            # All boxes present; append scores to case 1
+            first_60_case_1_scores.append(torch.stack((subject_score, verb_score, object_score), dim = 0))
+        if subject_score is not None:
+            # At least the subject box is present; append subject and verb scores
+            # to case 2
+            first_60_case_2_scores.append(torch.stack((subject_score, verb_score), dim = 0))
+        if object_score is not None:
+            # At least the object box is present; append object score to case 3
+            first_60_case_3_scores.append(object_score.unsqueeze(0))
+    first_60_case_1_scores = torch.stack(first_60_case_1_scores, dim = 0)
+    first_60_case_2_scores = torch.stack(first_60_case_2_scores, dim = 0)
+    first_60_case_3_scores = torch.stack(first_60_case_3_scores, dim = 0)
+    
+    # Concatenate new (first 60) scores with saved scores (from the validation set)
+    all_case_1_scores = torch.cat((case_1_scores, first_60_case_1_scores), dim = 0)
+    all_case_2_scores = torch.cat((case_2_scores, first_60_case_2_scores), dim = 0)
+    all_case_3_scores = torch.cat((case_3_scores, first_60_case_3_scores), dim = 0)
+
+    # Concatenate on the new labels. Since the first 60 examples are all nominal,
+    # their labels are all 0 (for type 0)
+    all_case_1_labels = torch.cat((case_1_labels, torch.zeros(len(first_60_case_1_scores), dtype = torch.long, device = case_1_labels.device)), dim = 0)
+    all_case_2_labels = torch.cat((case_2_labels, torch.zeros(len(first_60_case_2_scores), dtype = torch.long, device = case_2_labels.device)), dim = 0)
+    all_case_3_labels = torch.cat((case_3_labels, torch.zeros(len(first_60_case_3_scores), dtype = torch.long, device = case_3_labels.device)), dim = 0)
+
+    # And retrain the logistic regressions
+    fit_logistic_regression(case_1_logistic_regression, all_case_1_scores, all_case_1_labels, epochs = epochs, quiet = quiet)
+    fit_logistic_regression(case_2_logistic_regression, all_case_2_scores, all_case_2_labels, epochs = epochs, quiet = quiet)
+    fit_logistic_regression(case_3_logistic_regression, all_case_3_scores, all_case_3_labels, epochs = epochs, quiet = quiet)

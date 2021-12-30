@@ -39,6 +39,12 @@ def main():
     state_dict['case_1_logistic_regression'] = calibration_logistic_regressions_state_dict['case_1_logistic_regression']
     state_dict['case_2_logistic_regression'] = calibration_logistic_regressions_state_dict['case_2_logistic_regression']
     state_dict['case_3_logistic_regression'] = calibration_logistic_regressions_state_dict['case_3_logistic_regression']
+    state_dict['case_1_scores'] = calibration_logistic_regressions_state_dict['case_1_scores']
+    state_dict['case_2_scores'] = calibration_logistic_regressions_state_dict['case_2_scores']
+    state_dict['case_3_scores'] = calibration_logistic_regressions_state_dict['case_3_scores']
+    state_dict['case_1_labels'] = calibration_logistic_regressions_state_dict['case_1_labels']
+    state_dict['case_2_labels'] = calibration_logistic_regressions_state_dict['case_2_labels']
+    state_dict['case_3_labels'] = calibration_logistic_regressions_state_dict['case_3_labels']
 
     torch.save(state_dict, args.module_save_file)
 

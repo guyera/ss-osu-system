@@ -46,7 +46,7 @@ detector.load_state_dict(state_dict)
 testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
     name = 'Custom',
     data_root = 'Custom',
-    csv_path = 'Custom/annotations/dataset_v3_val.csv',
+    csv_path = 'Custom/annotations/dataset_v4_val.csv',
     training = False,
     image_batch_size = 16,
     feature_extraction_device = args.device
@@ -194,6 +194,11 @@ case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression().to
 case_2_logistic_regression = noveltydetection.utils.Case2LogisticRegression().to(args.device)
 case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression().to(args.device)
 
+noveltydetection.utils.fit_logistic_regression(case_1_logistic_regression, case_1_scores, case_1_labels, args.epochs, quiet = False)
+noveltydetection.utils.fit_logistic_regression(case_2_logistic_regression, case_2_scores, case_2_labels, args.epochs, quiet = False)
+noveltydetection.utils.fit_logistic_regression(case_3_logistic_regression, case_3_scores, case_3_labels, args.epochs, quiet = False)
+
+'''
 criterion = torch.nn.CrossEntropyLoss()
 case_1_optimizer = torch.optim.SGD(case_1_logistic_regression.parameters(), lr = args.lr, momentum = 0.9)
 case_2_optimizer = torch.optim.SGD(case_2_logistic_regression.parameters(), lr = args.lr, momentum = 0.9)
@@ -223,6 +228,7 @@ for epoch in range(args.epochs):
     progress.update()
 
 progress.close()
+'''
 
 def _state_dict(module):
     return {k: v.cpu() for k, v in module.state_dict().items()}
@@ -235,5 +241,11 @@ state_dict = {}
 state_dict['case_1_logistic_regression'] = case_1_state_dict
 state_dict['case_2_logistic_regression'] = case_2_state_dict
 state_dict['case_3_logistic_regression'] = case_3_state_dict
+state_dict['case_1_scores'] = case_1_scores.cpu()
+state_dict['case_2_scores'] = case_2_scores.cpu()
+state_dict['case_3_scores'] = case_3_scores.cpu()
+state_dict['case_1_labels'] = case_1_labels.cpu()
+state_dict['case_2_labels'] = case_2_labels.cpu()
+state_dict['case_3_labels'] = case_3_labels.cpu()
 
 torch.save(state_dict, args.calibration_logistic_regressions_save_file)

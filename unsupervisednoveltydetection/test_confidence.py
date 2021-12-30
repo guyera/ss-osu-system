@@ -16,7 +16,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             noveltydetectionfeatures.NoveltyFeatureDataset(
                 name = 'Custom',
                 data_root = 'Custom',
-                csv_path = 'Custom/annotations/dataset_v3_val.csv',
+                csv_path = 'Custom/annotations/dataset_v4_val.csv',
                 training = False,
                 image_batch_size = 16,
                 feature_extraction_device = self.device
