@@ -68,18 +68,12 @@ def main(rank, args):
         name=args.dataset,
         data_root=args.data_root,
         csv_path=args.csv_path,
-        num_subj_cls=args.num_subj_cls,
-        num_obj_cls=args.num_obj_cls,
-        num_action_cls=args.num_action_cls,
         flip=True)
 
     valset = DataFactory(
         name=args.dataset,
         data_root=args.data_root,
-        csv_path=args.val_csv_path,
-        num_subj_cls=args.num_subj_cls,
-        num_obj_cls=args.num_obj_cls,
-        num_action_cls=args.num_action_cls)
+        csv_path=args.val_csv_path)
 
     train_loader = DataLoader(
         dataset=trainset,

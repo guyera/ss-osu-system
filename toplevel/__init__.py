@@ -66,6 +66,10 @@ class TopLevelApp:
         self.feedback_enabled = feedback_enabled
         self.given_detection = given_detection
             
+        self.first_sixty_subj_scores_u = []
+        self.first_sixty_verb_scores_u = []
+        self.first_sixty_obj_scores_u = []
+            
         self.red_light_th = None
         self.pre_red_transform = None
         self.post_red_transform = None
@@ -94,6 +98,10 @@ class TopLevelApp:
         self.red_light_th = None
         self.pre_red_transform = None
         self.post_red_transform = None
+        
+        self.first_sixty_subj_scores_u = []
+        self.first_sixty_verb_scores_u = []
+        self.first_sixty_obj_scores_u = []
 
     def run(self, csv_path, test_id, round_id, img_paths):
         if csv_path is None:
@@ -145,19 +153,54 @@ class TopLevelApp:
 
         assert len(subject_novelty_scores) == len(verb_novelty_scores) == len(object_novelty_scores)
 
-        # Compute P_ni
         case_1_lr, case_2_lr, case_3_lr = self.und_manager.get_calibrators()
-        
+        base = self.all_p_ni.shape[0]
+        offset = N
+
+        # Compute P_ni        
+        if base < 60 and base + offset < 60:
+            self.first_sixty_subj_scores_u += subject_novelty_scores_u
+            self.first_sixty_verb_scores_u += verb_novelty_scores_u
+            self.first_sixty_obj_scores_u += object_novelty_scores_u
+            
+        elif base < 60 and base + offset >= 60:
+            self.first_sixty_subj_scores_u += subject_novelty_scores_u
+            self.first_sixty_verb_scores_u += verb_novelty_scores_u
+            self.first_sixty_obj_scores_u += object_novelty_scores_u
+            
+            self.first_sixty_subj_scores_u = self.first_sixty_subj_scores_u[:60]
+            self.first_sixty_verb_scores_u = self.first_sixty_verb_scores_u[:60]
+            self.first_sixty_obj_scores_u = self.first_sixty_obj_scores_u[:60]
+            
+            tune_lr_calibrators(self.und_manager, 
+                self.first_sixty_obj_scores_u, 
+                self.first_sixty_verb_scores_u, 
+                self.first_sixty_obj_scores_u)
+                    
+            unsupervised_results_recalibrated = self.und_manager.score(novelty_dataset, self.p_type_dist)
+    
+            subject_novelty_scores_r = unsupervised_results_recalibrated['subject_novelty_score']
+            verb_novelty_scores_r = unsupervised_results_recalibrated['verb_novelty_score']
+            object_novelty_scores_r = unsupervised_results_recalibrated['object_novelty_score']
+            
+            subject_novelty_scores = subject_novelty_scores_u[:60 - base] + subject_novelty_scores_r[60 - base:]
+            verb_novelty_scores = verb_novelty_scores_u[:60 - base] + verb_novelty_scores_r[60 - base:]
+            object_novelty_scores = object_novelty_scores_u[:60 - base] + object_novelty_scores_r[60 - base:]
+            
+            assert len(subject_novelty_scores) == N
+            assert len(verb_novelty_scores) == N
+            assert len(object_novelty_scores) == N
+                        
         with torch.no_grad():
             batch_p_type, p_ni = compute_probability_novelty(subject_novelty_scores, verb_novelty_scores, object_novelty_scores, 
                 case_1_lr, case_2_lr, case_3_lr)
 
-        p_ni = p_ni.cpu().float()
+        p_ni = p_ni.cpu().float()            
         batch_p_type = batch_p_type.cpu()
-
-        if self.hint_img_path in img_paths:
-            first_novelty = img_paths.index(self.hint_img_path)
-            p_ni[first_novelty] = 1.0
+        
+        # if self.hint_img_path in img_paths:
+        #     first_novelty = img_paths.index(self.hint_img_path)
+        #     p_ni[first_novelty] = 1.0
 
         # Merge top-3 SVOs
         top3_und = self.und_manager.get_top3(novelty_dataset, batch_p_type)        
@@ -194,27 +237,27 @@ class TopLevelApp:
         
         if not self.post_red:
             if self.all_p_ni.shape[0] >= 60:    
+                if self.red_light_th is None:
+                    self._compute_red_light_thresh()
+                    self._compute_score_transforms()
+                
                 red_light_scores = self._compute_moving_avg(self.all_p_ni, N)
                 start = self.all_p_ni.shape[0] - N
                 mask = np.array([start + i for i in range(N)])
                 mask = (mask > 60).astype(np.int)
                 red_light_scores *= mask
             
-                if not self.given_detection:
-                    EPS = 1e-3
-                    
-                    if self.red_light_th is None:
-                        self._compute_red_light_thresh()
-                        self._compute_score_transforms()
-                        
-                    p_gt_th = np.nonzero([p > self.red_light_th + EPS for p in red_light_scores])[0]
-                    self.post_red = p_gt_th.shape[0] > 0
-                    first_novelty_instance_idx = p_gt_th[0] if self.post_red else red_light_scores.shape[0]
-                    self.post_red_base = self.all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx if self.post_red else None
-                elif self.curr_round_id == self.hint_round:
-                    self.post_red = True
-                    first_novelty_instance_idx = self.hint_round
-                    self.post_red_base = self.all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx
+                # if not self.given_detection:
+                EPS = 1e-3    
+                p_gt_th = np.nonzero([p > self.red_light_th + EPS for p in red_light_scores])[0]
+                self.post_red = p_gt_th.shape[0] > 0
+                
+                first_novelty_instance_idx = p_gt_th[0] if self.post_red else red_light_scores.shape[0]
+                self.post_red_base = self.all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx if self.post_red else None
+                # elif self.curr_round_id == self.hint_round:
+                #     self.post_red = True
+                #     first_novelty_instance_idx = self.hint_round
+                #     self.post_red_base = self.all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx
         else:
             all_p_ni = np.concatenate([self.all_p_ni.numpy(), p_ni])
             red_light_scores = self._compute_moving_avg(all_p_ni, N)
@@ -337,6 +380,7 @@ class TopLevelApp:
             th = max(th, np.amax(moving_avgs))
             
         self.red_light_th = th
+        self.all_p_ni[:60] = 0
     
     def _compute_score_transforms(self):
         assert self.red_light_th is not None, "red-light threshold hasn't been computed yet."

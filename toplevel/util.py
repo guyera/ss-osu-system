@@ -1,7 +1,7 @@
 import torch
 import noveltydetection
 from unsupervisednoveltydetection import UnsupervisedNoveltyDetector
-from noveltydetection.utils import ScoreContext
+from noveltydetection.utils import tune_logistic_regressions
 from adaptation.supervised_anomaly_detectors import train_supervised_models, eval_supervised
 
 
@@ -56,6 +56,29 @@ class BatchContext:
             self.image_paths is not None and self.novelty_dataset is not None
 
 
+def tune_lr_calibrators(und, subj_scores, verb_scores, obj_scores):
+    assert len(subj_scores) == 60
+    assert len(verb_scores) == 60
+    assert len(obj_scores) == 60
+
+    subj_scores = [s.clone().to('cuda:0') if s is not None else None for s in subj_scores]
+    verb_scores = [s.clone().to('cuda:0') if s is not None else None for s in verb_scores]
+    obj_scores = [s.clone().to('cuda:0') if s is not None else None for s in obj_scores]
+
+    tune_logistic_regressions(und.case_1_logistic_regression, 
+        und.case_2_logistic_regression,
+        und.case_3_logistic_regression, 
+        und.case_1_scores, 
+        und.case_2_scores, 
+        und.case_3_scores, 
+        und.case_1_labels, 
+        und.case_2_labels, 
+        und.case_3_labels, 
+        subj_scores, 
+        verb_scores, 
+        obj_scores)
+
+
 class UnsupervisedNoveltyDetectionManager:
     def __init__(self, 
         pretrained_path, 
@@ -93,7 +116,16 @@ class UnsupervisedNoveltyDetectionManager:
         self.case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression()
         self.case_3_logistic_regression.load_state_dict(state_dict['case_3_logistic_regression'])
         self.case_3_logistic_regression = self.case_3_logistic_regression.to('cuda:0')
+        
+        self.case_1_scores = state_dict['case_1_scores'].to('cuda:0')
+        self.case_1_labels = state_dict['case_1_labels'].to('cuda:0')
 
+        self.case_2_scores = state_dict['case_2_scores'].to('cuda:0')
+        self.case_2_labels = state_dict['case_2_labels'].to('cuda:0')
+
+        self.case_3_scores = state_dict['case_3_scores'].to('cuda:0')
+        self.case_3_labels = state_dict['case_3_labels'].to('cuda:0')
+        
     def get_calibrators(self):
         return self.case_1_logistic_regression, self.case_2_logistic_regression, self.case_3_logistic_regression
 
