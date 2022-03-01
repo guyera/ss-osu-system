@@ -42,9 +42,11 @@ class Ensemble:
             self.nets[-1].load_state_dict(checkpoint['model_state_dict'])
             self.nets[-1].cuda()
             self.nets[-1].eval()
+            
+            break
 
-        if len(self.nets) < 2:
-            raise Exception(f'Ensemble size has to be at least two. Actual size: {len(self.nets)}')
+        # if len(self.nets) < 2:
+        #     raise Exception(f'Ensemble size has to be at least two. Actual size: {len(self.nets)}')
 
         self.calibrator_path = './ensemble/lr.pth'
         self.train_tuples_path = './ensemble/train_tuples.pkl'
@@ -107,7 +109,7 @@ class Ensemble:
         
     def get_top3_SVOs(self, data_loader, is_training, verbose=True):
         with torch.no_grad():
-            features, labels, is_null_flag, null_top3, is_subj_null, is_obj_null = self._compute_features(data_loader, is_training)
+            features, labels, is_null_flag, null_top3, is_subj_null, is_obj_null, verb_logits = self._compute_features(data_loader, is_training)
 
             features = [torch.Tensor(f) for f in features]
             features = torch.vstack(features)
@@ -143,7 +145,7 @@ class Ensemble:
             print(f'top1 accuracy: {count1 / len(labels)}')
             print(f'top3 accuracy: {count3 / len(labels)}')
 
-        return ret
+        return ret, verb_logits
         
     def _clean_result(self, my_net, orig_result, detections):
         # num_verb_cls = my_net.interaction_head.num_classes
@@ -271,6 +273,7 @@ class Ensemble:
 
     def _compute_features(self, data_loader, is_training):
         features = []
+        verb_logits = []
         labels = []
         null_top3 = []
         is_null_flag = []
@@ -322,9 +325,10 @@ class Ensemble:
                         'valid_objects': output['valid_objects'],
                     }
                     
+                    verb_logits.append(result['verb_logits'])                    
                     result = self._clean_result(net, result, mod_detections[0])
                     ensemble_results[n] = result
-
+                    
                     if n == 0:
                         is_subj_box_null = torch.numel(result["valid_subjects"]) == 0
                         is_obj_box_null = torch.numel(result["valid_objects"]) == 0
@@ -366,7 +370,7 @@ class Ensemble:
                     
                 features.append(ensemble_feature)
                 
-        return features, labels, is_null_flag, null_top3, is_subj_null, is_obj_null
+        return features, labels, is_null_flag, null_top3, is_subj_null, is_obj_null, verb_logits
 
     def _calibrate(self, cal_data_loader, val_data_loader):
         cal_features, cal_labels, _, _, _, _ = self._compute_features(cal_data_loader, True)

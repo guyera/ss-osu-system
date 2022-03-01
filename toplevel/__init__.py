@@ -11,7 +11,6 @@ import noveltydetectionfeatures
 import pandas as pd
 from noveltydetection.utils import compute_probability_novelty
 from adaptation.query_formulation import select_queries
-import pickle
 
 
 class TopLevelApp:
@@ -89,6 +88,7 @@ class TopLevelApp:
         self.all_p_type = torch.tensor([])
         self.post_red_base = None
         
+        self.und_manager.reset_lr_calibrators()
         self.snd_manager.reset()
         
         self.curr_test_id = None
@@ -116,7 +116,7 @@ class TopLevelApp:
         scg_data_loader, novelty_dataset, N, image_paths, batch_cases = self._load_data(csv_path)
 
         # Compute top-3 SVOs from SCG ensemble
-        scg_preds = self.scg_ensemble.get_top3_SVOs(scg_data_loader, False)
+        scg_preds, _ = self.scg_ensemble.get_top3_SVOs(scg_data_loader, False)
 
         # Unsupervised novelty scores
         unsupervised_results = self.und_manager.score(novelty_dataset, self.p_type_dist)
@@ -172,8 +172,7 @@ class TopLevelApp:
             self.first_sixty_verb_scores_u = self.first_sixty_verb_scores_u[:60]
             self.first_sixty_obj_scores_u = self.first_sixty_obj_scores_u[:60]
             
-            tune_lr_calibrators(self.und_manager, 
-                self.first_sixty_obj_scores_u, 
+            self.und_manager.tune_lr_calibrators(self.first_sixty_obj_scores_u, 
                 self.first_sixty_verb_scores_u, 
                 self.first_sixty_obj_scores_u)
                     
@@ -280,7 +279,7 @@ class TopLevelApp:
         ret['red_light_score'] = red_light_scores
         ret['svo'] = top_3
         ret['svo_probs'] = top_3_probs
-               
+                         
         return ret
 
     def select_queries(self, feedback_max_ids):
@@ -381,7 +380,7 @@ class TopLevelApp:
             
         self.red_light_th = th
         self.all_p_ni[:60] = 0
-    
+            
     def _compute_score_transforms(self):
         assert self.red_light_th is not None, "red-light threshold hasn't been computed yet."
         self.pre_red_transform = np.array([0.5 / self.red_light_th, 0])

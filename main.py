@@ -9,7 +9,7 @@ if __name__ == "__main__":
     p.add_argument('--data-root', default='.')
     p.add_argument('--scg-ensemble', default='./ensemble/pretrained')
     p.add_argument('--pretrained-unsupervised-novelty-path', default='./unsupervisednoveltydetection/unsupervised_novelty_detection_module.pth')
-    p.add_argument('--api_stubs', action='store_true')
+    p.add_argument('--api-stubs', action='store_true')
     p.add_argument('--url', default='http://localhost:6789')
     p.add_argument('--class_count', type=int, default=29)
     p.add_argument('--batch_size', type=int, default=4)
