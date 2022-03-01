@@ -72,8 +72,11 @@ def select_queries(budget, P_type, P_N, A_S, A_V, A_O):
             A_O[i] = A_O_min - 1
             O_nones += 1
         
-    if budget > (N - S_nones) or budget > (N - V_nones) or budget > (N - O_nones):
-        raise ValueError("Invalid budget; too many NoneType Instances")
+    # if budget > (N - S_nones) or budget > (N - V_nones) or budget > (N - O_nones):
+    #    # Need to fix this so that instances that are non-None are
+    #    # copied to give us a sufficiently large query set. This shouldn't
+    #    # be an issue when we don't have many examples
+    #    raise ValueError("Invalid budget; too many NoneType Instances")
 
     w_s = P_type_new[TYPE_1]
     w_v = P_type_new[TYPE_2] #+ P_type_new[type_5]
@@ -88,12 +91,22 @@ def select_queries(budget, P_type, P_N, A_S, A_V, A_O):
     u_o = w_o * O_tensor
 
     U_mat = torch.hstack((torch.hstack((u_s,u_v)),u_o)) 
+    # Takes the max across SVO
     u_vec, _ = torch.max(U_mat,1)
 
     # Sort u_vec
     u_vec_sorted, indices = torch.sort(u_vec,0,descending=True)
 
-    selection = indices[0:budget]
+    # Added 02/10/2022
+    indices_copy = indices.detach().clone()
+    while len(indices_copy.squeeze()) < budget:
+        if len(indices_copy.shape) == 2:
+            if indices_copy.shape[1] == 1:
+                indices_copy = torch.vstack((indices_copy,indices))
+        elif len(indices_copy.shape) == 1:
+            indices_copy = torch.hstack((indices_copy,indices))
+
+    selection = indices_copy[0:budget]
 
     return selection.tolist()
 
