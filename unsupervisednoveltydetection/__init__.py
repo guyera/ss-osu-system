@@ -16,100 +16,10 @@ class UnsupervisedNoveltyDetectorLogger:
         self.verb_novelty_scores += verb_novelty_scores
         self.object_novelty_scores += object_novelty_scores
 
-    def save_figures(self, figure_dir_path):
-        sv_filtered_subject_scores = []
-        so_filtered_subject_scores = []
-        
-        sv_filtered_verb_scores = []
-        vo_filtered_verb_scores = []
-        
-        so_filtered_object_scores = []
-        vo_filtered_object_scores = []
-        for idx in range(len(self.subject_novelty_scores)):
-            subject_score = self.subject_novelty_scores[idx]
-            verb_score = self.verb_novelty_scores[idx]
-            object_score = self.object_novelty_scores[idx]
-
-            if subject_score is not None:
-                if verb_score is not None:
-                    sv_filtered_subject_scores.append(subject_score)
-                if object_score is not None:
-                    so_filtered_subject_scores.append(subject_score)
-            
-            if verb_score is not None:
-                if subject_score is not None:
-                    sv_filtered_verb_scores.append(verb_score)
-                if object_score is not None:
-                    vo_filtered_verb_scores.append(verb_score)
-            
-            if object_score is not None:
-                if subject_score is not None:
-                    so_filtered_object_scores.append(object_score)
-                if verb_score is not None:
-                    vo_filtered_object_scores.append(object_score)
-            
-        sv_filtered_subject_scores = torch.stack(sv_filtered_subject_scores, dim = 0)
-        so_filtered_subject_scores = torch.stack(so_filtered_subject_scores, dim = 0)
-        
-        sv_filtered_verb_scores = torch.stack(sv_filtered_verb_scores, dim = 0)
-        vo_filtered_verb_scores = torch.stack(vo_filtered_verb_scores, dim = 0)
-        
-        so_filtered_object_scores = torch.stack(so_filtered_object_scores, dim = 0)
-        vo_filtered_object_scores = torch.stack(vo_filtered_object_scores, dim = 0)
-        
-        # Verb vs. subject scatter plot
-        fig, ax = plt.subplots()
-        ax.set_title('Verb novelty scores vs subject novelty scores')
-        ax.set_xlabel('Subject novelty scores')
-        ax.set_ylabel('Verb novelty scores')
-        ax.scatter(sv_filtered_subject_scores.detach().cpu().numpy(), sv_filtered_verb_scores.detach().cpu().numpy())
-        a = torch.stack((sv_filtered_subject_scores, torch.ones_like(sv_filtered_subject_scores)), dim = 1)
-        y = sv_filtered_verb_scores
-        x = torch.matmul(torch.matmul(torch.linalg.inv(torch.matmul(a.T, a)), a.T), y)
-        y_hat = torch.matmul(a, x)
-        ax.plot(sv_filtered_subject_scores.detach().cpu().numpy(), y_hat.detach().cpu().numpy(), color = 'black')
-        r = torch.corrcoef(torch.stack((sv_filtered_subject_scores, sv_filtered_verb_scores), dim = 0))[0, 1]
-        text = f'r = {float(r):.2f}'
-        props = dict(boxstyle = 'round', facecolor = 'tab:orange', alpha = 0.85)
-        ax.text(0.95, 0.05, text, transform = ax.transAxes, fontsize = 14, verticalalignment = 'bottom', horizontalalignment = 'right', bbox = props)
-        fig.savefig(os.path.join(figure_dir_path, 'subject_verb_scatter.jpg'))
-        plt.close(fig)
-        
-        # Object vs. subject scatter plot
-        fig, ax = plt.subplots()
-        ax.set_title('Object novelty scores vs subject novelty scores')
-        ax.set_xlabel('Subject novelty scores')
-        ax.set_ylabel('Object novelty scores')
-        ax.scatter(so_filtered_subject_scores.detach().cpu().numpy(), so_filtered_object_scores.detach().cpu().numpy())
-        a = torch.stack((so_filtered_subject_scores, torch.ones_like(so_filtered_subject_scores)), dim = 1)
-        y = so_filtered_object_scores
-        x = torch.matmul(torch.matmul(torch.linalg.inv(torch.matmul(a.T, a)), a.T), y)
-        y_hat = torch.matmul(a, x)
-        ax.plot(so_filtered_subject_scores.detach().cpu().numpy(), y_hat.detach().cpu().numpy(), color = 'black')
-        r = torch.corrcoef(torch.stack((so_filtered_subject_scores, so_filtered_object_scores), dim = 0))[0, 1]
-        text = f'r = {float(r):.2f}'
-        props = dict(boxstyle = 'round', facecolor = 'tab:orange', alpha = 0.85)
-        ax.text(0.95, 0.05, text, transform = ax.transAxes, fontsize = 14, verticalalignment = 'bottom', horizontalalignment = 'right', bbox = props)
-        fig.savefig(os.path.join(figure_dir_path, 'subject_object_scatter.jpg'))
-        plt.close(fig)
-
-        # Object vs. verb scatter plot
-        fig, ax = plt.subplots()
-        ax.set_title('Object novelty scores vs verb novelty scores')
-        ax.set_xlabel('Verb novelty scores')
-        ax.set_ylabel('Object novelty scores')
-        ax.scatter(vo_filtered_verb_scores.detach().cpu().numpy(), vo_filtered_object_scores.detach().cpu().numpy())
-        a = torch.stack((vo_filtered_verb_scores, torch.ones_like(vo_filtered_verb_scores)), dim = 1)
-        y = vo_filtered_object_scores
-        x = torch.matmul(torch.matmul(torch.linalg.inv(torch.matmul(a.T, a)), a.T), y)
-        y_hat = torch.matmul(a, x)
-        ax.plot(vo_filtered_verb_scores.detach().cpu().numpy(), y_hat.detach().cpu().numpy(), color = 'black')
-        r = torch.corrcoef(torch.stack((vo_filtered_verb_scores, vo_filtered_object_scores), dim = 0))[0, 1]
-        text = f'r = {float(r):.2f}'
-        props = dict(boxstyle = 'round', facecolor = 'tab:orange', alpha = 0.85)
-        ax.text(0.95, 0.05, text, transform = ax.transAxes, fontsize = 14, verticalalignment = 'bottom', horizontalalignment = 'right', bbox = props)
-        fig.savefig(os.path.join(figure_dir_path, 'verb_object_scatter.jpg'))
-        plt.close(fig)
+    def save_novelty_scores(self, novelty_score_dir_path):
+        torch.save(self.subject_novelty_scores, os.path.join(novelty_score_dir_path, 'subject.pth'))
+        torch.save(self.verb_novelty_scores, os.path.join(novelty_score_dir_path, 'verb.pth'))
+        torch.save(self.object_novelty_scores, os.path.join(novelty_score_dir_path, 'object.pth'))
 
 class UnsupervisedNoveltyDetector:
     # num_appearance_features is the number of features after ROI pooling
