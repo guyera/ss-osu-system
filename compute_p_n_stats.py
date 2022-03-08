@@ -50,34 +50,83 @@ p_known_vo = results['p_known_vo']
 
 filtered_subject_scores = []
 filtered_subject_labels = []
-for idx, subject_label in enumerate(subject_labels):
-    if subject_label is None:
-        continue
-    filtered_subject_labels.append(subject_label)
-    filtered_subject_scores.append(subject_scores[idx])
-    
-filtered_subject_scores = torch.stack(filtered_subject_scores, dim = 0)
-filtered_subject_labels = torch.stack(filtered_subject_labels, dim = 0)
-
-filtered_object_scores = []
-filtered_object_labels = []
-for idx, object_label in enumerate(object_labels):
-    if object_label is None:
-        continue
-    filtered_object_labels.append(object_label)
-    filtered_object_scores.append(object_scores[idx])
-filtered_object_scores = torch.stack(filtered_object_scores, dim = 0)
-filtered_object_labels = torch.stack(filtered_object_labels, dim = 0)
+sv_filtered_subject_scores = []
+sv_filtered_subject_labels = []
+so_filtered_subject_scores = []
+so_filtered_subject_labels = []
 
 filtered_verb_scores = []
 filtered_verb_labels = []
-for idx, verb_label in enumerate(verb_labels):
-    if verb_label is None:
-        continue
-    filtered_verb_labels.append(verb_label)
-    filtered_verb_scores.append(verb_scores[idx])
+sv_filtered_verb_scores = []
+sv_filtered_verb_labels = []
+vo_filtered_verb_scores = []
+vo_filtered_verb_labels = []
+
+filtered_object_scores = []
+filtered_object_labels = []
+so_filtered_object_scores = []
+so_filtered_object_labels = []
+vo_filtered_object_scores = []
+vo_filtered_object_labels = []
+for idx in range(len(subject_labels)):
+    subject_label = subject_labels[idx]
+    verb_label = verb_labels[idx]
+    object_label = object_labels[idx]
+
+    subject_score = subject_scores[idx]
+    verb_score = verb_scores[idx]
+    object_score = object_scores[idx]
+
+    if subject_label is not None:
+        filtered_subject_labels.append(subject_label)
+        filtered_subject_scores.append(subject_score)
+        if verb_label is not None:
+            sv_filtered_subject_scores.append(subject_score)
+            sv_filtered_subject_labels.append(subject_label)
+        if object_label is not None:
+            so_filtered_subject_scores.append(subject_score)
+            so_filtered_subject_labels.append(subject_label)
+
+    if verb_label is not None:
+        filtered_verb_labels.append(verb_label)
+        filtered_verb_scores.append(verb_score)
+        if subject_label is not None:
+            sv_filtered_verb_scores.append(verb_score)
+            sv_filtered_verb_labels.append(verb_label)
+        if object_label is not None:
+            vo_filtered_verb_scores.append(verb_score)
+            vo_filtered_verb_labels.append(verb_label)
+
+    if object_label is not None:
+        filtered_object_labels.append(object_label)
+        filtered_object_scores.append(object_score)
+        if subject_label is not None:
+            so_filtered_object_scores.append(object_score)
+            so_filtered_object_labels.append(object_label)
+        if verb_label is not None:
+            vo_filtered_object_scores.append(object_score)
+            vo_filtered_object_labels.append(object_label)
+    
+filtered_subject_scores = torch.stack(filtered_subject_scores, dim = 0)
+filtered_subject_labels = torch.stack(filtered_subject_labels, dim = 0)
+sv_filtered_subject_scores = torch.stack(sv_filtered_subject_scores, dim = 0)
+sv_filtered_subject_labels = torch.stack(sv_filtered_subject_labels, dim = 0)
+so_filtered_subject_scores = torch.stack(so_filtered_subject_scores, dim = 0)
+so_filtered_subject_labels = torch.stack(so_filtered_subject_labels, dim = 0)
+
 filtered_verb_scores = torch.stack(filtered_verb_scores, dim = 0)
 filtered_verb_labels = torch.stack(filtered_verb_labels, dim = 0)
+sv_filtered_verb_scores = torch.stack(sv_filtered_verb_scores, dim = 0)
+sv_filtered_verb_labels = torch.stack(sv_filtered_verb_labels, dim = 0)
+vo_filtered_verb_scores = torch.stack(vo_filtered_verb_scores, dim = 0)
+vo_filtered_verb_labels = torch.stack(vo_filtered_verb_labels, dim = 0)
+
+filtered_object_scores = torch.stack(filtered_object_scores, dim = 0)
+filtered_object_labels = torch.stack(filtered_object_labels, dim = 0)
+so_filtered_object_scores = torch.stack(so_filtered_object_scores, dim = 0)
+so_filtered_object_labels = torch.stack(so_filtered_object_labels, dim = 0)
+vo_filtered_object_scores = torch.stack(vo_filtered_object_scores, dim = 0)
+vo_filtered_object_labels = torch.stack(vo_filtered_object_labels, dim = 0)
 
 novel_subject_mask = filtered_subject_labels == 0
 novel_subject_scores = filtered_subject_scores[novel_subject_mask]
@@ -102,6 +151,23 @@ auc_verb_scores = torch.cat((nominal_verb_scores, novel_verb_scores), dim = 0)
 auc_verb_trues = torch.cat((torch.zeros_like(nominal_verb_scores), torch.ones_like(novel_verb_scores)), dim = 0)
 verb_auc = sklearn.metrics.roc_auc_score(auc_verb_trues.detach().cpu().numpy(), auc_verb_scores.detach().cpu().numpy())
 print(f'Verb AUC: {verb_auc}')
+
+fig, ax = plt.subplots()
+ax.set_title('Verb novelty scores vs subject novelty scores')
+ax.set_xlabel('Subject novelty scores')
+ax.set_ylabel('Verb novelty scores')
+ax.scatter(sv_filtered_subject_scores.detach().cpu().numpy(), sv_filtered_verb_scores.detach().cpu().numpy())
+a = torch.stack((sv_filtered_subject_scores, torch.ones_like(sv_filtered_subject_scores)), dim = 1)
+y = sv_filtered_verb_scores
+x = torch.matmul(torch.matmul(torch.linalg.inv(torch.matmul(a.T, a)), a.T), sv_filtered_verb_scores)
+y_hat = torch.matmul(a, x)
+ax.plot(sv_filtered_subject_scores.detach().cpu().numpy(), y_hat.detach().cpu().numpy(), color = 'black')
+r = torch.corrcoef(torch.stack((sv_filtered_subject_scores, sv_filtered_verb_scores), dim = 0))[0, 1]
+text = f'r = {float(r):.2f}'
+props = dict(boxstyle = 'round', facecolor = 'tab:orange', alpha = 0.85)
+ax.text(0.95, 0.05, text, transform = ax.transAxes, fontsize = 14, verticalalignment = 'bottom', horizontalalignment = 'right', bbox = props)
+fig.savefig('subject_verb_scatter.jpg')
+plt.close(fig)
 
 novel_subject_mask = filtered_subject_labels == 0
 novel_subject_scores = filtered_subject_scores[novel_subject_mask]
