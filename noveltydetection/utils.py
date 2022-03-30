@@ -135,7 +135,8 @@ def compute_probability_novelty(
         object_scores,
         case_1_logistic_regression,
         case_2_logistic_regression,
-        case_3_logistic_regression):
+        case_3_logistic_regression,
+        ignore_t2_in_pni = True):
     p_type = []
     p_n = []
     for idx in range(len(subject_scores)):
@@ -148,8 +149,10 @@ def compute_probability_novelty(
             scores = torch.stack((subject_score, verb_score, object_score), dim = 0).unsqueeze(0)
             logits = case_1_logistic_regression(scores).squeeze(0)
             # To compute p_n, skip P(type = 0) and sum remaining probabilities
-            # cur_p_n = torch.nn.functional.softmax(logits, dim = 0)[1:].sum()
-            cur_p_n = torch.nn.functional.softmax(logits, dim = 0)[[1, 3]].sum()
+            if ignore_t2_in_pni:
+                cur_p_n = torch.nn.functional.softmax(logits, dim = 0)[[1, 3]].sum()
+            else:
+                cur_p_n = torch.nn.functional.softmax(logits, dim = 0)[1:].sum()
             # To compute p_type, we'll remove the type = 0 logit, and then
             # normalize to get p_type[i] = P(type = i) for i in {1, 2, 3}.
             cur_partial_p_type = torch.nn.functional.softmax(logits[1:], dim = 0)
@@ -160,8 +163,10 @@ def compute_probability_novelty(
             scores = torch.stack((subject_score, verb_score), dim = 0).unsqueeze(0)
             logits = case_2_logistic_regression(scores).squeeze(0)
             # To compute p_n, skip P(type = 0) and sum remaining probabilities
-            # cur_p_n = torch.nn.functional.softmax(logits, dim = 0)[1:].sum()
-            cur_p_n = torch.nn.functional.softmax(logits, dim = 0)[1]
+            if ignore_t2_in_pni:
+                cur_p_n = torch.nn.functional.softmax(logits, dim = 0)[1]
+            else:
+                cur_p_n = torch.nn.functional.softmax(logits, dim = 0)[1:].sum()
             # To compute p_type, we'll remove the type = 0 logit, and then
             # normalize to get p_type[i] = P(type = i) for i in {1, 2}.
             cur_partial_p_type = torch.nn.functional.softmax(logits[1:], dim = 0)
