@@ -1,5 +1,5 @@
 import itertools
-import pathlib
+from pathlib import Path
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -11,32 +11,35 @@ import noveltydetectionfeatures
 import pandas as pd
 from noveltydetection.utils import compute_probability_novelty
 from adaptation.query_formulation import select_queries
+import pickle
+from scipy.stats import ks_2samp
 
 
 class TopLevelApp:
-    def __init__(self, ensemble_path, data_root, pretrained_unsupervised_module_path, th, feedback_enabled, given_detection):
+    def __init__(self, ensemble_path, data_root, pretrained_unsupervised_module_path, feedback_enabled, given_detection, 
+        log, log_dir, ignore_verb_novelty):
 
-        if not pathlib.Path(ensemble_path).exists():
-            raise Exception(f'pretrained SCG models were not found in path {ensemble_path}')
+        if not Path(ensemble_path).exists():
+            raise Exception(f'pretrained SCG model was not found in path {ensemble_path}')
 
         self.data_root = data_root
         self.NUM_SUBJECT_CLASSES = 5
         self.NUM_OBJECT_CLASSES = 12
         self.NUM_VERB_CLASSES = 8
-
         self.NUM_APP_FEATURES = 256 * 7 * 7
         self.NUM_VERB_FEATURES = self.NUM_APP_FEATURES + 2 * 36
         self.post_red = False
         self.p_type_dist = torch.tensor([1/3, 1/3, 1/3, 0.0])
-
         self.all_query_masks = torch.tensor([])
         self.all_feedback = torch.tensor([])
         self.all_cases = torch.tensor([])
         self.all_p_ni = torch.tensor([])
+        self.all_p_ni_raw = torch.tensor([])
         self.all_nc = torch.tensor([])
         self.all_top_1_svo = []
         self.all_top_3_svo = []
         self.all_p_type = torch.tensor([])
+        self.all_red_light_scores = np.array([])
 
         self.scg_ensemble = Ensemble(ensemble_path, self.NUM_OBJECT_CLASSES, self.NUM_SUBJECT_CLASSES, 
             self.NUM_VERB_CLASSES, data_root=None, cal_csv_path=None, val_csv_path=None)
@@ -53,25 +56,30 @@ class TopLevelApp:
         self.p_type_th = 0.75
         self.post_red_base = None
         self.batch_context = BatchContext()
-
         self.unsupervised_aucs = [None, None, None]
         self.supervised_aucs = [None, None, None]
-        
-        self.curr_test_id = None
-        self.curr_round_id = None
-        self.hint_round = None
-        self.hint_img_path = None
-
         self.feedback_enabled = feedback_enabled
-        self.given_detection = given_detection
-            
-        self.first_sixty_subj_scores_u = []
-        self.first_sixty_verb_scores_u = []
-        self.first_sixty_obj_scores_u = []
-            
-        self.red_light_th = None
-        self.pre_red_transform = None
-        self.post_red_transform = None
+        self.p_val_cuttoff =  0.0085542
+        self.windows_size = 40
+        
+        a = np.array([[self.p_val_cuttoff, 1], [1, 1]])
+        b = np.array([0.5, 0])
+        x = np.linalg.solve(a, b)
+        self.pre_red_transform = np.array([x[0], x[1]])        
+        
+        a = np.array([[self.p_val_cuttoff, 1], [0, 1]])
+        b = np.array([0.5, 1])
+        x = np.linalg.solve(a, b)
+        self.post_red_transform = np.array([x[0], x[1]])        
+        
+        self.subj_novelty_scores_un = []
+        self.verb_novelty_scores_un = []
+        self.obj_novelty_scores_un = []
+        self.log = log
+        self.log_dir = log_dir
+        self.p_type_hist = [self.p_type_dist.numpy()]
+        self.per_image_p_type = torch.tensor([])
+        self.ignore_verb_novelty = ignore_verb_novelty
         
     def reset(self):
         self.post_red = False
@@ -82,43 +90,35 @@ class TopLevelApp:
         self.all_feedback = torch.tensor([])
         self.all_cases = torch.tensor([])
         self.all_p_ni = torch.tensor([])
+        self.all_p_ni_raw = torch.tensor([])
         self.all_nc = torch.tensor([], dtype=torch.long)
         self.all_top_1_svo = []
         self.all_top_3_svo = []
         self.all_p_type = torch.tensor([])
         self.post_red_base = None
-        
-        self.und_manager.reset_lr_calibrators()
-        self.snd_manager.reset()
-        
-        self.curr_test_id = None
-        self.curr_round_id = None
-        self.hint_round = None
-        self.hint_img_path = None
-        self.red_light_th = None
-        self.pre_red_transform = None
-        self.post_red_transform = None
-        
-        self.first_sixty_subj_scores_u = []
-        self.first_sixty_verb_scores_u = []
-        self.first_sixty_obj_scores_u = []
+        self.subj_novelty_scores_un = []
+        self.verb_novelty_scores_un = []
+        self.obj_novelty_scores_un = []
+        self.p_type_hist = [self.p_type_dist.numpy()]
+        self.per_image_p_type = torch.tensor([])
+        self.all_red_light_scores = np.array([])
+
+        # self.und_manager.reset_lr_calibrators()
+        self.snd_manager.reset()        
 
     def run(self, csv_path, test_id, round_id, img_paths):
         if csv_path is None:
             raise Exception('path to csv was None')
 
-        self.curr_test_id = test_id
-        self.curr_round_id = round_id
-
         self.batch_context.reset()
 
-        # Initialize data loaders
+        # initialize data loaders
         scg_data_loader, novelty_dataset, N, image_paths, batch_cases = self._load_data(csv_path)
 
-        # Compute top-3 SVOs from SCG ensemble
-        scg_preds, _ = self.scg_ensemble.get_top3_SVOs(scg_data_loader, False)
+        # top-3 SVOs from SCG ensemble
+        scg_preds, _, _, _ = self.scg_ensemble.get_top3_SVOs(scg_data_loader, False)
 
-        # Unsupervised novelty scores
+        # unsupervised novelty scores
         unsupervised_results = self.und_manager.score(novelty_dataset, self.p_type_dist)
 
         subject_novelty_scores_u = unsupervised_results['subject_novelty_score']
@@ -128,6 +128,10 @@ class TopLevelApp:
         subject_novelty_scores = subject_novelty_scores_u
         verb_novelty_scores = verb_novelty_scores_u
         object_novelty_scores = object_novelty_scores_u
+
+        self.subj_novelty_scores_un += subject_novelty_scores_u
+        self.verb_novelty_scores_un += verb_novelty_scores_u
+        self.obj_novelty_scores_un += object_novelty_scores_u
 
         # if self.post_red and self.feedback_enabled:
         #     subject_novelty_scores_u_copy = [s.clone() if s is not None else None for s in subject_novelty_scores_u]
@@ -153,55 +157,17 @@ class TopLevelApp:
 
         assert len(subject_novelty_scores) == len(verb_novelty_scores) == len(object_novelty_scores)
 
-        case_1_lr, case_2_lr, case_3_lr = self.und_manager.get_calibrators()
-        base = self.all_p_ni.shape[0]
-        offset = N
-
-        # Compute P_ni        
-        if base < 60 and base + offset < 60:
-            self.first_sixty_subj_scores_u += subject_novelty_scores_u
-            self.first_sixty_verb_scores_u += verb_novelty_scores_u
-            self.first_sixty_obj_scores_u += object_novelty_scores_u
-            
-        elif base < 60 and base + offset >= 60:
-            self.first_sixty_subj_scores_u += subject_novelty_scores_u
-            self.first_sixty_verb_scores_u += verb_novelty_scores_u
-            self.first_sixty_obj_scores_u += object_novelty_scores_u
-            
-            self.first_sixty_subj_scores_u = self.first_sixty_subj_scores_u[:60]
-            self.first_sixty_verb_scores_u = self.first_sixty_verb_scores_u[:60]
-            self.first_sixty_obj_scores_u = self.first_sixty_obj_scores_u[:60]
-            
-            self.und_manager.tune_lr_calibrators(self.first_sixty_obj_scores_u, 
-                self.first_sixty_verb_scores_u, 
-                self.first_sixty_obj_scores_u)
-                    
-            unsupervised_results_recalibrated = self.und_manager.score(novelty_dataset, self.p_type_dist)
-    
-            subject_novelty_scores_r = unsupervised_results_recalibrated['subject_novelty_score']
-            verb_novelty_scores_r = unsupervised_results_recalibrated['verb_novelty_score']
-            object_novelty_scores_r = unsupervised_results_recalibrated['object_novelty_score']
-            
-            subject_novelty_scores = subject_novelty_scores_u[:60 - base] + subject_novelty_scores_r[60 - base:]
-            verb_novelty_scores = verb_novelty_scores_u[:60 - base] + verb_novelty_scores_r[60 - base:]
-            object_novelty_scores = object_novelty_scores_u[:60 - base] + object_novelty_scores_r[60 - base:]
-            
-            assert len(subject_novelty_scores) == N
-            assert len(verb_novelty_scores) == N
-            assert len(object_novelty_scores) == N
-                        
+        # compute P_n                        
         with torch.no_grad():
+            case_1_lr, case_2_lr, case_3_lr = self.und_manager.get_calibrators()
             batch_p_type, p_ni = compute_probability_novelty(subject_novelty_scores, verb_novelty_scores, object_novelty_scores, 
-                case_1_lr, case_2_lr, case_3_lr)
+                case_1_lr, case_2_lr, case_3_lr, ignore_t2_in_pni=self.ignore_verb_novelty)
 
         p_ni = p_ni.cpu().float()            
         batch_p_type = batch_p_type.cpu()
+        self.per_image_p_type = torch.cat([self.per_image_p_type, batch_p_type])
         
-        # if self.hint_img_path in img_paths:
-        #     first_novelty = img_paths.index(self.hint_img_path)
-        #     p_ni[first_novelty] = 1.0
-
-        # Merge top-3 SVOs
+        # merge top-3 SVOs
         top3_und = self.und_manager.get_top3(novelty_dataset, batch_p_type)        
         merged = self._merge_top3_SVOs(scg_preds, top3_und, p_ni)
         top_1 = [m[0][0] for m in merged]
@@ -213,7 +179,6 @@ class TopLevelApp:
         if not self.post_red or not self.feedback_enabled:
             batch_query_mask = torch.zeros(N, dtype=torch.long)
             batch_feedback_mask = torch.zeros(N, dtype=torch.long)
-
             self._accumulate(top_1, top_3, p_ni, batch_cases, batch_preds_is_nc, batch_feedback_mask, batch_query_mask, batch_p_type)
                         
         self.batch_context.p_ni = p_ni
@@ -232,55 +197,66 @@ class TopLevelApp:
         self.batch_context.p_type = batch_p_type
         
         p_ni = p_ni.numpy()
-        red_light_scores = np.zeros(N)
+        
+        # compute red-light scores
+        red_light_scores = np.ones(N)
         
         if not self.post_red:
             if self.all_p_ni.shape[0] >= 60:    
-                if self.red_light_th is None:
-                    self._compute_red_light_thresh()
-                    self._compute_score_transforms()
-                
-                red_light_scores = self._compute_moving_avg(self.all_p_ni, N)
                 start = self.all_p_ni.shape[0] - N
-                mask = np.array([start + i for i in range(N)])
-                mask = (mask > 60).astype(np.int)
-                red_light_scores *= mask
-            
-                # if not self.given_detection:
-                EPS = 1e-3    
-                p_gt_th = np.nonzero([p > self.red_light_th + EPS for p in red_light_scores])[0]
-                self.post_red = p_gt_th.shape[0] > 0
                 
+                for i in range(max(start, 60 + self.windows_size), start + N):
+                    p_val = ks_2samp(self.all_p_ni[:60].numpy(), self.all_p_ni[i - self.windows_size: i].numpy(), alternative='greater')[1]
+                    red_light_scores[i - start] = p_val
+
+                EPS = 1e-5
+                p_gt_th = np.nonzero([p < self.p_val_cuttoff - EPS for p in red_light_scores])[0]
+                self.post_red = p_gt_th.shape[0] > 0                                
                 first_novelty_instance_idx = p_gt_th[0] if self.post_red else red_light_scores.shape[0]
                 self.post_red_base = self.all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx if self.post_red else None
-                # elif self.curr_round_id == self.hint_round:
-                #     self.post_red = True
-                #     first_novelty_instance_idx = self.hint_round
-                #     self.post_red_base = self.all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx
         else:
             all_p_ni = np.concatenate([self.all_p_ni.numpy(), p_ni])
-            red_light_scores = self._compute_moving_avg(all_p_ni, N)
+            start = all_p_ni.shape[0] - N
             
-        if self.all_p_ni.shape[0] > 60:
-            assert self.pre_red_transform is not None
-            assert self.post_red_transform is not None
-        
-            for i in range(len(red_light_scores)):
-                if red_light_scores[i] <= self.red_light_th:
-                    red_light_scores[i] = self.pre_red_transform[0] * red_light_scores[i] + self.pre_red_transform[1]
-                else:
-                    red_light_scores[i] = self.post_red_transform[0] * red_light_scores[i] + self.post_red_transform[1]
+            for i in range(max(start, 60 + self.windows_size), start + N):
+                p_val = ks_2samp(all_p_ni[:60], all_p_ni[i - self.windows_size: i], alternative='greater')[1]
+                red_light_scores[i - start] = p_val
+            
+        for i in range(len(red_light_scores)):
+            if red_light_scores[i] >= self.p_val_cuttoff:
+                red_light_scores[i] = self.pre_red_transform[0] * red_light_scores[i] + self.pre_red_transform[1]
+            else:
+                red_light_scores[i] = self.post_red_transform[0] * red_light_scores[i] + self.post_red_transform[1]
          
         red_light_scores = np.clip(red_light_scores, 0.0, 1.0)
+        self.all_red_light_scores = np.concatenate([self.all_red_light_scores, red_light_scores])
          
-        # dictionary containing the return values
         ret = {}
         ret['p_ni'] = p_ni.tolist()
         ret['red_light_score'] = red_light_scores
         ret['svo'] = top_3
         ret['svo_probs'] = top_3_probs
-                         
+                                                  
         return ret
+
+    def test_completed_callback(self, test_id):
+        if not self.log:
+            return
+        
+        test_dir = Path(self.log_dir).joinpath(test_id)
+        test_dir.mkdir(exist_ok=True) 
+        with open(test_dir.joinpath(f'{test_id}.pkl'), 'wb') as handle:
+            logs = {}
+            logs['subj_novelty_scores_un'] = [s.cpu() if s is not None else None for s in self.subj_novelty_scores_un]
+            logs['verb_novelty_scores_un'] = [s.cpu() if s is not None else None for s in self.verb_novelty_scores_un]
+            logs['obj_novelty_scores_un'] = [s.cpu() if s is not None else None for s in self.obj_novelty_scores_un]
+            logs['p_ni'] = self.all_p_ni_raw.numpy()            
+            logs['per_img_p_type'] = self.per_image_p_type.numpy()
+            logs['post_red_base'] = self.post_red_base
+            logs['p_type'] = self.p_type_hist
+            logs['red_light_scores'] = self.all_red_light_scores
+
+            pickle.dump(logs, handle)
 
     def select_queries(self, feedback_max_ids):
         assert self.post_red, "query selection shoudn't happen pre-red button"
@@ -309,17 +285,11 @@ class TopLevelApp:
 
         if len(feedback_results) != len(self.batch_context.query_indices):
             print(f"\nWARNING: query/feedback mismatch, requested feedback for {len(self.batch_context.query_indices)} images but got feedback for {len(feedback_results)} images. Recalculating query mask...\n")
-
             N = len(self.batch_context.image_paths)
             self.batch_context.query_mask = torch.zeros(N, dtype=torch.long)
-
             query_indices = [self.batch_context.image_paths.index(k) for k in feedback_results.keys()]
-
             self.batch_context.query_mask[query_indices] = 1
             self.batch_context.query_indices = query_indices
-            
-        for k, v in feedback_results.items():
-            print(f'Feedback recevied for {k}: {v}')
             
         N = len(self.batch_context.image_paths)
         self.batch_context.feedback_mask = torch.zeros(N, dtype=torch.long)
@@ -340,56 +310,11 @@ class TopLevelApp:
             self.batch_context.p_type)
         
         self._type_inference()
-
-        # feedback interpretation and unsupervised score contexts update
+                
         # all_subject_indices, all_verb_indices, all_object_indices, subject_labels, verb_labels, object_labels = self._build_supervised_samples()
-
-        # retrains supervised detector
         # self._train_supervised_detector(all_subject_indices, all_verb_indices, all_object_indices, 
         #     subject_labels, verb_labels, object_labels)
-
-    def red_light_hint_callback(self, first_novelty_img_path):
-        assert self.hint_round is None, "red-light hint was previously set"
-        assert self.curr_test_id is not None and self.curr_round_id is not None
-        self.hint_round = self.curr_round_id + 1
-        self.hint_img_path = first_novelty_img_path
-
-    def _compute_moving_avg(self, p_n, num_elems):
-        base_offset = p_n.shape[0] - num_elems
-        assert base_offset >= 0, "There has to be at least 8 images in each round."
-        res = np.zeros(num_elems)
-        
-        for i in range(base_offset, base_offset + num_elems):
-            if i > 7:
-                res[i - base_offset] = p_n[:i + 1][-8:].mean()
-                
-        return res
-    
-    def _compute_red_light_thresh(self):
-        assert self.all_p_ni.shape[0] >= 60
-        
-        s = self.all_p_ni[:60]
-        s = np.concatenate([s for _ in range(10)], axis=0)
-        assert s.shape[0] == 600
-        
-        th = 0.0
-        for _ in range(50):
-            np.random.shuffle(s)
-            moving_avgs = self._compute_moving_avg(s, s.shape[0])
-            th = max(th, np.amax(moving_avgs))
-            
-        self.red_light_th = th
-        self.all_p_ni[:60] = 0
-            
-    def _compute_score_transforms(self):
-        assert self.red_light_th is not None, "red-light threshold hasn't been computed yet."
-        self.pre_red_transform = np.array([0.5 / self.red_light_th, 0])
-        
-        a = np.array([[self.red_light_th, 1], [1, 1]])
-        b = np.array([0.5, 1])
-        x = np.linalg.solve(a, b)
-        self.post_red_transform = np.array([x[0], x[1]])
-
+           
     def _merge_top3_SVOs(self, top3_non_novel, top3_novel, batch_p_ni):
         batch_p_ni = batch_p_ni.view(-1).numpy()
         N = len(batch_p_ni)
@@ -416,26 +341,16 @@ class TopLevelApp:
         
         filtered = self.all_p_type[self.post_red_base:][filter_v]
     
-        # types
         log_p_type_1 = self._infer_log_p_type(filtered[:, 0])
-        log_p_type_2 = self._infer_log_p_type(filtered[:, 1])
+        log_p_type_2 = self._infer_log_p_type(filtered[:, 1] if not self.ignore_verb_novelty else torch.zeros(filtered.shape[0]))
         log_p_type_3 = self._infer_log_p_type(filtered[:, 2])
         # log_p_type_4 = self._infer_log_p_type(filtered[:, 3])
     
         self.p_type_dist = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3])
         self.p_type_dist = torch.nn.functional.softmax(self.p_type_dist, dim=0).float()
         
-        print(f'p_type (product): {self.p_type_dist}')
-        
-        summed_p_type_1 = torch.sum(filtered[:, 0])
-        summed_p_type_2 = torch.sum(filtered[:, 1])
-        summed_p_type_3 = torch.sum(filtered[:, 2])
-        
-        sum_all = summed_p_type_1 + summed_p_type_2 + summed_p_type_3
-        
-        p_type_sum = torch.tensor([summed_p_type_1 / sum_all, summed_p_type_2 / sum_all, summed_p_type_3 / sum_all])
-        print(f'p_type (sum): {p_type_sum}')
-        
+        self.p_type_hist.append(self.p_type_dist.numpy())
+                
         assert not torch.any(torch.isnan(self.p_type_dist)), "NaNs in p_type."
         assert not torch.any(torch.isinf(self.p_type_dist)), "Infs in p_type."
 
@@ -521,6 +436,7 @@ class TopLevelApp:
         self.all_cases = torch.cat([self.all_cases, batch_cases])
         self.all_nc = torch.cat([self.all_nc, preds_is_nc])
         self.all_p_ni = torch.cat([self.all_p_ni, p_ni])
+        self.all_p_ni_raw = torch.cat([self.all_p_ni_raw, p_ni])
         self.all_feedback = torch.cat([self.all_feedback, feedback_mask])
         self.all_query_masks = torch.cat([self.all_query_masks, query_mask])
         self.all_p_type = torch.cat([self.all_p_type, p_type])
@@ -529,7 +445,7 @@ class TopLevelApp:
         assert self.all_nc.shape == self.all_p_ni.shape
         assert self.all_feedback.shape == self.all_query_masks.shape == self.all_cases.shape == self.all_p_ni.shape
 
-    def _build_supervised_samples(self):
+    def _build_supervised_training_dataset(self):
         query_indices = torch.tensor(self.batch_context.query_indices, dtype=torch.long)
 
         # t_star = torch.argmax(self.p_type_dist)
@@ -599,7 +515,7 @@ class TopLevelApp:
 
         return all_subject_indices, all_verb_indices, all_object_indices, subject_labels, verb_labels, object_labels
 
-    def _train_supervised_detector(self, all_subject_indices, all_verb_indices, all_object_indices,
+    def _train_supervised_detectors(self, all_subject_indices, all_verb_indices, all_object_indices,
         subject_labels, verb_labels, object_labels):
 
         assert self.batch_context.is_set(), "no batch context"
