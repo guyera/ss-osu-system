@@ -1,3 +1,5 @@
+import sys
+
 import torch
 import unsupervisednoveltydetection
 import noveltydetectionfeatures
@@ -15,7 +17,7 @@ detector.load_state_dict(state_dict['module'])
 testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
     name = 'Custom',
     data_root = 'Custom',
-    csv_path = 'Custom/annotations/dataset_v3_val.csv',
+    csv_path = 'Custom/annotations/dataset_v4_val.csv',
     training = False,
     image_batch_size = 16,
     feature_extraction_device = device
@@ -38,15 +40,12 @@ for example_spatial_features, example_subject_appearance_features, example_objec
     object_labels.append(object_label)
     verb_labels.append(verb_label)
 
-results = detector(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, torch.tensor([0.0, 1.0, 0.0, 0.0, 0.0], device = device))
+results = detector.scores_and_p_t4(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features)
 
 subject_scores = results['subject_novelty_score']
 object_scores = results['object_novelty_score']
 verb_scores = results['verb_novelty_score']
-p_known_svo = results['p_known_svo']
-p_known_sv = results['p_known_sv']
-p_known_so = results['p_known_so']
-p_known_vo = results['p_known_vo']
+p_t4 = results['p_t4']
 
 filtered_subject_scores = []
 filtered_subject_labels = []
@@ -207,9 +206,10 @@ case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression()
 case_3_logistic_regression.load_state_dict(state_dict['case_3_logistic_regression'])
 case_3_logistic_regression = case_3_logistic_regression.to(device)
 
-p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression)
-print(p_type.shape)
-print(p_n.shape)
+#p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = True, p_t4 = None)
+#p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = True, p_t4 = p_t4)
+#p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = None)
+p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = p_t4) # This gives the best results (thankfully)
 
 type_1_p_n = []
 type_1_p_type = []
@@ -273,11 +273,6 @@ argmax_type_2_p_type = torch.argmax(type_2_p_type, dim = 1)
 argmax_type_3_p_type = torch.argmax(type_3_p_type, dim = 1)
 argmax_nominal_p_type = torch.argmax(nominal_p_type, dim = 1)
 
-print(f'type_1_p_type: {type_1_p_type}')
-print(f'type_2_p_type: {type_2_p_type}')
-print(f'type_3_p_type: {type_3_p_type}')
-print(f'nominal_p_type: {nominal_p_type}')
-
 print(f'Predicted novelty types for type 1 data: {argmax_type_1_p_type + 1}')
 print(f'Predicted novelty types for type 2 data: {argmax_type_2_p_type + 1}')
 print(f'Predicted novelty types for type 3 data: {argmax_type_3_p_type + 1}')
@@ -310,7 +305,6 @@ scores = torch.cat((nominal_object_scores, type_3_object_scores), dim = 0)
 trues = torch.cat((torch.zeros_like(nominal_object_scores), torch.ones_like(type_3_object_scores)), dim = 0)
 auc = sklearn.metrics.roc_auc_score(trues.detach().cpu().numpy(), scores.detach().cpu().numpy())
 print(f'Type 3 object score AUC: {auc}')
-print(type_3_object_scores)
 
 print()
 
@@ -345,7 +339,6 @@ print(f'Number of type 2 examples: {len(type_2_p_n)}')
 print(f'Number of type 3 examples: {len(type_3_p_n)}')
 
 print()
-print(f'p_type: {p_type}')
 
 plt.scatter(nominal_x.detach().cpu().numpy(), nominal_p_n.detach().cpu().numpy(), label = 'No novelty', alpha = 0.2)
 plt.scatter(type_1_x.detach().cpu().numpy(), type_1_p_n.detach().cpu().numpy(), label = 'Type 1 novelty', alpha = 0.2)

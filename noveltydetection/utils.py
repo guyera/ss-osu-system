@@ -129,6 +129,7 @@ class ScoreContext:
         self.novel_scores = self.novel_scores.to(device)
         return self
 
+# If p_t4 is None, then it sets p_type[3] to zero and forfeits type 4 novelty.
 def compute_probability_novelty(
         subject_scores,
         verb_scores,
@@ -136,7 +137,8 @@ def compute_probability_novelty(
         case_1_logistic_regression,
         case_2_logistic_regression,
         case_3_logistic_regression,
-        ignore_t2_in_pni = True):
+        ignore_t2_in_pni = True,
+        p_t4 = None):
     p_type = []
     p_n = []
     for idx in range(len(subject_scores)):
@@ -148,39 +150,75 @@ def compute_probability_novelty(
             # Case 1
             scores = torch.stack((subject_score, verb_score, object_score), dim = 0).unsqueeze(0)
             logits = case_1_logistic_regression(scores).squeeze(0)
-            # To compute p_n, skip P(type = 0) and sum remaining probabilities
-            if ignore_t2_in_pni:
-                cur_p_n = torch.nn.functional.softmax(logits, dim = 0)[[1, 3]].sum()
-            else:
-                cur_p_n = torch.nn.functional.softmax(logits, dim = 0)[1:].sum()
+            softmax = torch.nn.functional.softmax(logits, dim = 0)
             # To compute p_type, we'll remove the type = 0 logit, and then
             # normalize to get p_type[i] = P(type = i) for i in {1, 2, 3}.
-            cur_partial_p_type = torch.nn.functional.softmax(logits[1:], dim = 0)
             # And, of course, we'll set p_type[3] to zero
-            cur_p_type = torch.cat((cur_partial_p_type, torch.zeros(1, device = cur_partial_p_type.device)), dim = 0)
+            if p_t4 is None:
+                # cur_p_n is P(type = 1) + P(type = 2) + P(type = 3)
+                if ignore_t2_in_pni:
+                    cur_p_n = softmax[[1, 3]].sum()
+                else:
+                    cur_p_n = softmax[1:].sum()
+
+                # cur_p_type is P(type = 1), P(type = 2), P(type = 3), 0,
+                # renormalized such that they sum to 1. This can be computed as
+                # the softmax of the type 1, 2, and 3 logits.
+                cur_partial_p_type = torch.nn.functional.softmax(logits[1:], dim = 0)
+                cur_p_type = torch.cat((cur_partial_p_type, torch.zeros(1, device = cur_partial_p_type.device)), dim = 0)
+            else:
+                # cur_p_n is P(type = 1) + P(type = 2) + P(type = 3) + P(type = 4)
+                # P(type = 4) = P(unknown combination | no novel boxes) * P(no novel boxes)
+                cur_p_t4 = p_t4[idx] * softmax[0]
+                if ignore_t2_in_pni:
+                    cur_p_n = softmax[[1, 3]].sum() + cur_p_t4
+                else:
+                    cur_p_n = softmax[1:].sum() + cur_p_t4
+
+                # cur_p_type is P(type = 1), P(type = 2), P(type = 3), P(type = 4),
+                # renormalized such that they sum to 1
+                cur_p_type_unnormalized = torch.cat((softmax[1:], cur_p_t4.unsqueeze(0)), dim = 0)
+                cur_p_type = cur_p_type_unnormalized / cur_p_type_unnormalized.sum()
         elif subject_score is not None:
             # Case 2
             scores = torch.stack((subject_score, verb_score), dim = 0).unsqueeze(0)
             logits = case_2_logistic_regression(scores).squeeze(0)
-            # To compute p_n, skip P(type = 0) and sum remaining probabilities
-            if ignore_t2_in_pni:
-                cur_p_n = torch.nn.functional.softmax(logits, dim = 0)[1]
+            softmax = torch.nn.functional.softmax(logits, dim = 0)
+            
+            if p_t4 is None:
+                # cur_p_n is P(type = 1) + P(type = 2)
+                if ignore_t2_in_pni:
+                    cur_p_n = softmax[1]
+                else:
+                    cur_p_n = softmax[1:].sum()
+                
+                # cur_p_type is P(type = 1), P(type = 2), 0, 0,
+                # renormalized such that they sum to 1. This can be computed as
+                # the softmax of the type 1 and 2 logits.
+                cur_partial_p_type = torch.nn.functional.softmax(logits[1:], dim = 0)
+                # And, of course, we'll set p_type[2] and p_type[3] to zero
+                cur_p_type = torch.cat((cur_partial_p_type, torch.zeros(2, device = cur_partial_p_type.device)), dim = 0)
             else:
-                cur_p_n = torch.nn.functional.softmax(logits, dim = 0)[1:].sum()
-            # To compute p_type, we'll remove the type = 0 logit, and then
-            # normalize to get p_type[i] = P(type = i) for i in {1, 2}.
-            cur_partial_p_type = torch.nn.functional.softmax(logits[1:], dim = 0)
-            # And, of course, we'll set p_type[2] and p_type[3] to zero
-            cur_p_type = torch.cat((cur_partial_p_type, torch.zeros(2, device = cur_partial_p_type.device)), dim = 0)
+                # cur_p_n is P(type = 1) + P(type = 2) + P(type = 4)
+                # P(type = 4) = P(unknown combination | no novel boxes) * P(no novel boxes)
+                cur_p_t4 = p_t4[idx] * softmax[0]
+                if ignore_t2_in_pni:
+                    cur_p_n = softmax[1] + cur_p_t4
+                else:
+                    cur_p_n = softmax[1:].sum() + cur_p_t4
+                
+                # cur_p_type is P(type = 1), P(type = 2), 0, P(type = 4),
+                # renormalized such that they sum to 1
+                cur_p_type_unnormalized = torch.cat((softmax[1:], torch.zeros(1, device = softmax.device), cur_p_t4.unsqueeze(0)), dim = 0)
+                cur_p_type = cur_p_type_unnormalized / cur_p_type_unnormalized.sum()
         else:
             # Case 3
             scores = object_score.unsqueeze(0).unsqueeze(0)
             logits = case_3_logistic_regression(scores).squeeze(0)
-            # To compute p_n, skip P(type = 0), setting p_n equal to the type 3
-            # probability
+            # cur_p_n is P(type = 3)
             cur_p_n = torch.nn.functional.softmax(logits, dim = 0)[1]
-            # In case 3, novelty type can only be 3 or 4. Since we're ignoring
-            # type 4, that leaves 100% probability for type 3.
+            # In case 3, novelty type can only be 3. So assign 100% probability
+            # to type 3 novelty and 0% to everything else
             cur_p_type = torch.zeros(4, device = cur_p_n.device)
             cur_p_type[2] = 1.0
 
