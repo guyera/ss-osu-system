@@ -109,7 +109,7 @@ class Ensemble:
         
     def get_top3_SVOs(self, data_loader, is_training, verbose=True):
         with torch.no_grad():
-            features, labels, is_null_flag, null_top3, is_subj_null, is_obj_null, verb_logits = self._compute_features(data_loader, is_training)
+            features, labels, is_null_flag, null_top3, is_subj_null, is_obj_null, subj_logits, verb_logits, obj_logits = self._compute_features(data_loader, is_training)
 
             features = [torch.Tensor(f) for f in features]
             features = torch.vstack(features)
@@ -145,7 +145,7 @@ class Ensemble:
             print(f'top1 accuracy: {count1 / len(labels)}')
             print(f'top3 accuracy: {count3 / len(labels)}')
 
-        return ret, verb_logits
+        return ret, subj_logits, verb_logits, obj_logits
         
     def _clean_result(self, my_net, orig_result, detections):
         # num_verb_cls = my_net.interaction_head.num_classes
@@ -273,7 +273,9 @@ class Ensemble:
 
     def _compute_features(self, data_loader, is_training):
         features = []
+        subj_logits = []
         verb_logits = []
+        obj_logits = []
         labels = []
         null_top3 = []
         is_null_flag = []
@@ -325,7 +327,10 @@ class Ensemble:
                         'valid_objects': output['valid_objects'],
                     }
                     
-                    verb_logits.append(result['verb_logits'])                    
+                    subj_logits.append(-np.max(result['subject_logits'][0].numpy()))                    
+                    verb_logits.append(-np.max(result['verb_logits'][0].numpy()))                    
+                    obj_logits.append(-np.max(result['object_logits'][0].numpy()))
+                    
                     result = self._clean_result(net, result, mod_detections[0])
                     ensemble_results[n] = result
                     
@@ -370,11 +375,11 @@ class Ensemble:
                     
                 features.append(ensemble_feature)
                 
-        return features, labels, is_null_flag, null_top3, is_subj_null, is_obj_null, verb_logits
+        return features, labels, is_null_flag, null_top3, is_subj_null, is_obj_null, subj_logits, verb_logits, obj_logits
 
     def _calibrate(self, cal_data_loader, val_data_loader):
-        cal_features, cal_labels, _, _, _, _ = self._compute_features(cal_data_loader, True)
-        val_features, val_labels, _, _, _, _ = self._compute_features(val_data_loader, True)
+        cal_features, cal_labels, _, _, _, _, _, _, _ = self._compute_features(cal_data_loader, True)
+        val_features, val_labels, _, _, _, _, _, _, _ = self._compute_features(val_data_loader, True)
 
         # calibration feature
         num_cal_samples = len(cal_features)

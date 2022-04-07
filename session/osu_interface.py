@@ -5,15 +5,17 @@ from toplevel import TopLevelApp
 
 
 class OSUInterface:
-    def __init__(self, scg_ensemble, data_root, pretrained_unsupervised_novelty_path, cusum_thresh, feedback_enabled, 
-        given_detection):
+    def __init__(self, scg_ensemble, data_root, pretrained_unsupervised_novelty_path, feedback_enabled, 
+        given_detection, log, log_dir, ignore_verb_novelty):
 
         self.app = TopLevelApp(ensemble_path=scg_ensemble, 
             data_root=data_root, 
             pretrained_unsupervised_module_path=pretrained_unsupervised_novelty_path,
-            th=cusum_thresh,
             feedback_enabled=feedback_enabled,
-            given_detection=given_detection)
+            given_detection=given_detection, 
+            log=log,
+            log_dir=log_dir,
+            ignore_verb_novelty=ignore_verb_novelty)
 
         self.temp_path = pathlib.Path('./session/temp/')
 
@@ -133,6 +135,8 @@ class OSUInterface:
 
     def end_test(self, test_id):
         print(f'==> OSU got end test {test_id}')
+
+        self.app.test_completed_callback(test_id)
 
     def end_session(self, session_id):
         print(f'==> OSU got end session {session_id}')

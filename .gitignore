@@ -1,4 +1,3 @@
-adaptation/crash.pth
 Custom
 __pycache__/
 pocket/
@@ -7,4 +6,6 @@ pretrained/
 Custom_v2
 Custom_v1
 dataset_v3
+dataset_v4
 .vscode/
+logs

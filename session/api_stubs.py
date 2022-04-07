@@ -42,7 +42,7 @@ class APIStubs:
         self.cache['last_csv'] = None
         self.cache['df'] = None
         self.cache['csv_data'] = None
-
+        
     def session_id(self):
         return '82b41225-f802-4ea0-ab53-648302261475'
 
