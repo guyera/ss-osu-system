@@ -29,7 +29,7 @@ class TopLevelApp:
         self.NUM_APP_FEATURES = 256 * 7 * 7
         self.NUM_VERB_FEATURES = self.NUM_APP_FEATURES + 2 * 36
         self.post_red = False
-        self.p_type_dist = torch.tensor([1/3, 1/3, 1/3, 0.0])
+        self.p_type_dist = torch.tensor([0.25, 0.25, 0.25, 0.25]) if not ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
         self.all_query_masks = torch.tensor([])
         self.all_feedback = torch.tensor([])
         self.all_cases = torch.tensor([])
@@ -161,7 +161,7 @@ class TopLevelApp:
         with torch.no_grad():
             case_1_lr, case_2_lr, case_3_lr = self.und_manager.get_calibrators()
             batch_p_type, p_ni = compute_probability_novelty(subject_novelty_scores, verb_novelty_scores, object_novelty_scores, 
-                case_1_lr, case_2_lr, case_3_lr, ignore_t2_in_pni=self.ignore_verb_novelty)
+                case_1_lr, case_2_lr, case_3_lr, ignore_t2_in_pni=self.ignore_verb_novelty, p_t4=unsupervised_results['p_t4'])
 
         p_ni = p_ni.cpu().float()            
         batch_p_type = batch_p_type.cpu()
@@ -341,12 +341,15 @@ class TopLevelApp:
         
         filtered = self.all_p_type[self.post_red_base:][filter_v]
     
-        log_p_type_1 = self._infer_log_p_type(filtered[:, 0])
-        log_p_type_2 = self._infer_log_p_type(filtered[:, 1] if not self.ignore_verb_novelty else torch.zeros(filtered.shape[0]))
-        log_p_type_3 = self._infer_log_p_type(filtered[:, 2])
-        # log_p_type_4 = self._infer_log_p_type(filtered[:, 3])
+        prior = 0.25 if not self.ignore_verb_novelty else 1/3
     
-        self.p_type_dist = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3])
+        log_p_type_1 = self._infer_log_p_type(prior, filtered[:, 0])
+        log_p_type_2 = self._infer_log_p_type(prior if not self.ignore_verb_novelty else 0, 
+                                              filtered[:, 1] if not self.ignore_verb_novelty else torch.zeros(filtered.shape[0]))
+        log_p_type_3 = self._infer_log_p_type(prior, filtered[:, 2])
+        log_p_type_4 = self._infer_log_p_type(prior, filtered[:, 3])
+    
+        self.p_type_dist = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4])
         self.p_type_dist = torch.nn.functional.softmax(self.p_type_dist, dim=0).float()
         
         self.p_type_hist.append(self.p_type_dist.numpy())
@@ -354,14 +357,14 @@ class TopLevelApp:
         assert not torch.any(torch.isnan(self.p_type_dist)), "NaNs in p_type."
         assert not torch.any(torch.isinf(self.p_type_dist)), "Infs in p_type."
 
-    def _infer_log_p_type(self, evidence):
+    def _infer_log_p_type(self, prior, evidence):
         LARGE_NEG_CONSTANT = -50.0
 
         zero_indices = torch.nonzero(torch.isclose(evidence, torch.zeros_like(evidence))).view(-1)
         log_ev = torch.log(evidence)
         log_ev[zero_indices] = LARGE_NEG_CONSTANT
         evidence = torch.sum(log_ev)
-        log_p_type = np.log(1/3) + evidence
+        log_p_type = prior + evidence
 
         return log_p_type
 

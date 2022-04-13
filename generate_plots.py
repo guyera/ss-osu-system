@@ -178,6 +178,7 @@ def plot(p):
 if __name__ == "__main__":
     p = ArgumentParser()
     p.add_argument('--log-dir', default='./logs')
+    p.add_argument('--cleanup', default=False, action='store_true')
     
     args = p.parse_args()
 
@@ -188,8 +189,9 @@ if __name__ == "__main__":
     for log_file_path in p.glob('*/*.pkl'):
         plot(log_file_path)
     
-    for log_file_path in p.glob('*/*.pkl'):
-        log_file_path.unlink()
+    if args.cleanup:
+        for log_file_path in p.glob('*/*.pkl'):
+            log_file_path.unlink()
         
     with zipfile.ZipFile('plots.zip', mode='w', compression=zipfile.ZIP_DEFLATED) as zipped:
         for test_dir in p.glob('*'):
@@ -198,12 +200,15 @@ if __name__ == "__main__":
                 
                 for img in test_dir.glob('*.jpg'):
                     zipped.write(img)
-                    img.unlink()
+                    if args.cleanup:
+                        img.unlink()
 
                 for img in test_dir.glob('*.png'):
                     zipped.write(img)
-                    img.unlink()
+                    if args.cleanup:
+                        img.unlink()
                     
-    for test_dir in p.glob('*'):
-        if test_dir.is_dir():
-            test_dir.rmdir()
+    if args.cleanup:
+        for test_dir in p.glob('*'):
+            if test_dir.is_dir():
+                test_dir.rmdir()
