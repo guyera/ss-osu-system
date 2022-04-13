@@ -2,48 +2,92 @@ import torch
 import argparse
 import pickle
 import os
+from torchvision.models import resnet50
 
 import noveltydetectionfeatures
 import unsupervisednoveltydetection.common
 
 import unittest
 
+class SubjectImageDataset(torch.utils.data.Dataset):
+    def __init__(self, novelty_feature_dataset):
+        super().__init__()
+        self.novelty_feature_dataset = novelty_feature_dataset
+    
+    def __len__(self):
+        return len(self.novelty_feature_dataset)
+
+    def __getitem__(self, idx):
+        _, _, _, _, labels, _, _, images, _, _ = self.novelty_feature_dataset[idx]
+        return images, labels
+
+class VerbImageDataset(torch.utils.data.Dataset):
+    def __init__(self, novelty_feature_dataset):
+        super().__init__()
+        self.novelty_feature_dataset = novelty_feature_dataset
+    
+    def __len__(self):
+        return len(self.novelty_feature_dataset)
+
+    def __getitem__(self, idx):
+        spatial_encodings, _, _, _, _, _, labels, _, _, images = self.novelty_feature_dataset[idx]
+        return images, spatial_encodings, labels
+        #return images, None, labels
+
+class ObjectImageDataset(torch.utils.data.Dataset):
+    def __init__(self, novelty_feature_dataset):
+        super().__init__()
+        self.novelty_feature_dataset = novelty_feature_dataset
+    
+    def __len__(self):
+        return len(self.novelty_feature_dataset)
+    
+    def __getitem__(self, idx):
+        _, _, _, _, _, labels, _, _, images, _ = self.novelty_feature_dataset[idx]
+        return images, labels
+
 class TestConfidenceCalibrationMethods(unittest.TestCase):
     def setUp(self):
         self.device = 'cuda:0'
         self.num_bins = 15
-        testing_set = unsupervisednoveltydetection.common.ReshapedNoveltyFeatureDataset(
-            noveltydetectionfeatures.NoveltyFeatureDataset(
-                name = 'Custom',
-                data_root = 'Custom',
-                csv_path = 'Custom/annotations/dataset_v4_val.csv',
-                training = False,
-                image_batch_size = 16,
-                feature_extraction_device = self.device
-            )
-        )
         
-        # Initialize the datasets in "train" mode. All this actually does is
-        # omit null instances (e.g. the subject_set will omit images which
-        # don't have subject boxes), which is helpful for testing of
-        # individual units.
-        subject_set = unsupervisednoveltydetection.common.SubjectDataset(testing_set, train = True)
-        object_set = unsupervisednoveltydetection.common.ObjectDataset(testing_set, train = True)
-        verb_set = unsupervisednoveltydetection.common.VerbDataset(testing_set, train = True)
+        backbone = resnet50(pretrained = False)
+        backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
+        backbone_state_dict = torch.load('unsupervisednoveltydetection/backbone_2.pth')
+        backbone.load_state_dict(backbone_state_dict)
+        backbone = backbone.to(self.device)
+        backbone.eval()
+        self.backbone = backbone
+        
+        full_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
+            name = 'Custom',
+            data_root = 'Custom',
+            csv_path = 'Custom/annotations/dataset_v4_val.csv',
+            training = False,
+            image_batch_size = 16,
+            backbone = backbone,
+            feature_extraction_device = self.device
+        )
 
-        # Remove novel 0 labels
-        id_subject_labels = list(range(1, 5))
-        id_object_labels = list(range(1, 12))
-        id_verb_labels = list(range(1, 8))
-        id_subject_indices = unsupervisednoveltydetection.common.get_indices_of_labels(subject_set, id_subject_labels)
-        id_object_indices = unsupervisednoveltydetection.common.get_indices_of_labels(object_set, id_object_labels)
-        id_verb_indices = unsupervisednoveltydetection.common.get_indices_of_labels(verb_set, id_verb_labels)
-        subject_set = torch.utils.data.Subset(subject_set, id_subject_indices)
-        object_set = torch.utils.data.Subset(object_set, id_object_indices)
-        verb_set = torch.utils.data.Subset(verb_set, id_verb_indices)
-
-        # The remaining datasets are used for evaluating AUC of subject, object,
-        # and verb classifiers in the open set setting.
+        subject_indices = []
+        verb_indices = []
+        object_indices = []
+        for idx, (_, _, _, _, subject_label, object_label, verb_label, _, _, _) in enumerate(full_dataset):
+            # Remove novel examples
+            if (subject_label is not None and subject_label.item() == 0) or (verb_label is not None and verb_label.item() == 0) or (object_label is not None and object_label.item() == 0):
+                continue
+            
+            # Find non-null examples
+            if subject_label is not None:
+                subject_indices.append(idx)
+            if verb_label is not None:
+                verb_indices.append(idx)
+            if object_label is not None:
+                object_indices.append(idx)
+        
+        subject_set = SubjectImageDataset(torch.utils.data.Subset(full_dataset, subject_indices))
+        verb_set = VerbImageDataset(torch.utils.data.Subset(full_dataset, verb_indices))
+        object_set = ObjectImageDataset(torch.utils.data.Subset(full_dataset, object_indices))
         
         # Construct data loader
         self.subject_loader = torch.utils.data.DataLoader(
@@ -63,24 +107,15 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         )
         
         # Create classifier
-        classifier = unsupervisednoveltydetection.common.Classifier(
-            12544,
-            12616,
-            1024,
-            5,
-            12,
-            8
-        )
-        
-        classifier_state_dict = torch.load('unsupervisednoveltydetection/confidence_classifier.pth')
+        classifier = unsupervisednoveltydetection.common.ClassifierV2(256, 5, 12, 8, 72)
+        classifier_state_dict = torch.load('unsupervisednoveltydetection/classifier_2.pth')
         classifier.load_state_dict(classifier_state_dict)
-        
         self.classifier = classifier.to(self.device)
         
-        calibrator = unsupervisednoveltydetection.common.ConfidenceCalibrator().to(self.device)
-        calibrator_state_dict = torch.load('unsupervisednoveltydetection/confidence_calibrator.pth')
+        calibrator = unsupervisednoveltydetection.common.ConfidenceCalibrator()
+        calibrator_state_dict = torch.load('unsupervisednoveltydetection/confidence_calibrator_2.pth')
         calibrator.load_state_dict(calibrator_state_dict)
-        self.calibrator = calibrator
+        self.calibrator = calibrator.to(self.device)
     
     def ece(self, confidences, correct):
         bin_starts = torch.arange(self.num_bins, device = self.device, dtype = torch.float) / self.num_bins
@@ -115,10 +150,11 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         subject_correct = []
         object_correct = []
         verb_correct = []
-        for features, labels in self.subject_loader:
-            features = features.to(self.device)
+        for images, labels in self.subject_loader:
+            images = images.to(self.device)
             labels = labels.to(self.device)
         
+            features = self.backbone(images)
             logits = self.classifier.predict_subject(features)
             
             uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)
@@ -138,10 +174,11 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             batch_correct = predictions == labels
             subject_correct.append(batch_correct)
 
-        for features, labels in self.object_loader:
-            features = features.to(self.device)
+        for images, labels in self.object_loader:
+            images = images.to(self.device)
             labels = labels.to(self.device)
         
+            features = self.backbone(images)
             logits = self.classifier.predict_object(features)
             
             uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)
@@ -161,10 +198,14 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             batch_correct = predictions == labels
             object_correct.append(batch_correct)
 
-        for features, labels in self.verb_loader:
-            features = features.to(self.device)
+        for images, spatial_encodings, labels in self.verb_loader:
+            images = images.to(self.device)
             labels = labels.to(self.device)
         
+            features = self.backbone(images)
+            if spatial_encodings is not None:
+                spatial_encodings = torch.flatten(spatial_encodings.to(self.device), start_dim = 1)
+                features = torch.cat((spatial_encodings, features), dim = 1)
             logits = self.classifier.predict_verb(features)
             
             uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)

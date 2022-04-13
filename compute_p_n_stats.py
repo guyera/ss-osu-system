@@ -1,5 +1,6 @@
 import sys
 
+from torchvision.models import resnet50
 import torch
 import unsupervisednoveltydetection
 import noveltydetectionfeatures
@@ -8,10 +9,19 @@ import noveltydetection
 import matplotlib.pyplot as plt
 
 device = 'cuda:0'
-detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(12544, 12616, 1024, 5, 12, 8)
-detector = detector.to(device)
 
-state_dict = torch.load('unsupervisednoveltydetection/unsupervised_novelty_detection_module.pth')
+backbone = resnet50(pretrained = False)
+backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
+backbone_state_dict = torch.load('unsupervisednoveltydetection/backbone_2.pth')
+backbone.load_state_dict(backbone_state_dict)
+backbone = backbone.to(device)
+backbone.eval()
+backbone = backbone
+
+classifier = unsupervisednoveltydetection.common.ClassifierV2(256, 5, 12, 8, 72)
+detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(classifier, 5, 12, 8)
+detector = detector.to(device)
+state_dict = torch.load('unsupervisednoveltydetection/unsupervised_novelty_detection_module_2.pth')
 detector.load_state_dict(state_dict['module'])
 
 testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
@@ -20,27 +30,34 @@ testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
     csv_path = 'Custom/annotations/dataset_v4_val.csv',
     training = False,
     image_batch_size = 16,
+    backbone = backbone,
     feature_extraction_device = device
 )
 
 spatial_features = []
-subject_appearance_features = []
-object_appearance_features = []
-verb_appearance_features = []
+subject_roi_features = []
+object_roi_features = []
+verb_roi_features = []
 subject_labels = []
 object_labels = []
 verb_labels = []
+subject_box_features = []
+object_box_features = []
+verb_box_features = []
         
-for example_spatial_features, example_subject_appearance_features, example_object_appearance_features, example_verb_appearance_features, subject_label, object_label, verb_label in testing_set:
+for example_spatial_features, example_subject_roi_features, example_object_roi_features, example_verb_roi_features, subject_label, object_label, verb_label, example_subject_box_image, example_object_box_image, example_verb_box_image in testing_set:
     spatial_features.append(example_spatial_features)
-    subject_appearance_features.append(example_subject_appearance_features)
-    object_appearance_features.append(example_object_appearance_features)
-    verb_appearance_features.append(example_verb_appearance_features)
+    subject_roi_features.append(example_subject_roi_features)
+    object_roi_features.append(example_object_roi_features)
+    verb_roi_features.append(example_verb_roi_features)
     subject_labels.append(subject_label)
     object_labels.append(object_label)
     verb_labels.append(verb_label)
+    subject_box_features.append(backbone(example_subject_box_image.unsqueeze(0)).squeeze(0) if example_subject_box_image is not None else None)
+    object_box_features.append(backbone(example_object_box_image.unsqueeze(0)).squeeze(0) if example_object_box_image is not None else None)
+    verb_box_features.append(backbone(example_verb_box_image.unsqueeze(0)).squeeze(0) if example_verb_box_image is not None else None)
 
-results = detector.scores_and_p_t4(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features)
+results = detector.scores_and_p_t4(spatial_features, subject_box_features, verb_box_features, object_box_features)
 
 subject_scores = results['subject_novelty_score']
 object_scores = results['object_novelty_score']

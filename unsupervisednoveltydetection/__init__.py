@@ -32,20 +32,12 @@ class UnsupervisedNoveltyDetector:
 
     # num_hidden_nodes is the number of hidden nodes used in each box classifier
     # MLP. It should be 1024 for the current box classifiers.
-    def __init__(self, num_appearance_features, num_verb_features, num_hidden_nodes, num_subj_cls, num_obj_cls, num_action_cls):
+    def __init__(self, classifier, num_subj_cls, num_obj_cls, num_action_cls):
         self.device = 'cpu'
-
-        self.classifier = unsupervisednoveltydetection.common.Classifier(
-            num_appearance_features,
-            num_verb_features,
-            num_hidden_nodes,
-            num_subj_cls,
-            num_obj_cls,
-            num_action_cls
-        )
-    
+        
+        self.classifier = classifier
         self.confidence_calibrator = unsupervisednoveltydetection.common.ConfidenceCalibrator()
-
+        
         self.known_svo_combinations = torch.zeros(num_subj_cls - 1, num_action_cls - 1, num_obj_cls - 1, dtype = torch.bool)
         self.known_sv_combinations = torch.zeros(num_subj_cls - 1, num_action_cls - 1, dtype = torch.bool)
         self.known_so_combinations = torch.zeros(num_subj_cls - 1, num_obj_cls - 1, dtype = torch.bool)

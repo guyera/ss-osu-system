@@ -1,4 +1,5 @@
 import torch
+from torchvision.models import resnet50
 import unsupervisednoveltydetection
 import noveltydetectionfeatures
 import sklearn.metrics
@@ -17,12 +18,17 @@ parser.add_argument(
 parser.add_argument(
     '--epochs',
     type = int,
-    default = 5000
+    default = 25000
 )
 parser.add_argument(
     '--lr',
     type = float,
-    default = 0.01
+    default = 0.05
+)
+parser.add_argument(
+    '--backbone-load-file',
+    type = str,
+    required = True
 )
 parser.add_argument(
     '--detector-load-file',
@@ -37,7 +43,15 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(12544, 12616, 1024, 5, 12, 8)
+backbone = resnet50(pretrained = False)
+backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
+backbone_state_dict = torch.load(args.backbone_load_file)
+backbone.load_state_dict(backbone_state_dict)
+backbone.eval()
+backbone = backbone.to(args.device)
+
+classifier = unsupervisednoveltydetection.common.ClassifierV2(256, 5, 12, 8, 72)
+detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(classifier, 5, 12, 8)
 detector = detector.to(args.device)
 
 state_dict = torch.load(args.detector_load_file)
@@ -49,27 +63,29 @@ testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
     csv_path = 'Custom/annotations/dataset_v4_val.csv',
     training = False,
     image_batch_size = 16,
-    feature_extraction_device = args.device
+    backbone = backbone,
+    feature_extraction_device = args.device,
+    cache_to_disk = False
 )
 
 spatial_features = []
-subject_appearance_features = []
-object_appearance_features = []
-verb_appearance_features = []
 subject_labels = []
 object_labels = []
 verb_labels = []
+subject_features = []
+object_features = []
+verb_features = []
         
-for example_spatial_features, example_subject_appearance_features, example_object_appearance_features, example_verb_appearance_features, subject_label, object_label, verb_label in testing_set:
+for example_spatial_features, _, _, _, subject_label, object_label, verb_label, subject_image, object_image, verb_image in testing_set:
     spatial_features.append(example_spatial_features)
-    subject_appearance_features.append(example_subject_appearance_features)
-    object_appearance_features.append(example_object_appearance_features)
-    verb_appearance_features.append(example_verb_appearance_features)
     subject_labels.append(subject_label)
     object_labels.append(object_label)
     verb_labels.append(verb_label)
+    subject_features.append(backbone(subject_image.unsqueeze(0)).squeeze(0) if subject_image is not None else None)
+    object_features.append(backbone(object_image.unsqueeze(0)).squeeze(0) if object_image is not None else None)
+    verb_features.append(backbone(verb_image.unsqueeze(0)).squeeze(0) if verb_image is not None else None)
 
-results = detector(spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, torch.tensor([0.0, 1.0, 0.0, 0.0, 0.0], device = args.device))
+results = detector(spatial_features, subject_features, verb_features, object_features, torch.tensor([0.0, 1.0, 0.0, 0.0, 0.0], device = args.device))
 
 subject_scores = results['subject_novelty_score']
 object_scores = results['object_novelty_score']
