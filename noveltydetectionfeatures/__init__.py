@@ -2,16 +2,14 @@ import pickle
 import os
 import torch
 import pocket
-from utils import compute_spatial_encodings, binary_focal_loss
+from utils import compute_spatial_encodings, binary_focal_loss, fpn_backbone
 from torchvision.ops import MultiScaleRoIAlign
 from torchvision.models.detection import transform
 from models.scg.scg import HOINetworkTransform
 import pocket.models as models
 from data.data_factory import DataFactory
 from torch.utils.data import DataLoader, DistributedSampler
-from torchvision.models.detection.backbone_utils import BackboneWithFPN
 from utils import custom_collate
-from torchvision.ops.feature_pyramid_network import LastLevelMaxPool
 import torchvision
 
 class AdaptivePad:
@@ -73,15 +71,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
         
         # Construct self.fpn_backbone around self.backbone via
         # torchvision.models.detection.backbone_utils._resnet_fpn_extractor().
-        for parameter in backbone.parameters():
-            parameter.requires_grad_(False)
-        extra_blocks = LastLevelMaxPool()
-        returned_layers = [1, 2, 3, 4]
-        return_layers = {f'layer{k}': str(v) for v, k in enumerate(returned_layers)}
-        in_channels_stage2 = backbone.inplanes // 8
-        in_channels_list = [in_channels_stage2 * 2 ** (i - 1) for i in returned_layers]
-        out_channels = 256
-        self.fpn_backbone = BackboneWithFPN(backbone, return_layers, in_channels_list, out_channels, extra_blocks=extra_blocks).to(feature_extraction_device)
+        self.fpn_backbone = fpn_backbone(backbone).to(feature_extraction_device)
 
         if cache_to_disk:
             if not os.path.exists(filename):

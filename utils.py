@@ -1,5 +1,7 @@
 import torch
 import torchvision.ops.boxes as box_ops
+from torchvision.models.detection.backbone_utils import BackboneWithFPN
+from torchvision.ops.feature_pyramid_network import LastLevelMaxPool
 
 from torch import Tensor
 from typing import List, Tuple
@@ -371,3 +373,15 @@ def get_map(keys, scores, bboxes):
             key = keys[i]
             map[hoi_id], mrec[hoi_id] = calc_ap(score, bbox, key, hoi_id, begin)
     return map, mrec
+
+def fpn_backbone(backbone):
+    for parameter in backbone.parameters():
+        parameter.requires_grad_(False)
+    extra_blocks = LastLevelMaxPool()
+    returned_layers = [1, 2, 3, 4]
+    return_layers = {f'layer{k}': str(v) for v, k in enumerate(returned_layers)}
+    in_channels_stage2 = backbone.inplanes // 8
+    in_channels_list = [in_channels_stage2 * 2 ** (i - 1) for i in returned_layers]
+    out_channels = 256
+    return BackboneWithFPN(backbone, return_layers, in_channels_list, out_channels, extra_blocks=extra_blocks)
+
