@@ -5,12 +5,13 @@ from toplevel import TopLevelApp
 
 
 class OSUInterface:
-    def __init__(self, scg_ensemble, data_root, pretrained_unsupervised_novelty_path, feedback_enabled, 
-        given_detection, log, log_dir, ignore_verb_novelty):
+    def __init__(self, scg_ensemble, data_root, pretrained_unsupervised_novelty_path, pretrained_backbone_path, 
+        feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty):
 
         self.app = TopLevelApp(ensemble_path=scg_ensemble, 
             data_root=data_root, 
             pretrained_unsupervised_module_path=pretrained_unsupervised_novelty_path,
+            pretrained_backbone_path=pretrained_backbone_path,
             feedback_enabled=feedback_enabled,
             given_detection=given_detection, 
             log=log,
@@ -81,7 +82,7 @@ class OSUInterface:
         csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}.csv')
         df.to_csv(csv_path, index=True)
         
-        ret = self.app.run(csv_path, test_id, round_id, df['new_image_path'].to_list())
+        ret = self.app.process_batch(csv_path, test_id, round_id, df['new_image_path'].to_list())
         p_ni = ret['p_ni']
         red_light_scores = ret['red_light_score']
         top_3 = ret['svo']

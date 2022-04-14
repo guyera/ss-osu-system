@@ -178,6 +178,7 @@ def plot(p):
 if __name__ == "__main__":
     p = ArgumentParser()
     p.add_argument('--log-dir', default='./logs')
+    p.add_argument('--out-dir', default='.')
     p.add_argument('--cleanup', default=False, action='store_true')
     
     args = p.parse_args()
@@ -186,6 +187,12 @@ if __name__ == "__main__":
     if not p.exists():
         raise Exception(f'log directory {p} was not found.')
     
+    out_path = Path(args.out_dir)
+    if not out_path.exists():
+        raise Exception(f'output directory {out_path} was not found.')
+
+    out_path = out_path.joinpath('plots.zip')
+
     for log_file_path in p.glob('*/*.pkl'):
         plot(log_file_path)
     
@@ -193,7 +200,7 @@ if __name__ == "__main__":
         for log_file_path in p.glob('*/*.pkl'):
             log_file_path.unlink()
         
-    with zipfile.ZipFile('plots.zip', mode='w', compression=zipfile.ZIP_DEFLATED) as zipped:
+    with zipfile.ZipFile(out_path, mode='w', compression=zipfile.ZIP_DEFLATED) as zipped:
         for test_dir in p.glob('*'):
             if test_dir.is_dir():
                 zipped.write(test_dir)

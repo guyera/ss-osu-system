@@ -1,7 +1,7 @@
 import torch
-import noveltydetection
 from unsupervisednoveltydetection import UnsupervisedNoveltyDetector
-from noveltydetection.utils import tune_logistic_regressions
+from noveltydetection.utils import Case1LogisticRegression, Case2LogisticRegression, Case3LogisticRegression
+from unsupervisednoveltydetection.common import ClassifierV2
 from adaptation.supervised_anomaly_detectors import train_supervised_models, eval_supervised
 
 
@@ -60,37 +60,25 @@ class UnsupervisedNoveltyDetectionManager:
     def __init__(self, 
         pretrained_path, 
         num_subject_classes, 
-        num_object_classes, 
         num_verb_classes,
-        num_appearance_features, 
-        num_verb_features):
-
-        self.num_appearance_features = num_appearance_features
-        self.num_verb_features = num_verb_features
-
-        self.pretrained_path = pretrained_path
-
-        self.detector = UnsupervisedNoveltyDetector(num_appearance_features=self.num_appearance_features, 
-            num_verb_features=self.num_verb_features, 
-            num_hidden_nodes=1024, 
-            num_subj_cls=num_subject_classes, 
-            num_obj_cls=num_object_classes, 
-            num_action_cls=num_verb_classes)
-
-        self.detector = self.detector.to('cuda:0')
-
+        num_object_classes, 
+        num_spatial_features):
+       
+        classifier = ClassifierV2(256, num_subject_classes, num_object_classes, num_verb_classes, num_spatial_features)
+        self.detector = UnsupervisedNoveltyDetector(classifier, num_subject_classes, num_object_classes, num_verb_classes)
         state_dict = torch.load(pretrained_path)
         self.detector.load_state_dict(state_dict['module'])
-
-        self.case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression()
+        self.detector = self.detector.to('cuda:0')
+        
+        self.case_1_logistic_regression = Case1LogisticRegression()
         self.case_1_logistic_regression.load_state_dict(state_dict['case_1_logistic_regression'])
         self.case_1_logistic_regression = self.case_1_logistic_regression.to('cuda:0')
         
-        self.case_2_logistic_regression = noveltydetection.utils.Case2LogisticRegression()
+        self.case_2_logistic_regression = Case2LogisticRegression()
         self.case_2_logistic_regression.load_state_dict(state_dict['case_2_logistic_regression'])
         self.case_2_logistic_regression = self.case_2_logistic_regression.to('cuda:0')
         
-        self.case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression()
+        self.case_3_logistic_regression = Case3LogisticRegression()
         self.case_3_logistic_regression.load_state_dict(state_dict['case_3_logistic_regression'])
         self.case_3_logistic_regression = self.case_3_logistic_regression.to('cuda:0')
         
@@ -103,92 +91,79 @@ class UnsupervisedNoveltyDetectionManager:
         self.case_3_scores = state_dict['case_3_scores'].to('cuda:0')
         self.case_3_labels = state_dict['case_3_labels'].to('cuda:0')
         
-    def reset_lr_calibrators(self):
-        state_dict = torch.load(self.pretrained_path)
+    # def reset_lr_calibrators(self):
+    #     state_dict = torch.load(self.pretrained_path)
 
-        self.case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression()
-        self.case_1_logistic_regression.load_state_dict(state_dict['case_1_logistic_regression'])
-        self.case_1_logistic_regression = self.case_1_logistic_regression.to('cuda:0')
+    #     self.case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression()
+    #     self.case_1_logistic_regression.load_state_dict(state_dict['case_1_logistic_regression'])
+    #     self.case_1_logistic_regression = self.case_1_logistic_regression.to('cuda:0')
         
-        self.case_2_logistic_regression = noveltydetection.utils.Case2LogisticRegression()
-        self.case_2_logistic_regression.load_state_dict(state_dict['case_2_logistic_regression'])
-        self.case_2_logistic_regression = self.case_2_logistic_regression.to('cuda:0')
+    #     self.case_2_logistic_regression = noveltydetection.utils.Case2LogisticRegression()
+    #     self.case_2_logistic_regression.load_state_dict(state_dict['case_2_logistic_regression'])
+    #     self.case_2_logistic_regression = self.case_2_logistic_regression.to('cuda:0')
         
-        self.case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression()
-        self.case_3_logistic_regression.load_state_dict(state_dict['case_3_logistic_regression'])
-        self.case_3_logistic_regression = self.case_3_logistic_regression.to('cuda:0')
+    #     self.case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression()
+    #     self.case_3_logistic_regression.load_state_dict(state_dict['case_3_logistic_regression'])
+    #     self.case_3_logistic_regression = self.case_3_logistic_regression.to('cuda:0')
         
-        self.case_1_scores = state_dict['case_1_scores'].to('cuda:0')
-        self.case_1_labels = state_dict['case_1_labels'].to('cuda:0')
+    #     self.case_1_scores = state_dict['case_1_scores'].to('cuda:0')
+    #     self.case_1_labels = state_dict['case_1_labels'].to('cuda:0')
 
-        self.case_2_scores = state_dict['case_2_scores'].to('cuda:0')
-        self.case_2_labels = state_dict['case_2_labels'].to('cuda:0')
+    #     self.case_2_scores = state_dict['case_2_scores'].to('cuda:0')
+    #     self.case_2_labels = state_dict['case_2_labels'].to('cuda:0')
 
-        self.case_3_scores = state_dict['case_3_scores'].to('cuda:0')
-        self.case_3_labels = state_dict['case_3_labels'].to('cuda:0')
+    #     self.case_3_scores = state_dict['case_3_scores'].to('cuda:0')
+    #     self.case_3_labels = state_dict['case_3_labels'].to('cuda:0')
             
-    def tune_lr_calibrators(self, subj_scores, verb_scores, obj_scores):
-        assert len(subj_scores) == 60
-        assert len(verb_scores) == 60
-        assert len(obj_scores) == 60
+    # def tune_lr_calibrators(self, subj_scores, verb_scores, obj_scores):
+    #     assert len(subj_scores) == 60
+    #     assert len(verb_scores) == 60
+    #     assert len(obj_scores) == 60
     
-        subj_scores = [s.clone().to('cuda:0') if s is not None else None for s in subj_scores]
-        verb_scores = [s.clone().to('cuda:0') if s is not None else None for s in verb_scores]
-        obj_scores = [s.clone().to('cuda:0') if s is not None else None for s in obj_scores]
+    #     subj_scores = [s.clone().to('cuda:0') if s is not None else None for s in subj_scores]
+    #     verb_scores = [s.clone().to('cuda:0') if s is not None else None for s in verb_scores]
+    #     obj_scores = [s.clone().to('cuda:0') if s is not None else None for s in obj_scores]
         
-        tune_logistic_regressions(self.case_1_logistic_regression, 
-            self.case_2_logistic_regression,
-            self.case_3_logistic_regression, 
-            self.case_1_scores, 
-            self.case_2_scores, 
-            self.case_3_scores, 
-            self.case_1_labels, 
-            self.case_2_labels, 
-            self.case_3_labels, 
-            subj_scores, 
-            verb_scores, 
-            obj_scores)            
+    #     tune_logistic_regressions(self.case_1_logistic_regression, 
+    #         self.case_2_logistic_regression,
+    #         self.case_3_logistic_regression, 
+    #         self.case_1_scores, 
+    #         self.case_2_scores, 
+    #         self.case_3_scores, 
+    #         self.case_1_labels, 
+    #         self.case_2_labels, 
+    #         self.case_3_labels, 
+    #         subj_scores, 
+    #         verb_scores, 
+    #         obj_scores)            
             
     def get_calibrators(self):
         return self.case_1_logistic_regression, self.case_2_logistic_regression, self.case_3_logistic_regression
 
-    def score(self, dataset, p_type):
-        all_spatial_features = []
-        all_subject_appearance_features = []
-        all_object_appearance_features = []
-        all_verb_appearance_features = []
-
-        for spatial_features, subj_app_features, obj_app_features, verb_app_features, _, _, _ in dataset:
-            all_spatial_features.append(spatial_features)
-            all_subject_appearance_features.append(subj_app_features)
-            all_object_appearance_features.append(obj_app_features)
-            all_verb_appearance_features.append(verb_app_features)
-
-        with torch.no_grad():
-            results = self.detector.scores_and_p_t4(all_spatial_features, all_subject_appearance_features, 
-                all_verb_appearance_features, all_object_appearance_features)
-
-        return results
+    def top3(self, backbone, dataset, batch_p_type):
+        spatial_features = []
+        subject_box_features = []
+        object_box_features = []
+        verb_box_features = []
         
-    def get_top3(self, dataset, batch_p_type):
-        all_spatial_features = []
-        all_subject_appearance_features = []
-        all_object_appearance_features = []
-        all_verb_appearance_features = []
-
-        for spatial_features, subj_app_features, obj_app_features, verb_app_features, _, _, _ in dataset:
-            all_spatial_features.append(spatial_features)
-            all_subject_appearance_features.append(subj_app_features)
-            all_object_appearance_features.append(obj_app_features)
-            all_verb_appearance_features.append(verb_app_features)
+        for example_spatial_features, _, _, _, _, _, _, example_subject_images, example_object_images, example_verb_images in dataset:
+            spatial_feature = example_spatial_features if example_spatial_features is not None else None
+            subject_feature = backbone(example_subject_images.unsqueeze(0)).squeeze(0) if example_subject_images is not None else None
+            object_feature = backbone(example_object_images.unsqueeze(0)).squeeze(0) if example_object_images is not None else None
+            verb_feature = backbone(example_verb_images.unsqueeze(0)).squeeze(0) if example_verb_images is not None else None
+            
+            spatial_features.append(spatial_feature)
+            subject_box_features.append(subject_feature)
+            object_box_features.append(object_feature)
+            verb_box_features.append(verb_feature)
 
         with torch.no_grad():
-            results = self.detector.top3(all_spatial_features, all_subject_appearance_features, 
-                all_verb_appearance_features, all_object_appearance_features, batch_p_type)
+            top3 = self.detector.top3(spatial_features, subject_box_features, verb_box_features, 
+                object_box_features, batch_p_type)
 
-        assert not any([any([torch.isnan(p[1]).item() for p in preds]) for preds in results['top3']]), "NaNs in unsupervied detector's top-3"
+        assert not any([any([torch.isnan(p[1]).item() for p in preds]) for preds in top3['top3']]), "NaNs in unsupervied detector's top-3"
                 
-        for i, p in enumerate(results['top3']):
+        for i, p in enumerate(top3['top3']):
             new_p = []
             for j in range(3):
                 if j < len(p):
@@ -206,10 +181,33 @@ class UnsupervisedNoveltyDetectionManager:
 
                 new_p.append(e)
 
-            results['top3'][i] = new_p
+            top3['top3'][i] = new_p
+            
+        return top3['top3']    
 
-        return results['top3']
+    def score(self, backbone, dataset):
+        spatial_features = []
+        subject_box_features = []
+        object_box_features = []
+        verb_box_features = []
         
+        for example_spatial_features, _, _, _, _, _, _, example_subject_images, example_object_images, example_verb_images in dataset:
+            spatial_feature = example_spatial_features if example_spatial_features is not None else None
+            subject_feature = backbone(example_subject_images.unsqueeze(0)).squeeze(0) if example_subject_images is not None else None
+            object_feature = backbone(example_object_images.unsqueeze(0)).squeeze(0) if example_object_images is not None else None
+            verb_feature = backbone(example_verb_images.unsqueeze(0)).squeeze(0) if example_verb_images is not None else None
+            
+            spatial_features.append(spatial_feature)
+            subject_box_features.append(subject_feature)
+            object_box_features.append(object_feature)
+            verb_box_features.append(verb_feature)
+
+        with torch.no_grad():
+            results = self.detector.scores_and_p_t4(spatial_features, subject_box_features, verb_box_features, 
+                object_box_features)
+
+        return results
+
 
 class SupervisedNoveltyDetectionManager:
     def __init__(self, num_appearance_features, num_verb_features):
