@@ -9,7 +9,8 @@ python main.py \
 --scg-ensemble <path-to-pretrained-SCG-ensemble> \
 --pretrained-unsupervised-novelty-path <path-to-pretrained-unsupervised-module> \
 --sys_results_dir <path-to-a-writeable-directory-for-temp-storage-of-results-to-be-sent-to-the-API> \
---detection_feedback
+--detection-feedback \
+--given-detection
 ```
 
 Two of the arguments come with sensible default values, supporting this simpler invocation:
@@ -21,8 +22,6 @@ python main.py \
 ```
 
 There is a classification_feedback argument that could be added, but our system does not currently implement it.
-
-There is also a given_detection argument that will be supported in our final system, but that is not yet supported in this version.
 
 While our system will function if the detection_feedback argument is omitted, it will apply its initial strategy throughout, rather than demonstrating adaptation.  We are assuming that the main evaluation runs will be with detection_feedback turned on. 
 

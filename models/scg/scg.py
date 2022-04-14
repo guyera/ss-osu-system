@@ -106,10 +106,7 @@ class GenericHOINetwork(nn.Module):
             If True, rescale bounding boxes to original image size
     """
 
-    def __init__(self,
-                 backbone: nn.Module, interaction_head: nn.Module,
-                 transform: nn.Module, postprocess: bool = True
-                 ) -> None:
+    def __init__(self, backbone, interaction_head: nn.Module, transform: nn.Module, postprocess: bool = True) -> None:
         super().__init__()
         self.backbone = backbone
         self.interaction_head = interaction_head
@@ -117,19 +114,12 @@ class GenericHOINetwork(nn.Module):
 
         self.postprocess = postprocess
 
-    def preprocess(self,
-                   images: List[Tensor],
-                   detections: List[dict],
-                   targets: Optional[List[dict]] = None
-                   ) -> Tuple[
-        List[Tensor], List[dict],
-        List[dict], List[Tuple[int, int]]
-    ]:
+    def preprocess(self, images: List[Tensor], detections: List[dict],
+                   targets: Optional[List[dict]] = None) -> Tuple[List[Tensor], List[dict], List[dict], List[Tuple[int, int]]]:
+                   
         original_image_sizes = [img.shape[-2:] for img in images]
         images, targets = self.transform(images, targets)
-        for im_id, (det, o_im_s, im_s) in enumerate(zip(
-                detections, original_image_sizes, images.image_sizes
-        )):
+        for im_id, (det, o_im_s, im_s) in enumerate(zip(detections, original_image_sizes, images.image_sizes)):
             sub_boxes = det['subject_boxes']
 
             # Tracking empty boxes so that we can ignore them during training of object classification head and to
@@ -217,18 +207,16 @@ class GenericHOINetwork(nn.Module):
         if self.training and targets is None:
             raise ValueError("In training mode, targets should be passed")
 
-        images, detections, targets, original_image_sizes = self.preprocess(
-            images, detections, targets)
+        images, detections, targets, original_image_sizes = self.preprocess(images, detections, targets)
         features = self.backbone(images.tensors)
-        results = self.interaction_head(features, detections,
-                                        images.image_sizes, targets)
+        
+        results = self.interaction_head(features, detections, images.image_sizes, targets)
 
         if self.postprocess and results is not None:
             return self.transform.postprocess(
                 results,
                 images.image_sizes,
-                original_image_sizes
-            )
+                original_image_sizes)
         else:
             return results
 
@@ -315,9 +303,6 @@ class GenericHOINetwork(nn.Module):
 
 class SpatiallyConditionedGraph(GenericHOINetwork):
     def __init__(self,
-                 # Backbone parameters
-                 backbone_name: str = "resnet50",
-                 pretrained: bool = True,
                  # Pooler parameters
                  output_size: int = 7,
                  sampling_ratio: int = 2,
@@ -339,21 +324,17 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
                  # Preprocessing parameters
                  box_nms_thresh: float = 0.5,
                  max_subject: int = 15,
-                 max_object: int = 15
-                 ) -> None:
-        detector = models.fasterrcnn_resnet_fpn(backbone_name,
-                                                pretrained=pretrained)
+                 max_object: int = 15) -> None:
+        detector = models.fasterrcnn_resnet_fpn('resnet50', pretrained=True)
         backbone = detector.backbone
 
         box_roi_pool = MultiScaleRoIAlign(
             featmap_names=['0', '1', '2', '3'],
             output_size=output_size,
-            sampling_ratio=sampling_ratio
-        )
+            sampling_ratio=sampling_ratio)
+            
         representation_size = 1024
-        box_head = TwoMLPHead(
-            backbone.out_channels * 7 ** 2,
-            representation_size)
+        box_head = TwoMLPHead(backbone.out_channels * 7 ** 2, representation_size)
 
         box_pair_head = GraphHead(
             out_channels=backbone.out_channels,
@@ -364,8 +345,7 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             num_object_cls=num_obj_classes,
             num_subject_cls=num_subject_classes,
             fg_iou_thresh=fg_iou_thresh,
-            num_iter=num_iterations
-        )
+            num_iter=num_iterations)
 
         box_verb_predictor = nn.Linear(representation_size * 2, num_classes)
         box_verb_suppressor = nn.Linear(representation_size * 2, 1)
@@ -387,16 +367,14 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             box_score_thresh=box_score_thresh,
             max_subject=max_subject,
             max_object=max_object,
-            distributed=distributed
-        )
+            distributed=distributed)
 
         if image_mean is None:
             image_mean = [0.485, 0.456, 0.406]
         if image_std is None:
             image_std = [0.229, 0.224, 0.225]
             
-        transform = HOINetworkTransform(min_size, max_size,
-                                        image_mean, image_std)
+        transform = HOINetworkTransform(min_size, max_size, image_mean, image_std)
 
         super().__init__(backbone, interaction_head, transform, postprocess)
 

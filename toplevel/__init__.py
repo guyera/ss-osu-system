@@ -13,11 +13,12 @@ from noveltydetection.utils import compute_probability_novelty
 from adaptation.query_formulation import select_queries
 import pickle
 from scipy.stats import ks_2samp
+from torchvision.models import resnet50
 
 
 class TopLevelApp:
-    def __init__(self, ensemble_path, data_root, pretrained_unsupervised_module_path, feedback_enabled, given_detection, 
-        log, log_dir, ignore_verb_novelty):
+    def __init__(self, ensemble_path, data_root, pretrained_unsupervised_module_path, pretrained_backbone_path, 
+        feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty):
 
         if not Path(ensemble_path).exists():
             raise Exception(f'pretrained SCG model was not found in path {ensemble_path}')
@@ -26,8 +27,7 @@ class TopLevelApp:
         self.NUM_SUBJECT_CLASSES = 5
         self.NUM_OBJECT_CLASSES = 12
         self.NUM_VERB_CLASSES = 8
-        self.NUM_APP_FEATURES = 256 * 7 * 7
-        self.NUM_VERB_FEATURES = self.NUM_APP_FEATURES + 2 * 36
+        self.NUM_SPATIAL_FEATURES = 2 * 36
         self.post_red = False
         self.p_type_dist = torch.tensor([0.25, 0.25, 0.25, 0.25]) if not ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
         self.all_query_masks = torch.tensor([])
@@ -46,12 +46,11 @@ class TopLevelApp:
 
         self.und_manager = UnsupervisedNoveltyDetectionManager(pretrained_unsupervised_module_path, 
             self.NUM_SUBJECT_CLASSES, 
-            self.NUM_OBJECT_CLASSES, 
             self.NUM_VERB_CLASSES, 
-            self.NUM_APP_FEATURES, 
-            self.NUM_VERB_FEATURES)
+            self.NUM_OBJECT_CLASSES, 
+            self.NUM_SPATIAL_FEATURES)
 
-        self.snd_manager = SupervisedNoveltyDetectionManager(self.NUM_APP_FEATURES, self.NUM_VERB_FEATURES)
+        # self.snd_manager = SupervisedNoveltyDetectionManager(self.NUM_APP_FEATURES, self.NUM_VERB_FEATURES)
 
         self.p_type_th = 0.75
         self.post_red_base = None
@@ -80,10 +79,25 @@ class TopLevelApp:
         self.p_type_hist = [self.p_type_dist.numpy()]
         self.per_image_p_type = torch.tensor([])
         self.ignore_verb_novelty = ignore_verb_novelty
+        self.given_detection = given_detection
+        self.red_light_img = None
+        self.red_light_this_batch = False
+        
+        if not Path(pretrained_backbone_path).exists():
+            raise Exception(f'pretrained backbone was not found in path {pretrained_backbone_path}')
+        
+        backbone = resnet50(pretrained = False)
+        backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
+        backbone_state_dict = torch.load(pretrained_backbone_path)
+        backbone.load_state_dict(backbone_state_dict)
+        backbone = backbone.to('cuda:0')
+        backbone.eval()
+        self.backbone = backbone
         
     def reset(self):
+        # self.snd_manager.reset()
         self.post_red = False
-        self.p_type_dist = torch.tensor([1/3, 1/3, 1/3, 0.0])
+        self.p_type_dist = torch.tensor([0.25, 0.25, 0.25, 0.25]) if not self.ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
         self.unsupervised_aucs = [None, None, None]
         self.supervised_aucs = [None, None, None]
         self.all_query_masks = torch.tensor([])
@@ -102,11 +116,10 @@ class TopLevelApp:
         self.p_type_hist = [self.p_type_dist.numpy()]
         self.per_image_p_type = torch.tensor([])
         self.all_red_light_scores = np.array([])
+        self.red_light_img = None
+        self.red_light_this_batch = False
 
-        # self.und_manager.reset_lr_calibrators()
-        self.snd_manager.reset()        
-
-    def run(self, csv_path, test_id, round_id, img_paths):
+    def process_batch(self, csv_path, test_id, round_id, img_paths):
         if csv_path is None:
             raise Exception('path to csv was None')
 
@@ -119,7 +132,7 @@ class TopLevelApp:
         scg_preds, _, _, _ = self.scg_ensemble.get_top3_SVOs(scg_data_loader, False)
 
         # unsupervised novelty scores
-        unsupervised_results = self.und_manager.score(novelty_dataset, self.p_type_dist)
+        unsupervised_results = self.und_manager.score(self.backbone, novelty_dataset)
 
         subject_novelty_scores_u = unsupervised_results['subject_novelty_score']
         verb_novelty_scores_u = unsupervised_results['verb_novelty_score']
@@ -168,19 +181,37 @@ class TopLevelApp:
         self.per_image_p_type = torch.cat([self.per_image_p_type, batch_p_type])
         
         # merge top-3 SVOs
-        top3_und = self.und_manager.get_top3(novelty_dataset, batch_p_type)        
-        merged = self._merge_top3_SVOs(scg_preds, top3_und, p_ni)
+        top3_und = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type)
+        p_ni_for_top3 = np.copy(p_ni.numpy())
+                
+        if not self.given_detection:
+            if self.all_p_ni.shape[0] + N < 60:    
+                p_ni_for_top3 = np.zeros_like(p_ni_for_top3)
+            elif self.all_p_ni.shape[0] < 60 and self.all_p_ni.shape[0] + N > 60:
+                num_lt_60 = 60 - self.all_p_ni.shape[0]
+                p_ni_for_top3[:num_lt_60] = 0
+        else:
+            if not self.post_red:
+                if self.red_light_this_batch:
+                    idx = -1
+                
+                    try:
+                       idx = img_paths.index(self.red_light_img)
+                    except ValueError:
+                        print(f'specified red-light image was not found in the given image paths.')
+                        raise Exception()
+                
+                    p_ni_for_top3[:idx] = 0
+                else:
+                    p_ni_for_top3 = np.zeros_like(p_ni_for_top3)
+        
+        merged = self._merge_top3_SVOs(scg_preds, top3_und, p_ni_for_top3)
         top_1 = [m[0][0] for m in merged]
         top_3 = [[e[0] for e in m] for m in merged]
         top_3_probs = [[e[1] for e in m] for m in merged]
 
         batch_preds_is_nc = torch.tensor([self._is_svo_type_4(t) for t in top_1], dtype=torch.long)
-        
-        if not self.post_red or not self.feedback_enabled:
-            batch_query_mask = torch.zeros(N, dtype=torch.long)
-            batch_feedback_mask = torch.zeros(N, dtype=torch.long)
-            self._accumulate(top_1, top_3, p_ni, batch_cases, batch_preds_is_nc, batch_feedback_mask, batch_query_mask, batch_p_type)
-                        
+                                
         self.batch_context.p_ni = p_ni
         self.batch_context.subject_novelty_scores_u = subject_novelty_scores_u
         self.batch_context.verb_novelty_scores_u = verb_novelty_scores_u
@@ -196,41 +227,15 @@ class TopLevelApp:
         self.batch_context.preds_is_nc = batch_preds_is_nc
         self.batch_context.p_type = batch_p_type
         
-        p_ni = p_ni.numpy()
-        
-        # compute red-light scores
-        red_light_scores = np.ones(N)
-        
-        if not self.post_red:
-            if self.all_p_ni.shape[0] >= 60:    
-                start = self.all_p_ni.shape[0] - N
-                
-                for i in range(max(start, 60 + self.windows_size), start + N):
-                    p_val = ks_2samp(self.all_p_ni[:60].numpy(), self.all_p_ni[i - self.windows_size: i].numpy(), alternative='greater')[1]
-                    red_light_scores[i - start] = p_val
+        red_light_scores = self._compute_red_light_scores(p_ni, N, img_paths)
 
-                EPS = 1e-5
-                p_gt_th = np.nonzero([p < self.p_val_cuttoff - EPS for p in red_light_scores])[0]
-                self.post_red = p_gt_th.shape[0] > 0                                
-                first_novelty_instance_idx = p_gt_th[0] if self.post_red else red_light_scores.shape[0]
-                self.post_red_base = self.all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx if self.post_red else None
-        else:
-            all_p_ni = np.concatenate([self.all_p_ni.numpy(), p_ni])
-            start = all_p_ni.shape[0] - N
-            
-            for i in range(max(start, 60 + self.windows_size), start + N):
-                p_val = ks_2samp(all_p_ni[:60], all_p_ni[i - self.windows_size: i], alternative='greater')[1]
-                red_light_scores[i - start] = p_val
-            
-        for i in range(len(red_light_scores)):
-            if red_light_scores[i] >= self.p_val_cuttoff:
-                red_light_scores[i] = self.pre_red_transform[0] * red_light_scores[i] + self.pre_red_transform[1]
-            else:
-                red_light_scores[i] = self.post_red_transform[0] * red_light_scores[i] + self.post_red_transform[1]
-         
-        red_light_scores = np.clip(red_light_scores, 0.0, 1.0)
+        if not self.post_red or not self.feedback_enabled:
+            batch_query_mask = torch.zeros(N, dtype=torch.long)
+            batch_feedback_mask = torch.zeros(N, dtype=torch.long)
+            self._accumulate(top_1, top_3, p_ni, batch_cases, batch_preds_is_nc, batch_feedback_mask, batch_query_mask, batch_p_type)
+
         self.all_red_light_scores = np.concatenate([self.all_red_light_scores, red_light_scores])
-         
+ 
         ret = {}
         ret['p_ni'] = p_ni.tolist()
         ret['red_light_score'] = red_light_scores
@@ -238,6 +243,10 @@ class TopLevelApp:
         ret['svo_probs'] = top_3_probs
                                                   
         return ret
+        
+    def red_light_hint_callback(self, path):
+        self.red_light_img = path
+        self.red_light_this_batch = True
 
     def test_completed_callback(self, test_id):
         if not self.log:
@@ -308,15 +317,67 @@ class TopLevelApp:
         self._accumulate(self.batch_context.top_1, self.batch_context.top_3, self.batch_context.p_ni, self.batch_context.cases, 
             self.batch_context.preds_is_nc, self.batch_context.feedback_mask, self.batch_context.query_mask, 
             self.batch_context.p_type)
-        
+
         self._type_inference()
                 
         # all_subject_indices, all_verb_indices, all_object_indices, subject_labels, verb_labels, object_labels = self._build_supervised_samples()
         # self._train_supervised_detector(all_subject_indices, all_verb_indices, all_object_indices, 
         #     subject_labels, verb_labels, object_labels)
            
+    def _compute_red_light_scores(self, p_ni, N, img_paths):
+        red_light_scores = np.ones(N)
+        all_p_ni = np.concatenate([self.all_p_ni.numpy(), p_ni.numpy()])
+        
+        if not self.post_red:
+            if all_p_ni.shape[0] >= 60:    
+                start = all_p_ni.shape[0] - N
+                
+                for i in range(max(start, 60 + self.windows_size), start + N):
+                    p_val = ks_2samp(all_p_ni[:60], all_p_ni[i - self.windows_size: i], alternative='greater')[1]
+                    red_light_scores[i - start] = p_val
+
+                if not self.given_detection:
+                    EPS = 1e-4
+                    p_gt_th = np.nonzero([p < self.p_val_cuttoff - EPS for p in red_light_scores])[0]
+                    self.post_red = p_gt_th.shape[0] > 0                                
+                    first_novelty_instance_idx = p_gt_th[0] if self.post_red else red_light_scores.shape[0]
+                    self.post_red_base = all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx if self.post_red else None
+        else:
+            start = all_p_ni.shape[0] - N
+            
+            for i in range(max(start, 60 + self.windows_size), start + N):
+                p_val = ks_2samp(all_p_ni[:60], all_p_ni[i - self.windows_size: i], alternative='greater')[1]
+                red_light_scores[i - start] = p_val
+            
+        for i in range(len(red_light_scores)):
+            if red_light_scores[i] >= self.p_val_cuttoff:
+                red_light_scores[i] = self.pre_red_transform[0] * red_light_scores[i] + self.pre_red_transform[1]
+            else:
+                red_light_scores[i] = self.post_red_transform[0] * red_light_scores[i] + self.post_red_transform[1]
+         
+        if self.given_detection and not self.post_red and not self.red_light_this_batch:
+            red_light_scores = np.zeros_like(red_light_scores)
+         
+        if self.given_detection and self.red_light_this_batch:
+            self.red_light_this_batch = False
+            self.post_red = True
+            idx = -1
+            
+            try:
+               idx = img_paths.index(self.red_light_img)
+            except ValueError:
+                print(f'specified red-light image was not found in the given image paths.')
+                raise Exception()
+
+            red_light_scores[:idx] = 0
+            red_light_scores[idx] = 1
+            self.post_red_base = all_p_ni.shape[0] - p_ni.shape[0] + idx
+            self.red_light_img = None           
+            
+        return red_light_scores
+            
     def _merge_top3_SVOs(self, top3_non_novel, top3_novel, batch_p_ni):
-        batch_p_ni = batch_p_ni.view(-1).numpy()
+        batch_p_ni = batch_p_ni.reshape(-1)
         N = len(batch_p_ni)
         top3_non_novel = [[(x[i][0], x[i][1], x[i][1] * (1 - y)) for i in range(3)] for x, y in zip(top3_non_novel, batch_p_ni)]
         top3_novel = [[(x[i][0], x[i][1], x[i][1] * y) for i in range(3)] for x, y in zip(top3_novel, batch_p_ni)]
@@ -382,13 +443,14 @@ class TopLevelApp:
             num_workers=1, 
             pin_memory=False,
             sampler=None)
-
+            
         novelty_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
             name = 'Custom',
             data_root = self.data_root,
             csv_path = csv_path,
             training = False,
-            image_batch_size = 1,
+            image_batch_size = 16,
+            backbone = self.backbone,
             feature_extraction_device = 'cuda:0',
             cache_to_disk = False)
 
