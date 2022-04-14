@@ -230,6 +230,125 @@ def compute_probability_novelty(
     
     return p_type, p_n
 
+def separate_scores_and_labels(subject_scores, object_scores, verb_scores, subject_labels, object_labels, verb_labels):
+    case_1_type_0_scores = []
+    case_1_type_1_scores = []
+    case_1_type_2_scores = []
+    case_1_type_3_scores = []
+    case_2_type_0_scores = []
+    case_2_type_1_scores = []
+    case_2_type_2_scores = []
+    case_3_type_0_scores = []
+    case_3_type_3_scores = []
+
+    for idx in range(len(subject_scores)):
+        subject_score = subject_scores[idx]
+        object_score = object_scores[idx]
+        verb_score = verb_scores[idx]
+        subject_label = subject_labels[idx]
+        object_label = object_labels[idx]
+        verb_label = verb_labels[idx]
+        
+        # Determine the novelty type
+        if subject_label == 0:
+            if object_label == 0 or verb_label == 0:
+                # Invalid novel example; multiple novelty types. Filter it out.
+                continue
+            # Type 1
+            type_label = 1
+        elif subject_label is not None and verb_label == 0:
+            if subject_label == 0 or object_label == 0:
+                # Invalid novel example; multiple novelty types. Filter it out.
+                continue
+            # Type 2
+            type_label = 2
+        elif object_label == 0:
+            if subject_label == 0 or (subject_label is not None and verb_label == 0):
+                # Invalid novel example; multiple novelty types. Filter it out.
+                continue
+            # Type 3
+            type_label = 3
+        else:
+            # Type 0
+            type_label = 0
+
+        # Add the scores and labels to the case inputs
+        if subject_score is not None and object_score is not None:
+            # All boxes present; append scores to case 1
+            if type_label == 0:
+                case_1_type_0_scores.append(torch.stack((subject_score, verb_score, object_score), dim = 0))
+            elif type_label == 1:
+                case_1_type_1_scores.append(torch.stack((subject_score, verb_score, object_score), dim = 0))
+            elif type_label == 2:
+                case_1_type_2_scores.append(torch.stack((subject_score, verb_score, object_score), dim = 0))
+            elif type_label == 3:
+                case_1_type_3_scores.append(torch.stack((subject_score, verb_score, object_score), dim = 0))
+        if subject_score is not None:
+            # At least the subject box is present; append subject and verb scores
+            # to case 2
+            if type_label == 0:
+                case_2_type_0_scores.append(torch.stack((subject_score, verb_score), dim = 0))
+            elif type_label == 1:
+                case_2_type_1_scores.append(torch.stack((subject_score, verb_score), dim = 0))
+            elif type_label == 2:
+                case_2_type_2_scores.append(torch.stack((subject_score, verb_score), dim = 0))
+        if object_score is not None:
+            # At least the object box is present; append object score to case 3
+            if type_label == 0:
+                case_3_type_0_scores.append(object_score.unsqueeze(0))
+            if type_label == 3:
+                case_3_type_3_scores.append(object_score.unsqueeze(0))
+
+    case_1_type_0_scores = torch.stack(case_1_type_0_scores, dim = 0)
+    case_1_type_1_scores = torch.stack(case_1_type_1_scores, dim = 0)
+    case_1_type_2_scores = torch.stack(case_1_type_2_scores, dim = 0)
+    case_1_type_3_scores = torch.stack(case_1_type_3_scores, dim = 0)
+    case_2_type_0_scores = torch.stack(case_2_type_0_scores, dim = 0)
+    case_2_type_1_scores = torch.stack(case_2_type_1_scores, dim = 0)
+    case_2_type_2_scores = torch.stack(case_2_type_2_scores, dim = 0)
+    case_3_type_0_scores = torch.stack(case_3_type_0_scores, dim = 0)
+    case_3_type_3_scores = torch.stack(case_3_type_3_scores, dim = 0)
+
+    device = case_1_type_0_scores.device
+
+    # Randomly shuffle score rows
+    case_1_type_0_scores = case_1_type_0_scores[torch.randperm(len(case_1_type_0_scores), device = device)]
+    case_1_type_1_scores = case_1_type_1_scores[torch.randperm(len(case_1_type_1_scores), device = device)]
+    case_1_type_2_scores = case_1_type_2_scores[torch.randperm(len(case_1_type_2_scores), device = device)]
+    case_1_type_3_scores = case_1_type_3_scores[torch.randperm(len(case_1_type_3_scores), device = device)]
+    case_2_type_0_scores = case_2_type_0_scores[torch.randperm(len(case_2_type_0_scores), device = device)]
+    case_2_type_1_scores = case_2_type_1_scores[torch.randperm(len(case_2_type_1_scores), device = device)]
+    case_2_type_2_scores = case_2_type_2_scores[torch.randperm(len(case_2_type_2_scores), device = device)]
+    case_3_type_0_scores = case_3_type_0_scores[torch.randperm(len(case_3_type_0_scores), device = device)]
+    case_3_type_3_scores = case_3_type_3_scores[torch.randperm(len(case_3_type_3_scores), device = device)]
+
+    # Now, we need to balance classes. Compute novelty type with fewest instances in
+    # each case
+    case_1_n_per_class = min(len(case_1_type_0_scores), len(case_1_type_1_scores), len(case_1_type_2_scores), len(case_1_type_3_scores))
+    case_2_n_per_class = min(len(case_2_type_0_scores), len(case_2_type_1_scores), len(case_2_type_2_scores))
+    case_3_n_per_class = min(len(case_3_type_0_scores), len(case_3_type_3_scores))
+
+    # Balance the classes
+    case_1_type_0_scores = case_1_type_0_scores[:case_1_n_per_class]
+    case_1_type_1_scores = case_1_type_1_scores[:case_1_n_per_class]
+    case_1_type_2_scores = case_1_type_2_scores[:case_1_n_per_class]
+    case_1_type_3_scores = case_1_type_3_scores[:case_1_n_per_class]
+    case_2_type_0_scores = case_2_type_0_scores[:case_2_n_per_class]
+    case_2_type_1_scores = case_2_type_1_scores[:case_2_n_per_class]
+    case_2_type_2_scores = case_2_type_2_scores[:case_2_n_per_class]
+    case_3_type_0_scores = case_3_type_0_scores[:case_3_n_per_class]
+    case_3_type_3_scores = case_3_type_3_scores[:case_3_n_per_class]
+
+    # Construct concatenated score tensors and label tensors
+    case_1_scores = torch.cat((case_1_type_0_scores, case_1_type_1_scores, case_1_type_2_scores, case_1_type_3_scores), dim = 0).detach()
+    case_2_scores = torch.cat((case_2_type_0_scores, case_2_type_1_scores, case_2_type_2_scores), dim = 0).detach()
+    case_3_scores = torch.cat((case_3_type_0_scores, case_3_type_3_scores), dim = 0).detach()
+    case_1_labels = torch.cat((torch.full(size = (len(case_1_type_0_scores),), fill_value = 0, dtype = torch.long, device = device), torch.full(size = (len(case_1_type_1_scores),), fill_value = 1, dtype = torch.long, device = device), torch.full(size = (len(case_1_type_2_scores),), fill_value = 2, dtype = torch.long, device = device), torch.full(size = (len(case_1_type_3_scores),), fill_value = 3, dtype = torch.long, device = device)), dim = 0)
+    case_2_labels = torch.cat((torch.full(size = (len(case_2_type_0_scores),), fill_value = 0, dtype = torch.long, device = device), torch.full(size = (len(case_2_type_1_scores),), fill_value = 1, dtype = torch.long, device = device), torch.full(size = (len(case_2_type_2_scores),), fill_value = 2, dtype = torch.long, device = device)), dim = 0)
+    case_3_labels = torch.cat((torch.full(size = (len(case_3_type_0_scores),), fill_value = 0, dtype = torch.long, device = device), torch.full(size = (len(case_3_type_3_scores),), fill_value = 1, dtype = torch.long, device = device)), dim = 0)
+    
+    return case_1_scores, case_2_scores, case_3_scores, case_1_labels, case_2_labels, case_3_labels
+
 def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000, quiet = True):
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(logistic_regression.parameters(), lr = 0.01, momentum = 0.9)
