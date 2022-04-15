@@ -4,6 +4,7 @@ import torch
 import matplotlib.pyplot as plt
 
 import unsupervisednoveltydetection.common
+import unsupervisednoveltydetection.training
 
 class UnsupervisedNoveltyDetectorLogger:
     def __init__(self):

@@ -2,7 +2,7 @@ import pickle
 import os
 import torch
 import pocket
-from utils import compute_spatial_encodings, binary_focal_loss, fpn_backbone
+from utils import compute_spatial_encodings, binary_focal_loss
 from torchvision.ops import MultiScaleRoIAlign
 from torchvision.models.detection import transform
 from models.scg.scg import HOINetworkTransform
@@ -113,10 +113,6 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
         
         filename = os.path.join(f'{os.path.splitext(csv_path)[0]}_novelty_features.pth')
         
-        # Construct self.fpn_backbone around self.backbone via
-        # torchvision.models.detection.backbone_utils._resnet_fpn_extractor().
-        self.fpn_backbone = fpn_backbone(backbone).to(feature_extraction_device)
-
         if cache_to_disk:
             if not os.path.exists(filename):
                 print('Image features have not yet been computed. Computing image features...')
@@ -254,9 +250,6 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                         det['object_boxes'] = obj_boxes
                 
                 image_tensors = images.tensors.to(feature_extraction_device)
-                features = self.fpn_backbone(image_tensors)
-                features = {k: v.cpu() for k, v in features.items()}
-
                 image_shapes = images.image_sizes
                 
                 for b_idx, detection in enumerate(detections):
@@ -311,9 +304,9 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                             [coords[x]], [coords[y]], [image_shapes[b_idx]]
                         ).detach().to(feature_extraction_device))
                         
-                        subject_roi_features.append(box_roi_pool(features, [detection['subject_boxes']], image_shapes).detach())
-                        object_roi_features.append(box_roi_pool(features, [detection['object_boxes']], image_shapes).detach())
-                        verb_roi_features.append(box_roi_pool(features, [verb_box_coords], image_shapes).detach())
+                        subject_roi_features.append(None)
+                        object_roi_features.append(None)
+                        verb_roi_features.append(None)
                         
                         # Extract image boxes via cropping
                         subject_images.append(box_transform(image_tensors[b_idx, :, r_s_ymin: r_s_ymax, r_s_xmin: r_s_xmax]))
@@ -347,9 +340,9 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                         #     [coords[x]], [coords[y]], [image_shapes[b_idx]]
                         # ))
                         
-                        subject_roi_features.append(box_roi_pool(features, [detection['subject_boxes']], image_shapes).detach())
+                        subject_roi_features.append(None)
                         object_roi_features.append(None)
-                        verb_roi_features.append(box_roi_pool(features, [verb_box_coords], image_shapes).detach())
+                        verb_roi_features.append(None)
                         subject_images.append(box_transform(image_tensors[b_idx, :, r_s_ymin: r_s_ymax, r_s_xmin: r_s_xmax]))
                         object_images.append(None)
                         verb_images.append(box_transform(image_tensors[b_idx, :, r_s_ymin: r_s_ymax, r_s_xmin: r_s_xmax]))
@@ -359,7 +352,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                         
                         box_pair_spatial.append(None)
                         subject_roi_features.append(None)
-                        object_roi_features.append(box_roi_pool(features, [detection['object_boxes']], image_shapes).detach())
+                        object_roi_features.append(None)
                         verb_roi_features.append(None)
                         subject_images.append(None)
                         object_images.append(box_transform(image_tensors[b_idx, :, r_o_ymin: r_o_ymax, r_o_xmin: r_o_xmax]))
@@ -392,4 +385,7 @@ def list_collate(batch):
     subject_labels = [batch[4] for item in batch]
     object_labels = [batch[5] for item in batch]
     verb_labels = [batch[6] for item in batch]
-    return [spatial_features, subject_roi_features, object_roi_features, verb_roi_features, subject_labels, object_labels, verb_labels]
+    subject_images = [batch[7] for item in batch]
+    object_images = [batch[8] for item in batch]
+    verb_images = [batch[9] for item in batch]
+    return [spatial_features, subject_roi_features, object_roi_features, verb_roi_features, subject_labels, object_labels, verb_labels, subject_images, object_images, verb_images]

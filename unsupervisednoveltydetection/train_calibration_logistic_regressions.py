@@ -76,14 +76,15 @@ subject_features = []
 object_features = []
 verb_features = []
         
-for example_spatial_features, _, _, _, subject_label, object_label, verb_label, subject_image, object_image, verb_image in testing_set:
-    spatial_features.append(example_spatial_features)
-    subject_labels.append(subject_label)
-    object_labels.append(object_label)
-    verb_labels.append(verb_label)
-    subject_features.append(backbone(subject_image.unsqueeze(0)).squeeze(0) if subject_image is not None else None)
-    object_features.append(backbone(object_image.unsqueeze(0)).squeeze(0) if object_image is not None else None)
-    verb_features.append(backbone(verb_image.unsqueeze(0)).squeeze(0) if verb_image is not None else None)
+with torch.no_grad():
+    for example_spatial_features, _, _, _, subject_label, object_label, verb_label, subject_image, object_image, verb_image in testing_set:
+        spatial_features.append(example_spatial_features)
+        subject_labels.append(subject_label)
+        object_labels.append(object_label)
+        verb_labels.append(verb_label)
+        subject_features.append(backbone(subject_image.unsqueeze(0)).squeeze(0) if subject_image is not None else None)
+        object_features.append(backbone(object_image.unsqueeze(0)).squeeze(0) if object_image is not None else None)
+        verb_features.append(backbone(verb_image.unsqueeze(0)).squeeze(0) if verb_image is not None else None)
 
 results = detector(spatial_features, subject_features, verb_features, object_features, torch.tensor([0.0, 1.0, 0.0, 0.0, 0.0], device = args.device))
 
@@ -99,6 +100,10 @@ verb_scores = results['verb_novelty_score']
 # case (for instance, case 3 cannot by novelty type 1, since there's no
 # subject).
 case_1_scores, case_2_scores, case_3_scores, case_1_labels, case_2_labels, case_3_labels = noveltydetection.utils.separate_scores_and_labels(subject_scores, object_scores, verb_scores, subject_labels, object_labels, verb_labels)
+
+print(case_1_scores.shape)
+print(case_2_scores.shape)
+print(case_3_scores.shape)
 
 # Fit logistic regressions
 case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression().to(args.device)
@@ -127,4 +132,4 @@ state_dict['case_1_labels'] = case_1_labels.cpu()
 state_dict['case_2_labels'] = case_2_labels.cpu()
 state_dict['case_3_labels'] = case_3_labels.cpu()
 
-torch.save(state_dict, args.calibration_logistic_regressions_save_file)
+# torch.save(state_dict, args.calibration_logistic_regressions_save_file)
