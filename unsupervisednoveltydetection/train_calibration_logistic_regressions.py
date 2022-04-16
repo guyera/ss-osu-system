@@ -86,7 +86,7 @@ with torch.no_grad():
         object_features.append(backbone(object_image.unsqueeze(0)).squeeze(0) if object_image is not None else None)
         verb_features.append(backbone(verb_image.unsqueeze(0)).squeeze(0) if verb_image is not None else None)
 
-results = detector(spatial_features, subject_features, verb_features, object_features, torch.tensor([0.0, 1.0, 0.0, 0.0, 0.0], device = args.device))
+results = detector.score(spatial_features, subject_features, verb_features, object_features)
 
 subject_scores = results['subject_novelty_score']
 object_scores = results['object_novelty_score']

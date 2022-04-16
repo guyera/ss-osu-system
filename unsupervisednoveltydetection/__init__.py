@@ -1,10 +1,57 @@
 import os
+from abc import ABC, abstractmethod
 
 import torch
 import matplotlib.pyplot as plt
 
 import unsupervisednoveltydetection.common
 import unsupervisednoveltydetection.training
+
+class TrialLevelPTypeStrategy(ABC):
+    @abstractmethod
+    def revise_p_type(self, p_type):
+        return NotImplemented
+
+class ThresholdTrialLevelPType(TrialLevelPTypeStrategy):
+    '''
+    Parameters:
+        trial_level_p_type: Tensor of size [4] indicating trial level p_type
+            estimates for type 1, 2, 3, and 4, respectively.
+        threshold: Threshold to compare trial_level_p_type against.
+            A hyperparameter.
+    '''
+    def __init__(self, trial_level_p_type, threshold = 0.98):
+        exceeds_threshold = trial_level_p_type >= threshold
+        if torch.any(exceeds_threshold):
+            self.revised_p_type = exceeds_threshold.to(torch.int)
+        else:
+            self.revised_p_type = None
+
+    def revise_p_type(self, p_type):
+        if self.revised_p_type is not None:
+            revised_p_type = p_type * 0 + self.revised_p_type
+        else:
+            revised_p_type = p_type
+
+        return revised_p_type
+
+class WeightedAverageTrialLevelPType(TrialLevelPTypeStrategy):
+    '''
+    Parameters:
+        trial_level_p_type: Tensor of size [4] indicating trial level p_type
+            estimates for type 1, 2, 3, and 4, respectively.
+        alpha: Number or scalar tensor indicating the weight for the weighted
+            average, i.e. the proportion of the weighted average contributed
+            by p(type_i) (per-instance p_type). alpha = 0 means to ignore
+            per-instance p(type_i) and look only at trial-level p(type), and
+            alpha = 1 means the opposite.
+    '''
+    def __init__(self, trial_level_p_type, alpha):
+        self.trial_level_p_type = trial_level_p_type
+        self.alpha = alpha
+
+    def revise_p_type(self, p_type):
+        return self.alpha * p_type + (1 - self.alpha) * self.trial_level_p_type
 
 class UnsupervisedNoveltyDetectorLogger:
     def __init__(self):
@@ -483,111 +530,13 @@ class UnsupervisedNoveltyDetector:
         else:
             return 1 - max_prob # And we'll take 1 - this in compute_probability_novelty
 
-    def __call__(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type):
-        predictions = []
-        results = {}
-        subject_novelty_scores = []
-        object_novelty_scores = []
-        verb_novelty_scores = []
-        p_known_svo = []
-        p_known_sv = []
-        p_known_so = []
-        p_known_vo = []
-        for idx in range(len(spatial_features)):
-            example_spatial_features = spatial_features[idx]
-            example_subject_appearance_features = subject_appearance_features[idx]
-            example_object_appearance_features = object_appearance_features[idx]
-            example_verb_appearance_features = verb_appearance_features[idx]
-            
-            if example_subject_appearance_features is not None:
-                example_subject_features = torch.flatten(example_subject_appearance_features).to(self.device)
-
-                subject_logits, subject_score = self.classifier.predict_score_subject(example_subject_features.unsqueeze(0))
-                
-                subject_score = subject_score.squeeze(0)
-
-                subject_probs = self.confidence_calibrator.calibrate_subject(subject_logits)
-                subject_probs = subject_probs.squeeze(0)
-
-                subject_novelty_scores.append(subject_score)
-            else:
-                subject_novelty_scores.append(None)
-
-            if example_object_appearance_features is not None:
-                example_object_features = torch.flatten(example_object_appearance_features).to(self.device)
-                
-                object_logits, object_score = self.classifier.predict_score_object(example_object_features.unsqueeze(0))
-                
-                object_score = object_score.squeeze(0)
-                
-                object_probs = self.confidence_calibrator.calibrate_object(object_logits)
-                object_probs = object_probs.squeeze(0)
-                
-                object_novelty_scores.append(object_score)
-            else:
-                object_novelty_scores.append(None)
-            
-            if example_verb_appearance_features is not None:
-                example_verb_features = torch.cat((torch.flatten(example_spatial_features), torch.flatten(example_verb_appearance_features))).to(self.device)
-                
-                verb_logits, verb_score = self.classifier.predict_score_verb(example_verb_features.unsqueeze(0))
-                
-                verb_score = verb_score.squeeze(0)
-
-                verb_probs = self.confidence_calibrator.calibrate_verb(verb_logits)
-                verb_probs = verb_probs.squeeze(0)
-                
-                verb_novelty_scores.append(verb_score)
-            else:
-                verb_novelty_scores.append(None)
-            
-            cur_p_known_svo = torch.tensor(0, dtype = torch.float, device = self.device)
-            cur_p_known_sv = torch.tensor(0, dtype = torch.float, device = self.device)
-            cur_p_known_so = torch.tensor(0, dtype = torch.float, device = self.device)
-            cur_p_known_vo = torch.tensor(0, dtype = torch.float, device = self.device)
-            if example_subject_appearance_features is not None and example_object_appearance_features is not None:
-                # Case 1, S/V/O
-                example_predictions = self._case_1(subject_probs, object_probs, verb_probs, p_type, 3)
-                cur_p_known_svo = self._compute_p_known_svo_2(subject_probs, verb_probs, object_probs)
-                cur_p_known_sv = self._compute_p_known_sv_2(subject_probs, verb_probs)
-                cur_p_known_so = self._compute_p_known_so_2(subject_probs, object_probs)
-                cur_p_known_vo = self._compute_p_known_vo_2(verb_probs, object_probs)
-            elif example_subject_appearance_features is not None and example_object_appearance_features is None:
-                # Case 2, S/V/None
-                example_predictions = self._case_2(subject_probs, verb_probs, p_type, 3)
-                cur_p_known_sv = self._compute_p_known_sv_2(subject_probs, verb_probs)
-            elif example_subject_appearance_features is None and example_object_appearance_features is not None:
-                # Case 3, None/None/O
-                example_predictions = self._case_3(p_type)
-            else:
-                return NotImplemented
-            
-            predictions.append(example_predictions)
-            p_known_svo.append(cur_p_known_svo)
-            p_known_sv.append(cur_p_known_sv)
-            p_known_so.append(cur_p_known_so)
-            p_known_vo.append(cur_p_known_vo)
-        
-        p_known_svo = torch.stack(p_known_svo, dim = 0)
-        p_known_sv = torch.stack(p_known_sv, dim = 0)
-        p_known_so = torch.stack(p_known_so, dim = 0)
-        p_known_vo = torch.stack(p_known_vo, dim = 0)
-
-        assert len(subject_novelty_scores) == len(verb_novelty_scores) == len(object_novelty_scores)
-
-        results['subject_novelty_score'] = subject_novelty_scores
-        results['verb_novelty_score'] = verb_novelty_scores
-        results['object_novelty_score'] = object_novelty_scores
-        results['p_known_svo'] = p_known_svo
-        results['p_known_sv'] = p_known_sv
-        results['p_known_so'] = p_known_so
-        results['p_known_vo'] = p_known_vo
-        results['top3'] = predictions
-
-        return results
-    
     # Note: p_type should be a tensor of size [N, 4]; it's per-image p_type
-    def top3(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type):
+    def top3(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type, trial_level_p_type_strategy = None):
+        # Revise per-instance p_type using trial_level_p_type_strategy, if not
+        # None
+        if trial_level_p_type_strategy is not None:
+            p_type = trial_level_p_type_strategy.revise_p_type(p_type)
+        
         predictions = []
         results = {}
         p_known_svo = []
