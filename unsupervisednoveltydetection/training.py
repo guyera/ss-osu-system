@@ -2,6 +2,7 @@ import copy
 
 from tqdm import tqdm
 import torch
+from torchvision.models import resnet50
 
 import unsupervisednoveltydetection.common
 import noveltydetectionfeatures
@@ -266,13 +267,31 @@ class NoveltyDetectorTrainer:
         # TODO THOMAS: Perhaps initialize some empty list / tensor / whatever
         # of feedback data, which will be appended to as we receive it from
         # the top level?
+        # DONE
+
+        self.feedback_data = None
     
     # TODO THOMAS: Implement this function. It should receive some new feedback
     # data from the top level and append it to the trainer's existing store
     # of feedback data. I'm not sure if a csv_path is the appropriate way to
     # accept this data, so feel free to change the API however you'd like.
+    # DONE
     def add_feedback_data(self, csv_path):
-        pass
+        new_novel_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
+            name = 'Custom',
+            data_root = 'Custom',
+            csv_path = csv_path,
+            training = True,
+            image_batch_size = 16,
+            backbone = None,
+            cache_to_disk = False
+        )
+
+        # Put new feedback data in list
+        if self.feedback_data is None:
+            self.feedback_data = new_novel_dataset
+        else:
+            self.feedback_data = torch.utils.data.ConcatDataset([self.feedback_data, new_novel_dataset])
     
     # Should be called before train_novelty_detection_module(), except when
     # training for the very first time manually by Alex. This prepares the
@@ -309,7 +328,8 @@ class NoveltyDetectorTrainer:
         case_3_logistic_regression.load_state_dict(random_case_3_logistic_regression)
         
     # TODO THOMAS: Edit this function interface to also accept novel train loaders
-    def train_epoch(self, known_subject_loader, known_object_loader, known_verb_loader, backbone, subject_classifier, object_classifier, verb_classifier, optimizer):
+    # DONE
+    def train_epoch(self, known_subject_loader, novel_subject_loader, known_object_loader, novel_object_loader, known_verb_loader, novel_verb_loader, backbone, subject_classifier, object_classifier, verb_classifier, optimizer):
         # Determine the device to use based on the backbone's fc weights
         device = backbone.fc.weight.device
         
@@ -329,6 +349,11 @@ class NoveltyDetectorTrainer:
         n_known_object_examples = 0
         n_known_object_correct = 0
         
+        # Number of known classes for each
+        n_known_subject_classes = 4
+        n_known_object_classes  = 11
+        n_known_verb_classes    = 7
+
         # The data loaders have different lengths, and so if we just zip them
         # all together, the zipped loader's length will be equal to that of the
         # minimum length of all the data loaders. So instead, we will iterate
@@ -339,6 +364,10 @@ class NoveltyDetectorTrainer:
         known_verb_iter = iter(known_verb_loader)
         # TODO THOMAS: Construct novel train iters as well, from the novel
         # train loaders
+        # DONE
+        novel_subject_iter = iter(novel_subject_loader)
+        novel_object_iter  = iter(novel_object_loader)
+        novel_verb_iter    = iter(novel_verb_loader)
         
         # We need to iterate until we've covered all of the data in the largest
         # iterator. That's what we'll call an "epoch". We might iterate over
@@ -351,11 +380,18 @@ class NoveltyDetectorTrainer:
         finished_known_verb_iter = False
         # TODO THOMAS: Construct similar flags for the novel data iters, and
         # modify the while loop below condition appropriately
+        # DONE
+        finished_novel_subject_iter = False
+        finished_novel_object_iter  = False
+        finished_novel_verb_iter    = False
 
         # Loop until all iterators have been covered
         while not (finished_known_subject_iter and\
                 finished_known_object_iter and\
-                finished_known_verb_iter):
+                finished_known_verb_iter and\
+                finished_novel_subject_iter and\
+                finished_novel_object_iter and\
+                finished_novel_verb_iter):
             # Sample a batch from each iterator
             try:
                 batch_known_subject_images, batch_known_subject_labels = next(known_subject_iter)
@@ -383,6 +419,28 @@ class NoveltyDetectorTrainer:
             # batches, i.e. make sure to set the flag to True and reconstruct
             # the iter when reaching the end of the data loader due to a
             # StopIteration
+            # DONE
+            try:
+                batch_novel_subject_images, batch_novel_subject_labels = next(novel_subject_iter)
+            except StopIteration:
+                finished_novel_subject_iter = True
+                novel_subject_iter = iter(novel_subject_loader)
+                batch_novel_subject_images, batch_novel_subject_labels = next(novel_subject_iter)
+
+            try:
+                batch_novel_object_images, batch_novel_object_labels = next(novel_object_iter)
+            except StopIteration:
+                finished_novel_object_iter = True
+                novel_object_iter = iter(novel_object_loader)
+                batch_novel_object_images, batch_novel_object_labels = next(novel_object_iter)
+
+            try:
+                batch_novel_verb_images, batch_novel_spatial_encodings, batch_novel_verb_labels = next(novel_verb_iter)
+            except StopIteration:
+                finished_novel_verb_iter = True
+                novel_verb_iter = iter(novel_verb_loader)
+                batch_novel_verb_images, batch_novel_spatial_encodings, batch_novel_verb_labels = next(novel_verb_iter)
+
             
             # Shift labels down by 1 for closed-set classifier, since known
             # class indices start at 1 but the classifiers outputs the number
@@ -405,7 +463,33 @@ class NoveltyDetectorTrainer:
             batch_known_spatial_encodings = torch.flatten(batch_known_spatial_encodings, start_dim = 1)
             batch_known_verb_features = torch.cat((batch_known_spatial_encodings, batch_known_verb_features), dim = 1)
             # TODO THOMAS: Extract features similarly for the novel batches
+            # DONE
+
+            # All novel labels should be uniform since we want to use outlier exposure
+            batch_novel_subject_images = batch_novel_subject_images.to(device)
+            batch_novel_subject_labels = (1/n_known_subject_classes) * torch.ones((batch_novel_subject_images.shape[0],n_known_subject_classes))
+            batch_novel_subject_labels = batch_novel_subject_labels.to(device)
+
+            batch_novel_object_images = batch_novel_object_images.to(device)
+            batch_novel_object_labels = (1/n_known_object_classes) * torch.ones((batch_novel_object_images.shape[0],n_known_object_classes))
+            batch_novel_object_labels = batch_novel_object_labels.to(device)
+
+            batch_novel_verb_images = batch_novel_verb_images.to(device)
+            batch_novel_spatial_encodings = batch_novel_spatial_encodings.to(device)
+            batch_novel_verb_labels = (1/n_known_verb_classes) * torch.ones((batch_novel_verb_images.shape[0],n_known_verb_classes))
+            batch_novel_verb_labels = batch_novel_verb_labels.to(device)
+
+            # Extract features from each novel image batch, making sure to prepend
+            # the spatial encodings to the verb features, since the verb
+            # classifier operates over the spatial encodings and the verb
+            # box features.
+            batch_novel_subject_features = backbone(batch_novel_subject_images)
+            batch_novel_object_features = backbone(batch_novel_object_images)
+            batch_novel_verb_features = backbone(batch_novel_verb_images)
+            batch_novel_spatial_encodings = torch.flatten(batch_novel_spatial_encodings, start_dim = 1)
+            batch_novel_verb_features = torch.cat((batch_novel_spatial_encodings, batch_novel_verb_features), dim = 1)
             
+
             # Compute logits by passing the features through the appropriate
             # classifiers
             batch_known_subject_preds = subject_classifier(batch_known_subject_features)
@@ -418,7 +502,20 @@ class NoveltyDetectorTrainer:
             
             # TODO THOMAS: Compute the novel OE losses and add them to
             # batch_loss
-            batch_loss = batch_known_subject_loss + batch_known_verb_loss + batch_known_object_loss
+            # DONE
+
+            # Compute logits by passing the features through the appropriate
+            # classifiers
+            batch_novel_subject_preds = subject_classifier(batch_novel_subject_features)
+            batch_novel_object_preds = object_classifier(batch_novel_object_features)
+            batch_novel_verb_preds = verb_classifier(batch_novel_verb_features)
+
+            batch_novel_subject_loss = torch.nn.functional.cross_entropy(batch_novel_subject_preds, batch_novel_subject_labels)
+            batch_novel_object_loss = torch.nn.functional.cross_entropy(batch_novel_object_preds, batch_novel_object_labels)
+            batch_novel_verb_loss = torch.nn.functional.cross_entropy(batch_novel_verb_preds, batch_novel_verb_labels)
+
+            batch_loss = batch_known_subject_loss + batch_known_verb_loss + batch_known_object_loss \
+                         + batch_novel_subject_loss + batch_novel_object_loss + batch_novel_verb_loss
             optimizer.zero_grad()
             batch_loss.backward()
             optimizer.step()
@@ -510,6 +607,22 @@ class NoveltyDetectorTrainer:
         # separate_data() defined near the top of this file. You might even load
         # the feedback data from the csv file very similarly to how I loaded the
         # dataset_v4_train.csv in __init__() of this class.
+        # DONE
+
+        # NOTE Can potentially refactor for speedup (by calling separate data in add_feedback
+        # and keeping track of novel feedback s,v, and o datasets as class attributes)
+        if self.feedback_data is not None:
+            _, novel_feedback_subject_dataset, \
+                _, novel_feedback_object_dataset, \
+                _, novel_feedback_verb_dataset = separate_data(self.feedback_data)
+
+            novel_subject_dataset = torch.utils.data.ConcatDataset([self.novel_train_subject_dataset, novel_feedback_subject_dataset])
+            novel_object_dataset  = torch.utils.data.ConcatDataset([self.novel_train_object_dataset, novel_feedback_object_dataset])
+            novel_verb_dataset    = torch.utils.data.ConcatDataset([self.novel_train_verb_dataset, novel_feedback_verb_dataset])
+        else:
+            novel_subject_dataset = self.novel_train_subject_dataset
+            novel_object_dataset  = self.novel_train_object_dataset
+            novel_verb_dataset    = self.novel_train_verb_dataset
 
         # Construct known dataloaders. Since we're not using any known feedback
         # data, these are constructed solely from the known OSU training data.
@@ -521,24 +634,55 @@ class NoveltyDetectorTrainer:
         # datasets have roughly the same number of batches. Otherwise, the
         # smaller dataset will be iterated many more times than the larger
         # one, which could lead to overfitting.
+        # DONE
+
+        ks_size = len(self.known_train_subject_dataset)
+        ko_size = len(self.known_train_object_dataset)
+        kv_size = len(self.known_train_verb_dataset)
+
+        ns_size = len(novel_subject_dataset)
+        no_size = len(novel_object_dataset)
+        nv_size = len(novel_verb_dataset)
+
+        total_batch_size = 32
+
+        ks_batch_size, ko_batch_size, kv_batch_size, \
+            ns_batch_size, no_batch_size, nv_batch_size = self.compute_balanced_batch_sizes(total_batch_size, ks_size, ko_size, kv_size, ns_size, no_size, nv_size)        
+
         known_train_subject_loader = torch.utils.data.DataLoader(
             self.known_train_subject_dataset,
-            batch_size = 10,
+            batch_size = ks_batch_size,
             shuffle = True
         )
         known_train_object_loader = torch.utils.data.DataLoader(
             self.known_train_object_dataset,
-            batch_size = 10,
+            batch_size = ko_batch_size,
             shuffle = True
         )
         known_train_verb_loader = torch.utils.data.DataLoader(
             self.known_train_verb_dataset,
-            batch_size = 10,
+            batch_size = kv_batch_size,
             shuffle = True
         )
 
         # TODO THOMAS: Similarly construct the three novel dataloaders, based on the
         # concatenated datasets constructed earlier in this function.
+        # DONE
+        novel_subject_loader = torch.utils.data.DataLoader(
+            novel_subject_dataset,
+            batch_size = ns_batch_size,
+            shuffle = True
+        )
+        novel_object_loader = torch.utils.data.DataLoader(
+            novel_object_dataset,
+            batch_size = no_batch_size,
+            shuffle = True
+        )
+        novel_verb_loader = torch.utils.data.DataLoader(
+            novel_verb_dataset,
+            batch_size = nv_batch_size,
+            shuffle = True
+        )
 
         # Construct validation loaders for early stopping / model selection.
         # I'm assuming our model selection strategy will be based solely on the
@@ -587,9 +731,12 @@ class NoveltyDetectorTrainer:
             # Train for one full epoch
             # TODO THOMAS: Modify this function and function call to also pass in 
             # the three novel train loaders for OE as well
-            mean_train_loss, mean_known_train_accuracy = self.train_epoch(known_train_subject_loader, known_train_object_loader,
-                known_train_verb_loader, backbone, subject_classifier,
-                object_classifier, verb_classifier, optimizer)
+            # DONE
+            mean_train_loss, mean_known_train_accuracy = self.train_epoch(known_train_subject_loader, novel_subject_loader, 
+                known_train_object_loader, novel_object_loader,
+                known_train_verb_loader, novel_verb_loader, 
+                backbone, subject_classifier, object_classifier, verb_classifier, 
+                optimizer)
             
             # Measure validation accuracy for early stopping / model selection.
             # I'm assuming we don't need to use the novel data here.
@@ -619,6 +766,30 @@ class NoveltyDetectorTrainer:
         subject_classifier.load_state_dict(best_accuracy_subject_classifier_state_dict)
         object_classifier.load_state_dict(best_accuracy_object_classifier_state_dict)
         verb_classifier.load_state_dict(best_accuracy_verb_classifier_state_dict)
+
+    def compute_balanced_batch_sizes(self, total_batch_size, ks_size, ko_size, kv_size, ns_size, no_size, nv_size):
+        total_size = ks_size + ko_size + kv_size + ns_size + no_size + nv_size
+        ks_batch_size = (total_batch_size * ks_size) // total_size
+        ko_batch_size = (total_batch_size * ko_size) // total_size
+        kv_batch_size = (total_batch_size * kv_size) // total_size
+        ns_batch_size = (total_batch_size * ns_size) // total_size
+        no_batch_size = (total_batch_size * no_size) // total_size
+        nv_batch_size = (total_batch_size * nv_size) // total_size
+        
+        if ks_batch_size == 0 and ks_size > 0:
+            ks_batch_size = 1
+        if ko_batch_size == 0 and ko_size > 0:
+            ks_batch_size = 1
+        if kv_batch_size == 0 and kv_size > 0:
+            kv_batch_size = 1
+        if ns_batch_size == 0 and ns_size > 0:
+            ns_batch_size = 1
+        if no_batch_size == 0 and no_size > 0:
+            no_batch_size = 1
+        if nv_batch_size == 0 and nv_size > 0:
+            nv_batch_size = 1
+
+        return ks_batch_size, ko_batch_size, kv_batch_size, ns_batch_size, no_batch_size, nv_batch_size
 
     def calibrate_temperature_scalers(self, backbone, subject_classifier, object_classifier, verb_classifier, subject_calibrator, object_calibrator, verb_calibrator):
         calibration_subject_loader = torch.utils.data.DataLoader(
