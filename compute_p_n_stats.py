@@ -44,20 +44,21 @@ verb_labels = []
 subject_box_features = []
 object_box_features = []
 verb_box_features = []
-        
-for example_spatial_features, example_subject_roi_features, example_object_roi_features, example_verb_roi_features, subject_label, object_label, verb_label, example_subject_box_image, example_object_box_image, example_verb_box_image in testing_set:
-    spatial_features.append(example_spatial_features)
-    subject_roi_features.append(example_subject_roi_features)
-    object_roi_features.append(example_object_roi_features)
-    verb_roi_features.append(example_verb_roi_features)
-    subject_labels.append(subject_label)
-    object_labels.append(object_label)
-    verb_labels.append(verb_label)
-    subject_box_features.append(backbone(example_subject_box_image.unsqueeze(0)).squeeze(0) if example_subject_box_image is not None else None)
-    object_box_features.append(backbone(example_object_box_image.unsqueeze(0)).squeeze(0) if example_object_box_image is not None else None)
-    verb_box_features.append(backbone(example_verb_box_image.unsqueeze(0)).squeeze(0) if example_verb_box_image is not None else None)
 
-results = detector.scores_and_p_t4(spatial_features, subject_box_features, verb_box_features, object_box_features)
+with torch.no_grad():
+    for example_spatial_features, example_subject_roi_features, example_object_roi_features, example_verb_roi_features, subject_label, object_label, verb_label, example_subject_box_image, example_object_box_image, example_verb_box_image in testing_set:
+        spatial_features.append(example_spatial_features)
+        subject_roi_features.append(example_subject_roi_features)
+        object_roi_features.append(example_object_roi_features)
+        verb_roi_features.append(example_verb_roi_features)
+        subject_labels.append(subject_label)
+        object_labels.append(object_label)
+        verb_labels.append(verb_label)
+        subject_box_features.append(backbone(example_subject_box_image.unsqueeze(0)).squeeze(0) if example_subject_box_image is not None else None)
+        object_box_features.append(backbone(example_object_box_image.unsqueeze(0)).squeeze(0) if example_object_box_image is not None else None)
+        verb_box_features.append(backbone(example_verb_box_image.unsqueeze(0)).squeeze(0) if example_verb_box_image is not None else None)
+
+    results = detector.scores_and_p_t4(spatial_features, subject_box_features, verb_box_features, object_box_features)
 
 subject_scores = results['subject_novelty_score']
 object_scores = results['object_novelty_score']

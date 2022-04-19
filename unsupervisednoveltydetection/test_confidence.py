@@ -65,8 +65,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             csv_path = 'Custom/annotations/dataset_v4_val.csv',
             training = False,
             image_batch_size = 16,
-            backbone = backbone,
-            feature_extraction_device = self.device
+            backbone = backbone
         )
 
         subject_indices = []
@@ -92,29 +91,28 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         # Construct data loader
         self.subject_loader = torch.utils.data.DataLoader(
             dataset = subject_set,
-            batch_size = 128,
+            batch_size = 32,
             shuffle = False
         )
         self.object_loader = torch.utils.data.DataLoader(
             dataset = object_set,
-            batch_size = 128,
+            batch_size = 32,
             shuffle = False
         )
         self.verb_loader = torch.utils.data.DataLoader(
             dataset = verb_set,
-            batch_size = 128,
+            batch_size = 32,
             shuffle = False
         )
         
+        module_state_dict = torch.load('unsupervisednoveltydetection/unsupervised_novelty_detection_module_2.pth')
         # Create classifier
         classifier = unsupervisednoveltydetection.common.ClassifierV2(256, 5, 12, 8, 72)
-        classifier_state_dict = torch.load('unsupervisednoveltydetection/classifier_2.pth')
-        classifier.load_state_dict(classifier_state_dict)
+        classifier.load_state_dict(module_state_dict['module']['classifier'])
         self.classifier = classifier.to(self.device)
         
         calibrator = unsupervisednoveltydetection.common.ConfidenceCalibrator()
-        calibrator_state_dict = torch.load('unsupervisednoveltydetection/confidence_calibrator_2.pth')
-        calibrator.load_state_dict(calibrator_state_dict)
+        calibrator.load_state_dict(module_state_dict['module']['confidence_calibrator'])
         self.calibrator = calibrator.to(self.device)
     
     def ece(self, confidences, correct):
@@ -141,116 +139,117 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         return ece.item()
 
     def test_reduces_ece(self):
-        uncalibrated_subject_confidences = []
-        uncalibrated_object_confidences = []
-        uncalibrated_verb_confidences = []
-        calibrated_subject_confidences = []
-        calibrated_object_confidences = []
-        calibrated_verb_confidences = []
-        subject_correct = []
-        object_correct = []
-        verb_correct = []
-        for images, labels in self.subject_loader:
-            images = images.to(self.device)
-            labels = labels.to(self.device)
-        
-            features = self.backbone(images)
-            logits = self.classifier.predict_subject(features)
+        with torch.no_grad():
+            uncalibrated_subject_confidences = []
+            uncalibrated_object_confidences = []
+            uncalibrated_verb_confidences = []
+            calibrated_subject_confidences = []
+            calibrated_object_confidences = []
+            calibrated_verb_confidences = []
+            subject_correct = []
+            object_correct = []
+            verb_correct = []
+            for images, labels in self.subject_loader:
+                images = images.to(self.device)
+                labels = labels.to(self.device)
             
-            uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)
-            calibrated_probabilities = self.calibrator.calibrate_subject(logits)
-            
-            batch_uncalibrated_confidences, predictions =\
-                torch.max(uncalibrated_probabilities, dim = 1)
-            batch_calibrated_confidences, _ =\
-                torch.max(calibrated_probabilities, dim = 1)
+                features = self.backbone(images)
+                logits = self.classifier.predict_subject(features)
+                
+                uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)
+                calibrated_probabilities = self.calibrator.calibrate_subject(logits)
+                
+                batch_uncalibrated_confidences, predictions =\
+                    torch.max(uncalibrated_probabilities, dim = 1)
+                batch_calibrated_confidences, _ =\
+                    torch.max(calibrated_probabilities, dim = 1)
 
-            # Shift predictions forward to allow for anomaly label = 0
-            predictions += 1
-            
-            uncalibrated_subject_confidences.append(batch_uncalibrated_confidences)
-            calibrated_subject_confidences.append(batch_calibrated_confidences)
-            
-            batch_correct = predictions == labels
-            subject_correct.append(batch_correct)
+                # Shift predictions forward to allow for anomaly label = 0
+                predictions += 1
+                
+                uncalibrated_subject_confidences.append(batch_uncalibrated_confidences)
+                calibrated_subject_confidences.append(batch_calibrated_confidences)
+                
+                batch_correct = predictions == labels
+                subject_correct.append(batch_correct)
 
-        for images, labels in self.object_loader:
-            images = images.to(self.device)
-            labels = labels.to(self.device)
-        
-            features = self.backbone(images)
-            logits = self.classifier.predict_object(features)
+            for images, labels in self.object_loader:
+                images = images.to(self.device)
+                labels = labels.to(self.device)
             
-            uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)
-            calibrated_probabilities = self.calibrator.calibrate_object(logits)
-            
-            batch_uncalibrated_confidences, predictions =\
-                torch.max(uncalibrated_probabilities, dim = 1)
-            batch_calibrated_confidences, _ =\
-                torch.max(calibrated_probabilities, dim = 1)
+                features = self.backbone(images)
+                logits = self.classifier.predict_object(features)
+                
+                uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)
+                calibrated_probabilities = self.calibrator.calibrate_object(logits)
+                
+                batch_uncalibrated_confidences, predictions =\
+                    torch.max(uncalibrated_probabilities, dim = 1)
+                batch_calibrated_confidences, _ =\
+                    torch.max(calibrated_probabilities, dim = 1)
 
-            # Shift predictions forward to allow for anomaly label = 0
-            predictions += 1
-            
-            uncalibrated_object_confidences.append(batch_uncalibrated_confidences)
-            calibrated_object_confidences.append(batch_calibrated_confidences)
-            
-            batch_correct = predictions == labels
-            object_correct.append(batch_correct)
+                # Shift predictions forward to allow for anomaly label = 0
+                predictions += 1
+                
+                uncalibrated_object_confidences.append(batch_uncalibrated_confidences)
+                calibrated_object_confidences.append(batch_calibrated_confidences)
+                
+                batch_correct = predictions == labels
+                object_correct.append(batch_correct)
 
-        for images, spatial_encodings, labels in self.verb_loader:
-            images = images.to(self.device)
-            labels = labels.to(self.device)
-        
-            features = self.backbone(images)
-            if spatial_encodings is not None:
-                spatial_encodings = torch.flatten(spatial_encodings.to(self.device), start_dim = 1)
-                features = torch.cat((spatial_encodings, features), dim = 1)
-            logits = self.classifier.predict_verb(features)
+            for images, spatial_encodings, labels in self.verb_loader:
+                images = images.to(self.device)
+                labels = labels.to(self.device)
             
-            uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)
-            calibrated_probabilities = self.calibrator.calibrate_verb(logits)
+                features = self.backbone(images)
+                if spatial_encodings is not None:
+                    spatial_encodings = torch.flatten(spatial_encodings.to(self.device), start_dim = 1)
+                    features = torch.cat((spatial_encodings, features), dim = 1)
+                logits = self.classifier.predict_verb(features)
+                
+                uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)
+                calibrated_probabilities = self.calibrator.calibrate_verb(logits)
+                
+                batch_uncalibrated_confidences, predictions =\
+                    torch.max(uncalibrated_probabilities, dim = 1)
+                batch_calibrated_confidences, _ =\
+                    torch.max(calibrated_probabilities, dim = 1)
+
+                # Shift predictions forward to allow for anomaly label = 0
+                predictions += 1
+                
+                uncalibrated_verb_confidences.append(batch_uncalibrated_confidences)
+                calibrated_verb_confidences.append(batch_calibrated_confidences)
+                
+                batch_correct = predictions == labels
+                verb_correct.append(batch_correct)
             
-            batch_uncalibrated_confidences, predictions =\
-                torch.max(uncalibrated_probabilities, dim = 1)
-            batch_calibrated_confidences, _ =\
-                torch.max(calibrated_probabilities, dim = 1)
+            uncalibrated_subject_confidences = torch.cat(uncalibrated_subject_confidences, dim = 0)
+            uncalibrated_object_confidences = torch.cat(uncalibrated_object_confidences, dim = 0)
+            uncalibrated_verb_confidences = torch.cat(uncalibrated_verb_confidences, dim = 0)
 
-            # Shift predictions forward to allow for anomaly label = 0
-            predictions += 1
+            calibrated_subject_confidences = torch.cat(calibrated_subject_confidences, dim = 0)
+            calibrated_object_confidences = torch.cat(calibrated_object_confidences, dim = 0)
+            calibrated_verb_confidences = torch.cat(calibrated_verb_confidences, dim = 0)
             
-            uncalibrated_verb_confidences.append(batch_uncalibrated_confidences)
-            calibrated_verb_confidences.append(batch_calibrated_confidences)
-            
-            batch_correct = predictions == labels
-            verb_correct.append(batch_correct)
-        
-        uncalibrated_subject_confidences = torch.cat(uncalibrated_subject_confidences, dim = 0)
-        uncalibrated_object_confidences = torch.cat(uncalibrated_object_confidences, dim = 0)
-        uncalibrated_verb_confidences = torch.cat(uncalibrated_verb_confidences, dim = 0)
+            subject_correct = torch.cat(subject_correct, dim = 0)
+            object_correct = torch.cat(object_correct, dim = 0)
+            verb_correct = torch.cat(verb_correct, dim = 0)
 
-        calibrated_subject_confidences = torch.cat(calibrated_subject_confidences, dim = 0)
-        calibrated_object_confidences = torch.cat(calibrated_object_confidences, dim = 0)
-        calibrated_verb_confidences = torch.cat(calibrated_verb_confidences, dim = 0)
-        
-        subject_correct = torch.cat(subject_correct, dim = 0)
-        object_correct = torch.cat(object_correct, dim = 0)
-        verb_correct = torch.cat(verb_correct, dim = 0)
+            uncalibrated_subject_ece = self.ece(uncalibrated_subject_confidences, subject_correct)
+            uncalibrated_object_ece = self.ece(uncalibrated_object_confidences, object_correct)
+            uncalibrated_verb_ece = self.ece(uncalibrated_verb_confidences, verb_correct)
 
-        uncalibrated_subject_ece = self.ece(uncalibrated_subject_confidences, subject_correct)
-        uncalibrated_object_ece = self.ece(uncalibrated_object_confidences, object_correct)
-        uncalibrated_verb_ece = self.ece(uncalibrated_verb_confidences, verb_correct)
+            calibrated_subject_ece = self.ece(calibrated_subject_confidences, subject_correct)
+            calibrated_object_ece = self.ece(calibrated_object_confidences, object_correct)
+            calibrated_verb_ece = self.ece(calibrated_verb_confidences, verb_correct)
 
-        calibrated_subject_ece = self.ece(calibrated_subject_confidences, subject_correct)
-        calibrated_object_ece = self.ece(calibrated_object_confidences, object_correct)
-        calibrated_verb_ece = self.ece(calibrated_verb_confidences, verb_correct)
-
-        print(f'Uncalibrated subject ECE: {uncalibrated_subject_ece}')
-        print(f'Calibrated subject ECE: {calibrated_subject_ece}')
-        print(f'Uncalibrated object ECE: {uncalibrated_object_ece}')
-        print(f'Calibrated object ECE: {calibrated_object_ece}')
-        print(f'Uncalibrated verb ECE: {uncalibrated_verb_ece}')
-        print(f'Calibrated verb ECE: {calibrated_verb_ece}')
+            print(f'Uncalibrated subject ECE: {uncalibrated_subject_ece}')
+            print(f'Calibrated subject ECE: {calibrated_subject_ece}')
+            print(f'Uncalibrated object ECE: {uncalibrated_object_ece}')
+            print(f'Calibrated object ECE: {calibrated_object_ece}')
+            print(f'Uncalibrated verb ECE: {uncalibrated_verb_ece}')
+            print(f'Calibrated verb ECE: {calibrated_verb_ece}')
         
 if __name__ == '__main__':
     unittest.main()

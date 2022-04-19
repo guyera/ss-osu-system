@@ -305,6 +305,7 @@ class NoveltyDetectorTrainer:
         # network with a lot of weights and we don't want to run out of GPU
         # memory
         random_backbone = resnet50(pretrained = False)
+        random_backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], backbone.fc.weight.shape[0])
         state_dict = random_backbone.state_dict()
         device = backbone.fc.weight.device
         backbone = backbone.to('cpu')
@@ -312,20 +313,20 @@ class NoveltyDetectorTrainer:
         backbone = backbone.to(device)
         
         # Randomize the classifiers and temperature scalers
-        detector.classifier.subject_classifier = torch.nn.Linear(detector.classifier.subject_classifier.fc.weight.shape[1], detector.classifier.subject_classifier.fc.weight.shape[0]).to(device)
-        detector.classifier.object_classifier = torch.nn.Linear(detector.classifier.object_classifier.fc.weight.shape[1], detector.classifier.object_classifier.fc.weight.shape[0]).to(device)
-        detector.classifier.verb_classifier = torch.nn.Linear(detector.classifier.verb_classifier.fc.weight.shape[1], detector.classifier.verb_classifier.fc.weight.shape[0]).to(device)
+        detector.classifier.subject_classifier = torch.nn.Linear(detector.classifier.subject_classifier.weight.shape[1], detector.classifier.subject_classifier.weight.shape[0]).to(device)
+        detector.classifier.object_classifier = torch.nn.Linear(detector.classifier.object_classifier.weight.shape[1], detector.classifier.object_classifier.weight.shape[0]).to(device)
+        detector.classifier.verb_classifier = torch.nn.Linear(detector.classifier.verb_classifier.weight.shape[1], detector.classifier.verb_classifier.weight.shape[0]).to(device)
         detector.confidence_calibrator.subject_calibrator = unsupervisednoveltydetection.common.TemperatureScaler().to(device)
         detector.confidence_calibrator.object_calibrator = unsupervisednoveltydetection.common.TemperatureScaler().to(device)
         detector.confidence_calibrator.verb_calibrator = unsupervisednoveltydetection.common.TemperatureScaler().to(device)
 
         # Construct random logistic regressions and transfer the weights
         random_case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression().to(device)
-        case_1_logistic_regression.load_state_dict(random_case_1_logistic_regression)
+        case_1_logistic_regression.load_state_dict(random_case_1_logistic_regression.state_dict())
         random_case_2_logistic_regression = noveltydetection.utils.Case2LogisticRegression().to(device)
-        case_2_logistic_regression.load_state_dict(random_case_2_logistic_regression)
+        case_2_logistic_regression.load_state_dict(random_case_2_logistic_regression.state_dict())
         random_case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression().to(device)
-        case_3_logistic_regression.load_state_dict(random_case_3_logistic_regression)
+        case_3_logistic_regression.load_state_dict(random_case_3_logistic_regression.state_dict())
         
     # TODO THOMAS: Edit this function interface to also accept novel train loaders
     # DONE
