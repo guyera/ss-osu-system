@@ -27,12 +27,10 @@ class TopLevelApp:
             raise Exception(f'pretrained SCG model was not found in path {ensemble_path}')
         if not Path(pretrained_backbone_path).exists():
             raise Exception(f'pretrained backbone was not found in path {pretrained_backbone_path}')
-        if not Path(train_csv_path).exists():
-            raise Exception(f'training CSV was not found in path {train_csv_path}')
-        if not Path(val_csv_path).exists():
-            raise Exception(f'validation CSV was not found in path {val_csv_path}')
-
-        torch.cuda.memory.reset_peak_memory_stats()
+        # if not Path(train_csv_path).exists():
+        #     raise Exception(f'training CSV was not found in path {train_csv_path}')
+        # if not Path(val_csv_path).exists():
+        #     raise Exception(f'validation CSV was not found in path {val_csv_path}')
 
         self.data_root = data_root
         self.train_csv_path = train_csv_path
