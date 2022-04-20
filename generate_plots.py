@@ -124,7 +124,7 @@ def plot_un(subject_novelty_scores, verb_novelty_scores, object_novelty_scores, 
     fig.savefig(out_dir.joinpath('verb_object_scatter.jpg'))
     plt.close(fig)
 
-def plot_p_ni(p_ni, test_id, out_dir, red_light_scores, post_red_base):
+def plot_p_ni(p_ni, p_ni_raw, test_id, out_dir, red_light_scores, post_red_base):
     plt.figure(figsize=(9, 5))
     plt.scatter(np.arange(p_ni.shape[0]), p_ni, s=15, alpha=0.6, label='P_n')
     
@@ -135,12 +135,27 @@ def plot_p_ni(p_ni, test_id, out_dir, red_light_scores, post_red_base):
     if post_red_base is not None:
         plt.vlines(post_red_base, 0, 1, color='red', alpha=0.4, label='Detection')
     plt.xlabel('Image')
-    plt.ylabel('P_ni')
-    plt.title(f'P_ni, {test_id}')    
+    plt.ylabel('Probability')
+    plt.title(f'P_n, {test_id}')    
     plt.legend()
-    plt.savefig(out_dir.joinpath(f'{test_id}_p_ni.jpg'))
+    plt.savefig(out_dir.joinpath(f'{test_id}_p_n.jpg'))
     plt.close()
-       
+
+    plt.figure(figsize=(9, 5))
+    plt.scatter(np.arange(p_ni_raw.shape[0]), p_ni_raw, s=15, alpha=0.6, label='P_n (original)')
+    
+    ma = compute_moving_avg(p_ni_raw, p_ni_raw.shape[0])
+    plt.plot(np.arange(ma.shape[0]), ma, color='gray', label='Moving Avg', alpha=0.4)
+    plt.plot(np.arange(red_light_scores.shape[0]), red_light_scores, color='green', alpha=0.7, label='Red-light Score')
+    if post_red_base is not None:
+        plt.vlines(post_red_base, 0, 1, color='red', alpha=0.4, label='Detection')
+    plt.xlabel('Image')
+    plt.ylabel('Probability')
+    plt.title(f'P_n (original), {test_id}')    
+    plt.legend()
+    plt.savefig(out_dir.joinpath(f'{test_id}_p_n_orig.jpg'))
+    plt.close()
+
 def plot_p_type(p_type_hist, test_id, out_dir):
     plt.figure(figsize=(9, 5))
     plt.plot(np.arange(len(p_type_hist)), [p[0] for p in p_type_hist], label='Type-1', marker='x', alpha=0.5)    
@@ -148,13 +163,14 @@ def plot_p_type(p_type_hist, test_id, out_dir):
     plt.plot(np.arange(len(p_type_hist)), [p[2] for p in p_type_hist], label='Type-3', marker='v', color='green', alpha=0.5)    
     plt.xlabel('Type-inference invocation')
     plt.ylabel('Probability')
-    plt.title(f'P-type, {test_id}')    
+    plt.title(f'P_type, {test_id}')    
     plt.legend()
     plt.savefig(out_dir.joinpath(f'{test_id}_p_type.jpg'))
     plt.close()
        
 def plot(p):
     p_ni = None
+    p_ni_raw = None
     subject_novelty_scores = None
     verb_novelty_scores = None
     object_novelty_scores = None
@@ -164,6 +180,7 @@ def plot(p):
     with open(p, 'rb') as handle:
         logs = pickle.load(handle)
         p_ni = logs['p_ni']
+        p_ni_raw = logs['p_ni_raw']
         subject_novelty_scores = logs['subj_novelty_scores_un']
         verb_novelty_scores = logs['verb_novelty_scores_un']
         object_novelty_scores = logs['obj_novelty_scores_un']
@@ -171,7 +188,7 @@ def plot(p):
         red_light_scores = logs['red_light_scores']
         post_red_base = logs['post_red_base']
         
-    plot_p_ni(p_ni, p.stem, p.parent, red_light_scores, post_red_base)
+    plot_p_ni(p_ni, p_ni_raw, p.stem, p.parent, red_light_scores, post_red_base)
     plot_p_type(p_type_hist, p.stem, p.parent)
     plot_un(subject_novelty_scores, verb_novelty_scores, object_novelty_scores, p.parent)
          

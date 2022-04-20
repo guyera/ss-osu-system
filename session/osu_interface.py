@@ -6,7 +6,8 @@ from toplevel import TopLevelApp
 
 class OSUInterface:
     def __init__(self, scg_ensemble, data_root, pretrained_unsupervised_novelty_path, pretrained_backbone_path, 
-        feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty):
+        feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path, 
+        trial_batch_size, trial_size):
 
         self.app = TopLevelApp(ensemble_path=scg_ensemble, 
             data_root=data_root, 
@@ -16,7 +17,11 @@ class OSUInterface:
             given_detection=given_detection, 
             log=log,
             log_dir=log_dir,
-            ignore_verb_novelty=ignore_verb_novelty)
+            ignore_verb_novelty=ignore_verb_novelty,
+            train_csv_path=train_csv_path,
+            val_csv_path=val_csv_path,
+            trial_size=trial_size,
+            trial_batch_size=trial_batch_size)
 
         self.temp_path = pathlib.Path('./session/temp/')
 

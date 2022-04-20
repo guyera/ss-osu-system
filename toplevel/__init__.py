@@ -14,16 +14,31 @@ from adaptation.query_formulation import select_queries
 import pickle
 from scipy.stats import ks_2samp
 from torchvision.models import resnet50
+from unsupervisednoveltydetection.training import NoveltyDetectorTrainer
+import os
 
 
 class TopLevelApp:
     def __init__(self, ensemble_path, data_root, pretrained_unsupervised_module_path, pretrained_backbone_path, 
-        feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty):
+        feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
+        trial_size, trial_batch_size):
 
         if not Path(ensemble_path).exists():
             raise Exception(f'pretrained SCG model was not found in path {ensemble_path}')
+        if not Path(pretrained_backbone_path).exists():
+            raise Exception(f'pretrained backbone was not found in path {pretrained_backbone_path}')
+        if not Path(train_csv_path).exists():
+            raise Exception(f'training CSV was not found in path {train_csv_path}')
+        if not Path(val_csv_path).exists():
+            raise Exception(f'validation CSV was not found in path {val_csv_path}')
+
+        torch.cuda.memory.reset_peak_memory_stats()
 
         self.data_root = data_root
+        self.train_csv_path = train_csv_path
+        self.val_csv_path = val_csv_path
+        self.pretrained_backbone_path = pretrained_backbone_path
+        self.pretrained_unsupervised_module_path = pretrained_unsupervised_module_path
         self.NUM_SUBJECT_CLASSES = 5
         self.NUM_OBJECT_CLASSES = 12
         self.NUM_VERB_CLASSES = 8
@@ -32,9 +47,8 @@ class TopLevelApp:
         self.p_type_dist = torch.tensor([0.25, 0.25, 0.25, 0.25]) if not ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
         self.all_query_masks = torch.tensor([])
         self.all_feedback = torch.tensor([])
-        self.all_cases = torch.tensor([])
         self.all_p_ni = torch.tensor([])
-        self.all_p_ni_raw = torch.tensor([])
+        self.all_p_ni_raw = np.array([])
         self.all_nc = torch.tensor([])
         self.all_top_1_svo = []
         self.all_top_3_svo = []
@@ -44,23 +58,13 @@ class TopLevelApp:
         self.scg_ensemble = Ensemble(ensemble_path, self.NUM_OBJECT_CLASSES, self.NUM_SUBJECT_CLASSES, 
             self.NUM_VERB_CLASSES, data_root=None, cal_csv_path=None, val_csv_path=None)
 
-        self.und_manager = UnsupervisedNoveltyDetectionManager(pretrained_unsupervised_module_path, 
-            self.NUM_SUBJECT_CLASSES, 
-            self.NUM_VERB_CLASSES, 
-            self.NUM_OBJECT_CLASSES, 
-            self.NUM_SPATIAL_FEATURES)
-
-        # self.snd_manager = SupervisedNoveltyDetectionManager(self.NUM_APP_FEATURES, self.NUM_VERB_FEATURES)
-
         self.p_type_th = 0.75
         self.post_red_base = None
         self.batch_context = BatchContext()
-        self.unsupervised_aucs = [None, None, None]
-        self.supervised_aucs = [None, None, None]
         self.feedback_enabled = feedback_enabled
         self.p_val_cuttoff =  0.0085542
         self.windows_size = 40
-        
+                
         a = np.array([[self.p_val_cuttoff, 1], [1, 1]])
         b = np.array([0.5, 0])
         x = np.linalg.solve(a, b)
@@ -82,29 +86,30 @@ class TopLevelApp:
         self.given_detection = given_detection
         self.red_light_img = None
         self.red_light_this_batch = False
+        self.num_retrains_so_far = 0
+        self.temp_path = Path('./session/temp/')
+        self.t_tn = None
+        self.batch_num = 0 
+        self.trial_size = trial_size
+        self.trial_batch_size = trial_batch_size
+        self.second_retrain_batch_num = (self.trial_size - 30) // self.trial_batch_size
+        self.retraining_buffer = pd.DataFrame(columns=['new_image_path', 'subject_name', 'subject_id', 'original_subject_id',
+            'object_name', 'object_id', 'original_object_id', 'verb_name',
+            'verb_id', 'original_verb_id', 'image_width', 'image_height',
+            'subject_ymin', 'subject_xmin', 'subject_ymax', 'subject_xmax',
+            'object_ymin', 'object_xmin', 'object_ymax', 'object_xmax'])
         
-        if not Path(pretrained_backbone_path).exists():
-            raise Exception(f'pretrained backbone was not found in path {pretrained_backbone_path}')
-        
-        backbone = resnet50(pretrained = False)
-        backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
-        backbone_state_dict = torch.load(pretrained_backbone_path)
-        backbone.load_state_dict(backbone_state_dict)
-        backbone = backbone.to('cuda:0')
-        backbone.eval()
-        self.backbone = backbone
+        self._reset_backbone_and_detectors()
         
     def reset(self):
-        # self.snd_manager.reset()
         self.post_red = False
         self.p_type_dist = torch.tensor([0.25, 0.25, 0.25, 0.25]) if not self.ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
         self.unsupervised_aucs = [None, None, None]
         self.supervised_aucs = [None, None, None]
         self.all_query_masks = torch.tensor([])
         self.all_feedback = torch.tensor([])
-        self.all_cases = torch.tensor([])
         self.all_p_ni = torch.tensor([])
-        self.all_p_ni_raw = torch.tensor([])
+        self.all_p_ni_raw = np.array([])
         self.all_nc = torch.tensor([], dtype=torch.long)
         self.all_top_1_svo = []
         self.all_top_3_svo = []
@@ -118,15 +123,22 @@ class TopLevelApp:
         self.all_red_light_scores = np.array([])
         self.red_light_img = None
         self.red_light_this_batch = False
+        self.t_tn = None
+        self.batch_num = 0 
+        self.num_retrains_so_far = 0
+        self.retraining_buffer = self.retraining_buffer.iloc[0:0]        
+        self._reset_backbone_and_detectors()
 
     def process_batch(self, csv_path, test_id, round_id, img_paths):
         if csv_path is None:
             raise Exception('path to csv was None')
 
+        self.batch_num += 1
         self.batch_context.reset()
 
         # initialize data loaders
-        scg_data_loader, novelty_dataset, N, image_paths, batch_cases = self._load_data(csv_path)
+        scg_data_loader, novelty_dataset, N, image_paths, df = self._load_data(csv_path)
+        self.batch_context.df = df
 
         # top-3 SVOs from SCG ensemble
         scg_preds, _, _, _ = self.scg_ensemble.get_top3_SVOs(scg_data_loader, False)
@@ -137,111 +149,55 @@ class TopLevelApp:
         subject_novelty_scores_u = unsupervised_results['subject_novelty_score']
         verb_novelty_scores_u = unsupervised_results['verb_novelty_score']
         object_novelty_scores_u = unsupervised_results['object_novelty_score']
-
-        subject_novelty_scores = subject_novelty_scores_u
-        verb_novelty_scores = verb_novelty_scores_u
-        object_novelty_scores = object_novelty_scores_u
+        assert len(subject_novelty_scores_u) == len(verb_novelty_scores_u) == len(object_novelty_scores_u)
 
         self.subj_novelty_scores_un += subject_novelty_scores_u
         self.verb_novelty_scores_un += verb_novelty_scores_u
         self.obj_novelty_scores_un += object_novelty_scores_u
 
-        # if self.post_red and self.feedback_enabled:
-        #     subject_novelty_scores_u_copy = [s.clone() if s is not None else None for s in subject_novelty_scores_u]
-        #     verb_novelty_scores_u_copy = [s.clone() if s is not None else None for s in verb_novelty_scores_u]
-        #     object_novelty_scores_u_copy = [s.clone() if s is not None else None for s in object_novelty_scores_u]
-
-        #     # Supervised novelty scores
-        #     subject_novelty_scores_s, verb_novelty_scores_s, object_novelty_scores_s = self.snd_manager.score(
-        #         novelty_dataset, subject_novelty_scores_u_copy, verb_novelty_scores_u_copy, object_novelty_scores_u_copy)
-
-        #     self.supervised_aucs = self.snd_manager.get_svo_detectors_auc()
-        #     self.unsupervised_aucs = self.und_manager.get_svo_detectors_auc()
-
-        #     # pick the scores from the detector which had a higher AUC
-        #     if self.unsupervised_aucs[0] < self.supervised_aucs[0]:
-        #         subject_novelty_scores = subject_novelty_scores_s
-
-        #     if self.unsupervised_aucs[1] < self.supervised_aucs[1]:
-        #         verb_novelty_scores = verb_novelty_scores_s
-            
-        #     if self.unsupervised_aucs[2] < self.supervised_aucs[2]:
-        #         object_novelty_scores = object_novelty_scores_s
-
-        assert len(subject_novelty_scores) == len(verb_novelty_scores) == len(object_novelty_scores)
-
         # compute P_n                        
         with torch.no_grad():
             case_1_lr, case_2_lr, case_3_lr = self.und_manager.get_calibrators()
-            batch_p_type, p_ni = compute_probability_novelty(subject_novelty_scores, verb_novelty_scores, object_novelty_scores, 
+            batch_p_type, p_ni = compute_probability_novelty(subject_novelty_scores_u, verb_novelty_scores_u, object_novelty_scores_u, 
                 case_1_lr, case_2_lr, case_3_lr, ignore_t2_in_pni=self.ignore_verb_novelty, p_t4=unsupervised_results['p_t4'])
 
         p_ni = p_ni.cpu().float()            
         batch_p_type = batch_p_type.cpu()
         self.per_image_p_type = torch.cat([self.per_image_p_type, batch_p_type])
         
-        # merge top-3 SVOs
-        top3_und = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type)
-        p_ni_for_top3 = np.copy(p_ni.numpy())
+        top3 = None
+        top3_probs = None
                 
         if not self.given_detection:
-            if self.all_p_ni.shape[0] + N < 60:    
-                p_ni_for_top3 = np.zeros_like(p_ni_for_top3)
-            elif self.all_p_ni.shape[0] < 60 and self.all_p_ni.shape[0] + N > 60:
-                num_lt_60 = 60 - self.all_p_ni.shape[0]
-                p_ni_for_top3[:num_lt_60] = 0
+            top3, top3_probs = self._top3(scg_preds, p_ni, novelty_dataset, batch_p_type)
         else:
-            if not self.post_red:
-                if self.red_light_this_batch:
-                    idx = -1
-                
-                    try:
-                       idx = img_paths.index(self.red_light_img)
-                    except ValueError:
-                        print(f'specified red-light image was not found in the given image paths.')
-                        raise Exception()
-                
-                    p_ni_for_top3[:idx] = 0
-                else:
-                    p_ni_for_top3 = np.zeros_like(p_ni_for_top3)
+            top3, top3_probs = self._top3_given_detection(scg_preds, p_ni, novelty_dataset, batch_p_type, img_paths)
         
-        merged = self._merge_top3_SVOs(scg_preds, top3_und, p_ni_for_top3)
-        top_1 = [m[0][0] for m in merged]
-        top_3 = [[e[0] for e in m] for m in merged]
-        top_3_probs = [[e[1] for e in m] for m in merged]
-
-        batch_preds_is_nc = torch.tensor([self._is_svo_type_4(t) for t in top_1], dtype=torch.long)
-                                
         self.batch_context.p_ni = p_ni
         self.batch_context.subject_novelty_scores_u = subject_novelty_scores_u
         self.batch_context.verb_novelty_scores_u = verb_novelty_scores_u
         self.batch_context.object_novelty_scores_u = object_novelty_scores_u
-        self.batch_context.subject_novelty_scores_best = subject_novelty_scores
-        self.batch_context.verb_novelty_scores_best = verb_novelty_scores
-        self.batch_context.object_novelty_scores_best = object_novelty_scores
         self.batch_context.image_paths = image_paths
         self.batch_context.novelty_dataset = novelty_dataset
-        self.batch_context.top_1 = top_1
-        self.batch_context.top_3 = top_3
-        self.batch_context.cases = batch_cases
-        self.batch_context.preds_is_nc = batch_preds_is_nc
+        self.batch_context.top_3 = top3
         self.batch_context.p_type = batch_p_type
+        self.batch_context.round_id = round_id
         
         red_light_scores = self._compute_red_light_scores(p_ni, N, img_paths)
 
         if not self.post_red or not self.feedback_enabled:
             batch_query_mask = torch.zeros(N, dtype=torch.long)
             batch_feedback_mask = torch.zeros(N, dtype=torch.long)
-            self._accumulate(top_1, top_3, p_ni, batch_cases, batch_preds_is_nc, batch_feedback_mask, batch_query_mask, batch_p_type)
+            self._accumulate(top3, p_ni, p_ni.numpy(), batch_feedback_mask, batch_query_mask, batch_p_type)
 
         self.all_red_light_scores = np.concatenate([self.all_red_light_scores, red_light_scores])
  
         ret = {}
         ret['p_ni'] = p_ni.tolist()
         ret['red_light_score'] = red_light_scores
-        ret['svo'] = top_3
-        ret['svo_probs'] = top_3_probs
-                                                  
+        ret['svo'] = top3
+        ret['svo_probs'] = top3_probs
+                                                                  
         return ret
         
     def red_light_hint_callback(self, path):
@@ -259,7 +215,8 @@ class TopLevelApp:
             logs['subj_novelty_scores_un'] = [s.cpu() if s is not None else None for s in self.subj_novelty_scores_un]
             logs['verb_novelty_scores_un'] = [s.cpu() if s is not None else None for s in self.verb_novelty_scores_un]
             logs['obj_novelty_scores_un'] = [s.cpu() if s is not None else None for s in self.obj_novelty_scores_un]
-            logs['p_ni'] = self.all_p_ni_raw.numpy()            
+            logs['p_ni'] = self.all_p_ni.numpy()
+            logs['p_ni_raw'] = self.all_p_ni_raw        
             logs['per_img_p_type'] = self.per_image_p_type.numpy()
             logs['post_red_base'] = self.post_red_base
             logs['p_type'] = self.p_type_hist
@@ -273,8 +230,8 @@ class TopLevelApp:
         assert self.feedback_enabled, "feedback is disabled"
 
         query_indices = select_queries(feedback_max_ids, torch.tensor([1/3, 1/3, 1/3, 0]), self.batch_context.p_ni, 
-            self.batch_context.subject_novelty_scores_best, self.batch_context.verb_novelty_scores_best, 
-            self.batch_context.object_novelty_scores_best)
+            self.batch_context.subject_novelty_scores_u, self.batch_context.verb_novelty_scores_u, 
+            self.batch_context.object_novelty_scores_u)
 
         if len(query_indices) > feedback_max_ids:
             raise Exception('number of queries exceeded feedback budget.')
@@ -300,6 +257,12 @@ class TopLevelApp:
             self.batch_context.query_mask[query_indices] = 1
             self.batch_context.query_indices = query_indices
             
+        if self.t_tn is None:
+            for i, img in enumerate(self.batch_context.image_paths):
+                if img in feedback_results and feedback_results[img] == 1:
+                    self.t_tn = i + self.all_p_ni.shape[0]
+                    break
+            
         N = len(self.batch_context.image_paths)
         self.batch_context.feedback_mask = torch.zeros(N, dtype=torch.long)
 
@@ -311,19 +274,71 @@ class TopLevelApp:
         feedback_t = torch.tensor(feedback, dtype=torch.long)
         self.batch_context.feedback_mask[self.batch_context.query_indices] = feedback_t
 
-        # adjust p_ni based on feedback 
+        # adjust p_ni based on feedback
+        p_ni_raw = np.copy(self.batch_context.p_ni)
         self.batch_context.p_ni[self.batch_context.query_indices] = feedback_t.float()
         
-        self._accumulate(self.batch_context.top_1, self.batch_context.top_3, self.batch_context.p_ni, self.batch_context.cases, 
-            self.batch_context.preds_is_nc, self.batch_context.feedback_mask, self.batch_context.query_mask, 
-            self.batch_context.p_type)
+        self._accumulate(self.batch_context.top_3, self.batch_context.p_ni, p_ni_raw,
+            self.batch_context.feedback_mask, self.batch_context.query_mask, self.batch_context.p_type)
 
         self._type_inference()
                 
-        # all_subject_indices, all_verb_indices, all_object_indices, subject_labels, verb_labels, object_labels = self._build_supervised_samples()
-        # self._train_supervised_detector(all_subject_indices, all_verb_indices, all_object_indices, 
-        #     subject_labels, verb_labels, object_labels)
-           
+        f = self.batch_context.df.apply(lambda row : feedback_results[row['new_image_path']] if row['new_image_path'] in feedback_results else -1, 
+            axis = 1)      
+        self.batch_context.df['feedback'] = f
+
+        self._retrain_supervised_detectors()                
+
+    def _top3(self, scg_preds, p_ni, novelty_dataset, batch_p_type):
+        top3 = None
+        top3_probs = None
+    
+        if self.t_tn is None:
+            top3 = [[e[0] for e in m] for m in scg_preds]
+            top3_probs = [[e[1] for e in m] for m in scg_preds]    
+        else:
+            assert self.post_red
+            top3_und = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist)
+            merged = self._merge_top3_SVOs(scg_preds, top3_und, p_ni)
+            top3 = [[e[0] for e in m] for m in merged]
+            top3_probs = [[e[1] for e in m] for m in merged]         
+                       
+        return top3, top3_probs
+                       
+    def _top3_given_detection(self, scg_preds, p_ni, novelty_dataset, batch_p_type, img_paths):
+        top3 = None
+        top3_probs = None
+        
+        if not self.post_red:
+            # if the red-light image happens to be in this batch
+            if self.red_light_this_batch:
+                idx = -1
+            
+                try:
+                   idx = img_paths.index(self.red_light_img)
+                except ValueError:
+                    print(f'specified red-light image was not found in the given image paths.')
+                    raise Exception()
+            
+                # use scg predictions up until the red-light image, merge with the unsupervised top3 from that point on
+                p_ni_for_top3 = np.copy(p_ni)
+                p_ni_for_top3[:idx] = 0
+                top3_und = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist)
+                merged = self._merge_top3_SVOs(scg_preds, top3_und, p_ni_for_top3)
+                top3 = [[e[0] for e in m] for m in merged]
+                top3_probs = [[e[1] for e in m] for m in merged] 
+            else:
+                top3 = [[e[0] for e in m] for m in scg_preds]
+                top3_probs = [[e[1] for e in m] for m in scg_preds]    
+        # just merge as usual 
+        else:
+            top3_und = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist)
+            merged = self._merge_top3_SVOs(scg_preds, top3_und, p_ni)
+            top3 = [[e[0] for e in m] for m in merged]
+            top3_probs = [[e[1] for e in m] for m in merged]          
+            
+        return top3, top3_probs
+        
     def _compute_red_light_scores(self, p_ni, N, img_paths):
         red_light_scores = np.ones(N)
         all_p_ni = np.concatenate([self.all_p_ni.numpy(), p_ni.numpy()])
@@ -386,7 +401,7 @@ class TopLevelApp:
         scores = [list(map(lambda x: (x, x[0][2] + x[1][2] + x[2][2]), comb_iter[i])) for i in range(N)]
         top_3_svo = [sorted(i, key=lambda x: x[1], reverse=True)[0][0] for i in scores]
         top_3_svo = [sorted(i, key=lambda x: x[2], reverse=True) for i in top_3_svo]
-        top_3_svo = [((a[0][0], a[0][2]), (a[1][0], a[1][2]), (a[2][0], a[2][2])) for a in top_3_svo]
+        top_3_svo = [((a[0][0], a[0][2].item()), (a[1][0], a[1][2].item()), (a[2][0], a[2][2].item())) for a in top_3_svo]
 
         return top_3_svo
 
@@ -430,22 +445,19 @@ class TopLevelApp:
         return log_p_type
 
     def _load_data(self, csv_path):
-        valset = DataFactory(
-            name="Custom", 
+        valset = DataFactory(name="Custom", 
             data_root=self.data_root,
             csv_path=csv_path,
             training=False)
 
-        scg_data_loader = DataLoader(
-            dataset=valset,
+        scg_data_loader = DataLoader(dataset=valset,
             collate_fn=custom_collate, 
             batch_size=1,
             num_workers=1, 
             pin_memory=False,
             sampler=None)
             
-        novelty_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
-            name = 'Custom',
+        novelty_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(name = 'Custom',
             data_root = self.data_root,
             csv_path = csv_path,
             training = False,
@@ -462,8 +474,9 @@ class TopLevelApp:
         cases = df.apply(lambda row : self._compute_case(row['subject_ymin'], row['subject_xmin'], 
             row['subject_ymax'], row['subject_xmax'], 
             row['object_ymin'], row['object_xmin'], row['object_ymax'], row['object_xmax']), axis = 1)
+        df['case'] = cases.to_numpy()
 
-        return scg_data_loader, novelty_dataset, N, image_paths, torch.tensor(cases.to_numpy(), dtype=torch.long)
+        return scg_data_loader, novelty_dataset, N, image_paths, df
 
     def _compute_case(self, sbox_ymin, sbox_xmin, sbox_ymax, sbox_xmax, obox_ymin, obox_xmin, obox_ymax, obox_xmax):
         has_subject = sbox_ymin >= 0 and sbox_ymax >= 0 and sbox_xmin >= 0 and sbox_xmax >= 0
@@ -480,135 +493,112 @@ class TopLevelApp:
 
         raise Exception(f'Invalid subject/object box coords, {has_subject}, {has_object}')
 
-    def _is_svo_type_4(self, svo):
-        # whether SV is novel or unknown
-        if svo[0] == -1 or svo[1] == -1 or svo[0] == 0 or svo[1] == 0:
-            return 0
-        
-        # whether SVO is a known-combination
-        if svo in self.scg_ensemble.train_tuples:
-            return 0
-
-        # whether SVO is type-2 or type-5
-        if (svo[0], svo[1]) in self.scg_ensemble.train_SVs:
-            return 0
-            
-        return 1
-
-    def _accumulate(self, top_1, top_3, p_ni, batch_cases, preds_is_nc, feedback_mask, query_mask, p_type):
-        self.all_top_1_svo += top_1
+    def _accumulate(self, top_3, p_ni, p_ni_raw, feedback_mask, query_mask, p_type):
         self.all_top_3_svo += top_3
-        self.all_cases = torch.cat([self.all_cases, batch_cases])
-        self.all_nc = torch.cat([self.all_nc, preds_is_nc])
         self.all_p_ni = torch.cat([self.all_p_ni, p_ni])
-        self.all_p_ni_raw = torch.cat([self.all_p_ni_raw, p_ni])
+        self.all_p_ni_raw = np.concatenate([self.all_p_ni_raw, p_ni_raw])
         self.all_feedback = torch.cat([self.all_feedback, feedback_mask])
         self.all_query_masks = torch.cat([self.all_query_masks, query_mask])
         self.all_p_type = torch.cat([self.all_p_type, p_type])
         
-        assert len(self.all_top_1_svo) == self.all_p_ni.shape[0] == self.all_p_type.shape[0]
-        assert self.all_nc.shape == self.all_p_ni.shape
-        assert self.all_feedback.shape == self.all_query_masks.shape == self.all_cases.shape == self.all_p_ni.shape
+        assert self.all_p_ni.shape[0] == self.all_p_type.shape[0] == len(self.all_top_3_svo)
+        assert self.all_feedback.shape == self.all_query_masks.shape == self.all_p_ni.shape
 
-    def _build_supervised_training_dataset(self):
-        query_indices = torch.tensor(self.batch_context.query_indices, dtype=torch.long)
+    def _reset_backbone_and_detectors(self):
+        self.und_manager = UnsupervisedNoveltyDetectionManager(self.pretrained_unsupervised_module_path, 
+            self.NUM_SUBJECT_CLASSES, 
+            self.NUM_VERB_CLASSES, 
+            self.NUM_OBJECT_CLASSES, 
+            self.NUM_SPATIAL_FEATURES,
+            0.98)        
 
-        # t_star = torch.argmax(self.p_type_dist)
-        # use_hard_labels = torch.isclose(self.p_type_dist[t_star], torch.ones(1, dtype=torch.float32))[0]
-        # t_star += 1
+        backbone = resnet50(pretrained = False)
+        backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
+        backbone_state_dict = torch.load(self.pretrained_backbone_path)
+        backbone.load_state_dict(backbone_state_dict)
+        backbone = backbone.to('cuda:0')
+        backbone.eval()
+        self.backbone = backbone
+        self.novelty_trainer = NoveltyDetectorTrainer(self.data_root, self.train_csv_path, self.val_csv_path)
 
-        batch_feedback = self.batch_context.feedback_mask[self.batch_context.query_indices]
-
-        novel_indices_mask = (batch_feedback == 1).long()
-        non_novel_indices_mask = (batch_feedback == 0).long()
+    def _retrain_supervised_detectors(self):
+        t_star = torch.argmax(self.p_type_dist) + 1
+        df_temp = self.batch_context.df.copy()
         
-        case_1_mask = (self.batch_context.cases[query_indices] == 1).long()
-        case_2_mask = (self.batch_context.cases[query_indices] == 2).long()
-        case_1_or_2_mask = case_1_mask + case_2_mask
-        case_1_or_3_mask = case_1_mask + (self.batch_context.cases[query_indices] == 3).long()
+        # subject
+        df_subj_neg_1 = df_temp[(df_temp['case'] == 1) & (df_temp['feedback'] == 0)]
+        df_subj_neg_2 = df_temp[(df_temp['case'] == 2) & (df_temp['feedback'] == 0)]
+        df_subj = pd.concat([df_subj_neg_1, df_subj_neg_2])
+        
+        # verb
+        df_verb_neg_1 = df_temp[(df_temp['case'] == 1) & (df_temp['feedback'] == 0)]
+        df_verb_neg_2 = df_temp[(df_temp['case'] == 2) & (df_temp['feedback'] == 0)]
+        df_verb = pd.concat([df_verb_neg_1, df_verb_neg_2])
+        
+        # object
+        df_obj_neg_1 = df_temp[(df_temp['case'] == 1) & (df_temp['feedback'] == 0)]
+        df_obj_neg_3 = df_temp[(df_temp['case'] == 3) & (df_temp['feedback'] == 0)]
+        df_obj = pd.concat([df_obj_neg_1, df_obj_neg_3])
+                
+        if t_star == 1:
+            df_subj_pos_1 = df_temp[(df_temp['case'] == 1) & (df_temp['feedback'] == 1)]
+            df_subj_pos_2 = df_temp[(df_temp['case'] == 2) & (df_temp['feedback'] == 1)]
+            df_subj_pos = pd.concat([df_subj_pos_1, df_subj_pos_2])
+            df_subj = pd.concat([df_subj, df_subj_pos])
+                                   
+        if t_star == 2:
+            df_verb_pos_1 = df_temp[(df_temp['case'] == 1) & (df_temp['feedback'] == 1)]
+            df_verb_pos_2 = df_temp[(df_temp['case'] == 2) & (df_temp['feedback'] == 1)]
+            df_verb_pos = pd.concat([df_verb_pos_1, df_verb_pos_2])
+            df_verb = pd.concat([df_verb, df_verb_pos])
+                        
+        if t_star == 3:
+            df_obj_pos_1 = df_temp[(df_temp['case'] == 1) & (df_temp['feedback'] == 1)]
+            df_obj_pos_3 = df_temp[(df_temp['case'] == 3) & (df_temp['feedback'] == 1)]
+            df_obj_pos = pd.concat([df_obj_pos_1, df_obj_pos_3])
+            df_obj = pd.concat([df_obj, df_obj_pos])
+                
+        p_type = self.p_type_dist.numpy()
+        use_hard_labels = np.isclose(p_type[t_star - 1], 1.0)
+        
+        df_subj['is_novel'] = df_subj.apply(lambda row: row['feedback'] * use_hard_labels + 
+            row['feedback'] * (1 - use_hard_labels) * p_type[0], axis=1)
+      
+        df_verb['is_novel'] = df_verb.apply(lambda row: row['feedback'] * use_hard_labels 
+            + row['feedback'] * (1 - use_hard_labels) * p_type[1], axis=1)
 
-        # negative samples
-        negative_subject_indices = query_indices[(non_novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
-        subject_labels = torch.zeros(negative_subject_indices.shape[0])
+        df_obj['is_novel'] = df_obj.apply(lambda row: row['feedback'] * use_hard_labels * (row['case'] == 3) + 
+            row['feedback'] * (1 - use_hard_labels) * p_type[2], axis=1)
 
-        negative_verb_indices = query_indices[(non_novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
-        verb_labels = torch.zeros(negative_verb_indices.shape[0])
-
-        negative_object_indices = query_indices[(non_novel_indices_mask == 1) & (case_1_or_3_mask == 1)]
-        object_labels = torch.zeros(negative_object_indices.shape[0])
-
-        # positive samples
-        # if use_hard_labels:
-        #     positive_subject_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)] if t_star == 1 else \
-        #         torch.tensor([], dtype=torch.long)
-        #     subject_labels = torch.cat([subject_labels, torch.ones(positive_subject_indices.shape[0])])
-
-        #     positive_verb_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)] if t_star == 2 else \
-        #         torch.tensor([], dtype=torch.long)
-        #     verb_labels = torch.cat([verb_labels, torch.ones(positive_verb_indices.shape[0])])
-
-        #     positive_object_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_3_mask == 1)] if t_star == 3 else \
-        #         torch.tensor([], dtype=torch.long)
-        #     object_labels = torch.cat([object_labels, torch.ones(positive_object_indices.shape[0])])
-        # else:
-        #     positive_subject_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
-        #     subject_labels = torch.cat([subject_labels, torch.ones(positive_subject_indices.shape[0]) * self.p_type_dist[0]])
-
-        #     positive_verb_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
-        #     verb_labels = torch.cat([verb_labels, torch.ones(positive_verb_indices.shape[0]) * self.p_type_dist[1]])
-
-        #     positive_object_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_3_mask == 1)]
-        #     object_labels = torch.cat([object_labels, torch.ones(positive_object_indices.shape[0]) * self.p_type_dist[2]])
+        df_subj = df_subj[df_subj['is_novel'] >= 0.9]
+        df_verb = df_verb[df_verb['is_novel'] >= 0.9]
+        df_obj = df_obj[df_obj['is_novel'] >= 0.9]
+  
+        df_final = pd.concat([df_subj, df_verb, df_obj]) 
+        df_final = df_final.drop(['case', 'feedback', 'is_novel'], axis=1, inplace=False)
+        df_final.drop_duplicates(inplace=True)        
+        self.retraining_buffer = pd.concat([self.retraining_buffer, df_final])
             
+        retrain_cond_1 = self.num_retrains_so_far == 0 and self.retraining_buffer.shape[0] >= 15
+        retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.retraining_buffer.shape[0] > 0)
         
-        positive_subject_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
-        subject_labels = torch.cat([subject_labels, torch.ones(positive_subject_indices.shape[0])])
-
-        positive_verb_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_2_mask == 1)]
-        verb_labels = torch.cat([verb_labels, torch.ones(positive_verb_indices.shape[0])])
-
-        positive_object_indices = query_indices[(novel_indices_mask == 1) & (case_1_or_3_mask == 1)]
-        object_labels = torch.cat([object_labels, torch.ones(positive_object_indices.shape[0])])
-        
-        all_subject_indices = torch.cat([negative_subject_indices, positive_subject_indices])
-        all_verb_indices = torch.cat([negative_verb_indices, positive_verb_indices])
-        all_object_indices = torch.cat([negative_object_indices, positive_object_indices])
-
-        subject_labels = 1.0 - subject_labels
-        verb_labels = 1.0 - verb_labels
-        object_labels = 1.0 - object_labels
-
-        return all_subject_indices, all_verb_indices, all_object_indices, subject_labels, verb_labels, object_labels
-
-    def _train_supervised_detectors(self, all_subject_indices, all_verb_indices, all_object_indices,
-        subject_labels, verb_labels, object_labels):
-
-        assert self.batch_context.is_set(), "no batch context"
-
-        appearance_features = [self.batch_context.novelty_dataset.subject_appearance_features[i].view(-1) for i in all_subject_indices]
-        subject_features = torch.vstack(appearance_features) if len(appearance_features) > 0 else torch.tensor([])
-
-        spatial_features = [self.batch_context.novelty_dataset.spatial_features[i].view(-1) for i in all_verb_indices]
-        spatial_features = torch.vstack(spatial_features) if len(spatial_features) > 1 else torch.tensor([])
-        appearance_features = [self.batch_context.novelty_dataset.verb_appearance_features[i].view(-1) for i in all_verb_indices]
-        appearance_features = torch.vstack(appearance_features) if len(appearance_features) > 0 else torch.tensor([])
-        verb_features = torch.hstack([spatial_features, appearance_features])
-
-        appearance_features = [self.batch_context.novelty_dataset.object_appearance_features[i].view(-1) for i in all_object_indices]
-        object_features = torch.vstack(appearance_features) if len(appearance_features) > 0 else torch.tensor([])
-
-        subject_novelty_scores_u = torch.tensor([self.batch_context.subject_novelty_scores_u[i] for i in all_subject_indices.tolist()])
-        verb_novelty_scores_u = torch.tensor([self.batch_context.verb_novelty_scores_u[i] for i in all_verb_indices.tolist()])
-        object_novelty_scores_u = torch.tensor([self.batch_context.object_novelty_scores_u[i] for i in all_object_indices.tolist()])
-
-        assert subject_features.shape[0] == subject_labels.shape[0]
-        assert verb_features.shape[0] == verb_labels.shape[0]
-        assert object_features.shape[0] == object_labels.shape[0]
-
-        # update the supervised novelty dataset
-        self.snd_manager.feedback_callback(subject_features, verb_features, object_features, 
-            subject_novelty_scores_u, verb_novelty_scores_u, object_novelty_scores_u, 
-            subject_labels, verb_labels, object_labels)
-
-        # retrain
-        self.snd_manager.train()        
+        if retrain_cond_1 or retrain_cond_2:
+            self.num_retrains_so_far += 1
+            csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
+            self.retraining_buffer.to_csv(csv_path, index=True)
+                
+            self.novelty_trainer.add_feedback_data(self.data_root, csv_path)
+            self.novelty_trainer.prepare_for_retraining(self.backbone, self.und_manager.detector, 
+                self.und_manager.case_1_logistic_regression,
+                self.und_manager.case_2_logistic_regression,
+                self.und_manager.case_3_logistic_regression)
+            self.novelty_trainer.train_novelty_detection_module(self.backbone, self.und_manager.detector, 
+                self.und_manager.case_1_logistic_regression,
+                self.und_manager.case_2_logistic_regression,
+                self.und_manager.case_3_logistic_regression)
+            
+            self.retraining_buffer = self.retraining_buffer.iloc[0:0]
+            assert self.retraining_buffer.shape[0] == 0
+                
+            if csv_path.exists():
+                os.remove(csv_path)

@@ -41,6 +41,14 @@ class VerbBoxImageDataset(torch.utils.data.Dataset):
         spatial_encodings, _, _, _, _, _, verb_label, _, _, verb_box_image = self.novelty_feature_dataset[idx]
         return verb_box_image, spatial_encodings, verb_label
 
+def custom_cross_entropy(predictions, targets):
+    log_softmaxes = predictions - torch.logsumexp(predictions, dim = 1, keepdim = True)
+    products = targets * log_softmaxes
+    negations = -products
+    sums = negations.sum(dim = 1)
+    reduction = sums.mean()
+    return reduction
+
 def separate_data(dataset):
     known_subject_indices = []
     novel_subject_indices = []
@@ -214,15 +222,15 @@ def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
     progress.close()
     
 class NoveltyDetectorTrainer:
-    def __init__(self):
+    def __init__(self, data_root, train_csv_path, val_csv_path):
         train_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
             name = 'Custom',
-            data_root = 'Custom',
-            csv_path = 'Custom/annotations/dataset_v4_train.csv',
+            data_root = data_root,
+            csv_path = train_csv_path,
             training = True,
             image_batch_size = 16,
             backbone = None,
-            cache_to_disk = False
+            cache_to_disk = True
         )
 
         self.known_train_subject_dataset,\
@@ -234,12 +242,12 @@ class NoveltyDetectorTrainer:
 
         val_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
             name = 'Custom',
-            data_root = 'Custom',
-            csv_path = 'Custom/annotations/dataset_v4_val.csv',
+            data_root = data_root,
+            csv_path = val_csv_path,
             training = False,
             image_batch_size = 16,
             backbone = None,
-            cache_to_disk = False
+            cache_to_disk = True
         )
         
         # Separate the known val data out for temperature scaling calibration
@@ -276,10 +284,10 @@ class NoveltyDetectorTrainer:
     # of feedback data. I'm not sure if a csv_path is the appropriate way to
     # accept this data, so feel free to change the API however you'd like.
     # DONE
-    def add_feedback_data(self, csv_path):
+    def add_feedback_data(self, data_root, csv_path):
         new_novel_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
             name = 'Custom',
-            data_root = 'Custom',
+            data_root = data_root,
             csv_path = csv_path,
             training = True,
             image_batch_size = 16,
@@ -304,7 +312,7 @@ class NoveltyDetectorTrainer:
         # backbone. Do the actual weight transfer on the CPU, since it's a big
         # network with a lot of weights and we don't want to run out of GPU
         # memory
-        random_backbone = resnet50(pretrained = False)
+        random_backbone = resnet50(pretrained = True)
         random_backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], backbone.fc.weight.shape[0])
         state_dict = random_backbone.state_dict()
         device = backbone.fc.weight.device
@@ -511,9 +519,12 @@ class NoveltyDetectorTrainer:
             batch_novel_object_preds = object_classifier(batch_novel_object_features)
             batch_novel_verb_preds = verb_classifier(batch_novel_verb_features)
 
-            batch_novel_subject_loss = torch.nn.functional.cross_entropy(batch_novel_subject_preds, batch_novel_subject_labels)
-            batch_novel_object_loss = torch.nn.functional.cross_entropy(batch_novel_object_preds, batch_novel_object_labels)
-            batch_novel_verb_loss = torch.nn.functional.cross_entropy(batch_novel_verb_preds, batch_novel_verb_labels)
+            # batch_novel_subject_loss = torch.nn.functional.cross_entropy(batch_novel_subject_preds, batch_novel_subject_labels)
+            # batch_novel_object_loss = torch.nn.functional.cross_entropy(batch_novel_object_preds, batch_novel_object_labels)
+            # batch_novel_verb_loss = torch.nn.functional.cross_entropy(batch_novel_verb_preds, batch_novel_verb_labels)
+            batch_novel_subject_loss = custom_cross_entropy(batch_novel_subject_preds, batch_novel_subject_labels)
+            batch_novel_object_loss = custom_cross_entropy(batch_novel_object_preds, batch_novel_object_labels)
+            batch_novel_verb_loss = custom_cross_entropy(batch_novel_verb_preds, batch_novel_verb_labels)
 
             batch_loss = batch_known_subject_loss + batch_known_verb_loss + batch_known_object_loss \
                          + batch_novel_subject_loss + batch_novel_object_loss + batch_novel_verb_loss
@@ -616,7 +627,7 @@ class NoveltyDetectorTrainer:
             _, novel_feedback_subject_dataset, \
                 _, novel_feedback_object_dataset, \
                 _, novel_feedback_verb_dataset = separate_data(self.feedback_data)
-
+            
             novel_subject_dataset = torch.utils.data.ConcatDataset([self.novel_train_subject_dataset, novel_feedback_subject_dataset])
             novel_object_dataset  = torch.utils.data.ConcatDataset([self.novel_train_object_dataset, novel_feedback_object_dataset])
             novel_verb_dataset    = torch.utils.data.ConcatDataset([self.novel_train_verb_dataset, novel_feedback_verb_dataset])
@@ -645,7 +656,7 @@ class NoveltyDetectorTrainer:
         no_size = len(novel_object_dataset)
         nv_size = len(novel_verb_dataset)
 
-        total_batch_size = 32
+        total_batch_size = 128
 
         ks_batch_size, ko_batch_size, kv_batch_size, \
             ns_batch_size, no_batch_size, nv_batch_size = self.compute_balanced_batch_sizes(total_batch_size, ks_size, ko_size, kv_size, ns_size, no_size, nv_size)        
@@ -694,17 +705,17 @@ class NoveltyDetectorTrainer:
         # so we'd have to modify __init__().
         known_val_subject_loader = torch.utils.data.DataLoader(
             self.known_val_subject_dataset,
-            batch_size = 10,
+            batch_size = 96,
             shuffle = False
         )
         known_val_object_loader = torch.utils.data.DataLoader(
             self.known_val_object_dataset,
-            batch_size = 10,
+            batch_size = 96,
             shuffle = False
         )
         known_val_verb_loader = torch.utils.data.DataLoader(
             self.known_val_verb_dataset,
-            batch_size = 10,
+            batch_size = 96,
             shuffle = False
         )
 
@@ -717,9 +728,10 @@ class NoveltyDetectorTrainer:
         )
         
         # Define convergence parameters (early stopping + model selection)
-        patience = 5
+        patience = 3
         epochs_since_improvement = 0
-        max_epochs = 30
+        max_epochs = 15
+        min_epochs = 4
         best_accuracy = None
         best_accuracy_backbone_state_dict = None
         best_accuracy_subject_classifier_state_dict = None
@@ -738,28 +750,31 @@ class NoveltyDetectorTrainer:
                 known_train_verb_loader, novel_verb_loader, 
                 backbone, subject_classifier, object_classifier, verb_classifier, 
                 optimizer)
+                
+            # progress.set_description(f'Training backbone and classifiers... | Train Loss: {mean_train_loss} | Train Acc: {mean_known_train_accuracy}')
             
             # Measure validation accuracy for early stopping / model selection.
             # I'm assuming we don't need to use the novel data here.
-            mean_val_accuracy = self.val_epoch(known_val_subject_loader,
-                known_val_object_loader, known_val_verb_loader, backbone,
-                subject_classifier, object_classifier, verb_classifier)
-            
-            progress.set_description(f'Training backbone and classifiers... | Train Loss: {mean_train_loss} | Train Acc: {mean_known_train_accuracy} | Val Acc: {mean_val_accuracy}')
-            
-            if best_accuracy is None or mean_val_accuracy > best_accuracy:
-                epochs_since_improvement = 0
-                best_accuracy = mean_val_accuracy
-                best_accuracy_backbone_state_dict = copy.deepcopy(backbone.state_dict())
-                best_accuracy_subject_classifier_state_dict = copy.deepcopy(subject_classifier.state_dict())
-                best_accuracy_object_classifier_state_dict = copy.deepcopy(object_classifier.state_dict())
-                best_accuracy_verb_classifier_state_dict = copy.deepcopy(verb_classifier.state_dict())
-            else:
-                epochs_since_improvement += 1
-                if epochs_since_improvement >= patience:
-                    # We haven't improved in several epochs. Time to stop
-                    # training.
-                    break
+            if epoch >= min_epochs - 1:
+                mean_val_accuracy = self.val_epoch(known_val_subject_loader,
+                    known_val_object_loader, known_val_verb_loader, backbone,
+                    subject_classifier, object_classifier, verb_classifier)
+                
+                progress.set_description(f'Training backbone and classifiers... | Train Loss: {mean_train_loss} | Train Acc: {mean_known_train_accuracy} | Val Acc: {mean_val_accuracy}')
+                
+                if best_accuracy is None or mean_val_accuracy > best_accuracy:
+                    epochs_since_improvement = 0
+                    best_accuracy = mean_val_accuracy
+                    best_accuracy_backbone_state_dict = copy.deepcopy(backbone.state_dict())
+                    best_accuracy_subject_classifier_state_dict = copy.deepcopy(subject_classifier.state_dict())
+                    best_accuracy_object_classifier_state_dict = copy.deepcopy(object_classifier.state_dict())
+                    best_accuracy_verb_classifier_state_dict = copy.deepcopy(verb_classifier.state_dict())
+                else:
+                    epochs_since_improvement += 1
+                    if epochs_since_improvement >= patience:
+                        # We haven't improved in several epochs. Time to stop
+                        # training.
+                        break
         progress.close()
 
         # Load the best accuracy state dicts

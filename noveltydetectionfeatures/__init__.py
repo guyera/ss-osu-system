@@ -162,25 +162,6 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.spatial_features)
 
-    def _cache(self):
-        data = {
-            'spatial_features': self.spatial_features,
-            'subject_labels': self.subject_labels,
-            'object_labels': self.object_labels,
-            'verb_labels': self.verb_labels,
-            'subject_roi_features': self.subject_roi_features,
-            'object_roi_features': self.object_roi_features,
-            'verb_roi_features': self.verb_roi_features,
-            'subject_images': self.subject_images,
-            'object_images': self.object_images,
-            'verb_images': self.verb_images
-        }
-
-        with open('dataset.pkl', 'wb') as f:
-            pickle.dump(data, f)
-
-        print('dataset was cached to disk.')
-
     def _compute_image_features(self, name, data_root, csv_path, training, 
         image_batch_size, feature_extraction_device, output_size, sampling_ratio, image_mean, image_std, 
         min_size, max_size):

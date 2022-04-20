@@ -17,6 +17,10 @@ if __name__ == "__main__":
     p.add_argument('--ignore-verb-novelty', default=False, action='store_true')
     p.add_argument('--detection-feedback', action='store_true')
     p.add_argument('--given-detection', default=False, action='store_true')
+    p.add_argument('--train-csv-path', default='./dataset_v4/dataset_v4_2_train.csv')
+    p.add_argument('--val-csv-path', default='./dataset_v4/dataset_v4_2_val.csv')
+    p.add_argument('--trial-size', type=int, default=600)
+    p.add_argument('--trial-batch-size', type=int, default=10)
     p.add_argument('--api-dir', default='./session/api')
     p.add_argument('--tests-dir', default='./session/tests')
     p.add_argument('--url', default='http://localhost:6789')
@@ -46,7 +50,11 @@ if __name__ == "__main__":
         given_detection=args.given_detection,
         log=args.log,
         log_dir=args.log_dir,
-        ignore_verb_novelty=args.ignore_verb_novelty)
+        ignore_verb_novelty=args.ignore_verb_novelty, 
+        train_csv_path=args.train_csv_path,
+        val_csv_path=args.val_csv_path,
+        trial_size=args.trial_size,
+        trial_batch_size=args.trial_batch_size)
     
     api = APIStubs(args.api_dir, args.tests_dir) if args.api_stubs else None
     
