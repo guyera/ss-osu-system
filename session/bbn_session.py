@@ -503,8 +503,9 @@ class BBNSession:
                 # if self.given_detection:
                 #     print(f' **** About to call choose_detection_feedback_ids, round {round_id}')
 
+                num_ids_to_request = len(filenames) if self.given_detection else feedback_max_ids
                 feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
-                                                                           filenames, feedback_max_ids)
+                                                                            filenames, num_ids_to_request)
                 detection_feedback_results = self.request_detection_feedback(session_id, test_id, round_id,
                                                                              feedback_ids)
                 self.osu_stubs.record_detection_feedback(test_id, round_id, detection_feedback_results)
