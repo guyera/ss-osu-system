@@ -222,7 +222,7 @@ def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
     progress.close()
     
 class NoveltyDetectorTrainer:
-    def __init__(self, data_root, train_csv_path, val_csv_path):
+    def __init__(self, data_root, train_csv_path, val_csv_path, retraining_batch_size):
         train_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
             name = 'Custom',
             data_root = data_root,
@@ -278,6 +278,8 @@ class NoveltyDetectorTrainer:
         # DONE
 
         self.feedback_data = None
+        
+        self.retraining_batch_size = retraining_batch_size 
     
     # TODO THOMAS: Implement this function. It should receive some new feedback
     # data from the top level and append it to the trainer's existing store
@@ -656,7 +658,7 @@ class NoveltyDetectorTrainer:
         no_size = len(novel_object_dataset)
         nv_size = len(novel_verb_dataset)
 
-        total_batch_size = 128
+        total_batch_size = self.retraining_batch_size
 
         ks_batch_size, ko_batch_size, kv_batch_size, \
             ns_batch_size, no_batch_size, nv_batch_size = self.compute_balanced_batch_sizes(total_batch_size, ks_size, ko_size, kv_size, ns_size, no_size, nv_size)        

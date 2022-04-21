@@ -21,7 +21,7 @@ import os
 class TopLevelApp:
     def __init__(self, ensemble_path, data_root, pretrained_unsupervised_module_path, pretrained_backbone_path, 
         feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
-        trial_size, trial_batch_size):
+        trial_size, trial_batch_size, retraining_batch_size):
 
         if not Path(ensemble_path).exists():
             raise Exception(f'pretrained SCG model was not found in path {ensemble_path}')
@@ -96,6 +96,7 @@ class TopLevelApp:
             'verb_id', 'original_verb_id', 'image_width', 'image_height',
             'subject_ymin', 'subject_xmin', 'subject_ymax', 'subject_xmax',
             'object_ymin', 'object_xmin', 'object_ymax', 'object_xmax'])
+        self.retraining_batch_size = retraining_batch_size
         
         self._reset_backbone_and_detectors()
         
@@ -517,7 +518,7 @@ class TopLevelApp:
         backbone = backbone.to('cuda:0')
         backbone.eval()
         self.backbone = backbone
-        self.novelty_trainer = NoveltyDetectorTrainer(self.data_root, self.train_csv_path, self.val_csv_path)
+        self.novelty_trainer = NoveltyDetectorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.retraining_batch_size)
 
     def _retrain_supervised_detectors(self):
         t_star = torch.argmax(self.p_type_dist) + 1
