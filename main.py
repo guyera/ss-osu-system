@@ -22,6 +22,7 @@ if __name__ == "__main__":
     p.add_argument('--trial-size', type=int, default=600)
     p.add_argument('--trial-batch-size', type=int, default=10)
     p.add_argument('--retraining-batch-size', type=int, default=128)
+    p.add_argument('--disable-retraining', default=False, action='store_true')
     p.add_argument('--api-dir', default='./session/api')
     p.add_argument('--tests-dir', default='./session/tests')
     p.add_argument('--url', default='http://localhost:6789')
@@ -56,7 +57,8 @@ if __name__ == "__main__":
         val_csv_path=args.val_csv_path,
         trial_size=args.trial_size,
         trial_batch_size=args.trial_batch_size,
-        retraining_batch_size=args.retraining_batch_size)
+        retraining_batch_size=args.retraining_batch_size,
+        disable_retraining=args.disable_retraining)
     
     api = APIStubs(args.api_dir, args.tests_dir) if args.api_stubs else None
     

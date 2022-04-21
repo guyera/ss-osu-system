@@ -21,7 +21,7 @@ import os
 class TopLevelApp:
     def __init__(self, ensemble_path, data_root, pretrained_unsupervised_module_path, pretrained_backbone_path, 
         feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
-        trial_size, trial_batch_size, retraining_batch_size):
+        trial_size, trial_batch_size, retraining_batch_size, disable_retraining):
 
         if not Path(ensemble_path).exists():
             raise Exception(f'pretrained SCG model was not found in path {ensemble_path}')
@@ -97,6 +97,7 @@ class TopLevelApp:
             'subject_ymin', 'subject_xmin', 'subject_ymax', 'subject_xmax',
             'object_ymin', 'object_xmin', 'object_ymax', 'object_xmax'])
         self.retraining_batch_size = retraining_batch_size
+        self.disable_retraining = disable_retraining
         
         self._reset_backbone_and_detectors()
         
@@ -286,7 +287,8 @@ class TopLevelApp:
             axis = 1)      
         self.batch_context.df['feedback'] = f
 
-        self._retrain_supervised_detectors()                
+        if not self.disable_retraining:
+            self._retrain_supervised_detectors()                
 
     def _top3(self, scg_preds, p_ni, novelty_dataset, batch_p_type):
         top3 = None
