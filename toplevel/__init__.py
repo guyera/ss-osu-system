@@ -560,19 +560,21 @@ class TopLevelApp:
         p_type = self.p_type_dist.numpy()
         use_hard_labels = np.isclose(p_type[t_star - 1], 1.0)
         
-        df_subj['is_novel'] = df_subj.apply(lambda row: row['feedback'] * use_hard_labels + 
-            row['feedback'] * (1 - use_hard_labels) * p_type[0], axis=1)
+        if df_subj.shape[0] > 0:
+            df_subj['is_novel'] = df_subj.apply(lambda row: row['feedback'] * use_hard_labels + 
+                row['feedback'] * (1 - use_hard_labels) * p_type[0], axis=1)        
+            df_subj = df_subj[df_subj['is_novel'] >= 0.9]
       
-        df_verb['is_novel'] = df_verb.apply(lambda row: row['feedback'] * use_hard_labels 
-            + row['feedback'] * (1 - use_hard_labels) * p_type[1], axis=1)
+        if df_verb.shape[0] > 0:
+            df_verb['is_novel'] = df_verb.apply(lambda row: row['feedback'] * use_hard_labels 
+                + row['feedback'] * (1 - use_hard_labels) * p_type[1], axis=1)
+            df_verb = df_verb[df_verb['is_novel'] >= 0.9]
 
-        df_obj['is_novel'] = df_obj.apply(lambda row: row['feedback'] * use_hard_labels * (row['case'] == 3) + 
-            row['feedback'] * (1 - use_hard_labels) * p_type[2], axis=1)
+        if df_obj.shape[0] > 0:
+            df_obj['is_novel'] = df_obj.apply(lambda row: row['feedback'] * use_hard_labels * (row['case'] == 3) + 
+                row['feedback'] * (1 - use_hard_labels) * p_type[2], axis=1)
+            df_obj = df_obj[df_obj['is_novel'] >= 0.9]
 
-        df_subj = df_subj[df_subj['is_novel'] >= 0.9]
-        df_verb = df_verb[df_verb['is_novel'] >= 0.9]
-        df_obj = df_obj[df_obj['is_novel'] >= 0.9]
-  
         df_final = pd.concat([df_subj, df_verb, df_obj]) 
         df_final = df_final.drop(['case', 'feedback', 'is_novel'], axis=1, inplace=False)
         df_final.drop_duplicates(inplace=True)        
