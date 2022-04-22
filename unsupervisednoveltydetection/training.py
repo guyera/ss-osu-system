@@ -139,6 +139,78 @@ def class_balance(dataset):
 
     return torch.utils.data.Subset(dataset, selected_indices)
 
+def custom_class_balance(dataset, class_proportions):
+    class_counts = {}
+    for item_tuple in dataset:
+        label = item_tuple[-1]
+        if torch.is_tensor(label):
+            numeric_label = int(label.item())
+        else:
+            numeric_label = label
+        
+        if numeric_label not in class_counts:
+            class_counts[numeric_label] = 0
+
+        class_counts[numeric_label] += 1
+    
+    total_data_points = sum([v for k, v in class_counts.items()])
+    target_class_counts = {k: int(total_data_points * class_proportions[k]) for k, v in class_counts.items()}
+    
+    # The target class counts need to be "refined", since they'll only be
+    # possible to achieve if the full dataset balance already exactly matches
+    # the class_proportions (otherwise there will be an insufficient amount
+    # of data for some classes and extra data for others). To refine them,
+    # we simply have to check each target class count as see if it's greater
+    # than the corresponding actual class count. If so, we compute a scale 
+    # factor by which all target class counts must be multiplied in order to
+    # make the target class count for the given class achievable (and preserving
+    # the target class count proportions by using the same scale factor across
+    # all target class counts). We do this for all such target class counts
+    # and find the minimum such scale factor. We then use this scale factor
+    # to do the actual scaling. After doing this, the limiting class's target
+    # class count will be exactly equal to its actual class count, which uses
+    # the maximal amount of data possible.
+    
+    # Discover the minimum scale factor
+    min_scale_factor = None
+    for key in target_class_counts:
+        if target_class_counts[key] > class_counts[key]:
+            scale_factor = float(class_counts[key]) / target_class_counts[key]
+            if min_scale_factor is None or scale_factor < min_scale_factor:
+                min_scale_factor = scale_factor
+    
+    # Apply the minimum scale factor, if appropriate
+    if min_scale_factor is not None:
+        for inner_key in target_class_counts:
+            target_class_counts[inner_key] = int(target_class_counts[inner_key] * min_scale_factor)
+    
+    # Iterate over dataset in random order, accumulating data for each class
+    # until the corresponding target class count is reached
+    class_counts = {}
+    selected_indices = []
+    generator = torch.Generator()
+    generator.manual_seed(0)
+    indices = torch.randperm(len(dataset), generator = generator)
+    for idx in indices:
+        item_tuple = dataset[idx]
+        label = item_tuple[-1]
+
+        if torch.is_tensor(label):
+            numeric_label = int(label.item())
+        else:
+            numeric_label = label
+        
+        if numeric_label not in class_counts:
+            class_counts[numeric_label] = 0
+        
+        # If we haven't yet selected target number of data points belonging to
+        # this class, then select this one as well
+        if class_counts[numeric_label] < target_class_counts[numeric_label]:
+            class_counts[numeric_label] += 1
+            selected_indices.append(idx)
+
+    return torch.utils.data.Subset(dataset, selected_indices)
+
 def separate_by_case(novelty_feature_dataset):
     case_1_images = []
     case_2_images = []
@@ -268,9 +340,12 @@ class NoveltyDetectorTrainer:
         case_1_novelty_type_dataset, case_2_novelty_type_dataset, case_3_novelty_type_dataset = separate_by_case(val_dataset)
 
         # Balance the case-separated data by novelty type
-        self.case_1_novelty_type_dataset = class_balance(case_1_novelty_type_dataset)
-        self.case_2_novelty_type_dataset = class_balance(case_2_novelty_type_dataset)
-        self.case_3_novelty_type_dataset = class_balance(case_3_novelty_type_dataset)
+        case_1_novelty_type_proportions = [0.5, 0.167, 0.167, 0.167]
+        self.case_1_novelty_type_dataset = custom_class_balance(case_1_novelty_type_dataset, case_1_novelty_type_proportions)
+        case_2_novelty_type_proportions = [0.5, 0.25, 0.25]
+        self.case_2_novelty_type_dataset = custom_class_balance(case_2_novelty_type_dataset, case_2_novelty_type_proportions)
+        case_3_novelty_type_proportions = [0.5, 0.5]
+        self.case_3_novelty_type_dataset = custom_class_balance(case_3_novelty_type_dataset, case_3_novelty_type_proportions)
 
         # TODO THOMAS: Perhaps initialize some empty list / tensor / whatever
         # of feedback data, which will be appended to as we receive it from
