@@ -330,16 +330,38 @@ scores = torch.cat((nominal_p_n, type_1_p_n), dim = 0)
 trues = torch.cat((torch.zeros_like(nominal_p_n), torch.ones_like(type_1_p_n)), dim = 0)
 auc = sklearn.metrics.roc_auc_score(trues.detach().cpu().numpy(), scores.detach().cpu().numpy())
 print(f'Type 1 P_N AUC: {auc}')
+predictions = scores > 0.5
+n_correct = (predictions == trues).to(torch.int).sum().detach().cpu().item()
+accuracy = float(n_correct) / len(trues)
+print(f'Type 1 P_N Accuracy: {accuracy}')
 
 scores = torch.cat((nominal_p_n, type_2_p_n), dim = 0)
 trues = torch.cat((torch.zeros_like(nominal_p_n), torch.ones_like(type_2_p_n)), dim = 0)
 auc = sklearn.metrics.roc_auc_score(trues.detach().cpu().numpy(), scores.detach().cpu().numpy())
 print(f'Type 2 P_N AUC: {auc}')
+predictions = scores > 0.5
+n_correct = (predictions == trues).to(torch.int).sum().detach().cpu().item()
+accuracy = float(n_correct) / len(trues)
+print(f'Type 2 P_N Accuracy: {accuracy}')
 
 scores = torch.cat((nominal_p_n, type_3_p_n), dim = 0)
 trues = torch.cat((torch.zeros_like(nominal_p_n), torch.ones_like(type_3_p_n)), dim = 0)
 auc = sklearn.metrics.roc_auc_score(trues.detach().cpu().numpy(), scores.detach().cpu().numpy())
 print(f'Type 3 P_N AUC: {auc}')
+predictions = scores > 0.5
+n_correct = (predictions == trues).to(torch.int).sum().detach().cpu().item()
+accuracy = float(n_correct) / len(trues)
+print(f'Type 3 P_N Accuracy: {accuracy}')
+
+scores = torch.cat((nominal_p_n, type_1_p_n, type_2_p_n, type_3_p_n), dim = 0)
+trues = torch.cat((torch.zeros_like(nominal_p_n), torch.ones_like(type_1_p_n), torch.ones_like(type_2_p_n), torch.ones_like(type_3_p_n)), dim = 0)
+auc = sklearn.metrics.roc_auc_score(trues.detach().cpu().numpy(), scores.detach().cpu().numpy())
+print(f'Type 0 vs Type Non-0 P_N AUC: {auc}')
+predictions = scores > 0.5
+n_correct = (predictions == trues).to(torch.int).sum().detach().cpu().item()
+accuracy = float(n_correct) / len(trues)
+print(f'Type 0 vs Type Non-0 P_N Accuracy: {accuracy}')
+
 
 print()
 
