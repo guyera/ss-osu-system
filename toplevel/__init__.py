@@ -578,9 +578,11 @@ class TopLevelApp:
             df_obj = df_obj[df_obj['is_novel'] >= 0.9]
 
         df_final = pd.concat([df_subj, df_verb, df_obj]) 
-        df_final = df_final.drop(['case', 'feedback', 'is_novel'], axis=1, inplace=False)
-        df_final.drop_duplicates(inplace=True)        
-        self.retraining_buffer = pd.concat([self.retraining_buffer, df_final])
+        
+        if df_final.shape[0] > 0:
+            df_final.drop(columns=['case', 'feedback', 'is_novel'], inplace=True)
+            df_final.drop_duplicates(inplace=True)        
+            self.retraining_buffer = pd.concat([self.retraining_buffer, df_final])
             
         retrain_cond_1 = self.num_retrains_so_far == 0 and self.retraining_buffer.shape[0] >= 15
         retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.retraining_buffer.shape[0] > 0)

@@ -132,18 +132,18 @@ class UnsupervisedNoveltyDetectionManager:
         object_box_features = []
         verb_box_features = []
         
-        for example_spatial_features, _, _, _, _, _, _, example_subject_images, example_object_images, example_verb_images in dataset:
-            spatial_feature = example_spatial_features if example_spatial_features is not None else None
-            subject_feature = backbone(example_subject_images.unsqueeze(0)).squeeze(0) if example_subject_images is not None else None
-            object_feature = backbone(example_object_images.unsqueeze(0)).squeeze(0) if example_object_images is not None else None
-            verb_feature = backbone(example_verb_images.unsqueeze(0)).squeeze(0) if example_verb_images is not None else None
-            
-            spatial_features.append(spatial_feature)
-            subject_box_features.append(subject_feature)
-            object_box_features.append(object_feature)
-            verb_box_features.append(verb_feature)
-
         with torch.no_grad():
+            for example_spatial_features, _, _, _, _, _, _, example_subject_images, example_object_images, example_verb_images in dataset:
+                spatial_feature = example_spatial_features if example_spatial_features is not None else None
+                subject_feature = backbone(example_subject_images.unsqueeze(0)).squeeze(0) if example_subject_images is not None else None
+                object_feature = backbone(example_object_images.unsqueeze(0)).squeeze(0) if example_object_images is not None else None
+                verb_feature = backbone(example_verb_images.unsqueeze(0)).squeeze(0) if example_verb_images is not None else None
+                
+                spatial_features.append(spatial_feature)
+                subject_box_features.append(subject_feature)
+                object_box_features.append(object_feature)
+                verb_box_features.append(verb_feature)
+    
             results = self.detector.scores_and_p_t4(spatial_features, subject_box_features, verb_box_features, 
                 object_box_features)
 
