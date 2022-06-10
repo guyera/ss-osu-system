@@ -62,3 +62,39 @@ but this script assumes that there will be just a single id, and ignores its val
 The scoring script writes its outputs to a scoring results directory.
 There is a `test_id.log` file with image-by-image results for each test,
 and a `summary.log` file that summarizes results.
+
+There is also a `confusion.pdf` file with confusion matrices.
+Two confusion matrices are output for each of S, O, and V,
+where the rows display the true classes 
+and the columns the classes that the system predicted
+in its top-ranked tuple.
+The first matrix in each pair is normalized by row,
+so showing percentage-wise the relative weights of each system output.
+The second matrix shows raw counts for each cell.
+(If the same image occurs in more than one test
+or multiple times in a given test,
+each occurrence is counted in the confusion matrices.)
+
+### Generating Image Symlinks Classified by True and Predicted Classes
+If you supply the flag `--save_symlinks` and also supply the argument
+`--databset_root` with the path to your local copy of the UMD data,
+the scoring results directory will also contain an `images` directory
+with a tree of category subdirectories and with leaf directories 
+that contain symlinks to each image in the tests run
+that has the given true and predicted classes.
+(Since the tests can contain duplicates, the image directories
+may contain fewer entries than the associated cells
+in the confusion matrices.)
+
+The top level categorical split is by the true (annotated) class
+with the second level for the predicted class.
+For example, `images/S/true_02_dog/pred_04_person/pred_04_horse/image_00741.jpg -> <path>`
+is a symlink in the directory for images whose true S value was dog
+but where the system's top-ranked triple predicted the S as horse.
+The V portion of the tree is split into V-S and V-SO 
+to distinguish images for which only an S box was specified
+from those where both S and O boxes were provided.
+According to the UMD rules, when only the S box is provided, 
+the V should always be tagged with id 0 =`novel/unknown`. 
+(But note that 11 image in the UMD training data are
+acknowledged errors that do not follow this rule.)
