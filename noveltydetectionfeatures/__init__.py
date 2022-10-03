@@ -157,7 +157,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                 min_size, max_size)
 
     def __getitem__(self, idx):
-        return self.spatial_features[idx], self.subject_roi_features[idx], self.object_roi_features[idx], self.verb_roi_features[idx], self.subject_labels[idx], self.object_labels[idx], self.verb_labels[idx], self.subject_images[idx], self.object_images[idx], self.verb_images[idx]
+        return self.spatial_features[idx], self.subject_roi_features[idx], self.object_roi_features[idx], self.verb_roi_features[idx], self.subject_labels[idx], self.object_labels[idx], self.verb_labels[idx] , self.subject_images[idx], self.object_images[idx], self.verb_images[idx]
 
     def __len__(self):
         return len(self.spatial_features)

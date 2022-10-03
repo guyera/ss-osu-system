@@ -189,6 +189,8 @@ class BBNSession:
         # self.history.add(filename, round_id, red_light, image_novelty_score, red_light_score,
         #                  classification_probs, top_layer)
 
+
+        # import ipdb; ipdb.set_trace()
         if self.probs_debug_format:
             output_probs = predicted_probs
         else:
@@ -435,6 +437,8 @@ class BBNSession:
                 novelty_preds, svo_preds = self.osu_stubs.process_round(test_id, round_id, image_data)
                 novelty_lines = novelty_preds.splitlines()
                 svo_lines = svo_preds.splitlines()
+
+                # import ipdb; ipdb.set_trace()
                 
                 filenames = []
                 for (novelty_line, svo_line, image_line) in zip(novelty_lines, svo_lines, image_lines):
@@ -466,6 +470,7 @@ class BBNSession:
 
             ### LAR useful trace
             # print(f'===> Submitting results with test_type: {self.history.test_type}')
+            # import ipdb; ipdb.set_trace()
 
             if self.api_stubs:
                 self.api_stubs.record_results(test_id, round_id,

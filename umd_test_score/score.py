@@ -14,6 +14,7 @@ import pandas as pd
 from class_file_reader import ClassFileReader
 from stats import Stats, Instance
 import shutil
+import numpy as np
 
 def match(corr_s, corr_o, corr_v, ans_s, ans_o, ans_v):
     'This will need to get fancier'
@@ -41,7 +42,10 @@ def percent_string(num, denom):
     return f'{100 * num / denom:6.2f}%'
 
 def score_test(test_id, metadata, test_df, detect_lines, class_lines, class_file_reader, log, summary, stats):
+    # import ipdb; ipdb.set_trace()
+
     # The metadata file is not currently used.
+    # import ipdb; ipdb.set_trace()
     total_pre_red = total_post_red = total_novel = total = 0
     pre_red_top_1_hits = post_red_top_1_hits = pre_red_top_3_hits = post_red_top_3_hits = 0
     novel_top_1_hits = novel_top_3_hits = 0
@@ -136,24 +140,56 @@ def score_test(test_id, metadata, test_df, detect_lines, class_lines, class_file
 
 def score_tests(test_dir, sys_output_dir, session_id, class_file_reader, log_dir,
                 save_symlinks, dataset_root):
+    
     stats = Stats()
-    test_ids = open(test_dir/'test_ids.csv', 'r').read().splitlines()
+    # test_ids = open(test_dir/'test_ids.csv', 'r').read().splitlines()
+    import pathlib 
+    test_ids = []
+    for p in pathlib.Path(test_dir).glob('*'):
+        if p.suffix != '.csv':
+            continue
+        test_name = p.name.split('_')[0]
+        test_ids.append(test_name)
+    
     # print(f'Found {len(test_ids)} tests...')
     print(f'   Test           Top-1     Top-3')
     with open(log_dir / f'summary.log', 'w') as summary:
         summary.write(f'              Red Decl Res Delay     -------- TOP 1 --------             -------- TOP 3 ---------   \n')
         summary.write(f'                                  Total    Pre      Post    Novel     Total    Pre     Post    Novel\n')
         for test_id in test_ids:
+
             metadata = json.load(open(test_dir / f'{test_id}_metadata.json', 'r'))
             test_df = pd.read_csv(test_dir / f'{test_id}_single_df.csv')
-            if (sys_output_dir / f'{session_id}.{test_id}_detection.csv').exists():
-                detect_lines = open(sys_output_dir / f'{session_id}.{test_id}_detection.csv').read().splitlines()
-                class_lines = open(sys_output_dir / f'{session_id}.{test_id}_classification.csv').read().splitlines()
-                with open(log_dir / f'{test_id}.log', 'w') as log:
-                    score_test(test_id, metadata, test_df, detect_lines, class_lines, class_file_reader,
-                               log, summary, stats)
-            else:
-                print(f'No results found for Test {test_id}.')
+            test_id = test_id[4:]
+
+            detect_lines = []
+            class_lines = []
+            for round_ in range(20):
+                if (sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').exists():
+                    detect_lines.append(open(sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').read().splitlines())
+                    class_lines.append(open(sys_output_dir / f'{session_id}.{test_id}_{round_}_classification.csv').read().splitlines())
+                    
+                else:
+                    print(f'No results found for Test {session_id}.{test_id}_{round_}.')
+            # import ipdb; ipdb.set_trace()
+
+            detect_lines = np.concatenate(detect_lines)
+
+            class_lines = np.concatenate(class_lines)
+
+            with open(log_dir / f'{test_id}.log', 'w') as log:
+                        score_test(test_id, metadata, test_df, detect_lines, class_lines, class_file_reader,
+                                log, summary, stats)
+            
+            # for round_ in range(19):
+            #     if (sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').exists():
+            #         detect_lines = open(sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').read().splitlines()
+            #         class_lines = open(sys_output_dir / f'{session_id}.{test_id}_{round_}_classification.csv').read().splitlines()
+            #         with open(log_dir / f'{test_id}.log', 'w') as log:
+            #             score_test(test_id, metadata, test_df, detect_lines, class_lines, class_file_reader,
+            #                     log, summary, stats)
+            #     else:
+            #         print(f'No results found for Test {session_id}.{test_id}_{round_}.')
     stats.print_confusion_matrices_1(log_dir / "confusion.pdf")
     if save_symlinks:
         stats.save_image_paths(log_dir / "images", dataset_root)
@@ -172,12 +208,13 @@ def main():
     if args.save_symlinks and not args.dataset_root:
         raise Exception("dataset_root must be specified if you want to save image symlinks")
     dataset_root = Path(args.dataset_root) if args.dataset_root else None
-    test_dir = Path(args.test_root)/"OND"/'svo_classification'
-    sys_output_dir = Path(args.sys_output_root)/'OND'/'svo_classification'
+    test_dir = Path(args.test_root)#/"OND"/'svo_classification'
+    sys_output_dir = Path(args.sys_output_root) #/'OND'/'svo_classification'
     session_ids = set()
     for file in sys_output_dir.iterdir():
         session_id = file.name.split('.')[0]
         session_ids.add(session_id)
+    
     if len(session_ids) > 1:
         raise Exception('More than one session id in results dir')
     session_id = list(session_ids)[0]
@@ -188,6 +225,7 @@ def main():
             shutil.rmtree(file)
         else:
             file.unlink()
+    
     score_tests(test_dir, sys_output_dir, session_id, ClassFileReader(), log_dir,
                 args.save_symlinks, dataset_root)
 

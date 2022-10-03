@@ -1,0 +1,35 @@
+Subject AUC: 0.957659815912243
+Object AUC: 0.9215788558511562
+Verb AUC: 0.87087605234642
+Subject partial AUC: 0.9050020714375777
+Object partial AUC: 0.8354193355311172
+Verb partial AUC: 0.7891949177770634
+Predicted novelty type accuracy for type 1 data: 0.9354838132858276
+Predicted novelty type accuracy for type 2 data: 0.8089887499809265
+Predicted novelty type accuracy for type 3 data: 0.6759259104728699
+Type 1 subject score AUC: 0.9806767095196782
+Type 2 verb score AUC: 0.905689404137249
+Type 3 object score AUC: 0.9318292091217856
+
+Type 1 P_N AUC: 0.9960899315738025
+Type 1 P_N Accuracy: 0.7849898580121704
+Type 2 P_N AUC: 0.8937934724451579
+Type 2 P_N Accuracy: 0.7858439201451906
+Type 3 P_N AUC: 0.9402356902356902
+Type 3 P_N Accuracy: 0.8333333333333334
+Type 0 vs Type Non-0 P_N AUC: 0.9330872500515359
+Type 0 vs Type Non-0 P_N Accuracy: 0.843358395989975
+
+Average P(N_i) over nominals: 0.3362082242965698
+Average P(N_i) over type 1 novelty: 0.9934872984886169
+Average P(N_i) over type 2 novelty: 0.8211545944213867
+Average P(N_i) over type 3 novelty: 0.8912340402603149
+Std P(N_i) over nominals: 0.2726350724697113
+Std P(N_i) over type 1 novelty: 0.011870644055306911
+Std P(N_i) over type 2 novelty: 0.23717567324638367
+Std P(N_i) over type 3 novelty: 0.1561027467250824
+
+Number of nominal examples: 462
+Number of type 1 examples: 31
+Number of type 2 examples: 89
+Number of type 3 examples: 216

@@ -13,7 +13,7 @@ from noveltydetection.utils import compute_probability_novelty
 from adaptation.query_formulation import select_queries
 import pickle
 from scipy.stats import ks_2samp
-from torchvision.models import resnet50
+from torchvision.models import resnet50, swin_t
 from unsupervisednoveltydetection.training import NoveltyDetectorTrainer
 import os
 
@@ -31,7 +31,7 @@ class TopLevelApp:
         #     raise Exception(f'training CSV was not found in path {train_csv_path}')
         # if not Path(val_csv_path).exists():
         #     raise Exception(f'validation CSV was not found in path {val_csv_path}')
-
+        # import ipdb; ipdb.set_trace()
         self.data_root = data_root
         self.train_csv_path = train_csv_path
         self.val_csv_path = val_csv_path
@@ -191,12 +191,14 @@ class TopLevelApp:
             self._accumulate(top3, p_ni, p_ni.numpy(), batch_feedback_mask, batch_query_mask, batch_p_type)
 
         self.all_red_light_scores = np.concatenate([self.all_red_light_scores, red_light_scores])
- 
+        # import ipdb; ipdb.set_trace()
         ret = {}
         ret['p_ni'] = p_ni.tolist()
         ret['red_light_score'] = red_light_scores
         ret['svo'] = top3
         ret['svo_probs'] = top3_probs
+
+        # print(ret)
                                                                   
         return ret
         
@@ -512,15 +514,27 @@ class TopLevelApp:
             self.NUM_OBJECT_CLASSES, 
             self.NUM_SPATIAL_FEATURES,
             0.98)        
+        # import ipdb; ipdb.set_trace()
+        if 'resnet' in self.pretrained_backbone_path:
+            backbone = resnet50(weights= None) #resnet50(pretrained = False)  weights="IMAGENET1K_V1"
+            backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
+            backbone_state_dict = torch.load(self.pretrained_backbone_path)
+            backbone.load_state_dict(backbone_state_dict)
+            model_ = 'resnet'
+           
 
-        backbone = resnet50(pretrained = False)
-        backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
-        backbone_state_dict = torch.load(self.pretrained_backbone_path)
-        backbone.load_state_dict(backbone_state_dict)
+        if 'swin_t' in self.pretrained_backbone_path:
+            backbone = swin_t(weights= None) # pretrained = False, 
+            backbone.head = torch.nn.Linear(backbone.head.weight.shape[1], 256)
+            backbone_state_dict = torch.load(self.pretrained_backbone_path)
+            backbone.load_state_dict(backbone_state_dict)
+            model_ = 'swin_t'
         backbone = backbone.to('cuda:0')
         backbone.eval()
         self.backbone = backbone
-        self.novelty_trainer = NoveltyDetectorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.retraining_batch_size)
+
+        # import ipdb; ipdb.set_trace()
+        self.novelty_trainer = NoveltyDetectorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.retraining_batch_size, model_)
 
     def _retrain_supervised_detectors(self):
         t_star = torch.argmax(self.p_type_dist) + 1
@@ -591,6 +605,7 @@ class TopLevelApp:
             self.num_retrains_so_far += 1
             csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
             self.retraining_buffer.to_csv(csv_path, index=True)
+
                 
             self.novelty_trainer.add_feedback_data(self.data_root, csv_path)
             self.novelty_trainer.prepare_for_retraining(self.backbone, self.und_manager.detector, 

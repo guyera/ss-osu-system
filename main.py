@@ -21,7 +21,7 @@ if __name__ == "__main__":
     p.add_argument('--val-csv-path', default='./dataset_v4/dataset_v4_2_val.csv')
     p.add_argument('--trial-size', type=int, default=600)
     p.add_argument('--trial-batch-size', type=int, default=10)
-    p.add_argument('--retraining-batch-size', type=int, default=128)
+    p.add_argument('--retraining-batch-size', type=int, default=80)
     p.add_argument('--disable-retraining', default=False, action='store_true')
     p.add_argument('--api-dir', default='./session/api')
     p.add_argument('--tests-dir', default='./session/tests')
@@ -43,6 +43,9 @@ if __name__ == "__main__":
         p = Path(args.log_dir)
         if not p.exists():
             p.mkdir()
+
+    
+    # import ipdb; ipdb.set_trace()
         
     osu_int = OSUInterface(scg_ensemble=args.scg_ensemble, 
         data_root=args.data_root, 

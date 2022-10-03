@@ -3,7 +3,7 @@ import pickle
 
 import noveltydetectionfeatures
 import unsupervisednoveltydetection.common
-
+from torchvision.models import resnet50
 def parse_args():
     parser = argparse.ArgumentParser(
         description = 'Max Classifier Logits for Anomaly Detection'
@@ -76,6 +76,7 @@ def main():
     # stored in disk, this will do that as well (so it might take awhile),
     # loading image_batch_size images at a time and computing features from
     # them.
+    backbone = resnet50(pretrained = True)
     training_set = unsupervisednoveltydetection.common.ReshapedNoveltyFeatureDataset(
         noveltydetectionfeatures.NoveltyFeatureDataset(
             name = args.dataset_name,
@@ -83,6 +84,7 @@ def main():
             csv_path = args.csv_path,
             training = True,
             image_batch_size = args.image_batch_size,
+            backbone = backbone,
             feature_extraction_device = args.device
         )
     )
@@ -91,6 +93,8 @@ def main():
     known_sv = set()
     known_so = set()
     known_vo = set()
+
+    # import ipdb; ipdb.set_trace
 
     for _, _, _, subject_label, object_label, verb_label in training_set:
         if subject_label is not None and int(subject_label.item()) > 0:

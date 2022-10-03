@@ -1,6 +1,6 @@
 import sys
 
-from torchvision.models import resnet50
+from torchvision.models import resnet50, swin_t, swin_b
 import torch
 import unsupervisednoveltydetection
 import noveltydetectionfeatures
@@ -10,9 +10,19 @@ import matplotlib.pyplot as plt
 
 device = 'cuda:0'
 
-backbone = resnet50(pretrained = False)
-backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
-backbone_state_dict = torch.load('unsupervisednoveltydetection/backbone_2.pth')
+model_ = 'resnet' # 'swin_t' 'swin_b'  'resnet'
+
+if model_ == 'resnet': 
+    backbone = resnet50(pretrained = False)
+    backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
+if model_ == 'swin_t': 
+    backbone = swin_t() 
+    backbone.head = torch.nn.Linear(backbone.head.weight.shape[1], 256)
+if model_ == 'swin_b': 
+    backbone = swin_b() 
+    backbone.head = torch.nn.Linear(backbone.head.weight.shape[1], 256)
+
+backbone_state_dict = torch.load('unsupervisednoveltydetection/' +model_ +'_backbone_2.pth')
 backbone.load_state_dict(backbone_state_dict)
 backbone = backbone.to(device)
 backbone.eval()
@@ -21,7 +31,7 @@ backbone = backbone
 classifier = unsupervisednoveltydetection.common.ClassifierV2(256, 5, 12, 8, 72)
 detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(classifier, 5, 12, 8)
 detector = detector.to(device)
-state_dict = torch.load('unsupervisednoveltydetection/unsupervised_novelty_detection_module_2.pth')
+state_dict = torch.load('unsupervisednoveltydetection/' +model_ +'_unsupervised_novelty_detection_module_2.pth')
 detector.load_state_dict(state_dict['module'])
 
 testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(

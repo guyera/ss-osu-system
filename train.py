@@ -139,7 +139,7 @@ if __name__ == "__main__":
     parser.add_argument('--val-csv-path', default=None, type=str, help="Csv Path is required only for Custom dataset")
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
-    parser.add_argument('--num-epochs', default=8, type=int)
+    parser.add_argument('--num-epochs', default=30, type=int)
     parser.add_argument('--random-seed', default=1, type=int)
     parser.add_argument('--learning-rate', default=0.0001, type=float)
     parser.add_argument('--momentum', default=0.9, type=float)
