@@ -2,7 +2,7 @@ import copy
 
 from tqdm import tqdm
 import torch
-from torchvision.models import resnet50
+from torchvision.models import resnet50, swin_t, swin_b
 
 import unsupervisednoveltydetection.common
 import noveltydetectionfeatures
@@ -294,16 +294,18 @@ def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
     progress.close()
     
 class NoveltyDetectorTrainer:
-    def __init__(self, data_root, train_csv_path, val_csv_path, retraining_batch_size):
+    def __init__(self, data_root, train_csv_path, val_csv_path, retraining_batch_size, model_ = 'resnet'):
         train_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
             name = 'Custom',
             data_root = data_root,
             csv_path = train_csv_path,
             training = True,
-            image_batch_size = 16,
+            image_batch_size = 512,
             backbone = None,
             cache_to_disk = True
         )
+
+        self.model_ = model_
 
         self.known_train_subject_dataset,\
             self.novel_train_subject_dataset,\
@@ -317,7 +319,7 @@ class NoveltyDetectorTrainer:
             data_root = data_root,
             csv_path = val_csv_path,
             training = False,
-            image_batch_size = 16,
+            image_batch_size = 512,
             backbone = None,
             cache_to_disk = True
         )
@@ -367,7 +369,7 @@ class NoveltyDetectorTrainer:
             data_root = data_root,
             csv_path = csv_path,
             training = True,
-            image_batch_size = 16,
+            image_batch_size = 8,
             backbone = None,
             cache_to_disk = False
         )
@@ -389,10 +391,25 @@ class NoveltyDetectorTrainer:
         # backbone. Do the actual weight transfer on the CPU, since it's a big
         # network with a lot of weights and we don't want to run out of GPU
         # memory
-        random_backbone = resnet50(pretrained = True)
-        random_backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], backbone.fc.weight.shape[0])
+        # random_backbone = resnet50(pretrained = True)
+        # random_backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], backbone.fc.weight.shape[0])
+        
+        if self.model_ == 'resnet':
+            random_backbone = resnet50(weights="IMAGENET1K_V1") # pretrained = True, 
+            random_backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
+            device = backbone.fc.weight.device
+
+        if self.model_ == 'swin_t':
+            random_backbone = swin_t(weights="IMAGENET1K_V1") # pretrained = True, 
+            random_backbone.head = torch.nn.Linear(backbone.head.weight.shape[1], 256)
+            device = backbone.head.weight.device
+
+        if self.model_ == 'swin_b':
+            random_backbone = swin_b(weights="IMAGENET1K_V1") # pretrained = True, 
+            random_backbone.head = torch.nn.Linear(backbone.head.weight.shape[1], 256)
+            device = backbone.head.weight.device
+
         state_dict = random_backbone.state_dict()
-        device = backbone.fc.weight.device
         backbone = backbone.to('cpu')
         backbone.load_state_dict(state_dict)
         backbone = backbone.to(device)
@@ -417,7 +434,10 @@ class NoveltyDetectorTrainer:
     # DONE
     def train_epoch(self, known_subject_loader, novel_subject_loader, known_object_loader, novel_object_loader, known_verb_loader, novel_verb_loader, backbone, subject_classifier, object_classifier, verb_classifier, optimizer):
         # Determine the device to use based on the backbone's fc weights
-        device = backbone.fc.weight.device
+        if self.model_ == 'resnet':
+            device = backbone.fc.weight.device
+        if self.model_ == 'swin_t' or self.model_ == 'swin_b':        
+            device = backbone.head.weight.device
         
         # Set everything to train mode
         backbone.train()
@@ -637,7 +657,11 @@ class NoveltyDetectorTrainer:
             object_classifier.eval()
             verb_classifier.eval()
 
-            device = backbone.fc.weight.device
+            if self.model_ == 'resnet':
+                device = backbone.fc.weight.device
+            if self.model_ == 'swin_t' or self.model_ == 'swin_b':        
+                device = backbone.head.weight.device
+
             
             n_subject_examples = 0
             n_subject_correct = 0
@@ -782,17 +806,17 @@ class NoveltyDetectorTrainer:
         # so we'd have to modify __init__().
         known_val_subject_loader = torch.utils.data.DataLoader(
             self.known_val_subject_dataset,
-            batch_size = 96,
+            batch_size = 256,
             shuffle = False
         )
         known_val_object_loader = torch.utils.data.DataLoader(
             self.known_val_object_dataset,
-            batch_size = 96,
+            batch_size = 256,
             shuffle = False
         )
         known_val_verb_loader = torch.utils.data.DataLoader(
             self.known_val_verb_dataset,
-            batch_size = 96,
+            batch_size = 256,
             shuffle = False
         )
 
@@ -807,8 +831,8 @@ class NoveltyDetectorTrainer:
         # Define convergence parameters (early stopping + model selection)
         patience = 3
         epochs_since_improvement = 0
-        max_epochs = 15
-        min_epochs = 4
+        max_epochs = 5
+        min_epochs = max_epochs-1
         best_accuracy = None
         best_accuracy_backbone_state_dict = None
         best_accuracy_subject_classifier_state_dict = None
@@ -910,7 +934,10 @@ class NoveltyDetectorTrainer:
         object_calibrator.train()
         verb_calibrator.train()
 
-        device = backbone.fc.weight.device
+        if self.model_ == 'resnet':
+            device = backbone.fc.weight.device
+        if self.model_ == 'swin_t' or self.model_ == 'swin_b':        
+            device = backbone.head.weight.device
 
         # Extract logits to fit confidence calibration temperatures
         with torch.no_grad():
@@ -997,7 +1024,10 @@ class NoveltyDetectorTrainer:
         case_2_logistic_regression.train()
         case_3_logistic_regression.train()
 
-        device = backbone.fc.weight.device
+        if self.model_ == 'resnet':
+            device = backbone.fc.weight.device
+        if self.model_ == 'swin_t' or self.model_ == 'swin_b':        
+            device = backbone.head.weight.device
 
         case_1_novelty_type_loader = torch.utils.data.DataLoader(
             self.case_1_novelty_type_dataset,

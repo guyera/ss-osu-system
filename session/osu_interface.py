@@ -105,6 +105,7 @@ class OSUInterface:
             os.remove(csv_path)
         
         print(f'  ==> OSU processed round {round_id}')
+        # import ipdb; ipdb.set_trace()
         
         return (novelty_preds, svo_preds)
 

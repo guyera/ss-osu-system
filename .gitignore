@@ -9,3 +9,5 @@ dataset_v3
 dataset_v4
 .vscode/
 logs
+.pth
+FinalResults*

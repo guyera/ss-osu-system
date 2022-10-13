@@ -27,6 +27,7 @@ class Ensemble:
             if p.suffix != '.pt' and p.suffix != '.pth':
                 continue
 
+            # import ipdb; ipdb.set_trace()
             self.nets.append(SCG(num_classes=self.NUM_VERB_CLASSES,
                 num_obj_classes=self.NUM_OBJECT_CLASSES, 
                 num_subject_classes=self.NUM_SUBJECT_CLASSES,

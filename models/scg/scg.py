@@ -325,7 +325,9 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
                  box_nms_thresh: float = 0.5,
                  max_subject: int = 15,
                  max_object: int = 15) -> None:
-        detector = models.fasterrcnn_resnet_fpn('resnet50', pretrained=True)
+
+        # import ipdb;ipdb.set_trace()
+        detector = models.fasterrcnn_resnet_fpn('resnet50', pretrained=True) 
         backbone = detector.backbone
 
         box_roi_pool = MultiScaleRoIAlign(

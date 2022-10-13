@@ -1,0 +1,24 @@
+python unsupervisednoveltydetection/compute_known_combinations.py --device cuda --dataset-name Custom --data-root ../Custom --csv-path Custom/annotations/dataset_v4_train.csv --known-combinations-save-file known_combinations
+
+python main.py --pretrained-backbone-path './unsupervisednoveltydetection/resnet_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/resnet_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/Test1' --detection-feedback --api-stubs
+
+python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/TestX' --detection-feedback --api-stubs
+
+
+--given-detection
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test1' './session/temp/sys_results_resnet/sys_results' './FinalResults_resnet1'
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test1' './session/temp/swin_t_test1_sys_results/' './FinalResults_swin_t_test1'
+
+python train.py --world-size 1 --data-root ../Custom --csv-path Custom/annotations/dataset_v4_train.csv --val-csv-path Custom/annotations/dataset_v4_val.csv
+
+
+python umd_test_generate/process_dataset.py --train_csv Custom/annotations/dataset_v4_train.csv --val_csv Custom/annotations/dataset_v4_val.csv --pickle_out_file '/umd_test_sandbox/test_source_data_v4_2_all_valid_val.pkl' --log_file '/umd_test_sandbox/dataset_analysis_v4_2_all_valid.log'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/' './session/temp/sys_results/' './FinalResults_RESNET'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/TestX' './session/temp/sys_results/' './FinalResults_Swin_T_5Epochs'
