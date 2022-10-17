@@ -762,6 +762,135 @@ class UnsupervisedNoveltyDetector:
         results['verb_novelty_score'] = self.score_verb(spatial_features, verb_appearance_features)
         return results
 
+    def merge_predictions(
+            self,
+            scg_predictions,
+            novelty_t67_predictions,\
+            cases,
+            novelty_other_top3,
+            p_n):
+        # For each instance
+        merged_predictions = []
+        for idx in range(len(scg_predictions)):
+            example_scg_predictions = scg_predictions[idx]
+            example_novelty_t67_predictions = novelty_t67_predictions[idx]
+            example_case = cases[idx]
+            example_novelty_other_top3 = novelty_other_top3[idx]
+            example_p_n = p_n[idx]
+
+            # Compute merged tuple probabilities:
+            # P(S=s, V=v, O=o)
+            #  = P(S=s, V=v, O=o, novel)
+            #      + P(S=s, V=v, O=o, not novel)
+            #  = P(S=s, V=v, O=o | novel) * P(novel)
+            #      + P(S=s, V=v, O=o, not novel) * P(not novel)
+            merged_tuple_predictions = \
+                example_p_n * example_novelty_t67_predictions + \
+                    (1 - example_p_n) * example_scg_predictions
+
+            # Flatten tuple predictions to shape [4*7*11] = [308] so that they
+            # can all be sorted / compared together to get the top 3
+            flattened_predictions = torch.flatten(merged_tuple_predictions)
+            # Sort to get top 3
+            sorted_predictions, sorted_indices = torch.sort(
+                flattened_predictions,
+                descending=True
+            )
+            top3 = sorted_predictions[:3]
+            top3_indices = sorted_indices[:3]
+
+            # Determine the case and unflatten appropriately to determine the
+            # individual S, V, and O class indices / labels
+            if example_case == 1:
+                # S, V, O
+                n_v = example_scg_predictions.shape[1]
+                n_o = example_scg_predictions.shape[2]
+                s_skip_interval = n_v * n_o
+                v_skip_interval = n_o
+                s_cls_label = (top3_indices / s_skip_interval).to(torch.long)
+                top3_indices -= s_cls_label * s_skip_interval
+                v_cls_label = (top3_indices / v_skip_interval).to(torch.long)
+                top3_indices -= v_cls_label * v_skip_interval
+                o_cls_label = top3_indices
+
+                # Add 1 to each predicted class label to account for label 0 =
+                # novel
+                s_cls_label = s_cls_label + 1
+                v_cls_label = v_cls_label + 1
+                o_cls_label = o_cls_label + 1
+            elif example_case == 2:
+                # S, V
+                n_v = example_scg_predictions.shape[1]
+                s_skip_interval = n_v
+                s_cls_label = (top3_indices / s_skip_interval).to(torch.long)
+                top3_indices -= s_cls_label * s_skip_interval
+                v_cls_label = top3_indices
+
+                # Add 1 to each predicted class label to account for label 0 =
+                # novel
+                s_cls_label = s_cls_label + 1
+                v_cls_label = v_cls_label + 1
+
+                # Set O label to -1, for "absent"
+                o_cls_label = torch.full_like(s_cls_label, -1)
+            else:
+                # O
+                o_cls_label = top3_indices
+
+                # Add 1 to each predicted class label to account for label 0 =
+                # novel
+                o_cls_label = o_cls_label + 1
+
+                # Set S label to -1 and V label to 0, for "absent" (yes, V is
+                # weird that way; "absent" and "novel" are both represented
+                # with zeros)
+                s_cls_label = torch.full_like(o_cls_label, -1)
+                v_cls_label = torch.full_like(o_cls_label, 0)
+
+            # Combine the labels into a list of the top 3 triples
+            top3_labels = [
+                (s_cls_label[i], v_cls_label[i], o_cls_label[i])\
+                    for i in range(3)
+            ]
+            
+            # Merge the top 3 type 0/6/7 tuple predictions
+            # (top3_labels) with the with the top 3 type 1/2/3/4 tuple
+            # predictions (example_novelty_other_top3). Recall that the
+            # type 1/2/3/4 predictions represent P(tuple = t | novel);
+            # we need to multiply them by P(novel) so that they are joint
+            # probabilities rather than conditional. i.e., for type 1/2/3/4
+            # tuple t:
+            # P(tuple = t)
+            #   = P(tuple = t, novel)
+            #   = P(tuple = t | novel) * P(novel)
+            merged_top3 = []
+            for _ in range(3):
+                novelty_other_triple = example_novelty_other_top3[0][0]
+                t0_67_triple = top3_labels[0]
+
+                novelty_other_prob = \
+                    example_novelty_other_top3[0][1] * example_p_n
+                t0_67_prob = top3[0]
+
+                if t0_67_prob >= novelty_other_prob:
+                    # The type 0/6/7 tuple has the greatest probability;
+                    # append it to the merged top 3, and remove it from the
+                    # list of top 3 type 0/6/7 tuples.
+                    merged_top3.append((t0_67_triple, t0_67_prob))
+                    top3_labels = top3_labels[1:]
+                    top3 = top3[1:]
+                else:
+                    # The type 1/2/3/4 tuple has the greatest probability;
+                    # append it to the merged top 3, and remove it from the
+                    # list of top 3 type 1/2/3/4 tuples.
+                    merged_top3.append((
+                        novelty_other_triple,
+                        novelty_other_prob
+                    ))
+                    example_novelty_other_top3 = example_novelty_other_top3[1:]
+            merged_predictions.append(merged_top3)
+        return merged_predictions
+
     def scores_and_p_t4(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features):
         subject_scores = []
         subject_probs = []
