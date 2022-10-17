@@ -70,16 +70,6 @@ class UnsupervisedNoveltyDetectorLogger:
         torch.save(self.object_novelty_scores, os.path.join(novelty_score_dir_path, 'object.pth'))
 
 class UnsupervisedNoveltyDetector:
-    # num_appearance_features is the number of features after ROI pooling
-    # and flattening the resulting representation. It should be 12544 for the
-    # resnet50 backbone and the typical pooling parameters.
-
-    # num_verb_features is the number of appearance features, plus the number
-    # of spatial features. It should be 12616, since there are 72 additional
-    # spatial features for the verb box classifier.
-
-    # num_hidden_nodes is the number of hidden nodes used in each box classifier
-    # MLP. It should be 1024 for the current box classifiers.
     def __init__(self, classifier, num_subj_cls, num_obj_cls, num_action_cls):
         self.device = 'cpu'
         
@@ -216,6 +206,15 @@ class UnsupervisedNoveltyDetector:
         else:
             t4_conditional_joint_probs = t4_unknown_joint_probs / t4_unknown_joint_probs_sum
         t4_joint_probs = t4_conditional_joint_probs * p_type[3]
+
+        t67_raw_joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
+        t67_known_joint_probs = self.known_svo_combinations.to(torch.int) * t67_raw_joint_probs
+        t67_known_joint_probs_sum = t67_known_joint_probs.sum()
+        if t67_known_joint_probs_sum.item() == 0:
+            t67_conditional_joint_probs = t67_known_joint_probs
+        else:
+            t67_conditional_joint_probs = t67_known_joint_probs / t67_known_joint_probs_sum
+        t67_joint_probs = t67_conditional_joint_probs * p_type[4]
         
         # We've computed P(Correct | N_i), but we also have the case information.
         # We need to compute:
@@ -231,13 +230,14 @@ class UnsupervisedNoveltyDetector:
         # So divide each joint probability by the type normalizer, or sum of
         # probabilities of possible types.
         
-        type_normalizer = p_type[0] + p_type[1] + p_type[2] + p_type[3]
+        type_normalizer = p_type[0] + p_type[1] + p_type[2] + p_type[3] + p_type[4]
         
         if type_normalizer > 0:
             t1_joint_probs /= type_normalizer
             t2_joint_probs /= type_normalizer
             t3_joint_probs /= type_normalizer
             t4_joint_probs /= type_normalizer
+            t67_joint_probs /= type_normalizer
         
         flattened_t1_joint_probs = torch.flatten(t1_joint_probs)
         sorted_t1_joint_probs, sorted_t1_joint_prob_indices = torch.sort(flattened_t1_joint_probs, descending = True)
@@ -329,51 +329,54 @@ class UnsupervisedNoveltyDetector:
                 sorted_t4_joint_probs = sorted_t4_joint_probs[1:]
                 sorted_t4_joint_prob_indices = sorted_t4_joint_prob_indices[1:]
 
-        return example_predictions
+        return example_predictions, t67_joint_probs
 
     def _case_2(self, subject_probs, verb_probs, p_type, k):
         t1_raw_joint_probs = verb_probs
         t1_joint_probs = t1_raw_joint_probs * p_type[0]
         
         t2_raw_joint_probs = subject_probs
-        # Type 2 and 5 instances are indistinguishable in case 2; a tuple of
-        # the form <S, 0, None> can be either type 2 or type 5. Thus, its
-        # probability of being correct is
-        #   P(Correct | valid) * P(valid)
-        # = P(Correct | valid) * P(type = 2 or type = 5)
-        # = P(Correct | valid) * (P(type = 2) + P(type = 5))
         t2_joint_probs = t2_raw_joint_probs * p_type[1]
+
+        t4_raw_joint_probs = subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
+        t4_unknown_joint_probs = (1 - self.known_sv_combinations.to(torch.int)) * t4_raw_joint_probs
+        t4_unknown_joint_probs_sum = t4_unknown_joint_probs.sum()
+        if t4_unknown_joint_probs_sum.item() == 0:
+            t4_conditional_joint_probs = t4_unknown_joint_probs
+        else:
+            t4_conditional_joint_probs = t4_unknown_joint_probs / t4_unknown_joint_probs_sum
+        t4_joint_probs = t4_conditional_joint_probs * p_type[3]
+
+        t67_raw_joint_probs = subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
+        t67_known_joint_probs = self.known_sv_combinations.to(torch.int) * t67_raw_joint_probs
+        t67_known_joint_probs_sum = t67_known_joint_probs.sum()
+        if t67_known_joint_probs_sum.item() == 0:
+            t67_conditional_joint_probs = t67_known_joint_probs
+        else:
+            t67_conditional_joint_probs = t67_known_joint_probs / t67_known_joint_probs_sum
+        t67_joint_probs = t67_conditional_joint_probs * p_type[4]
         
-        # We've computed P(Correct | N_i), but we also have the case information.
-        # We need to compute:
-        #   P(Correct | N_i, case = 2)
-        # = P(Correct | N_i, type in [1, 2, 5])
-        # = P(Correct, type in [1, 2, 5] | N_i) / P(type in [1, 2, 5] | N_i)
-        ####### Correctness of a novel tuple implies the trial type, so type
-        ####### P(Correct, type in [1, 2, 5]) = P(Correct). Type is also
-        ####### independent of N_i. So P(type in [1, 2, 5] | N_i) =
-        ####### P(type in [1, 2, 5]).
-        # = P(Correct | N_i) / P(type in [1, 2, 5])
-        # = P(Correct | N_i) / (\sum_{t in [1, 2, 5]} P(type = t)).
-        
-        # So divide each joint probability by the type normalizer, or sum of
-        # probabilities of possible types.
-        
-        type_normalizer = p_type[0] + p_type[1]
+        type_normalizer = p_type[0] + p_type[1] + p_type[3] + p_type[4]
         
         if type_normalizer > 0:
             t1_joint_probs /= type_normalizer
             t2_joint_probs /= type_normalizer
+            t4_joint_probs /= type_normalizer
+            t67_joint_probs /= type_normalizer
         
         flattened_t1_joint_probs = torch.flatten(t1_joint_probs)
         sorted_t1_joint_probs, sorted_t1_joint_prob_indices = torch.sort(flattened_t1_joint_probs, descending = True)
         
         flattened_t2_joint_probs = torch.flatten(t2_joint_probs)
         sorted_t2_joint_probs, sorted_t2_joint_prob_indices = torch.sort(flattened_t2_joint_probs, descending = True)
-        
+
+        flattened_t4_joint_probs = torch.flatten(t4_joint_probs)
+        sorted_t4_joint_probs, sorted_t4_joint_prob_indices = torch.sort(flattened_t4_joint_probs, descending = True)
+
         example_predictions = []
         for _ in range(k):
-            if sorted_t1_joint_probs[0] >= sorted_t2_joint_probs[0]:
+            if sorted_t1_joint_probs[0] >= sorted_t2_joint_probs[0]\
+                    and sorted_t1_joint_probs[0] >= sorted_t4_joint_probs[0]:
                 flattened_index = int(sorted_t1_joint_prob_indices[0].item())
                 
                 verb_index = flattened_index
@@ -384,7 +387,7 @@ class UnsupervisedNoveltyDetector:
                 sorted_t1_joint_probs = sorted_t1_joint_probs[1:]
                 sorted_t1_joint_prob_indices = sorted_t1_joint_prob_indices[1:]
                 
-            else:
+            elif sorted_t2_joint_probs[0] >= sorted_t4_joint_probs[0]:
                 flattened_index = int(sorted_t2_joint_prob_indices[0].item())
                 
                 subject_index = flattened_index
@@ -394,11 +397,37 @@ class UnsupervisedNoveltyDetector:
                 
                 sorted_t2_joint_probs = sorted_t2_joint_probs[1:]
                 sorted_t2_joint_prob_indices = sorted_t2_joint_prob_indices[1:]
-        
-        return example_predictions
+            else:
+                flattened_index = int(sorted_t4_joint_prob_indices[0].item())
+                
+                subject_skip_interval = verb_probs.shape[0]
 
-    def _case_3(self, p_type):
-        return [((-1, 0, torch.tensor(0, dtype = torch.long)), torch.tensor(1.0))]
+                subject_index = flattened_index // subject_skip_interval
+                subject_skip_total = subject_index * subject_skip_interval
+                flattened_index -= subject_skip_total
+                
+                verb_index = flattened_index
+                
+                # Shift labels forward, to allow for anomaly = 0
+                example_predictions.append(((subject_index + 1, verb_index + 1, -1), sorted_t4_joint_probs[0]))
+                
+                sorted_t4_joint_probs = sorted_t4_joint_probs[1:]
+                sorted_t4_joint_prob_indices = sorted_t4_joint_prob_indices[1:]
+        
+        return example_predictions, t67_joint_probs
+
+    def _case_3(self, object_probs, p_type, k):
+        t3_joint_prob = p_type[2]
+        
+        t67_conditional_joint_probs = object_probs
+        t67_joint_probs = t67_conditional_joint_probs * p_type[4]
+
+        type_normalizer = p_type[2] + p_type[4]
+        if type_normalizer > 0:
+            t3_joint_prob /= type_normalizer
+            t67_joint_probs /= type_normalizer
+
+        return ((-1, 0, torch.tensor(0, dtype=torch.long)), t3_joint_prob), t67_joint_probs
 
     def _known_case_1(self, subject_probs, object_probs, verb_probs, k):
         joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
@@ -538,6 +567,8 @@ class UnsupervisedNoveltyDetector:
             p_type = trial_level_p_type_strategy.revise_p_type(p_type)
         
         predictions = []
+        t67_joint_probs = []
+        cases = []
         results = {}
         p_known_svo = []
         p_known_sv = []
@@ -586,22 +617,27 @@ class UnsupervisedNoveltyDetector:
             cur_p_known_vo = torch.tensor(0, dtype = torch.float, device = self.device)
             if example_subject_appearance_features is not None and example_object_appearance_features is not None:
                 # Case 1, S/V/O
-                example_predictions = self._case_1(subject_probs, object_probs, verb_probs, cur_p_type, 3)
+                example_case = 1
+                example_predictions, example_t67_joint_probs = self._case_1(subject_probs, object_probs, verb_probs, cur_p_type, 3)
                 cur_p_known_svo = self._compute_p_known_svo_2(subject_probs, verb_probs, object_probs)
                 cur_p_known_sv = self._compute_p_known_sv_2(subject_probs, verb_probs)
                 cur_p_known_so = self._compute_p_known_so_2(subject_probs, object_probs)
                 cur_p_known_vo = self._compute_p_known_vo_2(verb_probs, object_probs)
             elif example_subject_appearance_features is not None and example_object_appearance_features is None:
                 # Case 2, S/V/None
-                example_predictions = self._case_2(subject_probs, verb_probs, cur_p_type, 3)
+                example_case = 2
+                example_predictions, example_t67_joint_probs = self._case_2(subject_probs, verb_probs, cur_p_type, 3)
                 cur_p_known_sv = self._compute_p_known_sv_2(subject_probs, verb_probs)
             elif example_subject_appearance_features is None and example_object_appearance_features is not None:
                 # Case 3, None/None/O
-                example_predictions = self._case_3(cur_p_type)
+                example_case = 3
+                example_predictions, example_t67_joint_probs = self._case_3(object_probs, cur_p_type, 3)
             else:
                 return NotImplemented
             
             predictions.append(example_predictions)
+            t67_joint_probs.append(example_t67_joint_probs)
+            cases.append(example_case)
             p_known_svo.append(cur_p_known_svo)
             p_known_sv.append(cur_p_known_sv)
             p_known_so.append(cur_p_known_so)
@@ -616,7 +652,12 @@ class UnsupervisedNoveltyDetector:
         results['p_known_sv'] = p_known_sv
         results['p_known_so'] = p_known_so
         results['p_known_vo'] = p_known_vo
+        # Excludes type 6/7 tuples
         results['top3'] = predictions
+        # ALL type 6/7 tuples; needed for merging with SCG tuples
+        results['t67'] = t67_joint_probs 
+        # Example cases each in {1, 2, 3}. Needed for merging with SCG tuples
+        results['cases'] = cases
 
         return results
 

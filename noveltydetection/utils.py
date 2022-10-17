@@ -24,26 +24,44 @@ def compute_partial_auc(nominal_scores, novel_scores):
 class Case1LogisticRegression(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc = torch.nn.Linear(3, 4)
+        self.fc = torch.nn.Linear(4, 5)
+        self.mean = torch.nn.Parameter(torch.zeros(4), requires_grad=False)
+        self.std = torch.nn.Parameter(torch.ones(4), requires_grad=False)
 
     def forward(self, x):
-        return self.fc(x)
+        return self.fc((x - self.mean) / self.std)
+
+    def fit_standardization_statistics(self, scores):
+        self.mean[:] = scores.mean(dim=0).detach()
+        self.std[:] = scores.std(dim=0).detach()
 
 class Case2LogisticRegression(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc = torch.nn.Linear(2, 3)
+        self.fc = torch.nn.Linear(3, 4)
+        self.mean = torch.nn.Parameter(torch.zeros(3), requires_grad=False)
+        self.std = torch.nn.Parameter(torch.ones(3), requires_grad=False)
 
     def forward(self, x):
-        return self.fc(x)
+        return self.fc((x - self.mean) / self.std)
+
+    def fit_standardization_statistics(self, scores):
+        self.mean[:] = scores.mean(dim=0).detach()
+        self.std[:] = scores.std(dim=0).detach()
 
 class Case3LogisticRegression(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc = torch.nn.Linear(1, 2)
+        self.fc = torch.nn.Linear(2, 3)
+        self.mean = torch.nn.Parameter(torch.zeros(2), requires_grad=False)
+        self.std = torch.nn.Parameter(torch.ones(2), requires_grad=False)
 
     def forward(self, x):
-        return self.fc(x)
+        return self.fc((x - self.mean) / self.std)
+
+    def fit_standardization_statistics(self, scores):
+        self.mean[:] = scores.mean(dim=0).detach()
+        self.std[:] = scores.std(dim=0).detach()
 
 class ScoreContext:
     class Source(Enum):
@@ -134,6 +152,7 @@ def compute_probability_novelty(
         subject_scores,
         verb_scores,
         object_scores,
+        activation_statistical_scores,
         case_1_logistic_regression,
         case_2_logistic_regression,
         case_3_logistic_regression,
@@ -145,82 +164,86 @@ def compute_probability_novelty(
         subject_score = subject_scores[idx]
         object_score = object_scores[idx]
         verb_score = verb_scores[idx]
+        activation_statistical_score = torch.from_numpy(activation_statistical_scores[idx])
         
         if subject_score is not None and object_score is not None:
             # Case 1
-            scores = torch.stack((subject_score, verb_score, object_score), dim = 0).unsqueeze(0)
+            scores = torch.stack((subject_score, verb_score, object_score, activation_statistical_score.to(torch.float).to(subject_score.device)), dim = 0).unsqueeze(0)
             logits = case_1_logistic_regression(scores).squeeze(0)
             softmax = torch.nn.functional.softmax(logits, dim = 0)
-            # To compute p_type, we'll remove the type = 0 logit, and then
-            # normalize to get p_type[i] = P(type = i) for i in {1, 2, 3}.
-            # And, of course, we'll set p_type[3] to zero
             if p_t4 is None:
                 # cur_p_n is P(type = 1) + P(type = 2) + P(type = 3)
                 if ignore_t2_in_pni:
-                    cur_p_n = softmax[[1, 3]].sum()
+                    cur_p_n = softmax[[1, 3, 4]].sum()
                 else:
                     cur_p_n = softmax[1:].sum()
 
                 # cur_p_type is P(type = 1), P(type = 2), P(type = 3), 0,
-                # renormalized such that they sum to 1. This can be computed as
-                # the softmax of the type 1, 2, and 3 logits.
+                # P(type = 6/7) renormalized such that they sum to 1. This
+                # can be computed as the softmax of the type 1, 2, 3, and 6/7
+                # logits.
+                # TODO I think this is broken; we should normalize in the
+                # softmax probability space
                 cur_partial_p_type = torch.nn.functional.softmax(logits[1:], dim = 0)
-                cur_p_type = torch.cat((cur_partial_p_type, torch.zeros(1, device = cur_partial_p_type.device)), dim = 0)
+                cur_p_type = torch.cat((cur_partial_p_type[:-1], torch.zeros(1, device = cur_partial_p_type.device), cur_partial_p_type[-1:]), dim = 0)
             else:
                 # cur_p_n is P(type = 1) + P(type = 2) + P(type = 3) + P(type = 4)
                 # P(type = 4) = P(unknown combination | no novel boxes) * P(no novel boxes)
                 cur_p_t4 = p_t4[idx] * softmax[0]
                 if ignore_t2_in_pni:
-                    cur_p_n = softmax[[1, 3]].sum() + cur_p_t4
+                    cur_p_n = softmax[[1, 3, 4]].sum() + cur_p_t4
                 else:
                     cur_p_n = softmax[1:].sum() + cur_p_t4
 
                 # cur_p_type is P(type = 1), P(type = 2), P(type = 3), P(type = 4),
                 # renormalized such that they sum to 1
-                cur_p_type_unnormalized = torch.cat((softmax[1:], cur_p_t4.unsqueeze(0)), dim = 0)
+                cur_p_type_unnormalized = torch.cat((softmax[1:-1], cur_p_t4.unsqueeze(0), softmax[-1:]), dim = 0)
                 cur_p_type = cur_p_type_unnormalized / cur_p_type_unnormalized.sum()
         elif subject_score is not None:
             # Case 2
-            scores = torch.stack((subject_score, verb_score), dim = 0).unsqueeze(0)
+            scores = torch.stack((subject_score, verb_score, activation_statistical_score.to(torch.float).to(subject_score.device)), dim = 0).unsqueeze(0)
             logits = case_2_logistic_regression(scores).squeeze(0)
             softmax = torch.nn.functional.softmax(logits, dim = 0)
             
             if p_t4 is None:
                 # cur_p_n is P(type = 1) + P(type = 2)
                 if ignore_t2_in_pni:
-                    cur_p_n = softmax[1]
+                    cur_p_n = softmax[[1, 3]].sum()
                 else:
                     cur_p_n = softmax[1:].sum()
                 
-                # cur_p_type is P(type = 1), P(type = 2), 0, 0,
+                # cur_p_type is P(type = 1), P(type = 2), 0, 0, P(type = 6/7)
                 # renormalized such that they sum to 1. This can be computed as
-                # the softmax of the type 1 and 2 logits.
+                # the softmax of the type 1, 2, and 6/7 logits.
+                # TODO I think this is broken; we should normalize in the
+                # softmax probability space
                 cur_partial_p_type = torch.nn.functional.softmax(logits[1:], dim = 0)
                 # And, of course, we'll set p_type[2] and p_type[3] to zero
-                cur_p_type = torch.cat((cur_partial_p_type, torch.zeros(2, device = cur_partial_p_type.device)), dim = 0)
+                cur_p_type = torch.cat((cur_partial_p_type[1:-1], torch.zeros(2, device = cur_partial_p_type.device), cur_partial_p_type[-1:]), dim = 0)
             else:
                 # cur_p_n is P(type = 1) + P(type = 2) + P(type = 4)
                 # P(type = 4) = P(unknown combination | no novel boxes) * P(no novel boxes)
                 cur_p_t4 = p_t4[idx] * softmax[0]
                 if ignore_t2_in_pni:
-                    cur_p_n = softmax[1] + cur_p_t4
+                    cur_p_n = softmax[[1, 3]] + cur_p_t4
                 else:
                     cur_p_n = softmax[1:].sum() + cur_p_t4
                 
                 # cur_p_type is P(type = 1), P(type = 2), 0, P(type = 4),
                 # renormalized such that they sum to 1
-                cur_p_type_unnormalized = torch.cat((softmax[1:], torch.zeros(1, device = softmax.device), cur_p_t4.unsqueeze(0)), dim = 0)
+                cur_p_type_unnormalized = torch.cat((softmax[1:-1], torch.zeros(1, device = softmax.device), cur_p_t4.unsqueeze(0), softmax[-1:]), dim = 0)
                 cur_p_type = cur_p_type_unnormalized / cur_p_type_unnormalized.sum()
         else:
             # Case 3
-            scores = object_score.unsqueeze(0).unsqueeze(0)
+            scores = torch.stack((object_score, activation_statistical_score.to(torch.float).to(object_score.device)), dim = 0).unsqueeze(0)
             logits = case_3_logistic_regression(scores).squeeze(0)
-            # cur_p_n is P(type = 3)
-            cur_p_n = torch.nn.functional.softmax(logits, dim = 0)[1]
+            softmax = torch.nn.functional.softmax(logits, dim = 0)
+            # cur_p_n is P(type = 3) + P(type = 6/7)
+            cur_p_n = softmax[1:].sum()
             # In case 3, novelty type can only be 3. So assign 100% probability
             # to type 3 novelty and 0% to everything else
-            cur_p_type = torch.zeros(4, device = cur_p_n.device)
-            cur_p_type[2] = 1.0
+            cur_p_type_unnormalized = torch.cat((torch.zeros(2, device=softmax.device), softmax[1:-1], torch.zeros(1, device = softmax.device), softmax[-1:]), dim = 0)
+            cur_p_type = cur_p_type_unnormalized / cur_p_type_unnormalized.sum()
 
         p_type.append(cur_p_type)
         p_n.append(cur_p_n)
@@ -352,6 +375,7 @@ def separate_scores_and_labels(subject_scores, object_scores, verb_scores, subje
 def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000, quiet = True):
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(logistic_regression.parameters(), lr = 0.01, momentum = 0.9)
+    logistic_regression.fit_standardization_statistics(scores)
     
     progress = None
     if not quiet:
@@ -431,6 +455,7 @@ def tune_logistic_regressions(
         first_60_subject_novelty_scores,
         first_60_verb_novelty_scores,
         first_60_object_novelty_scores,
+        first_60_activation_statistical_scores,
         epochs = 3000,
         quiet = True):
     # Separate first 60 score tuples into case 1, 2, and 3.
@@ -441,18 +466,19 @@ def tune_logistic_regressions(
         subject_score = first_60_subject_novelty_scores[idx]
         object_score = first_60_object_novelty_scores[idx]
         verb_score = first_60_verb_novelty_scores[idx]
+        activation_statistical_score = torch.from_numpy(first_60_activation_statistical_scores[idx])
         
         # Add the scores to the appropriate case tensors
         if subject_score is not None and object_score is not None:
             # All boxes present; append scores to case 1
-            first_60_case_1_scores.append(torch.stack((subject_score, verb_score, object_score), dim = 0))
+            first_60_case_1_scores.append(torch.stack((subject_score, verb_score, object_score, activation_statistical_score).to(torch.float).to(subject_score.device), dim = 0))
         if subject_score is not None:
             # At least the subject box is present; append subject and verb scores
             # to case 2
-            first_60_case_2_scores.append(torch.stack((subject_score, verb_score), dim = 0))
+            first_60_case_2_scores.append(torch.stack((subject_score, verb_score, activation_statistical_score).to(torch.float).to(subject_score.device), dim = 0))
         if object_score is not None:
             # At least the object box is present; append object score to case 3
-            first_60_case_3_scores.append(object_score.unsqueeze(0))
+            first_60_case_3_scores.append(torch.stack((object_score, activation_statistical_score).to(torch.float).to(object_score.device), dim = 0))
     first_60_case_1_scores = torch.stack(first_60_case_1_scores, dim = 0)
     first_60_case_2_scores = torch.stack(first_60_case_2_scores, dim = 0)
     first_60_case_3_scores = torch.stack(first_60_case_3_scores, dim = 0)

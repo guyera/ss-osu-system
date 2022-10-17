@@ -8,7 +8,7 @@ import unsupervisednoveltydetection
 import noveltydetection
 
 device = 'cuda:0'
-model_ = 'swin_b' # 'swin_t' 'swin_b' 'resnet'
+model_ = 'swin_t' # 'swin_t' 'swin_b' 'resnet'
 
 if model_ == 'resnet': 
     backbone = resnet50(weights="IMAGENET1K_V1") # pretrained = True, 
@@ -16,7 +16,6 @@ if model_ == 'resnet':
 if model_ == 'swin_t': 
     backbone = swin_t(weights="IMAGENET1K_V1") # pretrained = True, 
     backbone.head = torch.nn.Linear(backbone.head.weight.shape[1], 256)
-
 if model_ == 'swin_b': 
     backbone = swin_b(weights="IMAGENET1K_V1") # pretrained = True, 
     backbone.head = torch.nn.Linear(backbone.head.weight.shape[1], 256)
@@ -31,11 +30,13 @@ case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression().to
 case_2_logistic_regression = noveltydetection.utils.Case2LogisticRegression().to(device)
 case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression().to(device)
 
-trainer = unsupervisednoveltydetection.training.NoveltyDetectorTrainer('Custom', 'Custom/annotations/dataset_v4_train.csv', 'Custom/annotations/dataset_v4_val.csv', 64, model_ = model_)
+activation_statistical_model = unsupervisednoveltydetection.common.ActivationStatisticalModel(model_).to(device)
+
+trainer = unsupervisednoveltydetection.training.NoveltyDetectorTrainer('Custom', 'Custom/annotations/dataset_v4_train.csv', 'Custom/annotations/dataset_v4_val.csv', 'Custom/annotations/dataset_v4_val_incident.csv', 64, model_ = model_)
 
 start_time = time.time()
-trainer.prepare_for_retraining(backbone, detector, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression)
-trainer.train_novelty_detection_module(backbone, detector, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression)
+trainer.prepare_for_retraining(backbone, detector, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model)
+trainer.train_novelty_detection_module(backbone, detector, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model)
 end_time = time.time()
 print(f'Time: {end_time - start_time}')
 
@@ -55,6 +56,7 @@ module_state_dicts['module'] = detector_state_dicts
 module_state_dicts['case_1_logistic_regression'] = state_dict(case_1_logistic_regression)
 module_state_dicts['case_2_logistic_regression'] = state_dict(case_2_logistic_regression)
 module_state_dicts['case_3_logistic_regression'] = state_dict(case_3_logistic_regression)
+module_state_dicts['activation_statistical_model'] = activation_statistical_model.state_dict()
 
 torch.save(state_dict(backbone), 'unsupervisednoveltydetection/' +model_ +'_backbone_2.pth')
 torch.save(detector_state_dicts['classifier'], 'unsupervisednoveltydetection/' +model_ +'_classifier_2.pth')

@@ -16,7 +16,7 @@ class SubjectBoxImageDataset(torch.utils.data.Dataset):
         return len(self.novelty_feature_dataset)
 
     def __getitem__(self, idx):
-        _, _, _, _, subject_label, _, _, subject_box_image, _, _ = self.novelty_feature_dataset[idx]
+        _, _, _, _, subject_label, _, _, subject_box_image, _, _, _ = self.novelty_feature_dataset[idx]
         return subject_box_image, subject_label
 
 class ObjectBoxImageDataset(torch.utils.data.Dataset):
@@ -27,7 +27,7 @@ class ObjectBoxImageDataset(torch.utils.data.Dataset):
         return len(self.novelty_feature_dataset)
 
     def __getitem__(self, idx):
-        _, _, _, _, _, object_label, _, _, object_box_image, _ = self.novelty_feature_dataset[idx]
+        _, _, _, _, _, object_label, _, _, object_box_image, _, _ = self.novelty_feature_dataset[idx]
         return object_box_image, object_label
 
 class VerbBoxImageDataset(torch.utils.data.Dataset):
@@ -38,8 +38,19 @@ class VerbBoxImageDataset(torch.utils.data.Dataset):
         return len(self.novelty_feature_dataset)
 
     def __getitem__(self, idx):
-        spatial_encodings, _, _, _, _, _, verb_label, _, _, verb_box_image = self.novelty_feature_dataset[idx]
+        spatial_encodings, _, _, _, _, _, verb_label, _, _, verb_box_image, _ = self.novelty_feature_dataset[idx]
         return verb_box_image, spatial_encodings, verb_label
+
+class WholeImageDataset(torch.utils.data.Dataset):
+    def __init__(self, novelty_feature_dataset):
+        self.novelty_feature_dataset = novelty_feature_dataset
+
+    def __len__(self):
+        return len(self.novelty_feature_dataset)
+
+    def __getitem__(self, idx):
+        _, _, _, _, _, _, _, _, _, _, whole_image = self.novelty_feature_dataset[idx]
+        return whole_image
 
 def custom_cross_entropy(predictions, targets):
     log_softmaxes = predictions - torch.logsumexp(predictions, dim = 1, keepdim = True)
@@ -56,7 +67,7 @@ def separate_data(dataset):
     novel_object_indices = []
     known_verb_indices = []
     novel_verb_indices = []
-    for idx, (_, _, _, _, subject_label, object_label, verb_label, _, _, _) in enumerate(dataset):
+    for idx, (_, _, _, _, subject_label, object_label, verb_label, _, _, _, _) in enumerate(dataset):
         if subject_label is not None:
             if subject_label == 0:
                 # Novel subject
@@ -94,6 +105,29 @@ def separate_data(dataset):
         novel_object_dataset,\
         known_verb_dataset,\
         novel_verb_dataset
+
+def separate_known_whole_images(dataset):
+    known_indices = []
+    for idx, (_, _, _, _, subject_label, object_label, verb_label, _, _, _, _) in enumerate(dataset):
+        if subject_label is not None:
+            if subject_label == 0:
+                # Novel subject
+                continue
+
+        if object_label is not None:
+            if object_label == 0:
+                # Novel object
+                continue
+
+        if verb_label is not None:
+            if verb_label == 0:
+                # Novel verb
+                continue
+    
+        known_indices.append(idx)
+    
+    return WholeImageDataset(torch.utils.data.Subset(dataset, known_indices))
+
 
 def class_balance(dataset):
     # Determine the class with the fewest instances
@@ -211,6 +245,7 @@ def custom_class_balance(dataset, class_proportions):
 
     return torch.utils.data.Subset(dataset, selected_indices)
 
+'''
 def separate_by_case(novelty_feature_dataset):
     case_1_images = []
     case_2_images = []
@@ -277,10 +312,248 @@ def separate_by_case(novelty_feature_dataset):
     case_3_dataset = torch.utils.data.TensorDataset(case_3_images, case_3_labels)
 
     return case_1_dataset, case_2_dataset, case_3_dataset
+'''
+
+def separate_by_case(novelty_feature_dataset):
+    case_1_images = []
+    case_2_images = []
+    case_3_images = []
+    case_1_spatial_encodings = []
+    case_2_spatial_encodings = []
+    case_1_labels = []
+    case_2_labels = []
+    case_3_labels = []
+
+    # TODO for a lack of case 2 / 3 data, we use case 1 data additionally as
+    # case 2 / 3 (just leaving out the additional boxes). Previously, we would
+    # determine the novelty type of the case 1 image. If it was a novel object,
+    # then we would NOT use it as additional case 2 data. If it was a novel
+    # subject or verb, then we would NOT use it as additional case 3 data.
+    # The concern was that a novel subject / verb could result in something
+    # seeming novel about the object box as well, and that would be fed to
+    # the case 3 novelty type logistic regression during calibration. This
+    # check was eliminated when updating to phase 3. We could reimplement it,
+    # but it's not clear whether it's helpful.
+    for spatial_encodings, _, _, _, subject_label, object_label, verb_label, subject_box_image, object_box_image, verb_box_image, whole_image in novelty_feature_dataset:
+        # Add the images and labels to the case inputs
+        if subject_box_image is not None and object_box_image is not None:
+            # All boxes present; append images to case 1
+            case_1_images.append(torch.stack((subject_box_image, object_box_image, verb_box_image, whole_image), dim = 0))
+            case_1_spatial_encodings.append(spatial_encodings)
+            case_1_labels.append(
+                torch.stack(
+                    (
+                        subject_label,
+                        verb_label,
+                        object_label
+                    ),
+                    dim=0
+                )
+            )
+        if subject_box_image is not None:
+            # At least the subject box is present; append subject and verb images
+            # to case 2
+            case_2_images.append(torch.stack((subject_box_image, verb_box_image, whole_image), dim = 0))
+            case_2_spatial_encodings.append(spatial_encodings)
+            case_2_labels.append(
+                torch.stack(
+                    (
+                        subject_label,
+                        verb_label
+                    ),
+                    dim=0
+                )
+            )
+        if object_box_image is not None:
+            # At least the object box is present; append object box image to case 3
+            case_3_images.append(torch.stack((object_box_image, whole_image), dim = 0))
+            case_3_labels.append(object_label)
+
+    case_1_images = torch.stack(case_1_images, dim = 0)
+    case_1_spatial_encodings = torch.stack(case_1_spatial_encodings, dim = 0)
+    case_1_labels = torch.stack(case_1_labels, dim = 0)
+    case_2_images = torch.stack(case_2_images, dim = 0)
+    case_2_spatial_encodings = torch.stack(case_2_spatial_encodings, dim = 0)
+    case_2_labels = torch.stack(case_2_labels, dim = 0)
+    case_3_images = torch.stack(case_3_images, dim = 0)
+    case_3_labels = torch.stack(case_3_labels, dim = 0)
+    
+    case_1_dataset = torch.utils.data.TensorDataset(case_1_images, case_1_spatial_encodings, case_1_labels)
+    case_2_dataset = torch.utils.data.TensorDataset(case_2_images, case_2_spatial_encodings, case_2_labels)
+    case_3_dataset = torch.utils.data.TensorDataset(case_3_images, case_3_labels)
+
+    return case_1_dataset, case_2_dataset, case_3_dataset
+
+def to_case_1_novelty_type_dataset(case_1_dataset):
+    # Get all data from the TensorDataset
+    images, spatial_encodings, labels = case_1_dataset[:]
+
+    # Determine novel boxes
+    s_labels = labels[:, 0]
+    v_labels = labels[:, 1]
+    o_labels = labels[:, 2]
+    novel_s = s_labels == 0
+    novel_v = v_labels == 0
+    novel_o = o_labels == 0
+
+    # Disqualify images with more than one type of novelty
+    total_novel = novel_s.to(torch.int) + novel_v.to(torch.int) + \
+        novel_o.to(torch.int)
+    valid = total_novel <= 1
+    valid_images = images[valid]
+    valid_spatial_encodings = spatial_encodings[valid]
+    valid_novel_s = novel_s[valid]
+    valid_novel_v = novel_v[valid]
+    valid_novel_o = novel_o[valid]
+
+    # Determine novelty types
+    type_labels = torch.zeros_like(valid_novel_s, dtype=torch.long)
+    type_labels[valid_novel_s] = 1
+    type_labels[valid_novel_v] = 2
+    type_labels[valid_novel_o] = 3
+
+    return torch.utils.data.TensorDataset(
+        valid_images,
+        valid_spatial_encodings,
+        type_labels
+    )
+
+def to_case_2_novelty_type_dataset(case_2_dataset):
+    # Get all data from the TensorDataset
+    images, spatial_encodings, labels = case_2_dataset[:]
+
+    # Determine novel boxes
+    s_labels = labels[:, 0]
+    v_labels = labels[:, 1]
+    novel_s = s_labels == 0
+    novel_v = v_labels == 0
+
+    # Disqualify images with more than one type of novelty
+    total_novel = novel_s.to(torch.int) + novel_v.to(torch.int)
+    valid = total_novel <= 1
+    valid_images = images[valid]
+    valid_spatial_encodings = spatial_encodings[valid]
+    valid_novel_s = novel_s[valid]
+    valid_novel_v = novel_v[valid]
+
+    # Determine novelty types
+    type_labels = torch.zeros_like(valid_novel_s, dtype=torch.long)
+    type_labels[valid_novel_s] = 1
+    type_labels[valid_novel_v] = 2
+
+    return torch.utils.data.TensorDataset(
+        valid_images,
+        valid_spatial_encodings,
+        type_labels
+    )
+
+def to_case_3_novelty_type_dataset(case_3_dataset):
+    # Get all data from the TensorDataset
+    images, o_labels = case_3_dataset[:]
+
+    # Determine novel boxes
+    novel_o = o_labels == 0
+
+    # Determine novelty types
+    type_labels = torch.zeros_like(novel_o, dtype=torch.long)
+    type_labels[novel_o] = 1
+
+    return torch.utils.data.TensorDataset(
+        images,
+        type_labels
+    )
+
+def to_case_1_incident_novelty_type_dataset(case_1_incident_dataset):
+    # Get all data from the TensorDataset
+    images, spatial_encodings, labels = case_1_incident_dataset[:]
+    
+    # Determine novel boxes
+    s_labels = labels[:, 0]
+    v_labels = labels[:, 1]
+    o_labels = labels[:, 2]
+    novel_s = s_labels == 0
+    novel_v = v_labels == 0
+    novel_o = o_labels == 0
+
+    # Disqualify images with any novel boxes
+    total_novel = novel_s.to(torch.int) + novel_v.to(torch.int) + \
+        novel_o.to(torch.int)
+    valid = total_novel == 0
+    valid_images = images[valid]
+    valid_spatial_encodings = spatial_encodings[valid]
+
+    # Construct incident novelty type labels
+    type_labels = torch.full(
+        (valid_images.shape[0],),
+        4,
+        dtype=torch.long,
+        device=valid_images.device
+    )
+
+    return torch.utils.data.TensorDataset(
+        valid_images,
+        valid_spatial_encodings,
+        type_labels
+    )
+
+def to_case_2_incident_novelty_type_dataset(case_2_incident_dataset):
+    # Get all data from the TensorDataset
+    images, spatial_encodings, labels = case_2_incident_dataset[:]
+    
+    # Determine novel boxes
+    s_labels = labels[:, 0]
+    v_labels = labels[:, 1]
+    novel_s = s_labels == 0
+    novel_v = v_labels == 0
+
+    # Disqualify images with any novel boxes
+    total_novel = novel_s.to(torch.int) + novel_v.to(torch.int)
+    valid = total_novel == 0
+    valid_images = images[valid]
+    valid_spatial_encodings = spatial_encodings[valid]
+
+    # Construct incident novelty type labels
+    type_labels = torch.full(
+        (valid_images.shape[0],),
+        3,
+        dtype=torch.long,
+        device=valid_images.device
+    )
+
+    return torch.utils.data.TensorDataset(
+        valid_images,
+        valid_spatial_encodings,
+        type_labels
+    )
+
+def to_case_3_incident_novelty_type_dataset(case_3_incident_dataset):
+    # Get all data from the TensorDataset
+    images, o_labels = case_3_incident_dataset[:]
+    
+    # Determine novel boxes
+    novel_o = o_labels == 0
+
+    # Disqualify images with any novel boxes
+    valid = ~novel_o
+    valid_images = images[valid]
+
+    # Construct incident novelty type labels
+    type_labels = torch.full(
+        (valid_images.shape[0],),
+        2,
+        dtype=torch.long,
+        device=valid_images.device
+    )
+
+    return torch.utils.data.TensorDataset(
+        valid_images,
+        type_labels
+    )
 
 def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(logistic_regression.parameters(), lr = 0.01, momentum = 0.9)
+    logistic_regression.fit_standardization_statistics(scores)
     
     progress = tqdm(range(epochs), desc = 'Fitting logistic regression...')
     for epoch in progress:
@@ -294,7 +567,7 @@ def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
     progress.close()
     
 class NoveltyDetectorTrainer:
-    def __init__(self, data_root, train_csv_path, val_csv_path, retraining_batch_size, model_ = 'resnet'):
+    def __init__(self, data_root, train_csv_path, val_csv_path, val_incident_csv_path, retraining_batch_size, model_ = 'resnet'):
         train_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
             name = 'Custom',
             data_root = data_root,
@@ -339,30 +612,54 @@ class NoveltyDetectorTrainer:
 
         # Next, also using the val dataset, separate the instances by case
         # and label them by type.
-        case_1_novelty_type_dataset, case_2_novelty_type_dataset, case_3_novelty_type_dataset = separate_by_case(val_dataset)
+        case_1_val_dataset, case_2_val_dataset, case_3_val_dataset = separate_by_case(val_dataset)
+        case_1_val_novelty_type_dataset = to_case_1_novelty_type_dataset(case_1_val_dataset)
+        case_2_val_novelty_type_dataset = to_case_2_novelty_type_dataset(case_2_val_dataset)
+        case_3_val_novelty_type_dataset = to_case_3_novelty_type_dataset(case_3_val_dataset)
+        self.activation_stats_training_dataset = separate_known_whole_images(val_dataset)
+
+        val_incident_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
+            name = 'Custom',
+            data_root = data_root,
+            csv_path = val_incident_csv_path,
+            training = False,
+            image_batch_size = 512,
+            backbone = None,
+            cache_to_disk = True
+        )
+        
+        case_1_val_incident_dataset, case_2_val_incident_dataset, case_3_val_incident_dataset = separate_by_case(val_incident_dataset)
+        case_1_val_incident_novelty_type_dataset = to_case_1_incident_novelty_type_dataset(case_1_val_incident_dataset)
+        case_2_val_incident_novelty_type_dataset = to_case_2_incident_novelty_type_dataset(case_2_val_incident_dataset)
+        case_3_val_incident_novelty_type_dataset = to_case_3_incident_novelty_type_dataset(case_3_val_incident_dataset)
+
+        case_1_all_novelty_type_dataset = torch.utils.data.ConcatDataset((
+            case_1_val_novelty_type_dataset,
+            case_1_val_incident_novelty_type_dataset
+        ))
+        case_2_all_novelty_type_dataset = torch.utils.data.ConcatDataset((
+            case_2_val_novelty_type_dataset,
+            case_2_val_incident_novelty_type_dataset
+        ))
+        case_3_all_novelty_type_dataset = torch.utils.data.ConcatDataset((
+            case_3_val_novelty_type_dataset,
+            case_3_val_incident_novelty_type_dataset
+        ))
 
         # Balance the case-separated data by novelty type
-        case_1_novelty_type_proportions = [0.5, 0.167, 0.167, 0.167]
-        self.case_1_novelty_type_dataset = custom_class_balance(case_1_novelty_type_dataset, case_1_novelty_type_proportions)
-        case_2_novelty_type_proportions = [0.5, 0.25, 0.25]
-        self.case_2_novelty_type_dataset = custom_class_balance(case_2_novelty_type_dataset, case_2_novelty_type_proportions)
-        case_3_novelty_type_proportions = [0.5, 0.5]
-        self.case_3_novelty_type_dataset = custom_class_balance(case_3_novelty_type_dataset, case_3_novelty_type_proportions)
-
-        # TODO THOMAS: Perhaps initialize some empty list / tensor / whatever
-        # of feedback data, which will be appended to as we receive it from
-        # the top level?
-        # DONE
+        # TODO switch to a class-weighted sampler in the data loader rather
+        # than taking a constant subset of the data points
+        case_1_novelty_type_proportions = [0.5, 0.125, 0.125, 0.125, 0.125]
+        self.case_1_novelty_type_dataset = custom_class_balance(case_1_all_novelty_type_dataset, case_1_novelty_type_proportions)
+        case_2_novelty_type_proportions = [0.5, 0.167, 0.167, 0.167]
+        self.case_2_novelty_type_dataset = custom_class_balance(case_2_all_novelty_type_dataset, case_2_novelty_type_proportions)
+        case_3_novelty_type_proportions = [0.5, 0.25, 0.25]
+        self.case_3_novelty_type_dataset = custom_class_balance(case_3_all_novelty_type_dataset, case_3_novelty_type_proportions)
 
         self.feedback_data = None
-        
+
         self.retraining_batch_size = retraining_batch_size 
-    
-    # TODO THOMAS: Implement this function. It should receive some new feedback
-    # data from the top level and append it to the trainer's existing store
-    # of feedback data. I'm not sure if a csv_path is the appropriate way to
-    # accept this data, so feel free to change the API however you'd like.
-    # DONE
+
     def add_feedback_data(self, data_root, csv_path):
         new_novel_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
             name = 'Custom',
@@ -386,7 +683,7 @@ class NoveltyDetectorTrainer:
     # Most likely this is done by fully randomizing them, but in the future
     # we might change the process to be e.g. a warm-start, shrink-and-perturb,
     # or crashing a single layer.
-    def prepare_for_retraining(self, backbone, detector, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression):
+    def prepare_for_retraining(self, backbone, detector, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model):
         # Construct a randomly initialized ResNet50 and transfer the weights to
         # backbone. Do the actual weight transfer on the CPU, since it's a big
         # network with a lot of weights and we don't want to run out of GPU
@@ -429,9 +726,9 @@ class NoveltyDetectorTrainer:
         case_2_logistic_regression.load_state_dict(random_case_2_logistic_regression.state_dict())
         random_case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression().to(device)
         case_3_logistic_regression.load_state_dict(random_case_3_logistic_regression.state_dict())
-        
-    # TODO THOMAS: Edit this function interface to also accept novel train loaders
-    # DONE
+
+        activation_statistical_model.reset()
+
     def train_epoch(self, known_subject_loader, novel_subject_loader, known_object_loader, novel_object_loader, known_verb_loader, novel_verb_loader, backbone, subject_classifier, object_classifier, verb_classifier, optimizer):
         # Determine the device to use based on the backbone's fc weights
         if self.model_ == 'resnet':
@@ -468,9 +765,6 @@ class NoveltyDetectorTrainer:
         known_subject_iter = iter(known_subject_loader)
         known_object_iter = iter(known_object_loader)
         known_verb_iter = iter(known_verb_loader)
-        # TODO THOMAS: Construct novel train iters as well, from the novel
-        # train loaders
-        # DONE
         novel_subject_iter = iter(novel_subject_loader)
         novel_object_iter  = iter(novel_object_loader)
         novel_verb_iter    = iter(novel_verb_loader)
@@ -484,9 +778,6 @@ class NoveltyDetectorTrainer:
         finished_known_subject_iter = False
         finished_known_object_iter = False
         finished_known_verb_iter = False
-        # TODO THOMAS: Construct similar flags for the novel data iters, and
-        # modify the while loop below condition appropriately
-        # DONE
         finished_novel_subject_iter = False
         finished_novel_object_iter  = False
         finished_novel_verb_iter    = False
@@ -519,13 +810,7 @@ class NoveltyDetectorTrainer:
                 finished_known_verb_iter = True
                 known_verb_iter = iter(known_verb_loader)
                 batch_known_verb_images, batch_known_spatial_encodings, batch_known_verb_labels = next(known_verb_iter)
-            
-            # TODO THOMAS: Sample a batch from each of the three novel loaders
-            # as well. Do it in the same way I sampled from these three
-            # batches, i.e. make sure to set the flag to True and reconstruct
-            # the iter when reaching the end of the data loader due to a
-            # StopIteration
-            # DONE
+
             try:
                 batch_novel_subject_images, batch_novel_subject_labels = next(novel_subject_iter)
             except StopIteration:
@@ -547,7 +832,6 @@ class NoveltyDetectorTrainer:
                 novel_verb_iter = iter(novel_verb_loader)
                 batch_novel_verb_images, batch_novel_spatial_encodings, batch_novel_verb_labels = next(novel_verb_iter)
 
-            
             # Shift labels down by 1 for closed-set classifier, since known
             # class indices start at 1 but the classifiers outputs the number
             # of logits equal to the corresponding number of known classes
@@ -568,8 +852,6 @@ class NoveltyDetectorTrainer:
             batch_known_verb_features = backbone(batch_known_verb_images)
             batch_known_spatial_encodings = torch.flatten(batch_known_spatial_encodings, start_dim = 1)
             batch_known_verb_features = torch.cat((batch_known_spatial_encodings, batch_known_verb_features), dim = 1)
-            # TODO THOMAS: Extract features similarly for the novel batches
-            # DONE
 
             # All novel labels should be uniform since we want to use outlier exposure
             batch_novel_subject_images = batch_novel_subject_images.to(device)
@@ -594,7 +876,6 @@ class NoveltyDetectorTrainer:
             batch_novel_verb_features = backbone(batch_novel_verb_images)
             batch_novel_spatial_encodings = torch.flatten(batch_novel_spatial_encodings, start_dim = 1)
             batch_novel_verb_features = torch.cat((batch_novel_spatial_encodings, batch_novel_verb_features), dim = 1)
-            
 
             # Compute logits by passing the features through the appropriate
             # classifiers
@@ -605,10 +886,6 @@ class NoveltyDetectorTrainer:
             batch_known_subject_loss = torch.nn.functional.cross_entropy(batch_known_subject_preds, batch_known_subject_labels)
             batch_known_object_loss = torch.nn.functional.cross_entropy(batch_known_object_preds, batch_known_object_labels)
             batch_known_verb_loss = torch.nn.functional.cross_entropy(batch_known_verb_preds, batch_known_verb_labels)
-            
-            # TODO THOMAS: Compute the novel OE losses and add them to
-            # batch_loss
-            # DONE
 
             # Compute logits by passing the features through the appropriate
             # classifiers
@@ -635,19 +912,19 @@ class NoveltyDetectorTrainer:
             n_known_subject_examples += batch_known_subject_images.shape[0]
             n_known_object_examples += batch_known_object_images.shape[0]
             n_known_verb_examples += batch_known_verb_images.shape[0]
-            
+
             n_known_subject_correct += int((torch.argmax(batch_known_subject_preds, dim = 1) == batch_known_subject_labels).to(torch.int).sum().detach().cpu().item())
             n_known_object_correct += int((torch.argmax(batch_known_object_preds, dim = 1) == batch_known_object_labels).to(torch.int).sum().detach().cpu().item())
             n_known_verb_correct += int((torch.argmax(batch_known_verb_preds, dim = 1) == batch_known_verb_labels).to(torch.int).sum().detach().cpu().item())
-        
+
         mean_loss = sum_loss / n_iterations
-        
+
         mean_known_subject_accuracy = float(n_known_subject_correct) / n_known_subject_examples
         mean_known_object_accuracy = float(n_known_object_correct) / n_known_object_examples
         mean_known_verb_accuracy = float(n_known_verb_correct) / n_known_verb_examples
 
         mean_known_accuracy = (mean_known_subject_accuracy + mean_known_object_accuracy + mean_known_verb_accuracy) / 3.0
-        
+
         return mean_loss, mean_known_accuracy
 
     def val_epoch(self, subject_loader, object_loader, verb_loader, backbone, subject_classifier, object_classifier, verb_classifier):
@@ -711,18 +988,7 @@ class NoveltyDetectorTrainer:
             return mean_accuracy
 
     def train_backbone_and_classifiers(self, backbone, subject_classifier, object_classifier, verb_classifier):
-        # TODO THOMAS: Concatenate the stored novel feedback data with the appropriate
-        # self.novel_train_subject_dataset, self.novel_train_object_dataset,
-        # and self.novel_train_verb_dataset. You should end up with three
-        # novel datasets -- one for each of S/V/O. Make sure the feedback
-        # datasets are of type SubjectBoxImageDataset, ObjectBoxImageDataset,
-        # and VerbBoxImageDataset prior to concatenating, as output by
-        # separate_data() defined near the top of this file. You might even load
-        # the feedback data from the csv file very similarly to how I loaded the
-        # dataset_v4_train.csv in __init__() of this class.
-        # DONE
-
-        # NOTE Can potentially refactor for speedup (by calling separate data in add_feedback
+        # NOTE Can potentially refactor for speedup (by calling separate_data in add_feedback
         # and keeping track of novel feedback s,v, and o datasets as class attributes)
         if self.feedback_data is not None:
             _, novel_feedback_subject_dataset, \
@@ -739,15 +1005,6 @@ class NoveltyDetectorTrainer:
 
         # Construct known dataloaders. Since we're not using any known feedback
         # data, these are constructed solely from the known OSU training data.
-        # TODO THOMAS: In reality, the batch sizes will have to be determined
-        # programmatically rather than hard-coded since the feedback data
-        # grows over time. The idea is that they'll all sum to 32, and if
-        # dataset A has X times as many data points as dataset B, then dataset
-        # A should have X times as large of a batch size, so that the two
-        # datasets have roughly the same number of batches. Otherwise, the
-        # smaller dataset will be iterated many more times than the larger
-        # one, which could lead to overfitting.
-        # DONE
 
         ks_size = len(self.known_train_subject_dataset)
         ko_size = len(self.known_train_object_dataset)
@@ -760,7 +1017,7 @@ class NoveltyDetectorTrainer:
         total_batch_size = self.retraining_batch_size
 
         ks_batch_size, ko_batch_size, kv_batch_size, \
-            ns_batch_size, no_batch_size, nv_batch_size = self.compute_balanced_batch_sizes(total_batch_size, ks_size, ko_size, kv_size, ns_size, no_size, nv_size)        
+            ns_batch_size, no_batch_size, nv_batch_size = self.compute_balanced_batch_sizes(total_batch_size, ks_size, ko_size, kv_size, ns_size, no_size, nv_size)
 
         known_train_subject_loader = torch.utils.data.DataLoader(
             self.known_train_subject_dataset,
@@ -778,9 +1035,6 @@ class NoveltyDetectorTrainer:
             shuffle = True
         )
 
-        # TODO THOMAS: Similarly construct the three novel dataloaders, based on the
-        # concatenated datasets constructed earlier in this function.
-        # DONE
         novel_subject_loader = torch.utils.data.DataLoader(
             novel_subject_dataset,
             batch_size = ns_batch_size,
@@ -843,9 +1097,6 @@ class NoveltyDetectorTrainer:
         progress = tqdm(range(max_epochs), desc = 'Training backbone and classifiers...')
         for epoch in progress:
             # Train for one full epoch
-            # TODO THOMAS: Modify this function and function call to also pass in 
-            # the three novel train loaders for OE as well
-            # DONE
             mean_train_loss, mean_known_train_accuracy = self.train_epoch(known_train_subject_loader, novel_subject_loader, 
                 known_train_object_loader, novel_object_loader,
                 known_train_verb_loader, novel_verb_loader, 
@@ -907,6 +1158,31 @@ class NoveltyDetectorTrainer:
             nv_batch_size = 1
 
         return ks_batch_size, ko_batch_size, kv_batch_size, ns_batch_size, no_batch_size, nv_batch_size
+
+    def fit_activation_statistics(self, backbone, activation_statistical_model):
+        activation_stats_training_loader = torch.utils.data.DataLoader(
+            self.activation_stats_training_dataset,
+            batch_size = 32,
+            shuffle = False
+        )
+        backbone.eval()
+
+        if self.model_ == 'resnet':
+            device = backbone.fc.weight.device
+        if self.model_ == 'swin_t' or self.model_ == 'swin_b':        
+            device = backbone.head.weight.device
+
+        all_features = []
+        with torch.no_grad():
+            for batch in activation_stats_training_loader:
+                batch = batch.to(device)
+                features = activation_statistical_model.compute_features(
+                    backbone,
+                    batch
+                )
+                all_features.append(features)
+        all_features = torch.cat(all_features, dim=0)
+        activation_statistical_model.fit(all_features)
 
     def calibrate_temperature_scalers(self, backbone, subject_classifier, object_classifier, verb_classifier, subject_calibrator, object_calibrator, verb_calibrator):
         calibration_subject_loader = torch.utils.data.DataLoader(
@@ -1013,7 +1289,7 @@ class NoveltyDetectorTrainer:
             avg_loss = (subject_loss + verb_loss + object_loss) / 3.0
             progress.set_description(f'Training calibrators... | Loss: {avg_loss.detach().cpu().item()}')
 
-    def train_novelty_type_logistic_regressions(self, backbone, subject_classifier, object_classifier, verb_classifier, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression):
+    def train_novelty_type_logistic_regressions(self, backbone, subject_classifier, object_classifier, verb_classifier, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model):
         # Set the backbone and classifiers to eval(), but set the logistic
         # regressions to train()
         backbone.eval()
@@ -1051,6 +1327,8 @@ class NoveltyDetectorTrainer:
             case_1_labels = []
             for batch_images, batch_spatial_encodings, batch_labels in case_1_novelty_type_loader:
                 batch_images = batch_images.to(device)
+                batch_box_images = batch_images[:, :3]
+                batch_whole_images = batch_images[:, 3]
                 batch_spatial_encodings = batch_spatial_encodings.to(device)
                 batch_labels = batch_labels.to(device)
 
@@ -1058,14 +1336,14 @@ class NoveltyDetectorTrainer:
                 # denotes subject, object, and verb box images separately. Flatten
                 # the images so that they can all be processed by the backbone
                 # at once.
-                batch_flattened_images = batch_images.view(-1, *batch_images.shape[2:])
+                batch_flattened_images = batch_box_images.reshape(-1, *batch_box_images.shape[2:])
                 
                 # Extract features from flattened images
                 batch_flattened_features = backbone(batch_flattened_images)
 
                 # Reshape the flattened features to be [N, 3, D], where D is the
                 # number of features (bottleneck dimension)
-                batch_features = batch_flattened_features.view(-1, 3, batch_flattened_features.shape[-1])
+                batch_features = batch_flattened_features.reshape(-1, 3, batch_flattened_features.shape[-1])
 
                 # Extract S/V/O logits from the three feature vectors for each
                 # instance, concatenating the spatial encodings to the verb
@@ -1082,11 +1360,13 @@ class NoveltyDetectorTrainer:
                 batch_object_novelty_scores = -batch_max_object_logits
                 batch_max_verb_logits, _ = torch.max(batch_verb_logits, dim = 1)
                 batch_verb_novelty_scores = -batch_max_verb_logits
-                
+
+                # Compute whole-image activation statistic scores
+                batch_whole_image_features = activation_statistical_model.compute_features(backbone, batch_whole_images)
+                batch_activation_statistical_scores = torch.from_numpy(activation_statistical_model.score(batch_whole_image_features)).to(torch.float).to(device)
+
                 # Concatenate scores for the case 1 logistic regression input.
-                # NOTE: This one goes S,V,O instead of S,O,V. Not sure why I did 
-                # this differently from everything else.
-                batch_scores = torch.stack((batch_subject_novelty_scores, batch_verb_novelty_scores, batch_object_novelty_scores), dim = 1)
+                batch_scores = torch.stack((batch_subject_novelty_scores, batch_verb_novelty_scores, batch_object_novelty_scores, batch_activation_statistical_scores), dim = 1)
 
                 case_1_scores.append(batch_scores)
                 case_1_labels.append(batch_labels)
@@ -1099,6 +1379,8 @@ class NoveltyDetectorTrainer:
             case_2_labels = []
             for batch_images, batch_spatial_encodings, batch_labels in case_2_novelty_type_loader:
                 batch_images = batch_images.to(device)
+                batch_box_images = batch_images[:, :2]
+                batch_whole_images = batch_images[:, 2]
                 batch_spatial_encodings = batch_spatial_encodings.to(device)
                 batch_labels = batch_labels.to(device)
 
@@ -1106,14 +1388,14 @@ class NoveltyDetectorTrainer:
                 # indexes subject and verb box images separately. Flatten
                 # the images so that they can all be processed by the backbone
                 # at once.
-                batch_flattened_images = batch_images.view(-1, *batch_images.shape[2:])
+                batch_flattened_images = batch_box_images.reshape(-1, *batch_box_images.shape[2:])
                 
                 # Extract features from flattened images
                 batch_flattened_features = backbone(batch_flattened_images)
 
                 # Reshape the flattened features to be [N, 2, D], where D is the
                 # number of features (bottleneck dimension)
-                batch_features = batch_flattened_features.view(-1, 2, batch_flattened_features.shape[-1])
+                batch_features = batch_flattened_features.reshape(-1, 2, batch_flattened_features.shape[-1])
 
                 # Extract S/V logits from the two feature vectors for each
                 # instance, concatenating the spatial encodings to the verb
@@ -1127,9 +1409,13 @@ class NoveltyDetectorTrainer:
                 batch_subject_novelty_scores = -batch_max_subject_logits
                 batch_max_verb_logits, _ = torch.max(batch_verb_logits, dim = 1)
                 batch_verb_novelty_scores = -batch_max_verb_logits
+
+                # Compute whole-image activation statistic scores
+                batch_whole_image_features = activation_statistical_model.compute_features(backbone, batch_whole_images)
+                batch_activation_statistical_scores = torch.from_numpy(activation_statistical_model.score(batch_whole_image_features)).to(torch.float).to(device)
                 
                 # Concatenate scores for the case 2 logistic regression input.
-                batch_scores = torch.stack((batch_subject_novelty_scores, batch_verb_novelty_scores), dim = 1)
+                batch_scores = torch.stack((batch_subject_novelty_scores, batch_verb_novelty_scores, batch_activation_statistical_scores), dim = 1)
 
                 case_2_scores.append(batch_scores)
                 case_2_labels.append(batch_labels)
@@ -1142,10 +1428,12 @@ class NoveltyDetectorTrainer:
             case_3_labels = []
             for batch_images, batch_labels in case_3_novelty_type_loader:
                 batch_images = batch_images.to(device)
+                batch_box_images = batch_images[:, 0]
+                batch_whole_images = batch_images[:, 1]
                 batch_labels = batch_labels.to(device)
 
                 # Extract features from images
-                batch_features = backbone(batch_images)
+                batch_features = backbone(batch_box_images)
 
                 # Extract logits from the object classifier
                 batch_object_logits = object_classifier(batch_features)
@@ -1154,10 +1442,13 @@ class NoveltyDetectorTrainer:
                 # classifier
                 batch_max_object_logits, _ = torch.max(batch_object_logits, dim = 1)
                 batch_object_novelty_scores = -batch_max_object_logits
+
+                # Compute whole-image activation statistic scores
+                batch_whole_image_features = activation_statistical_model.compute_features(backbone, batch_whole_images)
+                batch_activation_statistical_scores = torch.from_numpy(activation_statistical_model.score(batch_whole_image_features)).to(torch.float).to(device)
                 
-                # Unsqueeze the scores to be [N, 1], as this is what's required for
-                # the case 3 logistic regression
-                batch_scores = batch_object_novelty_scores.unsqueeze(1)
+                # Concatenate scores for the case 3 logistic regression input.
+                batch_scores = torch.stack((batch_object_novelty_scores, batch_activation_statistical_scores), dim = 1)
 
                 case_3_scores.append(batch_scores)
                 case_3_labels.append(batch_labels)
@@ -1171,7 +1462,7 @@ class NoveltyDetectorTrainer:
         fit_logistic_regression(case_2_logistic_regression, case_2_scores, case_2_labels, epochs = 3000)
         fit_logistic_regression(case_3_logistic_regression, case_3_scores, case_3_labels, epochs = 3000)
 
-    def train_novelty_detection_module(self, backbone, detector, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression):
+    def train_novelty_detection_module(self, backbone, detector, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model):
         subject_classifier = detector.classifier.subject_classifier
         object_classifier = detector.classifier.object_classifier
         verb_classifier = detector.classifier.verb_classifier
@@ -1181,9 +1472,11 @@ class NoveltyDetectorTrainer:
         
         # Retrain the backbone and classifiers
         self.train_backbone_and_classifiers(backbone, subject_classifier, object_classifier, verb_classifier)
+
+        self.fit_activation_statistics(backbone, activation_statistical_model)
         
         # Retrain the detector's temperature scaling calibrators
         self.calibrate_temperature_scalers(backbone, subject_classifier, object_classifier, verb_classifier, subject_calibrator, object_calibrator, verb_calibrator)
 
         # Retrain the logistic regressions
-        self.train_novelty_type_logistic_regressions(backbone, subject_classifier, object_classifier, verb_classifier, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression)
+        self.train_novelty_type_logistic_regressions(backbone, subject_classifier, object_classifier, verb_classifier, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model)

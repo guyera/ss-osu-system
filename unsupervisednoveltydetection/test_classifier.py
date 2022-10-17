@@ -20,7 +20,7 @@ class SubjectImageDataset(torch.utils.data.Dataset):
         return len(self.novelty_feature_dataset)
 
     def __getitem__(self, idx):
-        _, _, _, _, labels, _, _, images, _, _ = self.novelty_feature_dataset[idx]
+        _, _, _, _, labels, _, _, images, _, _, _ = self.novelty_feature_dataset[idx]
         return images, labels
 
 class VerbImageDataset(torch.utils.data.Dataset):
@@ -32,7 +32,7 @@ class VerbImageDataset(torch.utils.data.Dataset):
         return len(self.novelty_feature_dataset)
 
     def __getitem__(self, idx):
-        spatial_encodings, _, _, _, _, _, labels, _, _, images = self.novelty_feature_dataset[idx]
+        spatial_encodings, _, _, _, _, _, labels, _, _, images, _ = self.novelty_feature_dataset[idx]
         return images, spatial_encodings, labels
         #return images, None, labels
 
@@ -45,7 +45,7 @@ class ObjectImageDataset(torch.utils.data.Dataset):
         return len(self.novelty_feature_dataset)
     
     def __getitem__(self, idx):
-        _, _, _, _, _, labels, _, _, images, _ = self.novelty_feature_dataset[idx]
+        _, _, _, _, _, labels, _, _, images, _, _ = self.novelty_feature_dataset[idx]
         return images, labels
 
 class TestConfidenceCalibrationMethods(unittest.TestCase):
@@ -72,7 +72,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         subject_indices = []
         verb_indices = []
         object_indices = []
-        for idx, (_, _, _, _, subject_label, object_label, verb_label, _, _, _) in enumerate(full_dataset):
+        for idx, (_, _, _, _, subject_label, object_label, verb_label, _, _, _, _) in enumerate(full_dataset):
             # Remove novel examples
             if (subject_label is not None and subject_label.item() == 0) or (verb_label is not None and verb_label.item() == 0) or (object_label is not None and object_label.item() == 0):
                 continue
