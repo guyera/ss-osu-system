@@ -1,4 +1,5 @@
 import sys
+import argparse
 
 from torchvision.models import resnet50, swin_t, swin_b
 import torch
@@ -7,6 +8,13 @@ import noveltydetectionfeatures
 import sklearn.metrics
 import noveltydetection
 import matplotlib.pyplot as plt
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('--hint-a', type=int, default=None)
+parser.add_argument('--hint-b', action='store_true')
+
+args = parser.parse_args()
 
 device = 'cuda:0'
 
@@ -68,6 +76,7 @@ subject_box_features = []
 object_box_features = []
 verb_box_features = []
 activation_statistical_scores = []
+hint_b = []
 
 with torch.no_grad():
     for example_spatial_features, example_subject_roi_features, example_object_roi_features, example_verb_roi_features, subject_label, object_label, verb_label, example_subject_box_image, example_object_box_image, example_verb_box_image, example_whole_image in testing_set:
@@ -83,8 +92,13 @@ with torch.no_grad():
         verb_box_features.append(backbone(example_verb_box_image.unsqueeze(0)).squeeze(0) if example_verb_box_image is not None else None)
         whole_image_features = activation_statistical_model.compute_features(backbone, example_whole_image.unsqueeze(0))
         activation_statistical_scores.append(activation_statistical_model.score(whole_image_features).squeeze(0))
+        if subject_label == 0 or (subject_label is not None and verb_label == 0) or object_label == 0:
+            hint_b.append(True)
+        else:
+            hint_b.append(False)
 
     results = detector.scores_and_p_t4(spatial_features, subject_box_features, verb_box_features, object_box_features)
+    hint_b = torch.tensor(hint_b, dtype=torch.bool, device=device) if args.hint_b else None
 
 subject_scores = results['subject_novelty_score']
 object_scores = results['object_novelty_score']
@@ -102,6 +116,7 @@ incident_subject_box_features = []
 incident_object_box_features = []
 incident_verb_box_features = []
 incident_activation_statistical_scores = []
+incident_hint_b = []
 
 with torch.no_grad():
     for example_spatial_features, example_subject_roi_features, example_object_roi_features, example_verb_roi_features, subject_label, object_label, verb_label, example_subject_box_image, example_object_box_image, example_verb_box_image, example_whole_image in incident_set:
@@ -117,8 +132,10 @@ with torch.no_grad():
         incident_verb_box_features.append(backbone(example_verb_box_image.unsqueeze(0)).squeeze(0) if example_verb_box_image is not None else None)
         whole_image_features = activation_statistical_model.compute_features(backbone, example_whole_image.unsqueeze(0))
         incident_activation_statistical_scores.append(activation_statistical_model.score(whole_image_features).squeeze(0))
+        incident_hint_b.append(True)
 
     results = detector.scores_and_p_t4(incident_spatial_features, incident_subject_box_features, incident_verb_box_features, incident_object_box_features)
+    incident_hint_b = torch.tensor(incident_hint_b, dtype=torch.bool, device=device) if args.hint_b else None
 
 incident_subject_scores = results['subject_novelty_score']
 incident_object_scores = results['object_novelty_score']
@@ -307,8 +324,10 @@ case_3_logistic_regression = case_3_logistic_regression.to(device)
 #p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = True, p_t4 = None)
 #p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = True, p_t4 = p_t4)
 #p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = None)
-p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, activation_statistical_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = p_t4) # This gives the best results (thankfully)
-incident_p_type, incident_p_n = noveltydetection.utils.compute_probability_novelty(incident_subject_scores, incident_verb_scores, incident_object_scores, incident_activation_statistical_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = incident_p_t4)
+p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, activation_statistical_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = p_t4, hint_a=args.hint_a, hint_b=hint_b) # This gives the best results (thankfully)
+incident_p_type, incident_p_n = noveltydetection.utils.compute_probability_novelty(incident_subject_scores, incident_verb_scores, incident_object_scores, incident_activation_statistical_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = incident_p_t4, hint_a=args.hint_a, hint_b=incident_hint_b)
+print(p_type)
+print(incident_p_type)
 
 type_1_p_n = []
 type_1_p_type = []
