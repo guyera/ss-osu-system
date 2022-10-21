@@ -427,7 +427,7 @@ class UnsupervisedNoveltyDetector:
             t3_joint_prob /= type_normalizer
             t67_joint_probs /= type_normalizer
 
-        return ((-1, 0, torch.tensor(0, dtype=torch.long)), t3_joint_prob), t67_joint_probs
+        return [((-1, 0, 0), t3_joint_prob)], t67_joint_probs
 
     def _known_case_1(self, subject_probs, object_probs, verb_probs, k):
         joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
@@ -505,60 +505,6 @@ class UnsupervisedNoveltyDetector:
         sv_known_joint_probs = (self.known_sv_combinations.to(torch.int)) * sv_raw_joint_probs
         return sv_known_joint_probs.sum()
 
-    def _compute_p_known_so(self, subject_probs, object_probs):
-        so_raw_joint_probs = subject_probs.unsqueeze(1) * object_probs.unsqueeze(0)
-        so_known_joint_probs = (self.known_so_combinations.to(torch.int)) * so_raw_joint_probs
-        return so_known_joint_probs.sum()
-
-    def _compute_p_known_vo(self, verb_probs, object_probs):
-        vo_raw_joint_probs = verb_probs.unsqueeze(1) * object_probs.unsqueeze(0)
-        vo_known_joint_probs = (self.known_vo_combinations.to(torch.int)) * vo_raw_joint_probs
-        return vo_known_joint_probs.sum()
-
-    def _compute_p_known_svo_2(self, subject_probs, verb_probs, object_probs):
-        svo_raw_joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
-        flattened_svo_raw_joint_probs = torch.flatten(svo_raw_joint_probs)
-        flattened_known_svo_combinations = torch.flatten(self.known_svo_combinations)
-        max_prob, max_prob_idx = torch.max(flattened_svo_raw_joint_probs, dim = 0)
-        max_prob_is_known = flattened_known_svo_combinations[max_prob_idx]
-        if max_prob_is_known:
-            return max_prob * 0 + 1 # i.e. return 1
-        else:
-            return 1 - max_prob # And we'll take 1 - this in compute_probability_novelty
-
-    def _compute_p_known_sv_2(self, subject_probs, verb_probs):
-        sv_raw_joint_probs = subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
-        flattened_sv_raw_joint_probs = torch.flatten(sv_raw_joint_probs)
-        flattened_known_sv_combinations = torch.flatten(self.known_sv_combinations)
-        max_prob, max_prob_idx = torch.max(flattened_sv_raw_joint_probs, dim = 0)
-        max_prob_is_known = flattened_known_sv_combinations[max_prob_idx]
-        if max_prob_is_known:
-            return max_prob * 0 + 1 # i.e. return 1
-        else:
-            return 1 - max_prob # And we'll take 1 - this in compute_probability_novelty
-
-    def _compute_p_known_so_2(self, subject_probs, object_probs):
-        so_raw_joint_probs = subject_probs.unsqueeze(1) * object_probs.unsqueeze(0)
-        flattened_so_raw_joint_probs = torch.flatten(so_raw_joint_probs)
-        flattened_known_so_combinations = torch.flatten(self.known_so_combinations)
-        max_prob, max_prob_idx = torch.max(flattened_so_raw_joint_probs, dim = 0)
-        max_prob_is_known = flattened_known_so_combinations[max_prob_idx]
-        if max_prob_is_known:
-            return max_prob * 0 + 1 # i.e. return 1
-        else:
-            return 1 - max_prob # And we'll take 1 - this in compute_probability_novelty
-
-    def _compute_p_known_vo_2(self, verb_probs, object_probs):
-        vo_raw_joint_probs = verb_probs.unsqueeze(1) * object_probs.unsqueeze(0)
-        flattened_vo_raw_joint_probs = torch.flatten(vo_raw_joint_probs)
-        flattened_known_vo_combinations = torch.flatten(self.known_vo_combinations)
-        max_prob, max_prob_idx = torch.max(flattened_vo_raw_joint_probs, dim = 0)
-        max_prob_is_known = flattened_known_vo_combinations[max_prob_idx]
-        if max_prob_is_known:
-            return max_prob * 0 + 1 # i.e. return scalar tensor 1
-        else:
-            return 1 - max_prob # And we'll take 1 - this in compute_probability_novelty
-
     # Note: p_type should be a tensor of size [N, 4]; it's per-image p_type
     def top3(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type, trial_level_p_type_strategy = None):
         # Revise per-instance p_type using trial_level_p_type_strategy, if not
@@ -570,10 +516,6 @@ class UnsupervisedNoveltyDetector:
         t67_joint_probs = []
         cases = []
         results = {}
-        p_known_svo = []
-        p_known_sv = []
-        p_known_so = []
-        p_known_vo = []
         for idx in range(len(spatial_features)):
             example_spatial_features = spatial_features[idx]
             example_subject_appearance_features = subject_appearance_features[idx]
@@ -611,47 +553,23 @@ class UnsupervisedNoveltyDetector:
                 verb_probs = self.confidence_calibrator.calibrate_verb(verb_logits)
                 verb_probs = verb_probs.squeeze(0)
                 
-            cur_p_known_svo = torch.tensor(0, dtype = torch.float, device = self.device)
-            cur_p_known_sv = torch.tensor(0, dtype = torch.float, device = self.device)
-            cur_p_known_so = torch.tensor(0, dtype = torch.float, device = self.device)
-            cur_p_known_vo = torch.tensor(0, dtype = torch.float, device = self.device)
             if example_subject_appearance_features is not None and example_object_appearance_features is not None:
                 # Case 1, S/V/O
                 example_case = 1
                 example_predictions, example_t67_joint_probs = self._case_1(subject_probs, object_probs, verb_probs, cur_p_type, 3)
-                cur_p_known_svo = self._compute_p_known_svo_2(subject_probs, verb_probs, object_probs)
-                cur_p_known_sv = self._compute_p_known_sv_2(subject_probs, verb_probs)
-                cur_p_known_so = self._compute_p_known_so_2(subject_probs, object_probs)
-                cur_p_known_vo = self._compute_p_known_vo_2(verb_probs, object_probs)
             elif example_subject_appearance_features is not None and example_object_appearance_features is None:
                 # Case 2, S/V/None
                 example_case = 2
                 example_predictions, example_t67_joint_probs = self._case_2(subject_probs, verb_probs, cur_p_type, 3)
-                cur_p_known_sv = self._compute_p_known_sv_2(subject_probs, verb_probs)
             elif example_subject_appearance_features is None and example_object_appearance_features is not None:
                 # Case 3, None/None/O
                 example_case = 3
                 example_predictions, example_t67_joint_probs = self._case_3(object_probs, cur_p_type, 3)
-            else:
-                return NotImplemented
-            
+
             predictions.append(example_predictions)
             t67_joint_probs.append(example_t67_joint_probs)
             cases.append(example_case)
-            p_known_svo.append(cur_p_known_svo)
-            p_known_sv.append(cur_p_known_sv)
-            p_known_so.append(cur_p_known_so)
-            p_known_vo.append(cur_p_known_vo)
-        
-        p_known_svo = torch.stack(p_known_svo, dim = 0)
-        p_known_sv = torch.stack(p_known_sv, dim = 0)
-        p_known_so = torch.stack(p_known_so, dim = 0)
-        p_known_vo = torch.stack(p_known_vo, dim = 0)
 
-        results['p_known_svo'] = p_known_svo
-        results['p_known_sv'] = p_known_sv
-        results['p_known_so'] = p_known_so
-        results['p_known_vo'] = p_known_vo
         # Excludes type 6/7 tuples
         results['top3'] = predictions
         # ALL type 6/7 tuples; needed for merging with SCG tuples
