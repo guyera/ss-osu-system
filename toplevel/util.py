@@ -1,7 +1,7 @@
 import torch
 from unsupervisednoveltydetection import UnsupervisedNoveltyDetector, ThresholdTrialLevelPType
 from noveltydetection.utils import Case1LogisticRegression, Case2LogisticRegression, Case3LogisticRegression
-from unsupervisednoveltydetection.common import ClassifierV2
+from unsupervisednoveltydetection.common import ClassifierV2, ActivationStatisticalModel
 
 
 class BatchContext:
@@ -60,9 +60,17 @@ class UnsupervisedNoveltyDetectionManager:
 
         classifier = ClassifierV2(256, num_subject_classes, num_object_classes, num_verb_classes, num_spatial_features)
         self.detector = UnsupervisedNoveltyDetector(classifier, num_subject_classes, num_object_classes, num_verb_classes)
+        
+
         state_dict = torch.load(pretrained_path)
         self.detector.load_state_dict(state_dict['module'])
         self.detector = self.detector.to('cuda:0')
+        if 'resnet' in pretrained_path:
+            model_ = 'resnet'
+        else:
+            model_ = 'swin_t'
+        self.activation_statistical_model = ActivationStatisticalModel(model_).to('cuda:0')
+        self.activation_statistical_model.load_state_dict(state_dict['activation_statistical_model'])
         
         self.case_1_logistic_regression = Case1LogisticRegression()
         self.case_1_logistic_regression.load_state_dict(state_dict['case_1_logistic_regression'])
@@ -86,7 +94,7 @@ class UnsupervisedNoveltyDetectionManager:
         verb_box_features = []
         
         with torch.no_grad():
-            for example_spatial_features, _, _, _, _, _, _, example_subject_images, example_object_images, example_verb_images in dataset:
+            for example_spatial_features, _, _, _, _, _, _, example_subject_images, example_object_images, example_verb_images, whole_images in dataset:
                 spatial_feature = example_spatial_features if example_spatial_features is not None else None
                 subject_feature = backbone(example_subject_images.unsqueeze(0)).squeeze(0) if example_subject_images is not None else None
                 object_feature = backbone(example_object_images.unsqueeze(0)).squeeze(0) if example_object_images is not None else None
@@ -96,13 +104,20 @@ class UnsupervisedNoveltyDetectionManager:
                 subject_box_features.append(subject_feature)
                 object_box_features.append(object_feature)
                 verb_box_features.append(verb_feature)
-    
+
             op = ThresholdTrialLevelPType(trial_p_type, self.p_type_alpha)
 
             top3 = self.detector.top3(spatial_features, subject_box_features, verb_box_features, 
                 object_box_features, batch_p_type, op)
+        import ipdb; ipdb.set_trace()
+        for preds in top3['top3']:
+            for p in preds:
+                print(p)
+                
 
-        assert not any([any([torch.isnan(p[1]).item() for p in preds]) for preds in top3['top3']]), "NaNs in unsupervied detector's top-3"
+        import ipdb; ipdb.set_trace()
+
+        assert not any([any([torch.isnan(p[1]) for p in preds]) for preds in top3['top3']]), "NaNs in unsupervied detector's top-3"
                 
         for i, p in enumerate(top3['top3']):
             new_p = []
@@ -124,16 +139,18 @@ class UnsupervisedNoveltyDetectionManager:
 
             top3['top3'][i] = new_p
             
-        return top3['top3']    
+        return top3   
 
     def score(self, backbone, dataset):
         spatial_features = []
         subject_box_features = []
         object_box_features = []
         verb_box_features = []
+        # whole_image_features = []
+        incident_activation_statistical_scores = []
         
         with torch.no_grad():
-            for example_spatial_features, _, _, _, _, _, _, example_subject_images, example_object_images, example_verb_images in dataset:
+            for example_spatial_features, _, _, _, _, _, _, example_subject_images, example_object_images, example_verb_images, whole_images  in dataset:
                 spatial_feature = example_spatial_features if example_spatial_features is not None else None
                 subject_feature = backbone(example_subject_images.unsqueeze(0)).squeeze(0) if example_subject_images is not None else None
                 object_feature = backbone(example_object_images.unsqueeze(0)).squeeze(0) if example_object_images is not None else None
@@ -142,9 +159,16 @@ class UnsupervisedNoveltyDetectionManager:
                 spatial_features.append(spatial_feature)
                 subject_box_features.append(subject_feature)
                 object_box_features.append(object_feature)
-                verb_box_features.append(verb_feature)
-    
+                verb_box_features.append(verb_feature)    
+
+                whole_image_features = self.activation_statistical_model.compute_features(backbone, whole_images.unsqueeze(0))
+                incident_activation_statistical_scores.append(self.activation_statistical_model.score(whole_image_features).squeeze(0))
+        
+                            
             results = self.detector.scores_and_p_t4(spatial_features, subject_box_features, verb_box_features, 
                 object_box_features)
+            
+            # results_top3 = self.detector.top3(spatial_features, subject_box_features, verb_box_features, 
+            #     object_box_features)
 
-        return results
+        return results, incident_activation_statistical_scores

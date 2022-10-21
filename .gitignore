@@ -11,3 +11,4 @@ dataset_v4
 logs
 .pth
 FinalResults*
+*.jpg
