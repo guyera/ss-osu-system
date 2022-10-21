@@ -767,8 +767,11 @@ class UnsupervisedNoveltyDetector:
 
             # Combine the labels into a list of the top 3 triples
             top3_labels = [
-                (s_cls_label[i], v_cls_label[i], o_cls_label[i])\
-                    for i in range(3)
+                (
+                    int(s_cls_label[i].cpu().item()),
+                    int(v_cls_label[i].cpu().item()),
+                    int(o_cls_label[i].cpu().item())
+                ) for i in range(3)
             ]
             
             # Merge the top 3 type 0/6/7 tuple predictions
