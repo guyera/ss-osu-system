@@ -142,7 +142,7 @@ class TopLevelApp:
         self.batch_context.df = df
 
         # top-3 SVOs from SCG ensemble
-        scg_preds, _, _, _ = self.scg_ensemble.get_top3_SVOs(scg_data_loader, False)
+        scg_preds = self.scg_ensemble.get_all_SVO_preds(scg_data_loader, False)
 
         # unsupervised novelty scores
         unsupervised_results, incident_activation_statistical_scores = self.und_manager.score(self.backbone, novelty_dataset)
