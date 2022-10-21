@@ -782,6 +782,8 @@ class UnsupervisedNoveltyDetector:
             #   = P(tuple = t, novel)
             #   = P(tuple = t | novel) * P(novel)
             merged_top3 = []
+            more = True
+            more_other = True
             for _ in range(3):
                 novelty_other_triple = example_novelty_other_top3[0][0]
                 t0_67_triple = top3_labels[0]
@@ -790,14 +792,17 @@ class UnsupervisedNoveltyDetector:
                     example_novelty_other_top3[0][1] * example_p_n
                 t0_67_prob = top3[0]
 
-                if t0_67_prob >= novelty_other_prob:
+                if more and (not more_other or t0_67_prob >= novelty_other_prob):
                     # The type 0/6/7 tuple has the greatest probability;
                     # append it to the merged top 3, and remove it from the
                     # list of top 3 type 0/6/7 tuples.
                     merged_top3.append((t0_67_triple, t0_67_prob))
                     top3_labels = top3_labels[1:]
-                    top3 = top3[1:]
-                else:
+                    if len(top3) > 1:
+                        top3 = top3[1:]
+                    else:
+                        more = False
+                elif more_other and (not more or novelty_other_prob > t0_67_prob):
                     # The type 1/2/3/4 tuple has the greatest probability;
                     # append it to the merged top 3, and remove it from the
                     # list of top 3 type 1/2/3/4 tuples.
@@ -805,7 +810,10 @@ class UnsupervisedNoveltyDetector:
                         novelty_other_triple,
                         novelty_other_prob
                     ))
-                    example_novelty_other_top3 = example_novelty_other_top3[1:]
+                    if len(example_novelty_other_top3) > 1:
+                        example_novelty_other_top3 = example_novelty_other_top3[1:]
+                    else:
+                        more_other = False
             merged_predictions.append(merged_top3)
         return merged_predictions
 
