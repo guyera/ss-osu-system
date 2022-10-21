@@ -334,8 +334,10 @@ def separate_by_case(novelty_feature_dataset):
     # the case 3 novelty type logistic regression during calibration. This
     # check was eliminated when updating to phase 3. We could reimplement it,
     # but it's not clear whether it's helpful.
+    
     for spatial_encodings, _, _, _, subject_label, object_label, verb_label, subject_box_image, object_box_image, verb_box_image, whole_image in novelty_feature_dataset:
         # Add the images and labels to the case inputs
+        
         if subject_box_image is not None and object_box_image is not None:
             # All boxes present; append images to case 1
             case_1_images.append(torch.stack((subject_box_image, object_box_image, verb_box_image, whole_image), dim = 0))
@@ -368,7 +370,8 @@ def separate_by_case(novelty_feature_dataset):
             # At least the object box is present; append object box image to case 3
             case_3_images.append(torch.stack((object_box_image, whole_image), dim = 0))
             case_3_labels.append(object_label)
-
+       
+    
     case_1_images = torch.stack(case_1_images, dim = 0)
     case_1_spatial_encodings = torch.stack(case_1_spatial_encodings, dim = 0)
     case_1_labels = torch.stack(case_1_labels, dim = 0)
@@ -612,6 +615,7 @@ class NoveltyDetectorTrainer:
 
         # Next, also using the val dataset, separate the instances by case
         # and label them by type.
+
         case_1_val_dataset, case_2_val_dataset, case_3_val_dataset = separate_by_case(val_dataset)
         case_1_val_novelty_type_dataset = to_case_1_novelty_type_dataset(case_1_val_dataset)
         case_2_val_novelty_type_dataset = to_case_2_novelty_type_dataset(case_2_val_dataset)

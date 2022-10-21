@@ -19,6 +19,7 @@ if __name__ == "__main__":
     p.add_argument('--given-detection', default=False, action='store_true')
     p.add_argument('--train-csv-path', default='./dataset_v4/dataset_v4_2_train.csv')
     p.add_argument('--val-csv-path', default='./dataset_v4/dataset_v4_2_val.csv')
+    p.add_argument('--val-incident-csv-path', default='./dataset_v4/dataset_v4_val_incident.csv')
     p.add_argument('--trial-size', type=int, default=600)
     p.add_argument('--trial-batch-size', type=int, default=10)
     p.add_argument('--retraining-batch-size', type=int, default=80)
@@ -58,6 +59,7 @@ if __name__ == "__main__":
         ignore_verb_novelty=args.ignore_verb_novelty, 
         train_csv_path=args.train_csv_path,
         val_csv_path=args.val_csv_path,
+        val_incident_csv_path=args.val_incident_csv_path,
         trial_size=args.trial_size,
         trial_batch_size=args.trial_batch_size,
         retraining_batch_size=args.retraining_batch_size,
