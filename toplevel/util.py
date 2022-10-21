@@ -87,7 +87,7 @@ class UnsupervisedNoveltyDetectionManager:
     def get_calibrators(self):
         return self.case_1_logistic_regression, self.case_2_logistic_regression, self.case_3_logistic_regression
 
-    def top3(self, backbone, dataset, batch_p_type, trial_p_type):
+    def top3(self, backbone, dataset, batch_p_type, trial_p_type, scg_predictions, p_ni):
         spatial_features = []
         subject_box_features = []
         object_box_features = []
@@ -109,14 +109,7 @@ class UnsupervisedNoveltyDetectionManager:
 
             top3 = self.detector.top3(spatial_features, subject_box_features, verb_box_features, 
                 object_box_features, batch_p_type, op)
-        import ipdb; ipdb.set_trace()
-        for preds in top3['top3']:
-            for p in preds:
-                print(p)
-                
-
-        import ipdb; ipdb.set_trace()
-
+                        
         assert not any([any([torch.isnan(p[1]) for p in preds]) for preds in top3['top3']]), "NaNs in unsupervied detector's top-3"
                 
         for i, p in enumerate(top3['top3']):
@@ -138,8 +131,10 @@ class UnsupervisedNoveltyDetectionManager:
                 new_p.append(e)
 
             top3['top3'][i] = new_p
+                
+        top3_merged = self.detector.merge_predictions(scg_predictions,top3['t67'], top3['cases'], top3['top3'], p_ni)
             
-        return top3   
+        return top3_merged   
 
     def score(self, backbone, dataset):
         spatial_features = []
@@ -168,7 +163,4 @@ class UnsupervisedNoveltyDetectionManager:
             results = self.detector.scores_and_p_t4(spatial_features, subject_box_features, verb_box_features, 
                 object_box_features)
             
-            # results_top3 = self.detector.top3(spatial_features, subject_box_features, verb_box_features, 
-            #     object_box_features)
-
         return results, incident_activation_statistical_scores

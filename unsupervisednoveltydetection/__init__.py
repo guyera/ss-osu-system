@@ -509,7 +509,6 @@ class UnsupervisedNoveltyDetector:
     def top3(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type, trial_level_p_type_strategy = None):
         # Revise per-instance p_type using trial_level_p_type_strategy, if not
         # None
-        import ipdb; ipdb.set_trace()
         if trial_level_p_type_strategy is not None:
             p_type = trial_level_p_type_strategy.revise_p_type(p_type)
         

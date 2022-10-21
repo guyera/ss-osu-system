@@ -15,6 +15,7 @@ import pickle
 from scipy.stats import ks_2samp
 from torchvision.models import resnet50, swin_t
 from unsupervisednoveltydetection.training import NoveltyDetectorTrainer
+
 import os
 
 
@@ -297,11 +298,10 @@ class TopLevelApp:
     def _top3(self, scg_preds, p_ni, novelty_dataset, batch_p_type):
         top3 = None
         top3_probs = None
-        import ipdb; ipdb.set_trace()
-        top3_und = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist)
-        merged = self._merge_top3_SVOs(scg_preds, top3_und, p_ni)
-        top3 = [[e[0] for e in m] for m in merged]
-        top3_probs = [[e[1] for e in m] for m in merged]     
+        # merged function is called inside top3
+        top3_merged = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist, scg_preds, p_ni)
+        top3 = [[e[0] for e in m] for m in top3_merged]
+        top3_probs = [[e[1] for e in m] for m in top3_merged]     
         # if self.t_tn is None:
         #     top3 = [[e[0] for e in m] for m in scg_preds]
         #     top3_probs = [[e[1] for e in m] for m in scg_preds]    
@@ -539,7 +539,6 @@ class TopLevelApp:
         backbone.eval()
         self.backbone = backbone
 
-        # import ipdb; ipdb.set_trace()
         self.novelty_trainer = NoveltyDetectorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.retraining_batch_size, model_)
 
     def _retrain_supervised_detectors(self):
