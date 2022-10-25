@@ -22,3 +22,6 @@ python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/'
 
 
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/TestX' './session/temp/sys_results/' './FinalResults_Swin_T_5Epochs'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/TestX' './session/temp/sys_results/' './Phase3_Swin_T_5Epochs'

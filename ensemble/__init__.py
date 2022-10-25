@@ -168,20 +168,20 @@ class Ensemble:
             for img_preds in ret:
                 if int(img_preds[0][0][0]) == -1:
                     # The subject prediction is absent; this is case 3
-                    reshaped_preds = torch.zeros(self.NUM_OBJECT_CLASSES)
+                    reshaped_preds = torch.zeros(self.NUM_OBJECT_CLASSES-1)
                     for img_pred in img_preds:
                         o_idx = img_pred[0][2] - 1
                         reshaped_preds[o_idx] = img_pred[1]
                 elif int(img_preds[0][0][2]) == -1:
                     # The object prediction is absent; this is case 2
-                    reshaped_preds = torch.zeros(self.NUM_SUBJECT_CLASSES, self.NUM_VERB_CLASSES)
+                    reshaped_preds = torch.zeros(self.NUM_SUBJECT_CLASSES-1, self.NUM_VERB_CLASSES-1)
                     for img_pred in img_preds:
                         s_idx = img_pred[0][0] - 1
                         v_idx = img_pred[0][1] - 1
                         reshaped_preds[s_idx, v_idx] = img_pred[1]
                 else:
                     # Both S and O predictions are present; this is case 1
-                    reshaped_preds = torch.zeros(self.NUM_SUBJECT_CLASSES, self.NUM_VERB_CLASSES, self.NUM_OBJECT_CLASSES)
+                    reshaped_preds = torch.zeros(self.NUM_SUBJECT_CLASSES-1, self.NUM_VERB_CLASSES-1, self.NUM_OBJECT_CLASSES-1)
                     for img_pred in img_preds:
                         s_idx = img_pred[0][0] - 1
                         v_idx = img_pred[0][1] - 1

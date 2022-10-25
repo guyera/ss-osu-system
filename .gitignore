@@ -10,5 +10,6 @@ dataset_v4
 .vscode/
 logs
 .pth
-FinalResults*
+*FinalResults*
 *.jpg
+*Results_Phase3*

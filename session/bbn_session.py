@@ -189,7 +189,6 @@ class BBNSession:
         # self.history.add(filename, round_id, red_light, image_novelty_score, red_light_score,
         #                  classification_probs, top_layer)
 
-
         # import ipdb; ipdb.set_trace()
         if self.probs_debug_format:
             output_probs = predicted_probs

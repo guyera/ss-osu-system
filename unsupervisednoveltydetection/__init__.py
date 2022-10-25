@@ -28,6 +28,7 @@ class ThresholdTrialLevelPType(TrialLevelPTypeStrategy):
             self.revised_p_type = None
 
     def revise_p_type(self, p_type):
+
         if self.revised_p_type is not None:
             revised_p_type = p_type * 0 + self.revised_p_type
         else:
@@ -702,10 +703,9 @@ class UnsupervisedNoveltyDetector:
             #      + P(S=s, V=v, O=o, not novel)
             #  = P(S=s, V=v, O=o | novel) * P(novel)
             #      + P(S=s, V=v, O=o, not novel) * P(not novel)
-            # import ipdb; ipdb.set_trace
             merged_tuple_predictions = \
                 example_p_n * example_novelty_t67_predictions + \
-                    (1 - example_p_n) * example_scg_predictions
+                    (1 - example_p_n) * example_scg_predictions.to('cuda:0')
 
             # Flatten tuple predictions to shape [4*7*11] = [308] so that they
             # can all be sorted / compared together to get the top 3

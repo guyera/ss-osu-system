@@ -194,12 +194,12 @@ class TopLevelApp:
             self._accumulate(top3, p_ni, p_ni.numpy(), batch_feedback_mask, batch_query_mask, batch_p_type)
 
         self.all_red_light_scores = np.concatenate([self.all_red_light_scores, red_light_scores])
-        # import ipdb; ipdb.set_trace()
+        
         ret = {}
         ret['p_ni'] = p_ni.tolist()
         ret['red_light_score'] = red_light_scores
         ret['svo'] = top3
-        ret['svo_probs'] = top3_probs
+        ret['svo_probs'] = [[p.detach().cpu().numpy().tolist() for p in lst] for lst in top3_probs] #top3_probs
 
         # print(ret)
                                                                   
@@ -363,9 +363,12 @@ class TopLevelApp:
 
                 if not self.given_detection:
                     EPS = 1e-4
+                    # import ipdb; ipdb.set_trace()
+
                     p_gt_th = np.nonzero([p < self.p_val_cuttoff - EPS for p in red_light_scores])[0]
                     self.post_red = p_gt_th.shape[0] > 0                                
                     first_novelty_instance_idx = p_gt_th[0] if self.post_red else red_light_scores.shape[0]
+
                     self.post_red_base = all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx if self.post_red else None
         else:
             start = all_p_ni.shape[0] - N
@@ -396,6 +399,8 @@ class TopLevelApp:
 
             red_light_scores[:idx] = 0
             red_light_scores[idx] = 1
+            # import ipdb; ipdb.set_trace()
+
             self.post_red_base = all_p_ni.shape[0] - p_ni.shape[0] + idx
             self.red_light_img = None           
             
@@ -421,9 +426,10 @@ class TopLevelApp:
         assert self.all_p_ni.shape[0] == self.all_p_type.shape[0], "p_type/p_ni shape mismatch"
     
         filter_v = self.all_p_ni[self.post_red_base:] >= self.p_type_th
-        
         if not torch.any(filter_v):
             return
+        
+        # import ipdb; ipdb.set_trace()
         
         filtered = self.all_p_type[self.post_red_base:][filter_v]
     
@@ -434,8 +440,9 @@ class TopLevelApp:
                                               filtered[:, 1] if not self.ignore_verb_novelty else torch.zeros(filtered.shape[0]))
         log_p_type_3 = self._infer_log_p_type(prior, filtered[:, 2])
         log_p_type_4 = self._infer_log_p_type(prior, filtered[:, 3])
+        log_p_type_5 = self._infer_log_p_type(prior, filtered[:, 4])
     
-        self.p_type_dist = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4])
+        self.p_type_dist = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4, log_p_type_5])
         self.p_type_dist = torch.nn.functional.softmax(self.p_type_dist, dim=0).float()
         
         self.p_type_hist.append(self.p_type_dist.numpy())
@@ -616,11 +623,13 @@ class TopLevelApp:
             self.novelty_trainer.prepare_for_retraining(self.backbone, self.und_manager.detector, 
                 self.und_manager.case_1_logistic_regression,
                 self.und_manager.case_2_logistic_regression,
-                self.und_manager.case_3_logistic_regression)
+                self.und_manager.case_3_logistic_regression,
+                self.und_manager.activation_statistical_model)
             self.novelty_trainer.train_novelty_detection_module(self.backbone, self.und_manager.detector, 
                 self.und_manager.case_1_logistic_regression,
                 self.und_manager.case_2_logistic_regression,
-                self.und_manager.case_3_logistic_regression)
+                self.und_manager.case_3_logistic_regression,
+                self.und_manager.activation_statistical_model)
             
             self.retraining_buffer = self.retraining_buffer.iloc[0:0]
             assert self.retraining_buffer.shape[0] == 0
