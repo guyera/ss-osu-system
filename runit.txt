@@ -25,3 +25,19 @@ python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/T
 
 
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/TestX' './session/temp/sys_results/' './Phase3_Swin_T_5Epochs'
+
+
+python main.py --pretrained-backbone-path './unsupervisednoveltydetection/resnet_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/resnet_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/Test_Phase3' --detection-feedback --api-stubs
+
+
+python main.py --pretrained-backbone-path './unsupervisednoveltydetection/resnet_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/resnet_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/Test_Phase3' --detection-feedback --api-stubs
+
+python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/Test_Phase3' --detection-feedback --api-stubs
+
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_resnet_5_epochs/' './Phase3_resnet_5Epochs'
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_resnet_20_epochs/' './Phase3_resnet_20Epochs'
+
+

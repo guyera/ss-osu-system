@@ -98,10 +98,10 @@ def score_test(test_id, metadata, test_df, detect_lines, class_lines, class_file
             if top_3:
                 novel_top_3_hits += 1
         log.write(f'{test_tuple.new_image_path:33} {test_tuple.novel:1}   {ans_nov:1}   '
-                  f'{corr_s:2d} {corr_o:2d} {corr_v:2d}   '
-                  f'{code(ans_1_s):2d} {code(ans_1_o):2d} {code(ans_1_v):2d}    '
-                  f'{code(ans_2_s):2d} {code(ans_2_o):2d} {code(ans_2_v):2d}   '
-                  f'{code(ans_3_s):2d} {code(ans_3_o):2d} {code(ans_3_v):2d} '
+                  f'{corr_s:2f} {corr_o:2f} {corr_v:2f}   '
+                  f'{code(ans_1_s):2f} {code(ans_1_o):2f} {code(ans_1_v):2f}    '
+                  f'{code(ans_2_s):2f} {code(ans_2_o):2f} {code(ans_2_v):2f}   '
+                  f'{code(ans_3_s):2f} {code(ans_3_o):2f} {code(ans_3_v):2f} '
                   f'{top_1:6} {top_3:6} \n')
     total_top_1_hits = pre_red_top_1_hits + post_red_top_1_hits
     total_top_3_hits = pre_red_top_3_hits + post_red_top_3_hits
