@@ -10,4 +10,10 @@ dataset_v4
 .vscode/
 logs
 .pth
-FinalResults*
+*FinalResults*
+*.jpg
+*Results_Phase3*
+runit.txt
+*Phase3_*
+*Oct_Exp
+*.csv

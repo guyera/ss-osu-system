@@ -6,7 +6,7 @@ from toplevel import TopLevelApp
 
 class OSUInterface:
     def __init__(self, scg_ensemble, data_root, pretrained_unsupervised_novelty_path, pretrained_backbone_path, 
-        feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path, 
+        feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path, val_incident_csv_path,
         trial_batch_size, trial_size, retraining_batch_size, disable_retraining):
 
         self.app = TopLevelApp(ensemble_path=scg_ensemble, 
@@ -20,6 +20,7 @@ class OSUInterface:
             ignore_verb_novelty=ignore_verb_novelty,
             train_csv_path=train_csv_path,
             val_csv_path=val_csv_path,
+            val_incident_csv_path = val_incident_csv_path,
             trial_size=trial_size,
             trial_batch_size=trial_batch_size,
             retraining_batch_size=retraining_batch_size,
@@ -89,6 +90,7 @@ class OSUInterface:
         csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}.csv')
         df.to_csv(csv_path, index=True)
         
+        
         ret = self.app.process_batch(csv_path, test_id, round_id, df['new_image_path'].to_list())
         p_ni = ret['p_ni']
         red_light_scores = ret['red_light_score']
@@ -145,7 +147,12 @@ class OSUInterface:
     def end_test(self, test_id):
         print(f'==> OSU got end test {test_id}')
 
-        self.app.test_completed_callback(test_id)
+        returned_pni = self.app.test_completed_callback(test_id)
+        # import numpy as np
+        # np.savetxt(test_id+'.csv', returned_pni, delimiter=',', header='p_ni')
+
+
+        
 
     def end_session(self, session_id):
         print(f'==> OSU got end session {session_id}')

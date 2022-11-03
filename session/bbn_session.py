@@ -189,7 +189,6 @@ class BBNSession:
         # self.history.add(filename, round_id, red_light, image_novelty_score, red_light_score,
         #                  classification_probs, top_layer)
 
-
         # import ipdb; ipdb.set_trace()
         if self.probs_debug_format:
             output_probs = predicted_probs
@@ -301,7 +300,7 @@ class BBNSession:
                     'test_ids': test_ids,
                     'domain': self.domain,
                     'hints': self.hints,
-                    'detection_threshold': 0.5, #self.detection_threshold,
+                    'detection_threshold': self.detection_threshold, #self.detection_threshold,
                     # 'hints': ['red_light' if given_detection else '']
                 }
             })
@@ -549,6 +548,7 @@ class BBNSession:
         if self.api_stubs:
             self.api_stubs.finish_test(test_id)
             print('api_stubs.finish_test')
+            self.osu_stubs.end_test(test_id)
         else:
             test_end_response = requests.delete(
                 f"{self.url}/test?session_id={session_id}&test_id={test_id}")

@@ -15,12 +15,13 @@ import pickle
 from scipy.stats import ks_2samp
 from torchvision.models import resnet50, swin_t
 from unsupervisednoveltydetection.training import NoveltyDetectorTrainer
+
 import os
 
 
 class TopLevelApp:
     def __init__(self, ensemble_path, data_root, pretrained_unsupervised_module_path, pretrained_backbone_path, 
-        feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
+        feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path, val_incident_csv_path,
         trial_size, trial_batch_size, retraining_batch_size, disable_retraining):
 
         if not Path(ensemble_path).exists():
@@ -35,6 +36,7 @@ class TopLevelApp:
         self.data_root = data_root
         self.train_csv_path = train_csv_path
         self.val_csv_path = val_csv_path
+        self.val_incident_csv_path = val_incident_csv_path
         self.pretrained_backbone_path = pretrained_backbone_path
         self.pretrained_unsupervised_module_path = pretrained_unsupervised_module_path
         self.NUM_SUBJECT_CLASSES = 5
@@ -42,7 +44,7 @@ class TopLevelApp:
         self.NUM_VERB_CLASSES = 8
         self.NUM_SPATIAL_FEATURES = 2 * 36
         self.post_red = False
-        self.p_type_dist = torch.tensor([0.25, 0.25, 0.25, 0.25]) if not ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
+        self.p_type_dist =torch.tensor([0.20, 0.20, 0.20, 0.20, 0.20]) if not ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
         self.all_query_masks = torch.tensor([])
         self.all_feedback = torch.tensor([])
         self.all_p_ni = torch.tensor([])
@@ -60,7 +62,7 @@ class TopLevelApp:
         self.post_red_base = None
         self.batch_context = BatchContext()
         self.feedback_enabled = feedback_enabled
-        self.p_val_cuttoff =  0.0085542
+        self.p_val_cuttoff =   0.08803683 #   0.0085542  #0.01042724
         self.windows_size = 40
                 
         a = np.array([[self.p_val_cuttoff, 1], [1, 1]])
@@ -98,12 +100,12 @@ class TopLevelApp:
             'object_ymin', 'object_xmin', 'object_ymax', 'object_xmax'])
         self.retraining_batch_size = retraining_batch_size
         self.disable_retraining = disable_retraining
-        
+                
         self._reset_backbone_and_detectors()
         
     def reset(self):
         self.post_red = False
-        self.p_type_dist = torch.tensor([0.25, 0.25, 0.25, 0.25]) if not self.ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
+        self.p_type_dist = torch.tensor([0.20, 0.20, 0.20, 0.20, 0.20]) if not self.ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
         self.unsupervised_aucs = [None, None, None]
         self.supervised_aucs = [None, None, None]
         self.all_query_masks = torch.tensor([])
@@ -135,16 +137,15 @@ class TopLevelApp:
 
         self.batch_num += 1
         self.batch_context.reset()
-
         # initialize data loaders
         scg_data_loader, novelty_dataset, N, image_paths, df = self._load_data(csv_path)
         self.batch_context.df = df
 
         # top-3 SVOs from SCG ensemble
-        scg_preds, _, _, _ = self.scg_ensemble.get_top3_SVOs(scg_data_loader, False)
+        scg_preds = self.scg_ensemble.get_all_SVO_preds(scg_data_loader, False)
 
         # unsupervised novelty scores
-        unsupervised_results = self.und_manager.score(self.backbone, novelty_dataset)
+        unsupervised_results, incident_activation_statistical_scores = self.und_manager.score(self.backbone, novelty_dataset)
 
         subject_novelty_scores_u = unsupervised_results['subject_novelty_score']
         verb_novelty_scores_u = unsupervised_results['verb_novelty_score']
@@ -155,16 +156,17 @@ class TopLevelApp:
         self.verb_novelty_scores_un += verb_novelty_scores_u
         self.obj_novelty_scores_un += object_novelty_scores_u
 
+
         # compute P_n                        
         with torch.no_grad():
             case_1_lr, case_2_lr, case_3_lr = self.und_manager.get_calibrators()
             batch_p_type, p_ni = compute_probability_novelty(subject_novelty_scores_u, verb_novelty_scores_u, object_novelty_scores_u, 
-                case_1_lr, case_2_lr, case_3_lr, ignore_t2_in_pni=self.ignore_verb_novelty, p_t4=unsupervised_results['p_t4'])
+                incident_activation_statistical_scores, case_1_lr, case_2_lr, case_3_lr, ignore_t2_in_pni=self.ignore_verb_novelty, p_t4=unsupervised_results['p_t4'])
 
         p_ni = p_ni.cpu().float()            
         batch_p_type = batch_p_type.cpu()
         self.per_image_p_type = torch.cat([self.per_image_p_type, batch_p_type])
-        
+
         top3 = None
         top3_probs = None
                 
@@ -172,6 +174,7 @@ class TopLevelApp:
             top3, top3_probs = self._top3(scg_preds, p_ni, novelty_dataset, batch_p_type)
         else:
             top3, top3_probs = self._top3_given_detection(scg_preds, p_ni, novelty_dataset, batch_p_type, img_paths)
+        
         
         self.batch_context.p_ni = p_ni
         self.batch_context.subject_novelty_scores_u = subject_novelty_scores_u
@@ -191,12 +194,12 @@ class TopLevelApp:
             self._accumulate(top3, p_ni, p_ni.numpy(), batch_feedback_mask, batch_query_mask, batch_p_type)
 
         self.all_red_light_scores = np.concatenate([self.all_red_light_scores, red_light_scores])
-        # import ipdb; ipdb.set_trace()
+        
         ret = {}
         ret['p_ni'] = p_ni.tolist()
         ret['red_light_score'] = red_light_scores
         ret['svo'] = top3
-        ret['svo_probs'] = top3_probs
+        ret['svo_probs'] = [[p.detach().cpu().numpy().tolist() for p in lst] for lst in top3_probs] #top3_probs
 
         # print(ret)
                                                                   
@@ -225,6 +228,7 @@ class TopLevelApp:
             logs['red_light_scores'] = self.all_red_light_scores
 
             pickle.dump(logs, handle)
+        return self.all_p_ni.numpy()
 
     def select_queries(self, feedback_max_ids):
         assert self.post_red, "query selection shoudn't happen pre-red button"
@@ -295,16 +299,20 @@ class TopLevelApp:
     def _top3(self, scg_preds, p_ni, novelty_dataset, batch_p_type):
         top3 = None
         top3_probs = None
-    
-        if self.t_tn is None:
-            top3 = [[e[0] for e in m] for m in scg_preds]
-            top3_probs = [[e[1] for e in m] for m in scg_preds]    
-        else:
-            assert self.post_red
-            top3_und = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist)
-            merged = self._merge_top3_SVOs(scg_preds, top3_und, p_ni)
-            top3 = [[e[0] for e in m] for m in merged]
-            top3_probs = [[e[1] for e in m] for m in merged]         
+        # merged function is called inside top3
+        top3_merged = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist, scg_preds, p_ni)
+        top3 = [[e[0] for e in m] for m in top3_merged]
+        top3_probs = [[e[1] for e in m] for m in top3_merged]     
+        # if self.t_tn is None:
+        #     top3 = [[e[0] for e in m] for m in scg_preds]
+        #     top3_probs = [[e[1] for e in m] for m in scg_preds]    
+        # else:
+        #     assert self.post_red
+        #     import ipdb; ipdb.set_trace()
+        #     top3_und = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist)
+        #     merged = self._merge_top3_SVOs(scg_preds, top3_und, p_ni)
+        #     top3 = [[e[0] for e in m] for m in merged]
+        #     top3_probs = [[e[1] for e in m] for m in merged]         
                        
         return top3, top3_probs
                        
@@ -327,7 +335,7 @@ class TopLevelApp:
                 p_ni_for_top3 = np.copy(p_ni)
                 p_ni_for_top3[:idx] = 0
                 top3_und = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist)
-                merged = self._merge_top3_SVOs(scg_preds, top3_und, p_ni_for_top3)
+                # merged = self._merge_top3_SVOs(scg_preds, top3_und, p_ni_for_top3)
                 top3 = [[e[0] for e in m] for m in merged]
                 top3_probs = [[e[1] for e in m] for m in merged] 
             else:
@@ -355,10 +363,12 @@ class TopLevelApp:
                     red_light_scores[i - start] = p_val
 
                 if not self.given_detection:
-                    EPS = 1e-4
+                    EPS = 0
+
                     p_gt_th = np.nonzero([p < self.p_val_cuttoff - EPS for p in red_light_scores])[0]
                     self.post_red = p_gt_th.shape[0] > 0                                
                     first_novelty_instance_idx = p_gt_th[0] if self.post_red else red_light_scores.shape[0]
+
                     self.post_red_base = all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx if self.post_red else None
         else:
             start = all_p_ni.shape[0] - N
@@ -389,6 +399,7 @@ class TopLevelApp:
 
             red_light_scores[:idx] = 0
             red_light_scores[idx] = 1
+
             self.post_red_base = all_p_ni.shape[0] - p_ni.shape[0] + idx
             self.red_light_img = None           
             
@@ -414,23 +425,23 @@ class TopLevelApp:
         assert self.all_p_ni.shape[0] == self.all_p_type.shape[0], "p_type/p_ni shape mismatch"
     
         filter_v = self.all_p_ni[self.post_red_base:] >= self.p_type_th
-        
         if not torch.any(filter_v):
             return
-        
+                
         filtered = self.all_p_type[self.post_red_base:][filter_v]
     
-        prior = 0.25 if not self.ignore_verb_novelty else 1/3
+        prior = 0.20 if not self.ignore_verb_novelty else 1/3
     
         log_p_type_1 = self._infer_log_p_type(prior, filtered[:, 0])
         log_p_type_2 = self._infer_log_p_type(prior if not self.ignore_verb_novelty else 0, 
                                               filtered[:, 1] if not self.ignore_verb_novelty else torch.zeros(filtered.shape[0]))
         log_p_type_3 = self._infer_log_p_type(prior, filtered[:, 2])
         log_p_type_4 = self._infer_log_p_type(prior, filtered[:, 3])
+        log_p_type_5 = self._infer_log_p_type(prior, filtered[:, 4])
     
-        self.p_type_dist = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4])
+        self.p_type_dist = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4, log_p_type_5])
         self.p_type_dist = torch.nn.functional.softmax(self.p_type_dist, dim=0).float()
-        
+                
         self.p_type_hist.append(self.p_type_dist.numpy())
                 
         assert not torch.any(torch.isnan(self.p_type_dist)), "NaNs in p_type."
@@ -514,7 +525,6 @@ class TopLevelApp:
             self.NUM_OBJECT_CLASSES, 
             self.NUM_SPATIAL_FEATURES,
             0.98)        
-        # import ipdb; ipdb.set_trace()
         if 'resnet' in self.pretrained_backbone_path:
             backbone = resnet50(weights= None) #resnet50(pretrained = False)  weights="IMAGENET1K_V1"
             backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
@@ -533,8 +543,7 @@ class TopLevelApp:
         backbone.eval()
         self.backbone = backbone
 
-        # import ipdb; ipdb.set_trace()
-        self.novelty_trainer = NoveltyDetectorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.retraining_batch_size, model_)
+        self.novelty_trainer = NoveltyDetectorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.retraining_batch_size, model_)
 
     def _retrain_supervised_detectors(self):
         t_star = torch.argmax(self.p_type_dist) + 1
@@ -611,11 +620,13 @@ class TopLevelApp:
             self.novelty_trainer.prepare_for_retraining(self.backbone, self.und_manager.detector, 
                 self.und_manager.case_1_logistic_regression,
                 self.und_manager.case_2_logistic_regression,
-                self.und_manager.case_3_logistic_regression)
+                self.und_manager.case_3_logistic_regression,
+                self.und_manager.activation_statistical_model)
             self.novelty_trainer.train_novelty_detection_module(self.backbone, self.und_manager.detector, 
                 self.und_manager.case_1_logistic_regression,
                 self.und_manager.case_2_logistic_regression,
-                self.und_manager.case_3_logistic_regression)
+                self.und_manager.case_3_logistic_regression,
+                self.und_manager.activation_statistical_model)
             
             self.retraining_buffer = self.retraining_buffer.iloc[0:0]
             assert self.retraining_buffer.shape[0] == 0

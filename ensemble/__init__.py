@@ -146,7 +146,51 @@ class Ensemble:
             print(f'top3 accuracy: {count3 / len(labels)}')
 
         return ret, subj_logits, verb_logits, obj_logits
-        
+
+    def get_all_SVO_preds(self, data_loader, is_training, verbose=True):
+        with torch.no_grad():
+            features, labels, is_null_flag, null_top3, is_subj_null, is_obj_null, subj_logits, verb_logits, obj_logits = self._compute_features(data_loader, is_training, return_all=True)
+
+            features = [torch.Tensor(f) for f in features]
+            features = torch.vstack(features)
+
+            output = self.calibrator(features)
+            probs = torch.nn.functional.softmax(output, dim=1)
+
+            lr_top3 = [[(self.train_tuples[j], probs[i, j].item()) for j in range(probs.shape[1])]
+                for i in range(probs.shape[0])]
+            invalid_null = [any([int(t[0][0]) == int(-1) or int(t[0][1]) == int(-1) or int(t[0][2]) == int(-1) for t in top3])
+                if not f else False for top3, f in zip(lr_top3, is_null_flag)]
+
+            ret = [t2 if f or inv else t1 for t1, t2, f, inv in zip(lr_top3, null_top3, is_null_flag, invalid_null)]
+
+            all_reshaped_preds = []
+            for img_preds in ret:
+                if int(img_preds[0][0][0]) == -1:
+                    # The subject prediction is absent; this is case 3
+                    reshaped_preds = torch.zeros(self.NUM_OBJECT_CLASSES-1)
+                    for img_pred in img_preds:
+                        o_idx = img_pred[0][2] - 1
+                        reshaped_preds[o_idx] = img_pred[1]
+                elif int(img_preds[0][0][2]) == -1:
+                    # The object prediction is absent; this is case 2
+                    reshaped_preds = torch.zeros(self.NUM_SUBJECT_CLASSES-1, self.NUM_VERB_CLASSES-1)
+                    for img_pred in img_preds:
+                        s_idx = img_pred[0][0] - 1
+                        v_idx = img_pred[0][1] - 1
+                        reshaped_preds[s_idx, v_idx] = img_pred[1]
+                else:
+                    # Both S and O predictions are present; this is case 1
+                    reshaped_preds = torch.zeros(self.NUM_SUBJECT_CLASSES-1, self.NUM_VERB_CLASSES-1, self.NUM_OBJECT_CLASSES-1)
+                    for img_pred in img_preds:
+                        s_idx = img_pred[0][0] - 1
+                        v_idx = img_pred[0][1] - 1
+                        o_idx = img_pred[0][2] - 1
+                        reshaped_preds[s_idx, v_idx, o_idx] = img_pred[1]
+                all_reshaped_preds.append(reshaped_preds)
+
+        return all_reshaped_preds
+
     def _clean_result(self, my_net, orig_result, detections):
         # num_verb_cls = my_net.interaction_head.num_classes
         num_verb_cls = self.NUM_VERB_CLASSES
@@ -271,7 +315,7 @@ class Ensemble:
 
         return topk, ret
 
-    def _compute_features(self, data_loader, is_training):
+    def _compute_features(self, data_loader, is_training, return_all=False):
         features = []
         subj_logits = []
         verb_logits = []
@@ -339,8 +383,12 @@ class Ensemble:
                         is_obj_box_null = torch.numel(result["valid_objects"]) == 0
                         
                         if is_subj_box_null:
-                            scores, o_ids = torch.topk(result['object_scores'][0][1:], 3)
-                            top_3 = [((-1, 0, o_id.item() + 1), s.item()) for o_id, s in zip(o_ids, scores)]
+                            if not return_all:
+                                scores, o_ids = torch.topk(result['object_scores'][0][1:], 3)
+                                top_3 = [((-1, 0, o_id.item() + 1), s.item()) for o_id, s in zip(o_ids, scores)]
+                            else:
+                                scores = result['object_scores'][0][1:]
+                                top_3 = [((-1, 0, o_id + 1), s.item()) for o_id, s in enumerate(scores)]
                             null_top3.append(top_3)
                             is_null_flag.append(True)
                             is_subj_null.append(True)
@@ -350,7 +398,10 @@ class Ensemble:
                             all_verbs = [(v_id + 1, score) for v_id, score in enumerate(result['verb_matrix'][0][0][1:].numpy().tolist())]
                             
                             all_combs = list(map(lambda x: ((x[0][0], x[1][0], -1), x[0][1] * x[1][1]), itertools.product(all_subjs, all_verbs)))
-                            top_3 = sorted(all_combs, key= lambda x: x[1], reverse=True)[:3]
+                            if not return_all:
+                                top_3 = sorted(all_combs, key= lambda x: x[1], reverse=True)[:3]
+                            else:
+                                top_3 = all_combs
                             null_top3.append(top_3)
                             is_null_flag.append(True)
                             is_obj_null.append(True)
@@ -362,7 +413,10 @@ class Ensemble:
                             
                             all_combs = list(map(lambda x: ((x[0][0], x[1][0], x[2][0]), x[0][1] * x[1][1] * x[2][1]), 
                                 itertools.product(all_subjs, all_verbs, all_objs)))
-                            top_3 = sorted(all_combs, key= lambda x: x[1], reverse=True)[:3]
+                            if not return_all:
+                                top_3 = sorted(all_combs, key= lambda x: x[1], reverse=True)[:3]
+                            else:
+                                top_3 = all_combs
                             null_top3.append(top_3)
                             is_null_flag.append(False)
                             is_subj_null.append(False)

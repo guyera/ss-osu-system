@@ -131,7 +131,8 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                     'verb_roi_features': self.verb_roi_features,
                     'subject_images': self.subject_images,
                     'object_images': self.object_images,
-                    'verb_images': self.verb_images
+                    'verb_images': self.verb_images,
+                    'whole_images': self.whole_images
                 }
 
                 with open(filename, 'wb') as f:
@@ -151,13 +152,14 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                 self.subject_images = data['subject_images']
                 self.object_images = data['object_images']
                 self.verb_images = data['verb_images']
+                self.whole_images = data['whole_images']
         else:
             self._compute_image_features(name, data_root, csv_path, training, 
                 image_batch_size, feature_extraction_device, output_size, sampling_ratio, image_mean, image_std, 
                 min_size, max_size)
 
     def __getitem__(self, idx):
-        return self.spatial_features[idx], self.subject_roi_features[idx], self.object_roi_features[idx], self.verb_roi_features[idx], self.subject_labels[idx], self.object_labels[idx], self.verb_labels[idx] , self.subject_images[idx], self.object_images[idx], self.verb_images[idx]
+        return self.spatial_features[idx], self.subject_roi_features[idx], self.object_roi_features[idx], self.verb_roi_features[idx], self.subject_labels[idx], self.object_labels[idx], self.verb_labels[idx] , self.subject_images[idx], self.object_images[idx], self.verb_images[idx], self.whole_images[idx]
 
     def __len__(self):
         return len(self.spatial_features)
@@ -209,6 +211,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
             subject_images = list()
             object_images = list()
             verb_images = list()
+            whole_images = list()
             
             for images, detections, targets in data_loader:
                 original_image_sizes = [img.shape[-2:] for img in images]
@@ -293,6 +296,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                         subject_images.append(box_transform(image_tensors[b_idx, :, r_s_ymin: r_s_ymax, r_s_xmin: r_s_xmax]))
                         object_images.append(box_transform(image_tensors[b_idx, :, r_o_ymin: r_o_ymax, r_o_xmin: r_o_xmax]))
                         verb_images.append(box_transform(image_tensors[b_idx, :, r_v_ymin: r_v_ymax, r_v_xmin: r_v_xmax]))
+                        whole_images.append(box_transform(image_tensors[b_idx]))
                     elif detection['subject_boxes'] is not None:
                         r_s_xmin, r_s_ymin, r_s_xmax, r_s_ymax = torch.round(
                             detection['subject_boxes'][0]).to(torch.int)
@@ -327,6 +331,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                         subject_images.append(box_transform(image_tensors[b_idx, :, r_s_ymin: r_s_ymax, r_s_xmin: r_s_xmax]))
                         object_images.append(None)
                         verb_images.append(box_transform(image_tensors[b_idx, :, r_s_ymin: r_s_ymax, r_s_xmin: r_s_xmax]))
+                        whole_images.append(box_transform(image_tensors[b_idx]))
                     elif detection['object_boxes'] is not None:
                         r_o_xmin, r_o_ymin, r_o_xmax, r_o_ymax = torch.round(
                             detection['object_boxes'][0]).to(torch.int)
@@ -338,6 +343,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                         subject_images.append(None)
                         object_images.append(box_transform(image_tensors[b_idx, :, r_o_ymin: r_o_ymax, r_o_xmin: r_o_xmax]))
                         verb_images.append(None)
+                        whole_images.append(box_transform(image_tensors[b_idx]))
                     else:
                         box_pair_spatial.append(None)
                         subject_roi_features.append(None)
@@ -346,7 +352,8 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                         subject_images.append(None)
                         object_images.append(None)
                         verb_images.append(None)
-            
+                        whole_images.append(None)
+
             self.spatial_features = box_pair_spatial
             self.subject_labels = subject_labels
             self.object_labels = object_labels
@@ -357,6 +364,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
             self.subject_images = subject_images
             self.object_images = object_images
             self.verb_images = verb_images
+            self.whole_images = whole_images
 
 def list_collate(batch):
     spatial_features = [batch[0] for item in batch]
@@ -369,4 +377,5 @@ def list_collate(batch):
     subject_images = [batch[7] for item in batch]
     object_images = [batch[8] for item in batch]
     verb_images = [batch[9] for item in batch]
-    return [spatial_features, subject_roi_features, object_roi_features, verb_roi_features, subject_labels, object_labels, verb_labels, subject_images, object_images, verb_images]
+    whole_images = [batch[10] for item in batch]
+    return [spatial_features, subject_roi_features, object_roi_features, verb_roi_features, subject_labels, object_labels, verb_labels, subject_images, object_images, verb_images, whole_images]
