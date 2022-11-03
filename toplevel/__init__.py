@@ -224,7 +224,6 @@ class TopLevelApp:
             logs['p_ni_raw'] = self.all_p_ni_raw        
             logs['per_img_p_type'] = self.per_image_p_type.numpy()
             logs['post_red_base'] = self.post_red_base
-            import ipdb; ipdb.set_trace()
             logs['p_type'] = self.p_type_hist
             logs['red_light_scores'] = self.all_red_light_scores
 
@@ -365,7 +364,6 @@ class TopLevelApp:
 
                 if not self.given_detection:
                     EPS = 0
-                    # import ipdb; ipdb.set_trace()
 
                     p_gt_th = np.nonzero([p < self.p_val_cuttoff - EPS for p in red_light_scores])[0]
                     self.post_red = p_gt_th.shape[0] > 0                                
@@ -401,7 +399,6 @@ class TopLevelApp:
 
             red_light_scores[:idx] = 0
             red_light_scores[idx] = 1
-            # import ipdb; ipdb.set_trace()
 
             self.post_red_base = all_p_ni.shape[0] - p_ni.shape[0] + idx
             self.red_light_img = None           
@@ -430,9 +427,7 @@ class TopLevelApp:
         filter_v = self.all_p_ni[self.post_red_base:] >= self.p_type_th
         if not torch.any(filter_v):
             return
-        
-        # import ipdb; ipdb.set_trace()
-        
+                
         filtered = self.all_p_type[self.post_red_base:][filter_v]
     
         prior = 0.20 if not self.ignore_verb_novelty else 1/3
@@ -446,8 +441,7 @@ class TopLevelApp:
     
         self.p_type_dist = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4, log_p_type_5])
         self.p_type_dist = torch.nn.functional.softmax(self.p_type_dist, dim=0).float()
-        # import ipdb; ipdb.set_trace()
-        
+                
         self.p_type_hist.append(self.p_type_dist.numpy())
                 
         assert not torch.any(torch.isnan(self.p_type_dist)), "NaNs in p_type."
