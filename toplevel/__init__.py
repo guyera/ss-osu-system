@@ -62,7 +62,7 @@ class TopLevelApp:
         self.post_red_base = None
         self.batch_context = BatchContext()
         self.feedback_enabled = feedback_enabled
-        self.p_val_cuttoff =  0.0085542
+        self.p_val_cuttoff =   0.08803683 #   0.0085542  #0.01042724
         self.windows_size = 40
                 
         a = np.array([[self.p_val_cuttoff, 1], [1, 1]])
@@ -224,10 +224,12 @@ class TopLevelApp:
             logs['p_ni_raw'] = self.all_p_ni_raw        
             logs['per_img_p_type'] = self.per_image_p_type.numpy()
             logs['post_red_base'] = self.post_red_base
+            import ipdb; ipdb.set_trace()
             logs['p_type'] = self.p_type_hist
             logs['red_light_scores'] = self.all_red_light_scores
 
             pickle.dump(logs, handle)
+        return self.all_p_ni.numpy()
 
     def select_queries(self, feedback_max_ids):
         assert self.post_red, "query selection shoudn't happen pre-red button"
@@ -362,7 +364,7 @@ class TopLevelApp:
                     red_light_scores[i - start] = p_val
 
                 if not self.given_detection:
-                    EPS = 1e-4
+                    EPS = 0
                     # import ipdb; ipdb.set_trace()
 
                     p_gt_th = np.nonzero([p < self.p_val_cuttoff - EPS for p in red_light_scores])[0]
@@ -433,7 +435,7 @@ class TopLevelApp:
         
         filtered = self.all_p_type[self.post_red_base:][filter_v]
     
-        prior = 0.25 if not self.ignore_verb_novelty else 1/3
+        prior = 0.20 if not self.ignore_verb_novelty else 1/3
     
         log_p_type_1 = self._infer_log_p_type(prior, filtered[:, 0])
         log_p_type_2 = self._infer_log_p_type(prior if not self.ignore_verb_novelty else 0, 
@@ -444,6 +446,7 @@ class TopLevelApp:
     
         self.p_type_dist = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4, log_p_type_5])
         self.p_type_dist = torch.nn.functional.softmax(self.p_type_dist, dim=0).float()
+        # import ipdb; ipdb.set_trace()
         
         self.p_type_hist.append(self.p_type_dist.numpy())
                 

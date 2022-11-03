@@ -147,7 +147,12 @@ class OSUInterface:
     def end_test(self, test_id):
         print(f'==> OSU got end test {test_id}')
 
-        self.app.test_completed_callback(test_id)
+        returned_pni = self.app.test_completed_callback(test_id)
+        # import numpy as np
+        # np.savetxt(test_id+'.csv', returned_pni, delimiter=',', header='p_ni')
+
+
+        
 
     def end_session(self, session_id):
         print(f'==> OSU got end session {session_id}')

@@ -41,3 +41,23 @@ python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/T
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_resnet_20_epochs/' './Phase3_resnet_20Epochs'
 
 
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_swin_T_5_epochs_thresh0.5/' './Phase3_swin_T_5Epochs0.5'
+
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_swin_T_5_epochs_thresh0.75_retrained/' './Phase3_swin_T_5Epochs0.75_retrained'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_swin_T_30_epochs_thresh0.75_retrained/' './Phase3_swin_T_30Epochs0.75_retrained'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_swin_T_5_epochs_thresh0.75_retrained/' './Phase3_swin_T_5Epochs0.75_retrained'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_swin_T_NewCutoff/' './Phase3_swin_T_5Epochs_NewCutoff'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_swin_T_NewCutoff_Th_0.75/' './Phase3_swin_T_5Epochs_NewCutoff_Th_0.75'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_swin_T_NewCutoff_Th_0.2/' './Phase3_swin_T_5Epochs_NewCutoff_Th_0.2'

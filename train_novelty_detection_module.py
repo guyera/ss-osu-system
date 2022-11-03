@@ -8,7 +8,7 @@ import unsupervisednoveltydetection
 import noveltydetection
 
 device = 'cuda:0'
-model_ = 'resnet' # 'swin_t' 'swin_b' 'resnet'
+model_ = 'swin_t' # 'swin_t' 'swin_b' 'resnet'
 
 if model_ == 'resnet': 
     backbone = resnet50(weights="IMAGENET1K_V1") # pretrained = True, 

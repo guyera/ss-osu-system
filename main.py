@@ -33,12 +33,14 @@ if __name__ == "__main__":
     p.add_argument('--classification_feedback', action="store_true")
     p.add_argument('--detector_seed', type=int, default=1234)
     p.add_argument('--version', default='101')
-    p.add_argument('--sys_results_dir', default='./session/temp/sys_results_resnet_20_epochs')
+    p.add_argument('--sys_results_dir', default='./session/temp/sys_results_test')
     p.add_argument('--test_ids', nargs="+", default=None)
     
     args = p.parse_args()
 
     torch.backends.cudnn.benchmark = False
+
+    detection_threshold = 0.5
 
     if args.log:
         p = Path(args.log_dir)
@@ -71,7 +73,7 @@ if __name__ == "__main__":
         args.classification_feedback, args.detection_feedback,
         args.given_detection, args.data_root,
         args.sys_results_dir, args.url, args.batch_size,
-        args.version, 0.5,
+        args.version, detection_threshold,
         api, osu_int)
         
     test_session.run(args.detector_seed, args.test_ids)
