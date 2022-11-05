@@ -7,7 +7,7 @@ from toplevel import TopLevelApp
 class OSUInterface:
     def __init__(self, scg_ensemble, data_root, pretrained_unsupervised_novelty_path, pretrained_backbone_path, 
         feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path, val_incident_csv_path,
-        trial_batch_size, trial_size, retraining_batch_size, disable_retraining):
+        val_corruption_csv_path, trial_batch_size, trial_size, retraining_batch_size, disable_retraining):
 
         self.app = TopLevelApp(ensemble_path=scg_ensemble, 
             data_root=data_root, 
@@ -21,6 +21,7 @@ class OSUInterface:
             train_csv_path=train_csv_path,
             val_csv_path=val_csv_path,
             val_incident_csv_path = val_incident_csv_path,
+            val_corruption_csv_path= val_corruption_csv_path,
             trial_size=trial_size,
             trial_batch_size=trial_batch_size,
             retraining_batch_size=retraining_batch_size,
@@ -96,6 +97,7 @@ class OSUInterface:
         red_light_scores = ret['red_light_score']
         top_3 = ret['svo']
         top_3_probs = ret['svo_probs']
+        
 
         novelty_lines = [f'{img}, {rs:e}, {p:e}' for img, rs, p in zip(df['new_image_path'].to_list(), red_light_scores, p_ni)]
         novelty_preds = '\n'.join(novelty_lines)
@@ -121,6 +123,12 @@ class OSUInterface:
         """
         queries = self.app.select_queries(feedback_max_ids)
         return queries
+    
+    def record_type0(self):       
+        self.app._type_inferenceType0()
+
+    def record_type67(self):       
+        self.app._type_inferenceType67()
 
     def record_detection_feedback(self, test_id, round_id, feedback_results):
         """

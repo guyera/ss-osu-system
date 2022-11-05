@@ -132,7 +132,7 @@ class UnsupervisedNoveltyDetectionManager:
 
             top3['top3'][i] = new_p
                 
-        top3_merged = self.detector.merge_predictions(scg_predictions,top3['t67'], top3['cases'], top3['top3'], p_ni)
+        top3_merged = self.detector.merge_predictions(scg_predictions, top3['t67'], top3['cases'], top3['top3'], p_ni)
             
         return top3_merged   
 

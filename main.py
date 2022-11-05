@@ -19,7 +19,8 @@ if __name__ == "__main__":
     p.add_argument('--given-detection', default=False, action='store_true')
     p.add_argument('--train-csv-path', default='./dataset_v4/dataset_v4_2_train.csv')
     p.add_argument('--val-csv-path', default='./dataset_v4/dataset_v4_2_val.csv')
-    p.add_argument('--val-incident-csv-path', default='./dataset_v4/dataset_v4_2_cal_incident_corruption.csv')
+    p.add_argument('--val-incident-csv-path', default='./dataset_v4/dataset_v4_2_val_incident.csv')
+    p.add_argument('--val-corruption-csv-path', default='./dataset_v4/dataset_v4_2_cal_corruption.csv')
     p.add_argument('--trial-size', type=int, default=600)
     p.add_argument('--trial-batch-size', type=int, default=10)
     p.add_argument('--retraining-batch-size', type=int, default=80)
@@ -33,7 +34,7 @@ if __name__ == "__main__":
     p.add_argument('--classification_feedback', action="store_true")
     p.add_argument('--detector_seed', type=int, default=1234)
     p.add_argument('--version', default='101')
-    p.add_argument('--sys_results_dir', default='./session/temp/sys_results_test')
+    p.add_argument('--sys_results_dir', default='./session/temp/sys_results_6_7sperated')
     p.add_argument('--test_ids', nargs="+", default=None)
     
     args = p.parse_args()
@@ -62,6 +63,7 @@ if __name__ == "__main__":
         train_csv_path=args.train_csv_path,
         val_csv_path=args.val_csv_path,
         val_incident_csv_path=args.val_incident_csv_path,
+        val_corruption_csv_path=args.val_corruption_csv_path,
         trial_size=args.trial_size,
         trial_batch_size=args.trial_batch_size,
         retraining_batch_size=args.retraining_batch_size,

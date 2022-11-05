@@ -455,12 +455,18 @@ class BBNSession:
                     else:
                         if float(red_light_str) > 0.5:
                             red_light_declared = True
+                    
+                    
                         
                     missing_s, missing_o = self.check_for_missing(image_line)
                     self.write_file_entries(novelty_image_path, detection_file, classification_file,
                                             svo_preds, float(red_light_str), float(per_image_nov_str),
                                             round_id, red_light_declared,
                                             missing_s, missing_o)
+                if red_light_declared:
+                    self.osu_stubs.record_type67()
+                else:                        
+                    self.osu_stubs.record_type0()
             else:
                 pass
 
@@ -487,6 +493,8 @@ class BBNSession:
                     'classification_file': open(classification_filename, "r")
                 })
 
+            
+            
             ## Handle classification feedback
             if self.class_fb and red_light_declared:
                 feedback_ids = self.osu_stubs.choose_classification_feedback_ids(filenames, feedback_max_ids)
