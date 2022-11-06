@@ -61,3 +61,9 @@ python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/T
 
 
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_swin_T_NewCutoff_Th_0.2/' './Phase3_swin_T_5Epochs_NewCutoff_Th_0.2'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_6_7sperated_KS_ExactMethod/' './Phase3_swin_T_6_7sperated_KS_ExactMethod'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_6_7sperated_Median_KS_ExactMethod/' './Phase3_swin_T_6_7sperated_Median_KS_ExactMethod'

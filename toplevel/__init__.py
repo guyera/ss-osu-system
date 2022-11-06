@@ -64,7 +64,7 @@ class TopLevelApp:
         self.post_red_base = None
         self.batch_context = BatchContext()
         self.feedback_enabled = feedback_enabled
-        self.p_val_cuttoff =   0.08803683 #   0.0085542  #0.01042724
+        self.p_val_cuttoff =  0.035808 #0.002215 #0.08803683 #   0.0085542  #0.01042724
         self.windows_size = 40
                 
         a = np.array([[self.p_val_cuttoff, 1], [1, 1]])
@@ -85,6 +85,7 @@ class TopLevelApp:
         self.p_type_hist = [self.p_type_dist.numpy()]
         self.p_type_hist_separated6_7 = []
         self.per_image_p_type = torch.tensor([])
+        self.per_image_p_type_separated6_7 = torch.tensor([])
         self.ignore_verb_novelty = ignore_verb_novelty
         self.given_detection = given_detection
         self.red_light_img = None
@@ -124,6 +125,7 @@ class TopLevelApp:
         self.verb_novelty_scores_un = []
         self.obj_novelty_scores_un = []
         self.p_type_hist = [self.p_type_dist.numpy()]
+        self.p_type_hist_separated6_7 = []
         self.per_image_p_type = torch.tensor([])
         self.per_image_p_type_separated6_7 = torch.tensor([])
         self.all_red_light_scores = np.array([])
@@ -235,7 +237,6 @@ class TopLevelApp:
 
             logs['p_type_6_7'] = self.p_type_hist_separated6_7
 
-            import ipdb; ipdb.set_trace()
             pickle.dump(logs, handle)
         return self.all_p_ni.numpy()
 
@@ -358,7 +359,7 @@ class TopLevelApp:
             if all_p_ni.shape[0] >= 60:    
                 start = all_p_ni.shape[0] - N                
                 for i in range(max(start, 60 + self.windows_size), start + N):
-                    p_val = ks_2samp(all_p_ni[:60], all_p_ni[i - self.windows_size: i], alternative='greater')[1]
+                    p_val = ks_2samp(all_p_ni[:60], all_p_ni[i - self.windows_size: i], alternative='greater', method='exact')[1]
                     red_light_scores[i - start] = p_val
 
                 if not self.given_detection:
@@ -446,27 +447,13 @@ class TopLevelApp:
         assert not torch.any(torch.isnan(self.p_type_dist)), "NaNs in p_type."
         assert not torch.any(torch.isinf(self.p_type_dist)), "Infs in p_type."
 
-    
-    
+        
     def _type_inferenceType0(self):  
-        filtered6_7 = torch.zeros((self.trial_batch_size, 7)) 
-        filtered6_7[:,0] = 1.0
-        prior = 0.20 if not self.ignore_verb_novelty else 1/3
-        log_p_type_1 = self._infer_log_p_type(prior, filtered6_7[:, 0])
-        log_p_type_2 = self._infer_log_p_type(prior if not self.ignore_verb_novelty else 0, 
-                                              filtered6_7[:, 1] if not self.ignore_verb_novelty else torch.zeros(filtered6_7.shape[0]))
-        log_p_type_3 = self._infer_log_p_type(prior, filtered6_7[:, 2])
-        log_p_type_4 = self._infer_log_p_type(prior, filtered6_7[:, 3])
-        log_p_type_5 = self._infer_log_p_type(prior, filtered6_7[:, 4])
-        log_p_type_6 = self._infer_log_p_type(prior, filtered6_7[:, 5])
-        log_p_type_7 = self._infer_log_p_type(prior, filtered6_7[:, 6])
+        filtered6_7 = np.zeros(7) 
+        filtered6_7[0] = 1.0
+        
+        self.p_type_hist_separated6_7.append(filtered6_7)
 
-        self.p_type_dist_separated6_7 = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4, log_p_type_5, log_p_type_6, log_p_type_7])
-        self.p_type_dist_separated6_7 = torch.nn.functional.softmax(self.p_type_dist_separated6_7, dim=0).float()
-                
-        self.p_type_hist_separated6_7.append(self.p_type_dist_separated6_7.numpy())
-
-        # self.p_type_hist_separated6_7.append(filtered6_7)
     
     def _type_inferenceType67(self): 
 
@@ -482,10 +469,11 @@ class TopLevelApp:
         log_p_type_5 = self._infer_log_p_type(prior, filtered6_7[:, 4])
         log_p_type_6 = self._infer_log_p_type(prior, filtered6_7[:, 5])
     
-        self.p_type_dist_separated6_7 = torch.tensor([0.0, log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4, log_p_type_5, log_p_type_6])
+        self.p_type_dist_separated6_7 = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4, log_p_type_5, log_p_type_6])
         self.p_type_dist_separated6_7 = torch.nn.functional.softmax(self.p_type_dist_separated6_7, dim=0).float()
-                
-        self.p_type_hist_separated6_7.append(self.p_type_dist_separated6_7.numpy())
+        tmp_arr = np.zeros(7)   
+        tmp_arr[1:] =  self.p_type_dist_separated6_7.numpy()
+        self.p_type_hist_separated6_7.append(tmp_arr)
                 
         assert not torch.any(torch.isnan(self.p_type_dist_separated6_7)), "NaNs in p_type."
         assert not torch.any(torch.isinf(self.p_type_dist_separated6_7)), "Infs in p_type."

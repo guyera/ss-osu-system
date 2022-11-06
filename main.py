@@ -34,7 +34,7 @@ if __name__ == "__main__":
     p.add_argument('--classification_feedback', action="store_true")
     p.add_argument('--detector_seed', type=int, default=1234)
     p.add_argument('--version', default='101')
-    p.add_argument('--sys_results_dir', default='./session/temp/sys_results_6_7sperated')
+    p.add_argument('--sys_results_dir', default='./session/temp/sys_results_6_7sperated_Median_KS_ExactMethod')
     p.add_argument('--test_ids', nargs="+", default=None)
     
     args = p.parse_args()
