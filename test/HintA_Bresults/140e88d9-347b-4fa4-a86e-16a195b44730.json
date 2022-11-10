@@ -1,0 +1,30 @@
+{
+  "created": {
+    "time": [
+      "2022-11-10 00:06:08.650153"
+    ],
+    "protocol": "OND",
+    "domain": "svo_classification",
+    "detector": "101",
+    "detection_threshold": 0.5,
+    "hints": [
+      "novelty_instance_detection",
+      "red_light"
+    ]
+  },
+  "tests": {
+    "completed_tests": [
+      "OND.106.000",
+      "OND.10710.000",
+      "OND.10711.000",
+      "OND.10712.000",
+      "OND.10713.000",
+      "OND.10716.000"
+    ]
+  },
+  "termination": {
+    "time": [
+      "2022-11-10 00:32:21.621040"
+    ]
+  }
+}

@@ -58,7 +58,7 @@ class OSUInterface:
         """
         self.app.red_light_hint_callback(red_light_image_path)
 
-    def process_round(self, test_id, round_id, contents):
+    def process_round(self, test_id, round_id, contents, hint_typeA_data, hint_typeB_data):
         """
         :param test_id:
         :param round_id:
@@ -92,7 +92,7 @@ class OSUInterface:
         df.to_csv(csv_path, index=True)
         
         
-        ret = self.app.process_batch(csv_path, test_id, round_id, df['new_image_path'].to_list())
+        ret = self.app.process_batch(csv_path, test_id, round_id, df['new_image_path'].to_list(), hint_typeA_data, hint_typeB_data)
         p_ni = ret['p_ni']
         red_light_scores = ret['red_light_score']
         top_3 = ret['svo']

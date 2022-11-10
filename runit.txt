@@ -5,7 +5,6 @@ python main.py --pretrained-backbone-path './unsupervisednoveltydetection/resnet
 python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/TestX' --detection-feedback --api-stubs
 
 
---given-detection
 
 
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test1' './session/temp/sys_results_resnet/sys_results' './FinalResults_resnet1'
@@ -33,6 +32,9 @@ python main.py --pretrained-backbone-path './unsupervisednoveltydetection/resnet
 python main.py --pretrained-backbone-path './unsupervisednoveltydetection/resnet_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/resnet_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/Test_Phase3' --detection-feedback --api-stubs
 
 python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/Test_Phase3' --detection-feedback --api-stubs
+
+
+python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/Test_Phase3' --detection-feedback
 
 
 
@@ -67,3 +69,27 @@ python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/T
 
 
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_6_7sperated_Median_KS_ExactMethod/' './Phase3_swin_T_6_7sperated_Median_KS_ExactMethod'
+
+
+python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/Test_Phase3' --detection-feedback
+
+
+
+sail_on_server --url localhost:8102 --data-directory '/nfs/hpc/share/sail_on3/svo/test_trials_csv/api_tests/' --results-directory ../sail-svo/test/results/
+
+
+sail_on_server --url localhost:8102 --data-directory '/nfs/stak/users/ullaham/hpc-share/SailON/phase3/sailon-svo/session/tests/api_tests/' --results-directory ../sailon-svo/test/results/
+
+python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/TestX' --detection-feedback
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './test/HintAresults/OND/svo_classification' './Phase3_swin_T_6_7speratedwithHintA'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_6_7HintA' './Phase3_swin_T_6_7speratedwithHintA'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_6_7HintA_B' './Phase3_swin_T_6_7speratedwithHintA_B'
+
+
+sail_on_server --url localhost:8102 --data-directory '/nfs/stak/users/ullaham/hpc-share/SailON/phase3/sailon-svo/session/tests/api_tests/' --results-directory ../sailon-svo/test/results/

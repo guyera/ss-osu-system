@@ -133,6 +133,42 @@ class BBNSession:
             
             return [(id, val) for (id, val) in zip(returned_ids, returned_answers)]
 
+    def request_hint_typeA(self, session_id, test_id):
+        print(f'====> Asking for hint on test_id {test_id}')
+
+        response = requests.get(
+            f'{self.url}/session/hint',
+            {'session_id': session_id,
+                'test_id': test_id,
+                'hint_type': 'typeA',
+                }
+        )
+
+        data = response.content.decode('utf-8').split('\n')
+        print("TYPE A HINT ==> ")
+        print(data)
+
+        return data
+
+    def request_hint_typeB(self, session_id, test_id, round_id):
+        print(f'====> Asking for hint on test_id {test_id}')
+
+        response = requests.get(
+            f'{self.url}/session/hint',
+            {'session_id': session_id,
+                'test_id': test_id,
+                'round_id': round_id,
+                'hint_type': 'typeB',
+                }
+        )
+
+        data = response.content.decode('utf-8').split('\n')
+        # print("TYPE B HINT ==> ")
+        # print(data)
+
+        return data
+
+
     # def force_to_missing(self, s, v, o, missing_s, missing_o, free_s, free_v, free_o):
     #     """Force our answer to be consistent with missing_s and missing_o"""
     #     ## Use the free_s, _v, _o vars to ensure that our three new forced answers are distinct.
@@ -189,7 +225,6 @@ class BBNSession:
         # self.history.add(filename, round_id, red_light, image_novelty_score, red_light_score,
         #                  classification_probs, top_layer)
 
-        # import ipdb; ipdb.set_trace()
         if self.probs_debug_format:
             output_probs = predicted_probs
         else:
@@ -306,6 +341,7 @@ class BBNSession:
             })
             session_id = ast.literal_eval(response.content.decode('utf-8'))['session_id']
 
+
         if self.osu_stubs:
             self.osu_stubs.start_session(session_id, detection_feedback=True, classification_feedback=False, given_detection=self.given_detection)
 
@@ -333,6 +369,9 @@ class BBNSession:
 
         # self.history = TestHistory()
 
+        # Request Hint Type A for given session Id and Test Id --> [test_id, kind_of_novelty]        
+        hint_typeA_data = int(self.request_hint_typeA(session_id, test_id)[0].split(',')[-1])
+        
         if self.api_stubs:
             metadata = self.api_stubs.get_metadata(test_id)
         else:
@@ -355,10 +394,20 @@ class BBNSession:
 
         round_id = 0
 
+        # Request Hint Type A for given session Id, Test Id and round_id --> ['fname, 0/1', ... ]
+        
+
         while True:
             image_data = None
             filenames = None
+            if self.given_detection:
+                hint_typeB_data = self.request_hint_typeB(session_id, test_id, round_id)
+                hint_typeB_data = [bool(int(hint.split(',')[-1])) for hint in hint_typeB_data[:-1]]
+            else:
+                hint_typeB_data = None
 
+
+            import ipdb; ipdb.set_trace()
             if self.api_stubs:
                 image_data = self.api_stubs.image_data(test_id, round_id)
                 
@@ -433,11 +482,10 @@ class BBNSession:
                     self.osu_stubs.given_detect_red_light(red_light_image)
                     # GDD
                     # print(f' **** Called osu_stubs.given_detect_red_light during round {round_id}')
-                novelty_preds, svo_preds = self.osu_stubs.process_round(test_id, round_id, image_data)
+                novelty_preds, svo_preds = self.osu_stubs.process_round(test_id, round_id, image_data, hint_typeA_data, hint_typeB_data)
                 novelty_lines = novelty_preds.splitlines()
                 svo_lines = svo_preds.splitlines()
 
-                # import ipdb; ipdb.set_trace()
                 
                 filenames = []
                 for (novelty_line, svo_line, image_line) in zip(novelty_lines, svo_lines, image_lines):
@@ -475,8 +523,7 @@ class BBNSession:
 
             ### LAR useful trace
             # print(f'===> Submitting results with test_type: {self.history.test_type}')
-            # import ipdb; ipdb.set_trace()
-
+            
             if self.api_stubs:
                 self.api_stubs.record_results(test_id, round_id,
                                          open(detection_filename, 'r').read(),

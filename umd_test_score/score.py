@@ -171,12 +171,19 @@ def score_tests(test_dir, sys_output_dir, session_id, class_file_reader, log_dir
                     
                 else:
                     print(f'No results found for Test {session_id}.{test_id}_{round_}.')
-            # import ipdb; ipdb.set_trace()
-
             detect_lines = np.concatenate(detect_lines)
 
             class_lines = np.concatenate(class_lines)
+            
+            # if (sys_output_dir / f'{session_id}.{test_id}_detection.csv').exists():
+            #     detect_lines = open(sys_output_dir / f'{session_id}.{test_id}_detection.csv').read().splitlines()
+            #     class_lines = open(sys_output_dir / f'{session_id}.{test_id}_classification.csv').read().splitlines()
+                
+            # else:
+            #     print(f'No results found for Test {session_id}.{test_id}_.')
+            
 
+           
             with open(log_dir / f'{test_id}.log', 'w') as log:
                         score_test(test_id, metadata, test_df, detect_lines, class_lines, class_file_reader,
                                 log, summary, stats)

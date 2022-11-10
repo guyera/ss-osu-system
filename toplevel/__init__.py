@@ -137,7 +137,7 @@ class TopLevelApp:
         self.retraining_buffer = self.retraining_buffer.iloc[0:0]        
         self._reset_backbone_and_detectors()
 
-    def process_batch(self, csv_path, test_id, round_id, img_paths):
+    def process_batch(self, csv_path, test_id, round_id, img_paths, hint_typeA_data, hint_typeB_data):
         if csv_path is None:
             raise Exception('path to csv was None')
 
@@ -167,7 +167,8 @@ class TopLevelApp:
         with torch.no_grad():
             case_1_lr, case_2_lr, case_3_lr = self.und_manager.get_calibrators()
             batch_p_type, p_ni, separated_p_type = compute_probability_novelty(subject_novelty_scores_u, verb_novelty_scores_u, object_novelty_scores_u, 
-                incident_activation_statistical_scores, case_1_lr, case_2_lr, case_3_lr, ignore_t2_in_pni=self.ignore_verb_novelty, p_t4=unsupervised_results['p_t4'])
+                incident_activation_statistical_scores, case_1_lr, case_2_lr, case_3_lr, ignore_t2_in_pni=self.ignore_verb_novelty, p_t4=unsupervised_results['p_t4'],
+                hint_a = hint_typeA_data,  hint_b = hint_typeB_data)
         
         p_ni = p_ni.cpu().float()            
         batch_p_type = batch_p_type.cpu()
@@ -335,17 +336,17 @@ class TopLevelApp:
                 # use scg predictions up until the red-light image, merge with the unsupervised top3 from that point on
                 p_ni_for_top3 = np.copy(p_ni)
                 p_ni_for_top3[:idx] = 0
-                top3_merged = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist, scg_preds, p_ni)
+                top3_merged = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist, scg_preds, p_ni_for_top3)
                 
                 top3 = [[e[0] for e in m] for m in top3_merged]
                 top3_probs = [[e[1] for e in m] for m in top3_merged] 
             else:
-                top3 = [[e[0] for e in m] for m in scg_preds]
-                top3_probs = [[e[1] for e in m] for m in scg_preds]    
+                top3_merged = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist, scg_preds, p_ni)
+                top3 = [[e[0] for e in m] for m in top3_merged]
+                top3_probs = [[e[1] for e in m] for m in top3_merged]     
         # just merge as usual 
         else:
             top3_merged = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist, scg_preds, p_ni)
-                
             top3 = [[e[0] for e in m] for m in top3_merged]
             top3_probs = [[e[1] for e in m] for m in top3_merged]          
             
