@@ -140,6 +140,11 @@ def compute_probability_novelty(
         
         zero_out = False
         possible_nov_types = torch.ones(7, dtype=torch.bool, device=device)
+        # Rule out novelty types that aren't allowed in phase 3
+        possible_nov_types[1] = False
+        possible_nov_types[2] = False
+        possible_nov_types[4] = False
+        # TODO Any others? And are these ones correct?
         if cur_hint_b is not None and not cur_hint_b:
             possible_nov_types[1:] = False
             cur_p_type = possible_nov_types.to(torch.float)
