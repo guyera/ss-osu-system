@@ -75,12 +75,9 @@ python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t
 
 
 
-sail_on_server --url localhost:8102 --data-directory '/nfs/hpc/share/sail_on3/svo/test_trials_csv/api_tests/' --results-directory ../sail-svo/test/results/
-
-
 sail_on_server --url localhost:8102 --data-directory '/nfs/stak/users/ullaham/hpc-share/SailON/phase3/sailon-svo/session/tests/api_tests/' --results-directory ../sailon-svo/test/results/
 
-python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/TestX' --detection-feedback
+python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/api_tests/' --detection-feedback
 
 
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './test/HintAresults/OND/svo_classification' './Phase3_swin_T_6_7speratedwithHintA'
@@ -93,3 +90,25 @@ python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/T
 
 
 sail_on_server --url localhost:8102 --data-directory '/nfs/stak/users/ullaham/hpc-share/SailON/phase3/sailon-svo/session/tests/api_tests/' --results-directory ../sailon-svo/test/results/
+
+
+
+sail_on_server --url localhost:8000 --data-directory '/nfs/stak/users/ullaham/hpc-share/SailON/phase3/sailon-svo/session/tests/api_tests/' --results-directory ../sailon-svo/test/results/
+
+
+python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/api_tests/' --detection-feedback
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_6_7HintA_B' './Phase3_swin_T_6_7speratedwithHintA_B'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_6_7NoHintA_B' './Phase3_swin_T_6_7speratedNoHintA_B'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './test/results' './Phase3_swin_T_6_7speratedNoHintA_B'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/test/speratedNoHintA_B' './Phase3_swin_T_6_7speratedNoHintA_B'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_ClinetServerTest' './Phase3_swin_T_ClinetServerTest'

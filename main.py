@@ -19,7 +19,7 @@ if __name__ == "__main__":
     p.add_argument('--given-detection', default=False, action='store_true')
     p.add_argument('--train-csv-path', default='./dataset_v4/dataset_v4_2_train.csv')
     p.add_argument('--val-csv-path', default='./dataset_v4/dataset_v4_2_val.csv')
-    p.add_argument('--val-incident-csv-path', default='./dataset_v4/dataset_v4_2_val_incident.csv')
+    p.add_argument('--val-incident-csv-path', default='./dataset_v4/dataset_v4_2_cal_incident.csv')
     p.add_argument('--val-corruption-csv-path', default='./dataset_v4/dataset_v4_2_cal_corruption.csv')
     p.add_argument('--trial-size', type=int, default=600)
     p.add_argument('--trial-batch-size', type=int, default=10)
@@ -27,15 +27,16 @@ if __name__ == "__main__":
     p.add_argument('--disable-retraining', default=False, action='store_true')
     p.add_argument('--api-dir', default='./session/api')
     p.add_argument('--tests-dir', default='./session/tests')
-    p.add_argument('--url', default='http://localhost:8102')
+    p.add_argument('--url', default='http://localhost:8000')
     p.add_argument('--class_count', type=int, default=29)
     p.add_argument('--batch_size', type=int, default=4)
     p.add_argument('--domain', default='svo_classification')
     p.add_argument('--classification_feedback', action="store_true")
     p.add_argument('--detector_seed', type=int, default=1234)
     p.add_argument('--version', default='101')
-    p.add_argument('--sys_results_dir', default='./session/temp/sys_results_6_7HintA_B_Debug')
+    p.add_argument('--sys_results_dir', default='./session/temp/sys_results_ClinetServerTestHintA')
     p.add_argument('--test_ids', nargs="+", default=None)
+    p.add_argument('--hintsflag', default= True)
     
     args = p.parse_args()
 
@@ -76,6 +77,6 @@ if __name__ == "__main__":
         args.given_detection, args.data_root,
         args.sys_results_dir, args.url, args.batch_size,
         args.version, detection_threshold,
-        api, osu_int)
+        api, osu_int, args.hintsflag)
         
     test_session.run(args.detector_seed, args.test_ids)

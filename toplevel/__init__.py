@@ -104,6 +104,10 @@ class TopLevelApp:
             'object_ymin', 'object_xmin', 'object_ymax', 'object_xmax'])
         self.retraining_batch_size = retraining_batch_size
         self.disable_retraining = disable_retraining
+
+        self.mergedSVO = []
+        self.mergedprobs = []
+        
                 
         self._reset_backbone_and_detectors()
         
@@ -134,7 +138,10 @@ class TopLevelApp:
         self.t_tn = None
         self.batch_num = 0 
         self.num_retrains_so_far = 0
-        self.retraining_buffer = self.retraining_buffer.iloc[0:0]        
+        self.retraining_buffer = self.retraining_buffer.iloc[0:0]  
+        self.mergedSVO = []
+        self.mergedprobs = []
+              
         self._reset_backbone_and_detectors()
 
     def process_batch(self, csv_path, test_id, round_id, img_paths, hint_typeA_data, hint_typeB_data):
@@ -149,6 +156,7 @@ class TopLevelApp:
 
         # top-3 SVOs from SCG ensemble
         scg_preds = self.scg_ensemble.get_all_SVO_preds(scg_data_loader, False)
+        
 
         # unsupervised novelty scores
         unsupervised_results, incident_activation_statistical_scores = self.und_manager.score(self.backbone, novelty_dataset)
@@ -182,6 +190,9 @@ class TopLevelApp:
         else:
             top3, top3_probs = self._top3_given_detection(scg_preds, p_ni, novelty_dataset, batch_p_type, img_paths)
         
+
+        self.mergedSVO.append(top3)
+        self.mergedprobs.append(top3_probs)
         
         self.batch_context.p_ni = p_ni
         self.batch_context.subject_novelty_scores_u = subject_novelty_scores_u
@@ -192,6 +203,7 @@ class TopLevelApp:
         self.batch_context.top_3 = top3
         self.batch_context.p_type = batch_p_type
         self.batch_context.round_id = round_id
+
         
         red_light_scores = self._compute_red_light_scores(p_ni, N, img_paths)
 
@@ -206,7 +218,8 @@ class TopLevelApp:
         ret['p_ni'] = p_ni.tolist()
         ret['red_light_score'] = red_light_scores
         ret['svo'] = top3
-        ret['svo_probs'] = [[p.detach().cpu().numpy().tolist() for p in lst] for lst in top3_probs] #top3_probs
+        # ret['svo_probs'] = [[p.detach().cpu().numpy().tolist() for p in lst] for lst in top3_probs] #top3_probs
+        ret['svo_probs'] = [[p.tolist() for p in lst] for lst in top3_probs] #top3_probs
         
         # print(ret)
                                                                   
@@ -231,7 +244,8 @@ class TopLevelApp:
             logs['p_ni_raw'] = self.all_p_ni_raw        
             logs['per_img_p_type'] = self.per_image_p_type.numpy()
             logs['per_image_p_type_separated6_7'] = self.per_image_p_type_separated6_7.numpy()
-
+            logs['mergedSVO'] = self.mergedSVO
+            logs['mergedprobs'] = self.mergedprobs
             logs['post_red_base'] = self.post_red_base
             logs['p_type'] = self.p_type_hist
             logs['red_light_scores'] = self.all_red_light_scores
@@ -639,7 +653,8 @@ class TopLevelApp:
             df_final.drop(columns=['case', 'feedback', 'is_novel'], inplace=True)
             df_final.drop_duplicates(inplace=True)        
             self.retraining_buffer = pd.concat([self.retraining_buffer, df_final])
-            
+
+
         retrain_cond_1 = self.num_retrains_so_far == 0 and self.retraining_buffer.shape[0] >= 15
         retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.retraining_buffer.shape[0] > 0)
         
