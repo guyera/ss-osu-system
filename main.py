@@ -34,9 +34,9 @@ if __name__ == "__main__":
     p.add_argument('--classification_feedback', action="store_true")
     p.add_argument('--detector_seed', type=int, default=1234)
     p.add_argument('--version', default='101')
-    p.add_argument('--sys_results_dir', default='./session/temp/sys_results_ClinetServerTestHintA')
+    p.add_argument('--sys_results_dir', default='./session/temp/sys_results_APIStubs_WithoutHint')
     p.add_argument('--test_ids', nargs="+", default=None)
-    p.add_argument('--hintsflag', default= True)
+    p.add_argument('--hintsflag', default= False)
     
     args = p.parse_args()
 

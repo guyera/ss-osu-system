@@ -401,6 +401,7 @@ class BBNSession:
 
         # Request Hint Type A for given session Id, Test Id and round_id --> ['fname, 0/1', ... ]
         
+        
         hintsBList = []
         while True:
             image_data = None
@@ -513,6 +514,7 @@ class BBNSession:
                                 # print(f' **** Turning on red_light_declared due to GD')
                     else:
                         if float(red_light_str) > 0.5:
+                            print(float(red_light_str))
                             red_light_declared = True
                     
                     
@@ -570,7 +572,9 @@ class BBNSession:
                 # GDD
                 # if self.given_detection:
                 #     print(f' **** About to call choose_detection_feedback_ids, round {round_id}')
+                
 
+                import ipdb; ipdb.set_trace()
                 num_ids_to_request = len(filenames) if self.given_detection else feedback_max_ids
                 feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
                                                                             filenames, num_ids_to_request)

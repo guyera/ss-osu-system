@@ -112,3 +112,6 @@ python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/T
 
 
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_ClinetServerTest' './Phase3_swin_T_ClinetServerTest'
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_ClinetServerTestHintA_All' './sys_results_ClinetServerTestHintA_All'
+

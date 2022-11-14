@@ -32,7 +32,7 @@ case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression().to
 
 activation_statistical_model = unsupervisednoveltydetection.common.ActivationStatisticalModel(model_).to(device)
 
-trainer = unsupervisednoveltydetection.training.NoveltyDetectorTrainer('./', 'dataset_v4/dataset_v4_2_train.csv', 'dataset_v4/dataset_v4_2_val.csv', 'dataset_v4/dataset_v4_2_val_incident.csv', 'dataset_v4/dataset_v4_2_cal_corruption.csv', 64, model_ = model_)
+trainer = unsupervisednoveltydetection.training.NoveltyDetectorTrainer('./', 'dataset_v4/dataset_v4_2_train.csv', 'dataset_v4/dataset_v4_2_val.csv', 'dataset_v4/dataset_v4_2_cal_incident.csv', 'dataset_v4/dataset_v4_2_cal_corruption.csv', 64, model_ = model_)
 
 start_time = time.time()
 trainer.prepare_for_retraining(backbone, detector, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model)

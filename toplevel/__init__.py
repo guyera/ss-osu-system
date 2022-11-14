@@ -46,7 +46,7 @@ class TopLevelApp:
         self.NUM_SPATIAL_FEATURES = 2 * 36
         self.post_red = False
         self.p_type_dist =torch.tensor([0.20, 0.20, 0.20, 0.20, 0.20]) if not ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
-        self.p_type_dist_separated6_7 =torch.tensor([0.20, 0.20, 0.20, 0.20, 0.20, 0.20]) if not ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
+        self.p_type_dist_separated6_7 =torch.tensor([0.16, 0.16, 0.16, 0.16, 0.16, 0.16]) if not ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
         self.all_query_masks = torch.tensor([])
         self.all_feedback = torch.tensor([])
         self.all_p_ni = torch.tensor([])
@@ -83,7 +83,7 @@ class TopLevelApp:
         self.log = log
         self.log_dir = log_dir
         self.p_type_hist = [self.p_type_dist.numpy()]
-        self.p_type_hist_separated6_7 = []
+        self.p_type_hist_separated6_7 = [self.p_type_dist_separated6_7.numpy()]
         self.per_image_p_type = torch.tensor([])
         self.per_image_p_type_separated6_7 = torch.tensor([])
         self.ignore_verb_novelty = ignore_verb_novelty
@@ -113,7 +113,8 @@ class TopLevelApp:
         
     def reset(self):
         self.post_red = False
-        self.p_type_dist = torch.tensor([0.20, 0.20, 0.20, 0.20, 0.20]) if not self.ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
+        self.p_type_dist = torch.tensor([0.20, 0.20, 0.20, 0.20, 0.20]) if not self.ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])        
+        self.p_type_dist_separated6_7 =torch.tensor([0.16, 0.16, 0.16, 0.16, 0.16, 0.16]) if not self.ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
         self.unsupervised_aucs = [None, None, None]
         self.supervised_aucs = [None, None, None]
         self.all_query_masks = torch.tensor([])
@@ -129,7 +130,7 @@ class TopLevelApp:
         self.verb_novelty_scores_un = []
         self.obj_novelty_scores_un = []
         self.p_type_hist = [self.p_type_dist.numpy()]
-        self.p_type_hist_separated6_7 = []
+        self.p_type_hist_separated6_7 = [self.p_type_dist_separated6_7.numpy()]
         self.per_image_p_type = torch.tensor([])
         self.per_image_p_type_separated6_7 = torch.tensor([])
         self.all_red_light_scores = np.array([])
