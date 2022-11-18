@@ -124,6 +124,7 @@ def compute_probability_novelty(
         object_score = object_scores[idx]
         verb_score = verb_scores[idx]
         activation_statistical_score = torch.from_numpy(activation_statistical_scores[idx])
+        
         if hint_b is not None:
             cur_hint_b = hint_b[idx]
         else:
@@ -146,8 +147,9 @@ def compute_probability_novelty(
         possible_nov_types[4] = False
         # TODO Any others? And are these ones correct?
         if cur_hint_b is not None and not cur_hint_b:
-            possible_nov_types[1:] = False
+            possible_nov_types[1:] = False        
             cur_p_type = possible_nov_types.to(torch.float)
+
         else:
             if cur_hint_b is not None and cur_hint_b:
                 possible_nov_types[0] = False
@@ -169,12 +171,12 @@ def compute_probability_novelty(
             if n_possible_types == 1:
                 cur_p_type = possible_nov_types.to(torch.float)
             elif subject_score is not None and object_score is not None:
-                # Case 1
+                # Case 1                
                 if not torch.any(possible_nov_types[[1, 2, 3, 5, 6]]):
                     cur_p_type = torch.zeros(7, dtype=torch.float, device=device)
                     cur_p_type[0] = 1 - cur_cond_p_t4
                     cur_p_type[4] = cur_cond_p_t4
-                else:
+                else:                    
                     scores = torch.stack((subject_score, verb_score, object_score, activation_statistical_score.to(torch.float).to(device)), dim = 0).unsqueeze(0)
                     logits = case_1_logistic_regression(scores).squeeze(0)
                     softmax = torch.nn.functional.softmax(logits, dim = 0)
@@ -194,7 +196,7 @@ def compute_probability_novelty(
                 # Case 2
                 possible_nov_types[3] = False
                 n_possible_types = possible_nov_types.to(torch.int).sum()
-                assert n_possible_types > 0
+                assert n_possible_types > 0                
                 if n_possible_types == 1:
                     cur_p_type = possible_nov_types.to(torch.float)
                 elif not torch.any(possible_nov_types[[1, 2, 3, 5, 6]]):
@@ -202,6 +204,7 @@ def compute_probability_novelty(
                     cur_p_type[0] = 1 - cur_cond_p_t4
                     cur_p_type[4] = cur_cond_p_t4
                 else:
+                    
                     scores = torch.stack((subject_score, verb_score, activation_statistical_score.to(torch.float).to(device)), dim = 0).unsqueeze(0)
                     logits = case_2_logistic_regression(scores).squeeze(0)
                     softmax = torch.nn.functional.softmax(logits, dim = 0)
@@ -262,6 +265,7 @@ def compute_probability_novelty(
         # what's passed to the novel tuple classifier (after combining types
         # 6/7 by adding their probabilities together)
         normalizer = cur_p_type[1:].sum()
+        
         if normalizer == 0:
             cur_novel_p_type = possible_nov_types[1:].to(torch.float)
             normalizer = cur_novel_p_type.sum()
@@ -293,6 +297,7 @@ def compute_probability_novelty(
         # probabilities. Alternatively, 1 - P(type = 0)
         cur_p_n = 1.0 - cur_p_type[0]
         p_n.append(cur_p_n)
+
 
     p_type = torch.stack(p_type, dim = 0)
     p_n = torch.stack(p_n, dim = 0)

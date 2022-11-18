@@ -115,3 +115,9 @@ python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/T
 
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_ClinetServerTestHintA_All' './sys_results_ClinetServerTestHintA_All'
 
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_NoHintsClinetServerVersion/' './sys_results_NoHintsClinetServerVersion/'
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_Hints_A_B_ClinetServerVersionUpdated_HintsAnalysis/' './sys_results_Hints_A_B_ClinetServerVersionUpdated_HintsAnalysis/'
+

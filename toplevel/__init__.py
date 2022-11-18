@@ -349,8 +349,10 @@ class TopLevelApp:
                     raise Exception()
             
                 # use scg predictions up until the red-light image, merge with the unsupervised top3 from that point on
+                
                 p_ni_for_top3 = np.copy(p_ni)
-                p_ni_for_top3[:idx] = 0
+                p_ni_for_top3[:idx] = 0                
+                
                 top3_merged = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist, scg_preds, p_ni_for_top3)
                 
                 top3 = [[e[0] for e in m] for m in top3_merged]

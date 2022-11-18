@@ -145,6 +145,8 @@ class BBNSession:
         )
 
         data = response.content.decode('utf-8').split('\n')
+        # import ipdb; ipdb.set_trace()
+
         print("TYPE A HINT ==> ")
         print(data)
 
@@ -320,7 +322,7 @@ class BBNSession:
                 # Need to remove possible final empty strings
                 test_ids = [test_id for test_id in test_ids if test_id.strip("\n\t\"',.") != ""]
         
-
+        # import ipdb; ipdb.set_trace()
         self.hints = []
         if self.detection_fb:
             self.hints.append('novelty_instance_detection')
@@ -457,8 +459,8 @@ class BBNSession:
 
                     # The image width and height used to be supplied, and so are expected,
                     # but not used. They are supplied here as zeros. 
-                    # image_line = ','.join([image_path,'0', '0', bbox_info])
-                    image_line = ','.join([image_path, bbox_info])
+                    image_line = ','.join([image_path,'0', '0', bbox_info])
+                    # image_line = ','.join([image_path, bbox_info])
 
                     image_lines.append(image_line)
                 image_data = '\n'.join(image_lines)
@@ -536,7 +538,7 @@ class BBNSession:
 
             ### LAR useful trace
             # print(f'===> Submitting results with test_type: {self.history.test_type}')
-            
+            # import ipdb; ipdb.set_trace()
             if self.api_stubs:
                 self.api_stubs.record_results(test_id, round_id,
                                          open(detection_filename, 'r').read(),
@@ -573,8 +575,6 @@ class BBNSession:
                 # if self.given_detection:
                 #     print(f' **** About to call choose_detection_feedback_ids, round {round_id}')
                 
-
-                import ipdb; ipdb.set_trace()
                 num_ids_to_request = len(filenames) if self.given_detection else feedback_max_ids
                 feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
                                                                             filenames, num_ids_to_request)

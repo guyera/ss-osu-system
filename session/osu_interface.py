@@ -92,6 +92,7 @@ class OSUInterface:
         csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}.csv')
         df.to_csv(csv_path, index=True)
         
+        # import ipdb; ipdb.set_trace()
         
         ret = self.app.process_batch(csv_path, test_id, round_id, df['new_image_path'].to_list(), hint_typeA_data, hint_typeB_data)
         p_ni = ret['p_ni']
