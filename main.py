@@ -34,9 +34,10 @@ if __name__ == "__main__":
     p.add_argument('--classification_feedback', action="store_true")
     p.add_argument('--detector_seed', type=int, default=1234)
     p.add_argument('--version', default='101')
-    p.add_argument('--sys_results_dir', default='./session/temp/sys_results_Hints_A_B_ClinetServerVersionUpdated_HintsAnalysis')
+    p.add_argument('--sys_results_dir', default='./session/temp/sys_results_Type3_6_7_NoHint')
     p.add_argument('--test_ids', nargs="+", default=None)
-    p.add_argument('--hintsflag', default= True)
+    p.add_argument('--hintA', default= False)
+    p.add_argument('--hintB', default= False)
     
     args = p.parse_args()
 
@@ -77,6 +78,6 @@ if __name__ == "__main__":
         args.given_detection, args.data_root,
         args.sys_results_dir, args.url, args.batch_size,
         args.version, detection_threshold,
-        api, osu_int, args.hintsflag)
+        api, osu_int, args.hintA, args.hintB)
         
     test_session.run(args.detector_seed, args.test_ids)

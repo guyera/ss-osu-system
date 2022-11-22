@@ -119,6 +119,7 @@ def compute_probability_novelty(
     p_type = []
     p_n = []
     separated_p_type = []
+       
     for idx in range(len(subject_scores)):
         subject_score = subject_scores[idx]
         object_score = object_scores[idx]
@@ -147,9 +148,9 @@ def compute_probability_novelty(
         possible_nov_types[4] = False
         # TODO Any others? And are these ones correct?
         if cur_hint_b is not None and not cur_hint_b:
-            possible_nov_types[1:] = False        
+            possible_nov_types[1:] = False  
             cur_p_type = possible_nov_types.to(torch.float)
-
+            
         else:
             if cur_hint_b is not None and cur_hint_b:
                 possible_nov_types[0] = False
@@ -258,12 +259,13 @@ def compute_probability_novelty(
                 cur_p_type = cur_p_type / cur_p_type.sum()
             else:
                 cur_p_type = cur_p_type / normalizer
-
         # Normalize the NOVEL novelty types; i.e., types 1, 2, 3, 4, 6, and 7.
         # This normalized partial p-type vector represents the probability
         # of each novelty type given that some novelty is present. This is
         # what's passed to the novel tuple classifier (after combining types
         # 6/7 by adding their probabilities together)
+
+        
         normalizer = cur_p_type[1:].sum()
         
         if normalizer == 0:
@@ -299,8 +301,21 @@ def compute_probability_novelty(
         p_n.append(cur_p_n)
 
 
+    
+
+
+    
+
+
+
     p_type = torch.stack(p_type, dim = 0)
     p_n = torch.stack(p_n, dim = 0)
     separated_p_type = torch.stack(separated_p_type, dim = 0)
+
+    # print('Given Hint', hint_a)
+    # print('p_n', p_n)
+    # print('p_type', p_type)
+    # print('separated_p_type', separated_p_type)
+    # import ipdb; ipdb.set_trace()
     
     return p_type, p_n, separated_p_type

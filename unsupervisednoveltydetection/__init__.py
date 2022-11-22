@@ -703,6 +703,8 @@ class UnsupervisedNoveltyDetector:
             #      + P(S=s, V=v, O=o, not novel)
             #  = P(S=s, V=v, O=o | novel) * P(novel)
             #      + P(S=s, V=v, O=o, not novel) * P(not novel)
+
+
             merged_tuple_predictions = \
                 example_p_n * example_novelty_t67_predictions + \
                     (1 - example_p_n) * example_scg_predictions.to('cuda:0')

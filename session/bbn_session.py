@@ -13,7 +13,7 @@ class BBNSession:
     def __init__(self, protocol, domain, class_count, class_fb, detection_fb, given_detection,
                  image_directory, results_directory, api_url,
                  batch_size, version, detection_threshold,
-                 api_stubs, osu_interface, hintsflag):
+                 api_stubs, osu_interface, hintA, hintB):
 
         # self.agent = Agent(config['detectormodelpath'],
         #                    config['classifiermodelpath'],
@@ -47,7 +47,8 @@ class BBNSession:
         self.num_subject_classes = 5
         self.num_object_classes = 12
         self.num_verb_classes = 8
-        self.hintflag = hintsflag
+        self.hintA = hintA
+        self.hintB = hintB
 
         # Turn this to True to get readable (S,O,V) triples for our top-3 in classification output.
         # Default is to get the 945 floats that UMD is requesting. 
@@ -343,8 +344,6 @@ class BBNSession:
                 }
             })
             session_id = ast.literal_eval(response.content.decode('utf-8'))['session_id']
-
-
         if self.osu_stubs:
             self.osu_stubs.start_session(session_id, detection_feedback=True, classification_feedback=False, given_detection=self.given_detection)
 
@@ -374,7 +373,7 @@ class BBNSession:
         # self.history = TestHistory()
 
         # Request Hint Type A for given session Id and Test Id --> [test_id, kind_of_novelty]  
-        if self.hintflag:      
+        if self.hintA:      
             hint_typeA_data = int(self.request_hint_typeA(session_id, test_id)[0].split(',')[-1])
         else:
             hint_typeA_data = None
@@ -403,12 +402,11 @@ class BBNSession:
 
         # Request Hint Type A for given session Id, Test Id and round_id --> ['fname, 0/1', ... ]
         
-        
         hintsBList = []
         while True:
             image_data = None
             filenames = None
-            if self.given_detection and self.hintflag:
+            if self.given_detection and self.hintB:
                 hint_typeB_data = self.request_hint_typeB(session_id, test_id, round_id)
                 hint_typeB_data = [bool(int(hint.split(',')[-1])) for hint in hint_typeB_data[:-1]]
                 print(hint_typeB_data)
@@ -516,7 +514,6 @@ class BBNSession:
                                 # print(f' **** Turning on red_light_declared due to GD')
                     else:
                         if float(red_light_str) > 0.5:
-                            print(float(red_light_str))
                             red_light_declared = True
                     
                     
@@ -556,41 +553,42 @@ class BBNSession:
                 })
                         
             ## Handle classification feedback
-            if self.class_fb and red_light_declared:
-                feedback_ids = self.osu_stubs.choose_classification_feedback_ids(filenames, feedback_max_ids)
-                class_feedback_results = self.request_class_feedback(session_id, test_id, round_id, feedback_ids)
-                # self.record_feedback_stub(feedback_results)
-                # self.history.record_feedback(known_count, novel_count)
+            if self.detection_fb or self.class_fb:
+                if self.class_fb and red_light_declared:
+                    feedback_ids = self.osu_stubs.choose_classification_feedback_ids(filenames, feedback_max_ids)
+                    class_feedback_results = self.request_class_feedback(session_id, test_id, round_id, feedback_ids)
+                    # self.record_feedback_stub(feedback_results)
+                    # self.history.record_feedback(known_count, novel_count)
 
-            ## Handle detection feedback
-            if (self.detection_fb or self.given_detection) and red_light_declared:
-                # Lance: It should be OK to always call choose_detection_feedback_ids
-                # if self.given_detection:
-                #     feedback_ids = filenames
-                # else:
-                #     feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
-                #                                                           filenames, feedback_max_ids)
+                ## Handle detection feedback
+                if (self.detection_fb or self.given_detection) and red_light_declared:
+                    # Lance: It should be OK to always call choose_detection_feedback_ids
+                    # if self.given_detection:
+                    #     feedback_ids = filenames
+                    # else:
+                    #     feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
+                    #                                                           filenames, feedback_max_ids)
 
-                # GDD
-                # if self.given_detection:
-                #     print(f' **** About to call choose_detection_feedback_ids, round {round_id}')
-                
-                num_ids_to_request = len(filenames) if self.given_detection else feedback_max_ids
-                feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
-                                                                            filenames, num_ids_to_request)
-                detection_feedback_results = self.request_detection_feedback(session_id, test_id, round_id,
-                                                                             feedback_ids)
+                    # GDD
+                    # if self.given_detection:
+                    #     print(f' **** About to call choose_detection_feedback_ids, round {round_id}')
+                    
+                    num_ids_to_request = len(filenames) if self.given_detection else feedback_max_ids
+                    feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
+                                                                                filenames, num_ids_to_request)
+                    detection_feedback_results = self.request_detection_feedback(session_id, test_id, round_id,
+                                                                                feedback_ids)
 
-                self.osu_stubs.record_detection_feedback(test_id, round_id, detection_feedback_results)
+                    self.osu_stubs.record_detection_feedback(test_id, round_id, detection_feedback_results)
 
-            ## LAR
-            ## Write characterization files after every round for experimental testing.
-            # characterization_filename = os.path.join(
-            #     self.results_directory, "%s_%s_%s_characterization_round.csv" % (session_id, test_id, round_id))
-            # compute_and_write_clusters(self.history, characterization_filename, max_novel_classes,
-            #                            min(max_novel_classes, self.bbn_max_clusters),
-            #                            self.bbn_min_novel_frac)
-            ## LAR
+                ## LAR
+                ## Write characterization files after every round for experimental testing.
+                # characterization_filename = os.path.join(
+                #     self.results_directory, "%s_%s_%s_characterization_round.csv" % (session_id, test_id, round_id))
+                # compute_and_write_clusters(self.history, characterization_filename, max_novel_classes,
+                #                            min(max_novel_classes, self.bbn_max_clusters),
+                #                            self.bbn_min_novel_frac)
+                ## LAR
 
             round_id += 1
 
