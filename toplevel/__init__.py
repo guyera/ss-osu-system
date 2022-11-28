@@ -657,8 +657,8 @@ class TopLevelApp:
             df_final.drop_duplicates(inplace=True)        
             self.retraining_buffer = pd.concat([self.retraining_buffer, df_final])
 
-
-        retrain_cond_1 = self.num_retrains_so_far == 0 and self.retraining_buffer.shape[0] >= 15
+        print(self.retraining_buffer.shape[0])
+        retrain_cond_1 = self.num_retrains_so_far == 0 and self.retraining_buffer.shape[0] >= 10
         retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.retraining_buffer.shape[0] > 0)
         
         if retrain_cond_1 or retrain_cond_2:

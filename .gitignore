@@ -8,7 +8,7 @@ Custom_v1
 dataset_v3
 dataset_v4
 .vscode/
-logs
+logs*
 .pth
 *FinalResults*
 *.jpg

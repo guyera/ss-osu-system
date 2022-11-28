@@ -121,3 +121,17 @@ python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/T
 
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_Hints_A_B_ClinetServerVersionUpdated_HintsAnalysis/' './sys_results_Hints_A_B_ClinetServerVersionUpdated_HintsAnalysis/'
 
+python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/Test_Phase3' --detection-feedback --api-stubs
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_3,6,7_NoHint_noFeedback/' './sys_results_3,6,7_NoHint_noFeedback/'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_3,7,8_NoHint_detectionFeedback/' './sys_results_3,7,8_NoHint_detectionFeedback/'
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_3_NoHint_detectionFeedback10/' './sys_results_3_NoHint_detectionFeedback10/'
+
+
+
+sail_on_server --url localhost:8001 --data-directory '/nfs/stak/users/ullaham/hpc-share/SailON/phase3/sailon-svo/session/tests/api_tests/' --results-directory ../sailon-svo/test/results/

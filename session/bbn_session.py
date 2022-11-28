@@ -371,10 +371,15 @@ class BBNSession:
     def run_test(self, session_id, test_id):
 
         # self.history = TestHistory()
-
         # Request Hint Type A for given session Id and Test Id --> [test_id, kind_of_novelty]  
         if self.hintA:      
-            hint_typeA_data = int(self.request_hint_typeA(session_id, test_id)[0].split(',')[-1])
+            hint_typeA = self.request_hint_typeA(session_id, test_id)[0].split(',')[-1]
+            if hint_typeA == 'object':
+                hint_typeA_data = 3
+            elif hint_typeA == 'event':
+                hint_typeA_data = 6
+            else: # environment
+                hint_typeA_data = 7
         else:
             hint_typeA_data = None
         print('Hint A is : ',hint_typeA_data)
