@@ -26,11 +26,11 @@ def select_queries(budget, P_type, P_N, A_S, A_V, A_O):
     Returns: A list of image indices indicating which images
              shall be sent to the oracle.
     '''
-    
     # Assert length of list is nonzero
     if P_N.shape[0] == 0:
         raise ValueError("Must pass in a nonzero number of queries")
 
+<<<<<<< HEAD
     # Assert that arguments have same length
     if not (P_N.shape[0] == len(A_S) and \
             len(A_S) == len(A_V)     and \
@@ -108,6 +108,10 @@ def select_queries(budget, P_type, P_N, A_S, A_V, A_O):
 
     selection = indices_copy[0:budget]
 
+=======
+    indices = torch.argsort(P_N, descending=True)
+    selection = indices[:budget]
+>>>>>>> b2f5bfe94286daba4496054cef5f78591a58fe14
     return selection.tolist()
 
 if __name__ == "__main__":
