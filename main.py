@@ -34,7 +34,7 @@ if __name__ == "__main__":
     p.add_argument('--classification_feedback', action="store_true")
     p.add_argument('--detector_seed', type=int, default=1234)
     p.add_argument('--version', default='101')
-    p.add_argument('--sys_results_dir', default='./session/temp/test_trials_csv_20_with_detection_feedback')
+    p.add_argument('--sys_results_dir', default='./session/temp/test_trials_csv_70_with_detection_feedback')
     p.add_argument('--test_ids', nargs="+", default=None)
     p.add_argument('--hintA', default= False)
     p.add_argument('--hintB', default= False)

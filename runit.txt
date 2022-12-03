@@ -144,3 +144,4 @@ sail_on_server --url localhost:8001 --data-directory '/nfs/stak/users/ullaham/hp
 
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/svo_10_70_last_20_novel/test_trials_csv_10/api_tests/OND/svo_classification' './session/temp/test_trials_csv_10_no_feedback/' './sys_results_test_trials_csv_10_no_feedback/'
 
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/svo_10_70_last_20_novel/test_trials_csv_10/api_tests/OND/svo_classification' './session/temp/test_trials_csv_10_with_detection_feedback/' './test_trials_csv_10_with_detection_feedback/'

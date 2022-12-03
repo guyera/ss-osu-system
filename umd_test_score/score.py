@@ -184,9 +184,6 @@ def score_tests(test_dir, sys_output_dir, session_id, class_file_reader, log_dir
                 #     print(f'No results found for Test {session_id}.{test_id}_.')
                 
 
-                if '106.000' in test_id:
-                    import ipdb; ipdb.set_trace()
-
                 with open(log_dir / f'{test_id}.log', 'w') as log:
                             score_test(test_id, metadata, test_df, detect_lines, class_lines, class_file_reader,
                                     log, summary, stats)
