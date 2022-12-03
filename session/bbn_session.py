@@ -378,8 +378,12 @@ class BBNSession:
                 hint_typeA_data = 3
             elif hint_typeA == 'event':
                 hint_typeA_data = 6
-            else: # environment
+            elif hint_typeA == 'environment':
                 hint_typeA_data = 7
+            elif hint_typeA == 'type0':
+                hint_typeA_data = 0
+            else: 
+                hint_typeA_data = None
         else:
             hint_typeA_data = None
         print('Hint A is : ',hint_typeA_data)

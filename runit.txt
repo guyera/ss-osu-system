@@ -130,8 +130,17 @@ python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/T
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_3,7,8_NoHint_detectionFeedback/' './sys_results_3,7,8_NoHint_detectionFeedback/'
 
 
-python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test_Phase3' './session/temp/sys_results_3_NoHint_detectionFeedback10/' './sys_results_3_NoHint_detectionFeedback10/'
-
-
 
 sail_on_server --url localhost:8001 --data-directory '/nfs/stak/users/ullaham/hpc-share/SailON/phase3/sailon-svo/session/tests/api_tests/' --results-directory ../sailon-svo/test/results/
+
+
+
+
+python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/svo_10_70_last_20_novel/test_trials_csv_10/api_tests'
+
+
+sail_on_server --url localhost:8001 --data-directory '/nfs/stak/users/ullaham/hpc-share/SailON/phase3/sailon-svo/session/tests/svo_10_70_last_20_novel/test_trials_csv_10/api_tests/' --results-directory ../sailon-svo/test/results/
+
+
+python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/svo_10_70_last_20_novel/test_trials_csv_10/api_tests/OND/svo_classification' './session/temp/test_trials_csv_10_no_feedback/' './sys_results_test_trials_csv_10_no_feedback/'
+

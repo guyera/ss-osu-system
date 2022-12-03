@@ -1129,7 +1129,7 @@ class NoveltyDetectorTrainer:
         # Define convergence parameters (early stopping + model selection)
         patience = 3
         epochs_since_improvement = 0
-        max_epochs = 5
+        max_epochs = 30
         min_epochs = 4
         best_accuracy = None
         best_accuracy_backbone_state_dict = None

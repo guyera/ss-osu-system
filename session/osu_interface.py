@@ -82,7 +82,6 @@ class OSUInterface:
             line[3], line[4], line[5], line[6], 
             line[7], line[8], line[9], line[10]]
         
-
         idx = 0
         for l in lines:
             row = create_row(idx, l)

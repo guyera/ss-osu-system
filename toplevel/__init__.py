@@ -104,6 +104,8 @@ class TopLevelApp:
             'object_ymin', 'object_xmin', 'object_ymax', 'object_xmax'])
         self.retraining_batch_size = retraining_batch_size
         self.disable_retraining = disable_retraining
+        # self.disable_retraining = True
+
 
         self.mergedSVO = []
         self.mergedprobs = []
@@ -264,7 +266,7 @@ class TopLevelApp:
         query_indices = select_queries(feedback_max_ids, torch.tensor([1/3, 1/3, 1/3, 0]), self.batch_context.p_ni, 
             self.batch_context.subject_novelty_scores_u, self.batch_context.verb_novelty_scores_u, 
             self.batch_context.object_novelty_scores_u)
-
+      
         if len(query_indices) > feedback_max_ids:
             raise Exception('number of queries exceeded feedback budget.')
 
@@ -657,16 +659,13 @@ class TopLevelApp:
             df_final.drop_duplicates(inplace=True)        
             self.retraining_buffer = pd.concat([self.retraining_buffer, df_final])
 
-        print(self.retraining_buffer.shape[0])
-        retrain_cond_1 = self.num_retrains_so_far == 0 and self.retraining_buffer.shape[0] >= 10
+        retrain_cond_1 = self.num_retrains_so_far == 0 and self.retraining_buffer.shape[0] >= 15
         retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.retraining_buffer.shape[0] > 0)
         
         if retrain_cond_1 or retrain_cond_2:
             self.num_retrains_so_far += 1
             csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
-            self.retraining_buffer.to_csv(csv_path, index=True)
-
-                
+            self.retraining_buffer.to_csv(csv_path, index=True)                
             self.novelty_trainer.add_feedback_data(self.data_root, csv_path)
             self.novelty_trainer.prepare_for_retraining(self.backbone, self.und_manager.detector, 
                 self.und_manager.case_1_logistic_regression,

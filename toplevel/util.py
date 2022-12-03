@@ -105,7 +105,8 @@ class UnsupervisedNoveltyDetectionManager:
                 object_box_features.append(object_feature)
                 verb_box_features.append(verb_feature)
 
-            op = ThresholdTrialLevelPType(trial_p_type, self.p_type_alpha)
+            # op = ThresholdTrialLevelPType(trial_p_type, self.p_type_alpha)
+            op = None
         
             top3 = self.detector.top3(spatial_features, subject_box_features, verb_box_features, 
                 object_box_features, batch_p_type, op)

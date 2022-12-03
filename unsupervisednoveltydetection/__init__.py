@@ -830,6 +830,9 @@ class UnsupervisedNoveltyDetector:
         verb_probs = []
         object_scores = []
         object_probs = []
+        example_subject_probs = None
+        example_verb_probs = None
+        example_object_probs = None
         for idx in range(len(spatial_features)):
             example_spatial_features = spatial_features[idx]
             example_subject_appearance_features = subject_appearance_features[idx]

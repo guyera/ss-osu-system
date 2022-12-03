@@ -41,8 +41,8 @@ def select_queries(budget, P_type, P_N, A_S, A_V, A_O):
 
     TYPE_1, TYPE_2 = 0, 1
     TYPE_3 = 2 #, type_5 = 2, 4
-    
     types_retained = [TYPE_1, TYPE_2, TYPE_3] #, type_5]
+    
     P_type_new = P_type[types_retained]
  
     ### Since a lower index element was removed, need
@@ -51,9 +51,9 @@ def select_queries(budget, P_type, P_N, A_S, A_V, A_O):
 
     P_type_new = P_type_new / torch.sum(P_type_new)
 
-    A_S_min = smallest_non_none(A_S)
-    A_V_min = smallest_non_none(A_V)
-    A_O_min = smallest_non_none(A_O)
+    A_S_min = smallest_non_none(A_S) if smallest_non_none(A_S) is not None  else -1e-10
+    A_V_min = smallest_non_none(A_V) if smallest_non_none(A_V) is not None  else -1e-10
+    A_O_min = smallest_non_none(A_O) if smallest_non_none(A_O) is not None  else -1e-10
 
     S_nones = 0
     V_nones = 0
