@@ -12,9 +12,10 @@ class ClassFileReader():
         self.num_subj = 5
         self.num_verb = 8
         self.num_obj = 12
-        self.triple_list = list(itertools.product(np.arange(-1, self.num_subj),
+        self.triple_list = list(itertools.product(np.arange(0, self.num_subj),
                                                   np.arange(0, self.num_verb),
-                                                  np.arange(-1, self.num_obj)))
+                                                  np.arange(0, self.num_obj)))
+    
         self.get_triple = {}
         for i, triple in enumerate(self.triple_list):
             self.get_triple[i] = triple
@@ -23,6 +24,7 @@ class ClassFileReader():
         chunks = class_line.split(',')
         prob_strs = chunks[1:]
         probs = np.array([float(prob_str) for prob_str in prob_strs])
+
         ind_1, ind_2, ind_3 = np.argsort(-1.0 * probs)[:3]
         ans_1_s, ans_1_v, ans_1_o = self.get_triple[ind_1]
         ans_2_s, ans_2_v, ans_2_o = self.get_triple[ind_2]
@@ -65,7 +67,7 @@ def score_test(test_df, class_lines, class_file_reader):
     novel = True
 
     for pos, (test_tuple, class_line) in enumerate(zip(test_tuples, class_lines[1:])):
-        print(test_tuple.new_image_path, class_line.split(',')[0])
+        # print(test_tuple.new_image_path, class_line.split(',')[0])
         if novel:
             red_button = True
             if red_button_pos == -1:
@@ -81,8 +83,8 @@ def score_test(test_df, class_lines, class_file_reader):
                  match(corr_s, corr_o, corr_v, ans_2_s, ans_2_o, ans_2_v) or
                  match(corr_s, corr_o, corr_v, ans_3_s, ans_3_o, ans_3_v))
 
-        print(ans_1_s, ans_1_v, ans_1_o, ans_2_s, ans_2_v, ans_2_o, ans_3_s, ans_3_v, ans_3_o)
-        print(top_1, top_3)
+        # print(ans_1_s, ans_1_v, ans_1_o, ans_2_s, ans_2_v, ans_2_o, ans_3_s, ans_3_v, ans_3_o)
+        # print(top_1, top_3)
         total += 1
         if red_button:
             total_post_red += 1
@@ -105,8 +107,6 @@ def score_test(test_df, class_lines, class_file_reader):
     total_top_1_hits = pre_red_top_1_hits + post_red_top_1_hits
     total_top_3_hits = pre_red_top_3_hits + post_red_top_3_hits
 
-    pre_top_1_score = percent_string(pre_red_top_1_hits, total_pre_red)
-    pre_top_3_score = percent_string(pre_red_top_3_hits, total_pre_red)
     if post_red_top_1_hits > 0:
         post_top_1_score = percent_string(post_red_top_1_hits, total_post_red)
         post_top_3_score = percent_string(post_red_top_3_hits, total_post_red)
@@ -121,8 +121,8 @@ def score_test(test_df, class_lines, class_file_reader):
     else:
         novel_top_1_score = "    NA"
         novel_top_3_score = "    NA"
-    print(f' {test_id}    {total_top_1_score}    {total_top_3_score}')
-    print(f'{" "*86} {total_top_1_score}  {total_top_3_score}\n')
+    print(f'   Test           Top-1     Top-3')
+    print(f' Results    {total_top_1_score}    {total_top_3_score}')
     
 
 
