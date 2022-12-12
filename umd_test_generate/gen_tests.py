@@ -48,7 +48,6 @@ def gen_no_novel_api_test(test_name,
     with open(metadata_file, 'w') as handle:
         handle.write(json.dumps(metadata))
 
-
 def gen_api_test(test_name,
                  known_feed, novel_feed,
                  test_dir, test_len, red_button, alpha, round_size):

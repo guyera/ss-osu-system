@@ -13,7 +13,7 @@ logs*
 *FinalResults*
 *.jpg
 *Results_Phase3*
-runit.txt
+runit*
 *Phase3_*
 *Oct_Exp
 *.csv
@@ -21,3 +21,5 @@ runit.txt
 *sys_results*
 sys_test/
 test_trials_*
+Last30*
+SVO_*

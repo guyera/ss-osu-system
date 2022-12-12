@@ -213,6 +213,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
             verb_images = list()
             whole_images = list()
             
+
             for images, detections, targets in data_loader:
                 original_image_sizes = [img.shape[-2:] for img in images]
                 images, targets = i_transform(images, targets)

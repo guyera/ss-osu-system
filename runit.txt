@@ -2,28 +2,8 @@ python unsupervisednoveltydetection/compute_known_combinations.py --device cuda 
 
 python main.py --pretrained-backbone-path './unsupervisednoveltydetection/resnet_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/resnet_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/Test1' --detection-feedback --api-stubs
 
-python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/TestX' --detection-feedback --api-stubs
-
-
-
-
-python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test1' './session/temp/sys_results_resnet/sys_results' './FinalResults_resnet1'
 
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/Test1' './session/temp/swin_t_test1_sys_results/' './FinalResults_swin_t_test1'
-
-python train.py --world-size 1 --data-root ../Custom --csv-path Custom/annotations/dataset_v4_train.csv --val-csv-path Custom/annotations/dataset_v4_val.csv
-
-
-python umd_test_generate/process_dataset.py --train_csv Custom/annotations/dataset_v4_train.csv --val_csv Custom/annotations/dataset_v4_val.csv --pickle_out_file '/umd_test_sandbox/test_source_data_v4_2_all_valid_val.pkl' --log_file '/umd_test_sandbox/dataset_analysis_v4_2_all_valid.log'
-
-
-python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/' './session/temp/sys_results/' './FinalResults_RESNET'
-
-
-python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/TestX' './session/temp/sys_results/' './FinalResults_Swin_T_5Epochs'
-
-
-python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/TestX' './session/temp/sys_results/' './Phase3_Swin_T_5Epochs'
 
 
 python main.py --pretrained-backbone-path './unsupervisednoveltydetection/resnet_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/resnet_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/Test_Phase3' --detection-feedback --api-stubs
@@ -145,3 +125,21 @@ sail_on_server --url localhost:8001 --data-directory '/nfs/stak/users/ullaham/hp
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/svo_10_70_last_20_novel/test_trials_csv_10/api_tests/OND/svo_classification' './session/temp/test_trials_csv_10_no_feedback/' './sys_results_test_trials_csv_10_no_feedback/'
 
 python umd_test_score/score.py --dataset_root './dataset_v4/' './session/tests/svo_10_70_last_20_novel/test_trials_csv_10/api_tests/OND/svo_classification' './session/temp/test_trials_csv_10_with_detection_feedback/' './test_trials_csv_10_with_detection_feedback/'
+
+
+python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/Val_Data_Exp/ --api-stubs
+
+
+
+sail_on_server --url localhost:8001 --data-directory '/nfs/stak/users/ullaham/hpc-share/SailON/phase3/temacode/sailon-svo/umd_test_generate/svo1/test_trials_csv10/api_tests/' --results-directory ../sailon-svo/test/results/
+
+
+python main.py --pretrained-backbone-path './unsupervisednoveltydetection/swin_t_backbone_2.pth' --pretrained-unsupervised-novelty-path './unsupervisednoveltydetection/swin_t_unsupervised_novelty_detection_module_2.pth' --tests-dir './session/tests/' 
+
+python umd_test_score/scoreLast30.py --dataset_root './dataset_v4/' '../temacode/sailon-svo/umd_test_generate/svo1/test_trials_csv10/api_tests/OND/svo_classification/' './session/temp/SVO_1_test_trials_csv10_no_feedback/' './SVO_1_test_trials_csv10_no_feedback/'
+
+
+python umd_test_score/scoreLast30.py --dataset_root './dataset_v4/' '../temacode/sailon-svo/umd_test_generate/svo3/test_trials_csv10/api_tests/OND/svo_classification/' './session/temp/SVO_3_test_trials_csv10_with_detection_feedback/' './SVO_3_test_trials_csv10_with_detection_feedback/'
+
+
+python umd_test_score/scoreLast30.py --dataset_root './dataset_v4/' '../temacode/sailon-svo/umd_test_generate/svo5/test_trials_csv10/api_tests/OND/svo_classification/' './session/temp/SVO_5_test_trials_csv10_with_detection_feedback/' './SVO_5_test_trials_csv10_with_detection_feedback/'
