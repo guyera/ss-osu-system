@@ -38,14 +38,14 @@ class Backbone(Module):
             'name': 'swin_t',
             'ctor': _swin_t_ctor,
             'register_feature_hook' :\
-                (lambda model, hook : model.layer4.register_forward_hook(hook))
+                (lambda model, hook : model.features[2]\
+                    .register_forward_hook(hook))
         }
         resnet50 = {
             'name': 'resnet50',
             'ctor': _resnet50_ctor,
             'register_feature_hook' :\
-                (lambda model, hook : model.features[2]\
-                    .register_forward_hook(hook))
+                (lambda model, hook : model.layer4.register_forward_hook(hook))
         }
 
         def __str__(self):
