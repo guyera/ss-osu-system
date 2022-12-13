@@ -73,7 +73,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                     self.assertTrue(prediction[1] <= previous_confidence)
                     previous_confidence = prediction[1]
                     self.assertTrue(prediction[0][0] != -1 and prediction[0][1] != -1 and prediction[0][2] != -1)
-                    self.assertTrue(prediction[0][0] == 0 and prediction[0][1] != 0 and prediction[0][2] != 0)
+                    self.assertTrue((prediction[0][0] == 0 and prediction[0][1] != 0 and prediction[0][2] != 0) or prediction[1] == 0)
 
     def test_case_1_t2(self):
         with torch.no_grad():
@@ -96,14 +96,14 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 object_box_features.append(self.backbone(example_object_images.unsqueeze(0)).squeeze(0))
                 verb_box_features.append(self.backbone(example_verb_images.unsqueeze(0)).squeeze(0))
             
-            results = self.detector.top3(spatial_features, subject_box_features, verb_box_features, object_box_features, torch.tensor([0.0, 2.0, 0.0, 0.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
-            for top3 in results['top3']:
+            results = self.detector.top3(spatial_features, subject_box_features, verb_box_features, object_box_features, torch.tensor([0.0, 1.0, 0.0, 0.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
+            for top3_idx, top3 in enumerate(results['top3']):
                 previous_confidence = 1.0
                 for prediction in top3:
                     self.assertTrue(prediction[1] <= previous_confidence)
                     previous_confidence = prediction[1]
                     self.assertTrue(prediction[0][0] != -1 and prediction[0][1] != -1 and prediction[0][2] != -1)
-                    self.assertTrue(prediction[0][0] != 0 and prediction[0][1] == 0 and prediction[0][2] != 0)
+                    self.assertTrue((prediction[0][0] != 0 and prediction[0][1] == 0 and prediction[0][2] != 0) or prediction[1] == 0)
 
     def test_case_1_t3(self):
         with torch.no_grad():
@@ -133,8 +133,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                     self.assertTrue(prediction[1] <= previous_confidence)
                     previous_confidence = prediction[1]
                     self.assertTrue(prediction[0][0] != -1 and prediction[0][1] != -1 and prediction[0][2] != -1)
-                    self.assertTrue(prediction[0][0] != 0 and prediction[0][1] != 0 and prediction[0][2] == 0)
-                    self.assertTrue(prediction[0][2] < 12 and prediction[0][2] >= 0)
+                    self.assertTrue((prediction[0][0] != 0 and prediction[0][1] != 0 and prediction[0][2] == 0) or prediction[1] == 0)
 
     def test_case_1_t4(self):
         with torch.no_grad():
@@ -164,7 +163,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                     self.assertTrue(prediction[1] <= previous_confidence)
                     previous_confidence = prediction[1]
                     self.assertTrue(prediction[0][0] != -1 and prediction[0][1] != -1 and prediction[0][2] != -1)
-                    self.assertTrue(prediction[0][0] != 0 and prediction[0][1] != 0 and prediction[0][2] != 0)
+                    self.assertTrue((prediction[0][0] != 0 and prediction[0][1] != 0 and prediction[0][2] != 0) or prediction[1] == 0)
     
     def test_case_1_novel_box(self):
         with torch.no_grad():
@@ -194,7 +193,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                     self.assertTrue(prediction[1] <= previous_confidence)
                     previous_confidence = prediction[1]
                     self.assertTrue(prediction[0][0] != -1 and prediction[0][1] != -1 and prediction[0][2] != -1)
-                    self.assertTrue(prediction[0][0] == 0 or prediction[0][1] == 0 or prediction[0][2] == 0)
+                    self.assertTrue((prediction[0][0] == 0 or prediction[0][1] == 0 or prediction[0][2] == 0) or prediction[1] == 0)
         
 if __name__ == '__main__':
     unittest.main()

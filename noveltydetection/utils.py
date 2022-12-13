@@ -29,7 +29,9 @@ class Case1LogisticRegression(torch.nn.Module):
         self.std = torch.nn.Parameter(torch.ones(4), requires_grad=False)
 
     def forward(self, x):
-        return self.fc((x - self.mean) / self.std)
+        normalized = (x - self.mean) / self.std
+        normalized[torch.isnan(normalized)] = 0
+        return self.fc(normalized)
 
     def fit_standardization_statistics(self, scores):
         self.mean[:] = scores.mean(dim=0).detach()
@@ -43,7 +45,9 @@ class Case2LogisticRegression(torch.nn.Module):
         self.std = torch.nn.Parameter(torch.ones(3), requires_grad=False)
 
     def forward(self, x):
-        return self.fc((x - self.mean) / self.std)
+        normalized = (x - self.mean) / self.std
+        normalized[torch.isnan(normalized)] = 0
+        return self.fc(normalized)
 
     def fit_standardization_statistics(self, scores):
         self.mean[:] = scores.mean(dim=0).detach()
@@ -57,7 +61,9 @@ class Case3LogisticRegression(torch.nn.Module):
         self.std = torch.nn.Parameter(torch.ones(2), requires_grad=False)
 
     def forward(self, x):
-        return self.fc((x - self.mean) / self.std)
+        normalized = (x - self.mean) / self.std
+        normalized[torch.isnan(normalized)] = 0
+        return self.fc(normalized)
 
     def fit_standardization_statistics(self, scores):
         self.mean[:] = scores.mean(dim=0).detach()
@@ -264,8 +270,6 @@ def compute_probability_novelty(
         # of each novelty type given that some novelty is present. This is
         # what's passed to the novel tuple classifier (after combining types
         # 6/7 by adding their probabilities together)
-
-        
         normalizer = cur_p_type[1:].sum()
         
         if normalizer == 0:
@@ -299,14 +303,6 @@ def compute_probability_novelty(
         # probabilities. Alternatively, 1 - P(type = 0)
         cur_p_n = 1.0 - cur_p_type[0]
         p_n.append(cur_p_n)
-
-
-    
-
-
-    
-
-
 
     p_type = torch.stack(p_type, dim = 0)
     p_n = torch.stack(p_n, dim = 0)

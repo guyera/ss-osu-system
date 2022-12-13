@@ -13,7 +13,12 @@ def sliding_window_p_vals(sample, prefix_size, window_size):
     for i in range(start, end):
         window = sample[i - window_size + 1 : i + 1]
         # p_val = ks_2samp(prefix, window, alternative='greater')[1]
-        p_val = ks_2samp(prefix, window, alternative='greater', method='exact')[1]
+        p_val = ks_2samp(
+            prefix,
+            window,
+            alternative='greater',
+            method='exact'
+        )[1]
         p_vals.append(p_val)
     return np.array(p_vals)
 
@@ -38,7 +43,9 @@ n_window_sizes = len(window_sizes)
 
 
 print('With exact method!')
-df_thresholds = pandas.DataFrame(columns=['window_size', 'median_pvalue', 'q10_pvalue'])
+df_thresholds = pandas.DataFrame(
+    columns=['window_size', 'median_pvalue', 'q10_pvalue']
+)
 df_thresholds['window_size'] = window_sizes
 df_thresholds.set_index('window_size', inplace=True)
 for window_size in tqdm(window_sizes, leave=False):
