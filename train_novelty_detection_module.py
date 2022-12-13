@@ -59,5 +59,4 @@ module_state_dicts['case_3_logistic_regression'] = state_dict(case_3_logistic_re
 module_state_dicts['activation_statistical_model'] = activation_statistical_model.state_dict()
 
 torch.save(state_dict(backbone), 'unsupervisednoveltydetection/' +model_ +'_backbone_2.pth')
-torch.save(detector_state_dicts['classifier'], 'unsupervisednoveltydetection/' +model_ +'_classifier_2.pth')
 torch.save(module_state_dicts, 'unsupervisednoveltydetection/' +model_ +'_unsupervised_novelty_detection_module_2.pth')
