@@ -7,53 +7,6 @@ import matplotlib.pyplot as plt
 import unsupervisednoveltydetection.common
 import unsupervisednoveltydetection.training
 
-class TrialLevelPTypeStrategy(ABC):
-    @abstractmethod
-    def revise_p_type(self, p_type):
-        return NotImplemented
-
-class ThresholdTrialLevelPType(TrialLevelPTypeStrategy):
-    '''
-    Parameters:
-        trial_level_p_type: Tensor of size [4] indicating trial level p_type
-            estimates for type 1, 2, 3, and 4, respectively.
-        threshold: Threshold to compare trial_level_p_type against.
-            A hyperparameter.
-    '''
-    def __init__(self, trial_level_p_type, threshold = 0.98):
-        exceeds_threshold = trial_level_p_type >= threshold
-        if torch.any(exceeds_threshold):
-            self.revised_p_type = exceeds_threshold.to(torch.int)
-        else:
-            self.revised_p_type = None
-
-    def revise_p_type(self, p_type):
-
-        if self.revised_p_type is not None:
-            revised_p_type = p_type * 0 + self.revised_p_type
-        else:
-            revised_p_type = p_type
-
-        return revised_p_type
-
-class WeightedAverageTrialLevelPType(TrialLevelPTypeStrategy):
-    '''
-    Parameters:
-        trial_level_p_type: Tensor of size [4] indicating trial level p_type
-            estimates for type 1, 2, 3, and 4, respectively.
-        alpha: Number or scalar tensor indicating the weight for the weighted
-            average, i.e. the proportion of the weighted average contributed
-            by p(type_i) (per-instance p_type). alpha = 0 means to ignore
-            per-instance p(type_i) and look only at trial-level p(type), and
-            alpha = 1 means the opposite.
-    '''
-    def __init__(self, trial_level_p_type, alpha):
-        self.trial_level_p_type = trial_level_p_type
-        self.alpha = alpha
-
-    def revise_p_type(self, p_type):
-        return self.alpha * p_type + (1 - self.alpha) * self.trial_level_p_type
-
 class UnsupervisedNoveltyDetectorLogger:
     def __init__(self):
         self.subject_novelty_scores = []
@@ -507,12 +460,7 @@ class UnsupervisedNoveltyDetector:
         return sv_known_joint_probs.sum()
 
     # Note: p_type should be a tensor of size [N, 4]; it's per-image p_type
-    def top3(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type, trial_level_p_type_strategy = None):
-        # Revise per-instance p_type using trial_level_p_type_strategy, if not
-        # None
-        if trial_level_p_type_strategy is not None:
-            p_type = trial_level_p_type_strategy.revise_p_type(p_type)
-        
+    def top3(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type):
         predictions = []
         t67_joint_probs = []
         cases = []
