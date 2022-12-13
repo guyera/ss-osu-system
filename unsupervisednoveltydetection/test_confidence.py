@@ -5,7 +5,7 @@ import os
 from torchvision.models import resnet50
 
 import noveltydetectionfeatures
-import unsupervisednoveltydetection.common
+import unsupervisednoveltydetection
 
 import unittest
 
@@ -107,11 +107,11 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         
         module_state_dict = torch.load('unsupervisednoveltydetection/unsupervised_novelty_detection_module_2.pth')
         # Create classifier
-        classifier = unsupervisednoveltydetection.common.ClassifierV2(256, 5, 12, 8, 72)
+        classifier = unsupervisednoveltydetection.ClassifierV2(256, 5, 12, 8, 72)
         classifier.load_state_dict(module_state_dict['module']['classifier'])
         self.classifier = classifier.to(self.device)
         
-        calibrator = unsupervisednoveltydetection.common.ConfidenceCalibrator()
+        calibrator = unsupervisednoveltydetection.ConfidenceCalibrator()
         calibrator.load_state_dict(module_state_dict['module']['confidence_calibrator'])
         self.calibrator = calibrator.to(self.device)
     

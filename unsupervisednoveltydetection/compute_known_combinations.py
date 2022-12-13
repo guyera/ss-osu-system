@@ -2,7 +2,6 @@ import argparse
 import pickle
 
 import noveltydetectionfeatures
-import unsupervisednoveltydetection.common
 from torchvision.models import resnet50
 def parse_args():
     parser = argparse.ArgumentParser(

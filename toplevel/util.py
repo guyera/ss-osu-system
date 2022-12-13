@@ -1,7 +1,13 @@
 import torch
-from unsupervisednoveltydetection import UnsupervisedNoveltyDetector, ThresholdTrialLevelPType
-from noveltydetection.utils import Case1LogisticRegression, Case2LogisticRegression, Case3LogisticRegression
-from unsupervisednoveltydetection.common import ClassifierV2, ActivationStatisticalModel
+from unsupervisednoveltydetection import\
+    UnsupervisedNoveltyDetector,\
+    ThresholdTrialLevelPType
+from noveltydetection.utils import\
+    ActivationStatisticalModel,\
+    Case1LogisticRegression,\
+    Case2LogisticRegression,\
+    Case3LogisticRegression
+from unsupervisednoveltydetection import ClassifierV2
 
 
 class BatchContext:

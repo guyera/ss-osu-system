@@ -4,7 +4,9 @@ from abc import ABC, abstractmethod
 import torch
 import matplotlib.pyplot as plt
 
-import unsupervisednoveltydetection.common
+from unsupervisednoveltydetection._classifier import ClassifierV2
+from unsupervisednoveltydetection._confidencecalibrator import\
+    ConfidenceCalibrator
 import unsupervisednoveltydetection.training
 
 class UnsupervisedNoveltyDetectorLogger:
@@ -28,7 +30,7 @@ class UnsupervisedNoveltyDetector:
         self.device = 'cpu'
         
         self.classifier = classifier
-        self.confidence_calibrator = unsupervisednoveltydetection.common.ConfidenceCalibrator()
+        self.confidence_calibrator = ConfidenceCalibrator()
         
         self.known_svo_combinations = torch.zeros(num_subj_cls - 1, num_action_cls - 1, num_obj_cls - 1, dtype = torch.bool)
         self.known_sv_combinations = torch.zeros(num_subj_cls - 1, num_action_cls - 1, dtype = torch.bool)
@@ -870,3 +872,10 @@ class UnsupervisedNoveltyDetector:
         results['p_t4'] = p_t4
         
         return results
+
+__all__ = [
+    'UnsupervisedNoveltyDetector',
+    'UnsupervisedNoveltyDetectorLogger',
+    'ClassifierV2',
+    'ConfidenceCalibrator'
+]

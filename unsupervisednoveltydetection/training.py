@@ -4,7 +4,6 @@ from tqdm import tqdm
 import torch
 from torchvision.models import resnet50, swin_t, swin_b
 
-import unsupervisednoveltydetection.common
 import noveltydetectionfeatures
 import noveltydetection
 

@@ -3,10 +3,10 @@ import sklearn.metrics
 import sklearn.neighbors
 import math
 import sys
+from enum import Enum
 
 from tqdm import tqdm
-
-from enum import Enum
+from sklearn.neighbors import KernelDensity
 
 def compute_partial_auc(nominal_scores, novel_scores):
     nominal_trues = torch.zeros_like(nominal_scores)
@@ -20,6 +20,59 @@ def compute_partial_auc(nominal_scores, novel_scores):
     auc = sklearn.metrics.roc_auc_score(trues, scores, max_fpr = 0.25)
 
     return auc
+
+
+class ActivationStatisticalModel:
+    def __init__(self, model_name):
+        self._model_name = model_name
+        if model_name == 'resnet':
+            self._kde = KernelDensity(kernel='gaussian', bandwidth=5)
+        elif model_name == 'swin_t':
+            self._kde = KernelDensity(kernel='gaussian', bandwidth=50)
+        else:
+            raise NotImplementedError()
+
+        self._device = None
+        self._v = None
+
+    def forward_hook(self, module, inputs, outputs):
+        self._features = outputs
+
+    def compute_features(self, backbone, batch):
+        if self._model_name == 'resnet':
+            handle = backbone.layer4.register_forward_hook(self.forward_hook)
+        else:
+            handle = backbone.features[2].register_forward_hook(self.forward_hook)
+        backbone(batch)
+        handle.remove()
+        return self._features.view(self._features.shape[0], -1)
+
+    def pca_reduce(self, v, features, k):
+        return torch.matmul(features, v[:, :k])
+
+    def fit(self, features):
+        # Fit PCA
+        _, _, v = torch.svd(features)
+        self._v = v
+
+        # PCA-project features
+        projected_features = self.pca_reduce(v, features, 64)
+
+        # Fit self._kde to pca-projected features
+        self._kde.fit(projected_features.cpu().numpy())
+
+    def score(self, features):
+        # Compute and return negative log likelihood under self._kde
+        projected_features = self.pca_reduce(self._v, features, 64)
+        return -self._kde.score_samples(projected_features.cpu().numpy())
+
+    def reset(self):
+        self._v = None
+        if self._model_name == 'resnet':
+            self._kde = KernelDensity(kernel='gaussian', bandwidth=5)
+        else:
+            self._kde = KernelDensity(kernel='gaussian', bandwidth=50)
+
 
 class Case1LogisticRegression(torch.nn.Module):
     def __init__(self):

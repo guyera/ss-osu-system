@@ -29,7 +29,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         backbone.eval()
         self.backbone = backbone
         
-        classifier = unsupervisednoveltydetection.common.ClassifierV2(256, 5, 12, 8, 72)
+        classifier = unsupervisednoveltydetection.ClassifierV2(256, 5, 12, 8, 72)
         detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(classifier, 5, 12, 8)
         self.detector = detector.to(self.device)
         state_dict = torch.load('unsupervisednoveltydetection/' +model_ +'_unsupervised_novelty_detection_module_2.pth')

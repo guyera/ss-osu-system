@@ -22,7 +22,7 @@ if model_ == 'swin_b':
 
 backbone = backbone.to(device)
 
-classifier = unsupervisednoveltydetection.common.ClassifierV2(256, 5, 12, 8, 72)
+classifier = unsupervisednoveltydetection.ClassifierV2(256, 5, 12, 8, 72)
 detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(classifier, 5, 12, 8)
 detector = detector.to(device)
 
@@ -30,7 +30,7 @@ case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression().to
 case_2_logistic_regression = noveltydetection.utils.Case2LogisticRegression().to(device)
 case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression().to(device)
 
-activation_statistical_model = unsupervisednoveltydetection.common.ActivationStatisticalModel(model_).to(device)
+activation_statistical_model = noveltydetection.utils.ActivationStatisticalModel(model_).to(device)
 
 trainer = unsupervisednoveltydetection.training.NoveltyDetectorTrainer('./', 'dataset_v4/dataset_v4_2_train.csv', 'dataset_v4/dataset_v4_2_val.csv', 'dataset_v4/dataset_v4_2_cal_incident.csv', 'dataset_v4/dataset_v4_2_cal_corruption.csv', 64, model_ = model_)
 
