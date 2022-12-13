@@ -5,12 +5,14 @@ from session.osu_interface import OSUInterface
 from argparse import ArgumentParser
 from pathlib import Path
 
+from backbone import Backbone
+
 if __name__ == "__main__":
     p = ArgumentParser()
     p.add_argument('--data-root', default='.')
     p.add_argument('--scg-ensemble', default='./ensemble/pretrained')
-    p.add_argument('--pretrained-unsupervised-novelty-path', default='./unsupervisednoveltydetection/unsupervised_novelty_detection_module_2.pth')
-    p.add_argument('--pretrained-backbone-path', default='./unsupervisednoveltydetection/backbone_2.pth')
+    p.add_argument('--pretrained-models-dir', default='./pretrained-models')
+    p.add_argument('--backbone-architecture', type=Backbone.Architecture, choices=list(Backbone.Architecture), default=Backbone.Architecture.swin_t)
     p.add_argument('--api-stubs', action='store_true')
     p.add_argument('--log', action='store_true')
     p.add_argument('--log-dir', default='./logsDete10')
@@ -55,8 +57,8 @@ if __name__ == "__main__":
         
     osu_int = OSUInterface(scg_ensemble=args.scg_ensemble, 
         data_root=args.data_root, 
-        pretrained_unsupervised_novelty_path=args.pretrained_unsupervised_novelty_path,
-        pretrained_backbone_path=args.pretrained_backbone_path,
+        pretrained_models_dir=args.pretrained_models_dir,
+        backbone_architecture=args.backbone_architecture,
         feedback_enabled=args.detection_feedback,
         given_detection=args.given_detection,
         log=args.log,

@@ -1,29 +1,20 @@
 import torch
-from torchvision.models import resnet50, swin_t, swin_b
+
+import unittest
 
 import unsupervisednoveltydetection
 import noveltydetectionfeatures
 import noveltydetection
+from backbone import Backbone
 
-import unittest
 
 class TestConfidenceCalibrationMethods(unittest.TestCase):
     def setUp(self):
         self.device = 'cuda:0'
 
-        model_ = 'swin_t' # 'swin_t' 'swin_b'  'resnet'
-
-        if model_ == 'resnet': 
-            backbone = resnet50(pretrained = False)
-            backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
-        if model_ == 'swin_t': 
-            backbone = swin_t() 
-            backbone.head = torch.nn.Linear(backbone.head.weight.shape[1], 256)
-        if model_ == 'swin_b': 
-            backbone = swin_b() 
-            backbone.head = torch.nn.Linear(backbone.head.weight.shape[1], 256)
+        backbone = Backbone(Backbone.Architecture.swin_t)
         
-        backbone_state_dict = torch.load('unsupervisednoveltydetection/' +model_ +'_backbone_2.pth')
+        backbone_state_dict = torch.load('unsupervisednoveltydetection/' + backbone.architecture.name +'_backbone_2.pth')
         backbone.load_state_dict(backbone_state_dict)
         backbone = backbone.to(self.device)
         backbone.eval()

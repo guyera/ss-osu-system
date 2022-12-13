@@ -2,7 +2,6 @@ import copy
 
 from tqdm import tqdm
 import torch
-from torchvision.models import resnet50, swin_t, swin_b
 
 import noveltydetectionfeatures
 import noveltydetection
@@ -244,74 +243,6 @@ def custom_class_balance(dataset, class_proportions):
 
     return torch.utils.data.Subset(dataset, selected_indices)
 
-'''
-def separate_by_case(novelty_feature_dataset):
-    case_1_images = []
-    case_2_images = []
-    case_3_images = []
-    case_1_spatial_encodings = []
-    case_2_spatial_encodings = []
-    case_1_labels = []
-    case_2_labels = []
-    case_3_labels = []
-
-    for spatial_encodings, _, _, _, subject_label, object_label, verb_label, subject_box_image, object_box_image, verb_box_image in novelty_feature_dataset:
-        # Determine the novelty type
-        if subject_label == 0:
-            if object_label == 0 or verb_label == 0:
-                # Invalid novel example; multiple novelty types. Filter it out.
-                continue
-            # Type 1
-            type_label = 1
-        elif subject_label is not None and verb_label == 0:
-            if subject_label == 0 or object_label == 0:
-                # Invalid novel example; multiple novelty types. Filter it out.
-                continue
-            # Type 2
-            type_label = 2
-        elif object_label == 0:
-            if subject_label == 0 or (subject_label is not None and verb_label == 0):
-                # Invalid novel example; multiple novelty types. Filter it out.
-                continue
-            # Type 3
-            type_label = 3
-        else:
-            # Type 0
-            type_label = 0
-
-        # Add the images and labels to the case inputs
-        if subject_box_image is not None and object_box_image is not None:
-            # All boxes present; append images to case 1
-            case_1_images.append(torch.stack((subject_box_image, object_box_image, verb_box_image), dim = 0))
-            case_1_spatial_encodings.append(spatial_encodings)
-            case_1_labels.append(torch.tensor(type_label, dtype = torch.long, device = subject_box_image.device))
-        if subject_box_image is not None and (type_label == 0 or type_label == 1 or type_label == 2):
-            # At least the subject box is present; append subject and verb images
-            # to case 2
-            case_2_images.append(torch.stack((subject_box_image, verb_box_image), dim = 0))
-            case_2_spatial_encodings.append(spatial_encodings)
-            case_2_labels.append(torch.tensor(type_label, dtype = torch.long, device = subject_box_image.device))
-        if object_box_image is not None and (type_label == 0 or type_label == 3):
-            # At least the object box is present; append object box image to case 3
-            case_3_images.append(object_box_image)
-            cur_type_label = 0 if type_label == 0 else 1
-            case_3_labels.append(torch.tensor(cur_type_label, dtype = torch.long, device = object_box_image.device))
-
-    case_1_images = torch.stack(case_1_images, dim = 0)
-    case_1_spatial_encodings = torch.stack(case_1_spatial_encodings, dim = 0)
-    case_1_labels = torch.stack(case_1_labels, dim = 0)
-    case_2_images = torch.stack(case_2_images, dim = 0)
-    case_2_spatial_encodings = torch.stack(case_2_spatial_encodings, dim = 0)
-    case_2_labels = torch.stack(case_2_labels, dim = 0)
-    case_3_images = torch.stack(case_3_images, dim = 0)
-    case_3_labels = torch.stack(case_3_labels, dim = 0)
-    
-    case_1_dataset = torch.utils.data.TensorDataset(case_1_images, case_1_spatial_encodings, case_1_labels)
-    case_2_dataset = torch.utils.data.TensorDataset(case_2_images, case_2_spatial_encodings, case_2_labels)
-    case_3_dataset = torch.utils.data.TensorDataset(case_3_images, case_3_labels)
-
-    return case_1_dataset, case_2_dataset, case_3_dataset
-'''
 
 def separate_by_case(novelty_feature_dataset):
     case_1_images = []
@@ -589,9 +520,10 @@ def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
         
         progress.set_description(f'Fitting logistic regression... | Loss: {loss.detach().cpu().item()}')
     progress.close()
-    
+
+
 class NoveltyDetectorTrainer:
-    def __init__(self, data_root, train_csv_path, val_csv_path, val_incident_csv_path, val_environment_csv_path, retraining_batch_size, model_ = 'resnet'):
+    def __init__(self, data_root, train_csv_path, val_csv_path, val_incident_csv_path, val_environment_csv_path, retraining_batch_size):
         train_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
             name = 'Custom',
             data_root = data_root,
@@ -601,8 +533,6 @@ class NoveltyDetectorTrainer:
             backbone = None,
             cache_to_disk = True
         )
-
-        self.model_ = model_
 
         self.known_train_subject_dataset,\
             self.novel_train_subject_dataset,\
@@ -727,55 +657,22 @@ class NoveltyDetectorTrainer:
     # we might change the process to be e.g. a warm-start, shrink-and-perturb,
     # or crashing a single layer.
     def prepare_for_retraining(self, backbone, detector, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model):
-        # Construct a randomly initialized ResNet50 and transfer the weights to
-        # backbone. Do the actual weight transfer on the CPU, since it's a big
-        # network with a lot of weights and we don't want to run out of GPU
-        # memory
-        # random_backbone = resnet50(pretrained = True)
-        # random_backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], backbone.fc.weight.shape[0])
+        # Reset the backbone
+        backbone.reset()
         
-        if self.model_ == 'resnet':
-            random_backbone = resnet50(weights="IMAGENET1K_V1") # pretrained = True, 
-            random_backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
-            device = backbone.fc.weight.device
-
-        if self.model_ == 'swin_t':
-            random_backbone = swin_t(weights="IMAGENET1K_V1") # pretrained = True, 
-            random_backbone.head = torch.nn.Linear(backbone.head.weight.shape[1], 256)
-            device = backbone.head.weight.device
-
-        if self.model_ == 'swin_b':
-            random_backbone = swin_b(weights="IMAGENET1K_V1") # pretrained = True, 
-            random_backbone.head = torch.nn.Linear(backbone.head.weight.shape[1], 256)
-            device = backbone.head.weight.device
-
-        state_dict = random_backbone.state_dict()
-        backbone = backbone.to('cpu')
-        backbone.load_state_dict(state_dict)
-        backbone = backbone.to(device)
-        
-        # Randomize the classifiers and temperature scalers
-        detector.classifier.subject_classifier = torch.nn.Linear(detector.classifier.subject_classifier.weight.shape[1], detector.classifier.subject_classifier.weight.shape[0]).to(device)
-        detector.classifier.object_classifier = torch.nn.Linear(detector.classifier.object_classifier.weight.shape[1], detector.classifier.object_classifier.weight.shape[0]).to(device)
-        detector.classifier.verb_classifier = torch.nn.Linear(detector.classifier.verb_classifier.weight.shape[1], detector.classifier.verb_classifier.weight.shape[0]).to(device)
+        # Reset the classifier and confidence calibrator
+        detector.classifier.reset()
         detector.confidence_calibrator.reset()
 
-        # Construct random logistic regressions and transfer the weights
-        random_case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression().to(device)
-        case_1_logistic_regression.load_state_dict(random_case_1_logistic_regression.state_dict())
-        random_case_2_logistic_regression = noveltydetection.utils.Case2LogisticRegression().to(device)
-        case_2_logistic_regression.load_state_dict(random_case_2_logistic_regression.state_dict())
-        random_case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression().to(device)
-        case_3_logistic_regression.load_state_dict(random_case_3_logistic_regression.state_dict())
-
+        # Reset logistic regressions and statistical model
+        case_1_logistic_regression.reset()
+        case_2_logistic_regression.reset()
+        case_3_logistic_regression.reset()
         activation_statistical_model.reset()
 
     def train_epoch(self, known_subject_loader, novel_subject_loader, known_object_loader, novel_object_loader, known_verb_loader, novel_verb_loader, backbone, subject_classifier, object_classifier, verb_classifier, optimizer):
         # Determine the device to use based on the backbone's fc weights
-        if self.model_ == 'resnet':
-            device = backbone.fc.weight.device
-        if self.model_ == 'swin_t' or self.model_ == 'swin_b':        
-            device = backbone.head.weight.device
+        device = backbone.device
         
         # Set everything to train mode
         backbone.train()
@@ -975,11 +872,7 @@ class NoveltyDetectorTrainer:
             object_classifier.eval()
             verb_classifier.eval()
 
-            if self.model_ == 'resnet':
-                device = backbone.fc.weight.device
-            if self.model_ == 'swin_t' or self.model_ == 'swin_b':        
-                device = backbone.head.weight.device
-
+            device = backbone.device
             
             n_subject_examples = 0
             n_subject_correct = 0
@@ -1208,10 +1101,7 @@ class NoveltyDetectorTrainer:
         )
         backbone.eval()
 
-        if self.model_ == 'resnet':
-            device = backbone.fc.weight.device
-        if self.model_ == 'swin_t' or self.model_ == 'swin_b':        
-            device = backbone.head.weight.device
+        device = backbone.device
 
         all_features = []
         with torch.no_grad():
@@ -1251,10 +1141,7 @@ class NoveltyDetectorTrainer:
         object_calibrator.train()
         verb_calibrator.train()
 
-        if self.model_ == 'resnet':
-            device = backbone.fc.weight.device
-        if self.model_ == 'swin_t' or self.model_ == 'swin_b':        
-            device = backbone.head.weight.device
+        device = backbone.device
 
         # Extract logits to fit confidence calibration temperatures
         with torch.no_grad():
@@ -1341,10 +1228,7 @@ class NoveltyDetectorTrainer:
         case_2_logistic_regression.train()
         case_3_logistic_regression.train()
 
-        if self.model_ == 'resnet':
-            device = backbone.fc.weight.device
-        if self.model_ == 'swin_t' or self.model_ == 'swin_b':        
-            device = backbone.head.weight.device
+        device = backbone.device
 
         case_1_novelty_type_loader = torch.utils.data.DataLoader(
             self.case_1_novelty_type_dataset,

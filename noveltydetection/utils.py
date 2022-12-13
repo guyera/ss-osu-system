@@ -8,6 +8,8 @@ from enum import Enum
 from tqdm import tqdm
 from sklearn.neighbors import KernelDensity
 
+from backbone import Backbone
+
 def compute_partial_auc(nominal_scores, novel_scores):
     nominal_trues = torch.zeros_like(nominal_scores)
     novel_trues = torch.ones_like(novel_scores)
@@ -23,15 +25,13 @@ def compute_partial_auc(nominal_scores, novel_scores):
 
 
 class ActivationStatisticalModel:
-    def __init__(self, model_name):
-        self._model_name = model_name
-        if model_name == 'resnet':
-            self._kde = KernelDensity(kernel='gaussian', bandwidth=5)
-        elif model_name == 'swin_t':
-            self._kde = KernelDensity(kernel='gaussian', bandwidth=50)
-        else:
-            raise NotImplementedError()
-
+    _bandwidths = {
+        Backbone.Architecture.swin_t: 50,
+        Backbone.Architecture.resnet50: 5
+    }
+    def __init__(self, backbone_architecture):
+        self._bandwidth = self._bandwidths[backbone_architecture]
+        self._kde = KernelDensity(kernel='gaussian', bandwidth=self._bandwidth)
         self._device = None
         self._v = None
 
@@ -39,10 +39,7 @@ class ActivationStatisticalModel:
         self._features = outputs
 
     def compute_features(self, backbone, batch):
-        if self._model_name == 'resnet':
-            handle = backbone.layer4.register_forward_hook(self.forward_hook)
-        else:
-            handle = backbone.features[2].register_forward_hook(self.forward_hook)
+        handle = backbone.register_feature_hook(self.forward_hook)
         backbone(batch)
         handle.remove()
         return self._features.view(self._features.shape[0], -1)
@@ -68,18 +65,45 @@ class ActivationStatisticalModel:
 
     def reset(self):
         self._v = None
-        if self._model_name == 'resnet':
-            self._kde = KernelDensity(kernel='gaussian', bandwidth=5)
-        else:
-            self._kde = KernelDensity(kernel='gaussian', bandwidth=50)
+        self._kde = KernelDensity(kernel='gaussian', bandwidth=self._bandwidth)
 
+    def to(self, device):
+        self._device = device
+        if self._v is not None:
+            self._v = self._v.to(device)
+        return self
+
+    def state_dict(self):
+        sd = {}
+        if self._v is not None:
+            sd['v'] = self._v.to('cpu')
+        else:
+            sd['v'] = None
+        sd['kde'] = self._kde
+        return sd
+
+    def load_state_dict(self, sd):
+        self._v = sd['v']
+        self._kde = sd['kde']
+        if self._device is not None and self._v is not None:
+            self._v = self._v.to(self._device)
 
 class Case1LogisticRegression(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc = torch.nn.Linear(4, 6)
-        self.mean = torch.nn.Parameter(torch.zeros(4), requires_grad=False)
-        self.std = torch.nn.Parameter(torch.ones(4), requires_grad=False)
+        self.device = 'cpu'
+        self.reset()
+
+    def reset(self):
+        self.fc = torch.nn.Linear(4, 6).to(self.device)
+        self.mean = torch.nn.Parameter(
+            torch.zeros(4, device=self.device),
+            requires_grad=False
+        )
+        self.std = torch.nn.Parameter(
+            torch.ones(4, device=self.device),
+            requires_grad=False
+        )
 
     def forward(self, x):
         normalized = (x - self.mean) / self.std
@@ -89,13 +113,38 @@ class Case1LogisticRegression(torch.nn.Module):
     def fit_standardization_statistics(self, scores):
         self.mean[:] = scores.mean(dim=0).detach()
         self.std[:] = scores.std(dim=0).detach()
+
+    def to(self, device):
+        super().to(device)
+        self.device = device
+        return self
+
+    def state_dict(self):
+        raw_state_dict = super().state_dict()
+        return {k: v.cpu() for k, v in raw_state_dict.items()}
+
+    def load_state_dict(self, cpu_state_dict):
+        moved_state_dict = {
+            k: v.to(self.device) for k, v in cpu_state_dict.items()
+        }
+        super().load_state_dict(moved_state_dict)
 
 class Case2LogisticRegression(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc = torch.nn.Linear(3, 5)
-        self.mean = torch.nn.Parameter(torch.zeros(3), requires_grad=False)
-        self.std = torch.nn.Parameter(torch.ones(3), requires_grad=False)
+        self.device = 'cpu'
+        self.reset()
+
+    def reset(self):
+        self.fc = torch.nn.Linear(3, 5).to(self.device)
+        self.mean = torch.nn.Parameter(
+            torch.zeros(3, device=self.device),
+            requires_grad=False
+        )
+        self.std = torch.nn.Parameter(
+            torch.ones(3, device=self.device),
+            requires_grad=False
+        )
 
     def forward(self, x):
         normalized = (x - self.mean) / self.std
@@ -105,13 +154,38 @@ class Case2LogisticRegression(torch.nn.Module):
     def fit_standardization_statistics(self, scores):
         self.mean[:] = scores.mean(dim=0).detach()
         self.std[:] = scores.std(dim=0).detach()
+
+    def to(self, device):
+        super().to(device)
+        self.device = device
+        return self
+
+    def state_dict(self):
+        raw_state_dict = super().state_dict()
+        return {k: v.cpu() for k, v in raw_state_dict.items()}
+
+    def load_state_dict(self, cpu_state_dict):
+        moved_state_dict = {
+            k: v.to(self.device) for k, v in cpu_state_dict.items()
+        }
+        super().load_state_dict(moved_state_dict)
 
 class Case3LogisticRegression(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc = torch.nn.Linear(2, 4)
-        self.mean = torch.nn.Parameter(torch.zeros(2), requires_grad=False)
-        self.std = torch.nn.Parameter(torch.ones(2), requires_grad=False)
+        self.device = 'cpu'
+        self.reset()
+
+    def reset(self):
+        self.fc = torch.nn.Linear(2, 4).to(self.device)
+        self.mean = torch.nn.Parameter(
+            torch.zeros(2, device=self.device),
+            requires_grad=False
+        )
+        self.std = torch.nn.Parameter(
+            torch.ones(2, device=self.device),
+            requires_grad=False
+        )
 
     def forward(self, x):
         normalized = (x - self.mean) / self.std
@@ -121,6 +195,21 @@ class Case3LogisticRegression(torch.nn.Module):
     def fit_standardization_statistics(self, scores):
         self.mean[:] = scores.mean(dim=0).detach()
         self.std[:] = scores.std(dim=0).detach()
+
+    def to(self, device):
+        super().to(device)
+        self.device = device
+        return self
+
+    def state_dict(self):
+        raw_state_dict = super().state_dict()
+        return {k: v.cpu() for k, v in raw_state_dict.items()}
+
+    def load_state_dict(self, cpu_state_dict):
+        moved_state_dict = {
+            k: v.to(self.device) for k, v in cpu_state_dict.items()
+        }
+        super().load_state_dict(moved_state_dict)
 
 # If p_t4 is None, then it sets p_type[3] to zero and forfeits type 4 novelty.
 def compute_probability_novelty(

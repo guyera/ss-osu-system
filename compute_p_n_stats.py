@@ -2,13 +2,14 @@ import sys
 import argparse
 import numpy as np
 
-from torchvision.models import resnet50, swin_t, swin_b
 import torch
+import sklearn.metrics
+import matplotlib.pyplot as plt
+
 import unsupervisednoveltydetection
 import noveltydetectionfeatures
-import sklearn.metrics
 import noveltydetection
-import matplotlib.pyplot as plt
+from backbone import Backbone
 
 parser = argparse.ArgumentParser()
 
@@ -19,19 +20,16 @@ args = parser.parse_args()
 
 device = 'cuda:0'
 
-model_ = 'swin_t' # 'swin_t' 'swin_b'  'resnet'
+architecture = Backbone.Architecture.swin_t
+backbone = Backbone(architecture)
 
-if model_ == 'resnet': 
-    backbone = resnet50(pretrained = False)
-    backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
-if model_ == 'swin_t': 
-    backbone = swin_t() 
-    backbone.head = torch.nn.Linear(backbone.head.weight.shape[1], 256)
-if model_ == 'swin_b': 
-    backbone = swin_b() 
-    backbone.head = torch.nn.Linear(backbone.head.weight.shape[1], 256)
-
-backbone_state_dict = torch.load('unsupervisednoveltydetection/' +model_ +'_backbone_2.pth')
+pretrained_models_dir = os.path.join(
+    'pretrained-models',
+    architecture.value['name']
+)
+backbone_state_dict = torch.load(
+    os.path.join(pretrained_models_dir, 'backbone.pth')
+)
 backbone.load_state_dict(backbone_state_dict)
 backbone = backbone.to(device)
 backbone.eval()
@@ -40,10 +38,15 @@ backbone = backbone
 classifier = unsupervisednoveltydetection.ClassifierV2(256, 5, 12, 8, 72)
 detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(classifier, 5, 12, 8)
 detector = detector.to(device)
-state_dict = torch.load('unsupervisednoveltydetection/' +model_ +'_unsupervised_novelty_detection_module_2.pth')
+state_dict = torch.load(
+    os.path.join(
+        pretrained_models_dir,
+        'unsupervised_novelty_detection_module.pth'
+    )
+)
 detector.load_state_dict(state_dict['module'])
 
-activation_statistical_model = noveltydetection.utils.ActivationStatisticalModel(model_).to(device)
+activation_statistical_model = noveltydetection.utils.ActivationStatisticalModel(architecture).to(device)
 activation_statistical_model.load_state_dict(state_dict['activation_statistical_model'])
 
 testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(

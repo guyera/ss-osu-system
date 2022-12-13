@@ -5,14 +5,14 @@ from toplevel import TopLevelApp
 
 
 class OSUInterface:
-    def __init__(self, scg_ensemble, data_root, pretrained_unsupervised_novelty_path, pretrained_backbone_path, 
+    def __init__(self, scg_ensemble, data_root, pretrained_models_dir, backbone_architecture,
         feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path, val_incident_csv_path,
         val_corruption_csv_path, trial_batch_size, trial_size, retraining_batch_size, disable_retraining):
 
         self.app = TopLevelApp(ensemble_path=scg_ensemble, 
-            data_root=data_root, 
-            pretrained_unsupervised_module_path=pretrained_unsupervised_novelty_path,
-            pretrained_backbone_path=pretrained_backbone_path,
+            data_root=data_root,
+            pretrained_models_dir=pretrained_models_dir,
+            backbone_architecture=backbone_architecture,
             feedback_enabled=feedback_enabled,
             given_detection=given_detection, 
             log=log,

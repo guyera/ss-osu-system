@@ -11,9 +11,17 @@ class ClassifierV2:
             num_action_cls,
             spatial_encoding_dim):
         self.device = 'cpu'
-        self.subject_classifier = torch.nn.Linear(bottleneck_dim, num_subj_cls - 1)
-        self.object_classifier = torch.nn.Linear(bottleneck_dim, num_obj_cls - 1)
-        self.verb_classifier = torch.nn.Linear(bottleneck_dim + spatial_encoding_dim, num_action_cls - 1)
+        self.bottleneck_dim = bottleneck_dim
+        self.num_subj_cls = num_subj_cls
+        self.num_obj_cls = num_obj_cls
+        self.num_action_cls = num_action_cls
+        self.spatial_encoding_dim = spatial_encoding_dim
+        self.reset()
+
+    def reset(self):
+        self.subject_classifier = torch.nn.Linear(self.bottleneck_dim, self.num_subj_cls - 1).to(self.device)
+        self.object_classifier = torch.nn.Linear(self.bottleneck_dim, self.num_obj_cls - 1).to(self.device)
+        self.verb_classifier = torch.nn.Linear(self.bottleneck_dim + self.spatial_encoding_dim, self.num_action_cls - 1).to(self.device)
     
     def predict(self, subject_features, object_features, verb_features):
         self.subject_classifier.eval()

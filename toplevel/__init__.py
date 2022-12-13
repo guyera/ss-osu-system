@@ -13,17 +13,21 @@ from noveltydetection.utils import compute_probability_novelty
 from adaptation.query_formulation import select_queries
 import pickle
 from scipy.stats import ks_2samp
-from torchvision.models import resnet50, swin_t
 from unsupervisednoveltydetection.training import NoveltyDetectorTrainer
 
 import os
 
 
 class TopLevelApp:
-    def __init__(self, ensemble_path, data_root, pretrained_unsupervised_module_path, pretrained_backbone_path, 
+    def __init__(self, ensemble_path, data_root, pretrained_models_dir, backbone_architecture,
         feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path, val_incident_csv_path,
         val_corruption_csv_path, trial_size, trial_batch_size, retraining_batch_size, disable_retraining):
 
+        self.pretrained_backbone_path = os.path.join(
+            pretrained_models_dir,
+            backbone_architecture.value['name'],
+            'backbone.pth'
+        )
         if not Path(ensemble_path).exists():
             raise Exception(f'pretrained SCG model was not found in path {ensemble_path}')
         if not Path(pretrained_backbone_path).exists():
@@ -34,12 +38,13 @@ class TopLevelApp:
         #     raise Exception(f'validation CSV was not found in path {val_csv_path}')
         # import ipdb; ipdb.set_trace()
         self.data_root = data_root
+        self.pretrained_models_dir = pretrained_models_dir
+        self.backbone_architecture = backbone_architecture
         self.train_csv_path = train_csv_path
         self.val_csv_path = val_csv_path
         self.val_incident_csv_path = val_incident_csv_path
         self.val_corruption_csv_path = val_corruption_csv_path
         self.pretrained_backbone_path = pretrained_backbone_path
-        self.pretrained_unsupervised_module_path = pretrained_unsupervised_module_path
         self.NUM_SUBJECT_CLASSES = 5
         self.NUM_OBJECT_CLASSES = 12
         self.NUM_VERB_CLASSES = 8
@@ -111,7 +116,20 @@ class TopLevelApp:
         self.mergedprobs = []
         
                 
-        self._reset_backbone_and_detectors()
+        self.backbone = Backbone(backbone_architecture)
+        backbone_state_dict = torch.load(self.pretrained_backbone_path)
+        self.backbone.load_state_dict(backbone_state_dict)
+        self.backbone = self.backbone.to('cuda:0')
+        self.backbone.eval()
+        self.und_manager = UnsupervisedNoveltyDetectionManager(
+            self.pretrained_models_dir,
+            self.backbone_architecture,
+            self.NUM_SUBJECT_CLASSES,
+            self.NUM_VERB_CLASSES,
+            self.NUM_OBJECT_CLASSES,
+            self.NUM_SPATIAL_FEATURES,
+            0.98)
+        self.novelty_trainer = NoveltyDetectorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.val_corruption_csv_path, self.retraining_batch_size)
         
     def reset(self):
         self.post_red = False
@@ -571,31 +589,21 @@ class TopLevelApp:
         assert self.all_feedback.shape == self.all_query_masks.shape == self.all_p_ni.shape
 
     def _reset_backbone_and_detectors(self):
-        self.und_manager = UnsupervisedNoveltyDetectionManager(self.pretrained_unsupervised_module_path, 
-            self.NUM_SUBJECT_CLASSES, 
-            self.NUM_VERB_CLASSES, 
-            self.NUM_OBJECT_CLASSES, 
+        self.und_manager = UnsupervisedNoveltyDetectionManager(
+            self.pretrained_models_dir,
+            self.backbone_architecture,
+            self.NUM_SUBJECT_CLASSES,
+            self.NUM_VERB_CLASSES,
+            self.NUM_OBJECT_CLASSES,
             self.NUM_SPATIAL_FEATURES,
-            0.98)        
-        if 'resnet' in self.pretrained_backbone_path:
-            backbone = resnet50(weights= None) #resnet50(pretrained = False)  weights="IMAGENET1K_V1"
-            backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
-            backbone_state_dict = torch.load(self.pretrained_backbone_path)
-            backbone.load_state_dict(backbone_state_dict)
-            model_ = 'resnet'
-           
+            0.98)
+        self.backbone.reset()
+        backbone_state_dict = torch.load(self.pretrained_backbone_path)
+        self.backbone.load_state_dict(backbone_state_dict)
+        self.backbone = self.backbone.to('cuda:0')
+        self.backbone.eval()
 
-        if 'swin_t' in self.pretrained_backbone_path:
-            backbone = swin_t(weights= None) # pretrained = False, 
-            backbone.head = torch.nn.Linear(backbone.head.weight.shape[1], 256)
-            backbone_state_dict = torch.load(self.pretrained_backbone_path)
-            backbone.load_state_dict(backbone_state_dict)
-            model_ = 'swin_t'
-        backbone = backbone.to('cuda:0')
-        backbone.eval()
-        self.backbone = backbone
-
-        self.novelty_trainer = NoveltyDetectorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.val_corruption_csv_path, self.retraining_batch_size, model_)
+        self.novelty_trainer = NoveltyDetectorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.val_corruption_csv_path, self.retraining_batch_size)
 
     def _retrain_supervised_detectors(self):
         t_star = torch.argmax(self.p_type_dist) + 1

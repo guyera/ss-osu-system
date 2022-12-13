@@ -55,7 +55,8 @@ class BatchContext:
 
 class UnsupervisedNoveltyDetectionManager:
     def __init__(self, 
-        pretrained_path, 
+        model_dir,
+        backbone_architecture,
         num_subject_classes, 
         num_verb_classes,
         num_object_classes, 
@@ -67,15 +68,15 @@ class UnsupervisedNoveltyDetectionManager:
         classifier = ClassifierV2(256, num_subject_classes, num_object_classes, num_verb_classes, num_spatial_features)
         self.detector = UnsupervisedNoveltyDetector(classifier, num_subject_classes, num_object_classes, num_verb_classes)
         
-
+        pretrained_path = os.path.join(
+            model_dir,
+            backbone_architecture.value['name'],
+            'unsupervised_novelty_detection_module'
+        )
         state_dict = torch.load(pretrained_path)
         self.detector.load_state_dict(state_dict['module'])
         self.detector = self.detector.to('cuda:0')
-        if 'resnet' in pretrained_path:
-            model_ = 'resnet'
-        else:
-            model_ = 'swin_t'
-        self.activation_statistical_model = ActivationStatisticalModel(model_).to('cuda:0')
+        self.activation_statistical_model = ActivationStatisticalModel(backbone_architecture).to('cuda:0')
         self.activation_statistical_model.load_state_dict(state_dict['activation_statistical_model'])
         
         self.case_1_logistic_regression = Case1LogisticRegression()
