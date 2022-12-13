@@ -759,9 +759,7 @@ class NoveltyDetectorTrainer:
         detector.classifier.subject_classifier = torch.nn.Linear(detector.classifier.subject_classifier.weight.shape[1], detector.classifier.subject_classifier.weight.shape[0]).to(device)
         detector.classifier.object_classifier = torch.nn.Linear(detector.classifier.object_classifier.weight.shape[1], detector.classifier.object_classifier.weight.shape[0]).to(device)
         detector.classifier.verb_classifier = torch.nn.Linear(detector.classifier.verb_classifier.weight.shape[1], detector.classifier.verb_classifier.weight.shape[0]).to(device)
-        detector.confidence_calibrator.subject_calibrator = unsupervisednoveltydetection.common.TemperatureScaler().to(device)
-        detector.confidence_calibrator.object_calibrator = unsupervisednoveltydetection.common.TemperatureScaler().to(device)
-        detector.confidence_calibrator.verb_calibrator = unsupervisednoveltydetection.common.TemperatureScaler().to(device)
+        detector.confidence_calibrator.reset()
 
         # Construct random logistic regressions and transfer the weights
         random_case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression().to(device)

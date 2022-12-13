@@ -77,16 +77,14 @@ def main():
     # loading image_batch_size images at a time and computing features from
     # them.
     backbone = resnet50(pretrained = True)
-    training_set = unsupervisednoveltydetection.common.ReshapedNoveltyFeatureDataset(
-        noveltydetectionfeatures.NoveltyFeatureDataset(
-            name = args.dataset_name,
-            data_root = args.data_root,
-            csv_path = args.csv_path,
-            training = True,
-            image_batch_size = args.image_batch_size,
-            backbone = backbone,
-            feature_extraction_device = args.device
-        )
+    training_set = noveltydetectionfeatures.NoveltyFeatureDataset(
+        name = args.dataset_name,
+        data_root = args.data_root,
+        csv_path = args.csv_path,
+        training = True,
+        image_batch_size = args.image_batch_size,
+        backbone = backbone,
+        feature_extraction_device = args.device
     )
     
     known_svo = set()
@@ -96,7 +94,7 @@ def main():
 
     # import ipdb; ipdb.set_trace
 
-    for _, _, _, subject_label, object_label, verb_label in training_set:
+    for _, _, _, _, subject_label, object_label, verb_label, _, _, _, _ in training_set:
         if subject_label is not None and int(subject_label.item()) > 0:
             known_subject = True
         else:
