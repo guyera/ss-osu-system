@@ -62,7 +62,7 @@ def score_test(test_id, metadata, test_df, detect_lines, class_lines, class_file
                 red_button_pos = pos
         ans_nov = float(detect_line.split(',')[1]) > 0.5
         if sys_declare_pos == -1 and ans_nov:
-            sys_declare_pos = pos
+            sys_declare_pos = pos        
         corr_s = test_tuple.subject_id
         corr_o = test_tuple.object_id
         corr_v = test_tuple.verb_id
@@ -157,29 +157,36 @@ def score_tests(test_dir, sys_output_dir, session_id, class_file_reader, log_dir
         summary.write(f'              Red Decl Res Delay     -------- TOP 1 --------             -------- TOP 3 ---------   \n')
         summary.write(f'                                  Total    Pre      Post    Novel     Total    Pre     Post    Novel\n')
         for test_id in test_ids:
+            if 'OND' in test_id and '100.000' not in test_id:
 
-            metadata = json.load(open(test_dir / f'{test_id}_metadata.json', 'r'))
-            test_df = pd.read_csv(test_dir / f'{test_id}_single_df.csv')
-            test_id = test_id[4:]
+                metadata = json.load(open(test_dir / f'{test_id}_metadata.json', 'r'))
+                test_df = pd.read_csv(test_dir / f'{test_id}_single_df.csv')
+                test_id = test_id[4:]
 
-            detect_lines = []
-            class_lines = []
-            for round_ in range(20):
-                if (sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').exists():
-                    detect_lines.append(open(sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').read().splitlines())
-                    class_lines.append(open(sys_output_dir / f'{session_id}.{test_id}_{round_}_classification.csv').read().splitlines())
+                detect_lines = []
+                class_lines = []
+                for round_ in range(10):
+                    if (sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').exists():
+                        detect_lines.append(open(sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').read().splitlines())
+                        class_lines.append(open(sys_output_dir / f'{session_id}.{test_id}_{round_}_classification.csv').read().splitlines())
+                        
+                    else:
+                        print(f'No results found for Test {session_id}.{test_id}_{round_}.')
+                detect_lines = np.concatenate(detect_lines)
+
+                class_lines = np.concatenate(class_lines)
+                
+                # if (sys_output_dir / f'{session_id}.{test_id}_detection.csv').exists():
+                #     detect_lines = open(sys_output_dir / f'{session_id}.{test_id}_detection.csv').read().splitlines()
+                #     class_lines = open(sys_output_dir / f'{session_id}.{test_id}_classification.csv').read().splitlines()
                     
-                else:
-                    print(f'No results found for Test {session_id}.{test_id}_{round_}.')
-            # import ipdb; ipdb.set_trace()
+                # else:
+                #     print(f'No results found for Test {session_id}.{test_id}_.')
+                
 
-            detect_lines = np.concatenate(detect_lines)
-
-            class_lines = np.concatenate(class_lines)
-
-            with open(log_dir / f'{test_id}.log', 'w') as log:
-                        score_test(test_id, metadata, test_df, detect_lines, class_lines, class_file_reader,
-                                log, summary, stats)
+                with open(log_dir / f'{test_id}.log', 'w') as log:
+                            score_test(test_id, metadata, test_df, detect_lines, class_lines, class_file_reader,
+                                    log, summary, stats)
             
             # for round_ in range(19):
             #     if (sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').exists():

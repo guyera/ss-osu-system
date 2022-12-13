@@ -47,8 +47,8 @@ activation_statistical_model.load_state_dict(state_dict['activation_statistical_
 
 testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
     name = 'Custom',
-    data_root = 'Custom',
-    csv_path = 'Custom/annotations/dataset_v4_val.csv',
+    data_root = './',
+    csv_path = 'dataset_v4/dataset_v4_2_val.csv',
     training = False,
     image_batch_size = 16,
     backbone = backbone,
@@ -57,8 +57,8 @@ testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
 
 incident_set = noveltydetectionfeatures.NoveltyFeatureDataset(
     name = 'Custom',
-    data_root = 'Custom',
-    csv_path = 'Custom/annotations/dataset_v4_val_incident.csv',
+    data_root = './',
+    csv_path = 'dataset_v4/dataset_v4_2_cal_incident.csv',
     training = False,
     image_batch_size = 16,
     backbone = backbone,
@@ -324,8 +324,8 @@ case_3_logistic_regression = case_3_logistic_regression.to(device)
 #p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = True, p_t4 = None)
 #p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = True, p_t4 = p_t4)
 #p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = None)
-p_type, p_n = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, activation_statistical_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = p_t4, hint_a=args.hint_a, hint_b=hint_b) # This gives the best results (thankfully)
-incident_p_type, incident_p_n = noveltydetection.utils.compute_probability_novelty(incident_subject_scores, incident_verb_scores, incident_object_scores, incident_activation_statistical_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = incident_p_t4, hint_a=args.hint_a, hint_b=incident_hint_b)
+p_type, p_n, separated_p_type = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, activation_statistical_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = p_t4, hint_a=args.hint_a, hint_b=hint_b) # This gives the best results (thankfully)
+incident_p_type, incident_p_n, incident_separated_p_type = noveltydetection.utils.compute_probability_novelty(incident_subject_scores, incident_verb_scores, incident_object_scores, incident_activation_statistical_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = incident_p_t4, hint_a=args.hint_a, hint_b=incident_hint_b)
 print(p_type)
 print(incident_p_type)
 

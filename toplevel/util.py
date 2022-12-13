@@ -105,7 +105,8 @@ class UnsupervisedNoveltyDetectionManager:
                 object_box_features.append(object_feature)
                 verb_box_features.append(verb_feature)
 
-            op = ThresholdTrialLevelPType(trial_p_type, self.p_type_alpha)
+            # op = ThresholdTrialLevelPType(trial_p_type, self.p_type_alpha)
+            op = None
         
             top3 = self.detector.top3(spatial_features, subject_box_features, verb_box_features, 
                 object_box_features, batch_p_type, op)
@@ -132,7 +133,7 @@ class UnsupervisedNoveltyDetectionManager:
 
             top3['top3'][i] = new_p
                 
-        top3_merged = self.detector.merge_predictions(scg_predictions,top3['t67'], top3['cases'], top3['top3'], p_ni)
+        top3_merged = self.detector.merge_predictions(scg_predictions, top3['t67'], top3['cases'], top3['top3'], p_ni)
             
         return top3_merged   
 

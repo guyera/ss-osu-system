@@ -466,7 +466,15 @@ def to_case_3_novelty_type_dataset(case_3_dataset):
         type_labels
     )
 
-def to_case_1_incident_novelty_type_dataset(case_1_incident_dataset):
+def to_case_1_phase_3_novelty_type_dataset(
+        case_1_incident_dataset,
+        incident_or_environment):
+    assert incident_or_environment in ['incident', 'environment']
+    if incident_or_environment == 'incident':
+        incident = True
+    else:
+        incident = False
+
     # Get all data from the TensorDataset
     images, spatial_encodings, labels = case_1_incident_dataset[:]
     
@@ -488,7 +496,7 @@ def to_case_1_incident_novelty_type_dataset(case_1_incident_dataset):
     # Construct incident novelty type labels
     type_labels = torch.full(
         (valid_images.shape[0],),
-        4,
+        4 if incident else 5,
         dtype=torch.long,
         device=valid_images.device
     )
@@ -499,7 +507,14 @@ def to_case_1_incident_novelty_type_dataset(case_1_incident_dataset):
         type_labels
     )
 
-def to_case_2_incident_novelty_type_dataset(case_2_incident_dataset):
+def to_case_2_phase_3_novelty_type_dataset(
+        case_2_incident_dataset,
+        incident_or_environment):
+    assert incident_or_environment in ['incident', 'environment']
+    if incident_or_environment == 'incident':
+        incident = True
+    else:
+        incident = False
     # Get all data from the TensorDataset
     images, spatial_encodings, labels = case_2_incident_dataset[:]
     
@@ -518,7 +533,7 @@ def to_case_2_incident_novelty_type_dataset(case_2_incident_dataset):
     # Construct incident novelty type labels
     type_labels = torch.full(
         (valid_images.shape[0],),
-        3,
+        3 if incident else 4,
         dtype=torch.long,
         device=valid_images.device
     )
@@ -529,7 +544,14 @@ def to_case_2_incident_novelty_type_dataset(case_2_incident_dataset):
         type_labels
     )
 
-def to_case_3_incident_novelty_type_dataset(case_3_incident_dataset):
+def to_case_3_phase_3_novelty_type_dataset(
+        case_3_incident_dataset,
+        incident_or_environment):
+    assert incident_or_environment in ['incident', 'environment']
+    if incident_or_environment == 'incident':
+        incident = True
+    else:
+        incident = False
     # Get all data from the TensorDataset
     images, o_labels = case_3_incident_dataset[:]
     
@@ -543,7 +565,7 @@ def to_case_3_incident_novelty_type_dataset(case_3_incident_dataset):
     # Construct incident novelty type labels
     type_labels = torch.full(
         (valid_images.shape[0],),
-        2,
+        2 if incident else 3,
         dtype=torch.long,
         device=valid_images.device
     )
@@ -570,7 +592,7 @@ def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
     progress.close()
     
 class NoveltyDetectorTrainer:
-    def __init__(self, data_root, train_csv_path, val_csv_path, val_incident_csv_path, retraining_batch_size, model_ = 'resnet'):
+    def __init__(self, data_root, train_csv_path, val_csv_path, val_incident_csv_path, val_environment_csv_path, retraining_batch_size, model_ = 'resnet'):
         train_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
             name = 'Custom',
             data_root = data_root,
@@ -633,31 +655,49 @@ class NoveltyDetectorTrainer:
         )
         
         case_1_val_incident_dataset, case_2_val_incident_dataset, case_3_val_incident_dataset = separate_by_case(val_incident_dataset)
-        case_1_val_incident_novelty_type_dataset = to_case_1_incident_novelty_type_dataset(case_1_val_incident_dataset)
-        case_2_val_incident_novelty_type_dataset = to_case_2_incident_novelty_type_dataset(case_2_val_incident_dataset)
-        case_3_val_incident_novelty_type_dataset = to_case_3_incident_novelty_type_dataset(case_3_val_incident_dataset)
+        case_1_val_incident_novelty_type_dataset = to_case_1_phase_3_novelty_type_dataset(case_1_val_incident_dataset, 'incident')
+        case_2_val_incident_novelty_type_dataset = to_case_2_phase_3_novelty_type_dataset(case_2_val_incident_dataset, 'incident')
+        case_3_val_incident_novelty_type_dataset = to_case_3_phase_3_novelty_type_dataset(case_3_val_incident_dataset, 'incident')
+
+        val_environment_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
+            name = 'Custom',
+            data_root = data_root,
+            csv_path = val_environment_csv_path,
+            training = False,
+            image_batch_size = 512,
+            backbone = None,
+            cache_to_disk = True
+        )
+        
+        case_1_val_environment_dataset, case_2_val_environment_dataset, case_3_val_environment_dataset = separate_by_case(val_environment_dataset)
+        case_1_val_environment_novelty_type_dataset = to_case_1_phase_3_novelty_type_dataset(case_1_val_environment_dataset, 'environment')
+        case_2_val_environment_novelty_type_dataset = to_case_2_phase_3_novelty_type_dataset(case_2_val_environment_dataset, 'environment')
+        case_3_val_environment_novelty_type_dataset = to_case_3_phase_3_novelty_type_dataset(case_3_val_environment_dataset, 'environment')
 
         case_1_all_novelty_type_dataset = torch.utils.data.ConcatDataset((
             case_1_val_novelty_type_dataset,
-            case_1_val_incident_novelty_type_dataset
+            case_1_val_incident_novelty_type_dataset,
+            case_1_val_environment_novelty_type_dataset
         ))
         case_2_all_novelty_type_dataset = torch.utils.data.ConcatDataset((
             case_2_val_novelty_type_dataset,
-            case_2_val_incident_novelty_type_dataset
+            case_2_val_incident_novelty_type_dataset,
+            case_2_val_environment_novelty_type_dataset
         ))
         case_3_all_novelty_type_dataset = torch.utils.data.ConcatDataset((
             case_3_val_novelty_type_dataset,
-            case_3_val_incident_novelty_type_dataset
+            case_3_val_incident_novelty_type_dataset,
+            case_3_val_environment_novelty_type_dataset
         ))
 
         # Balance the case-separated data by novelty type
         # TODO switch to a class-weighted sampler in the data loader rather
         # than taking a constant subset of the data points
-        case_1_novelty_type_proportions = [0.5, 0.125, 0.125, 0.125, 0.125]
+        case_1_novelty_type_proportions = [0.5, 0.1, 0.1, 0.1, 0.1, 0.1]
         self.case_1_novelty_type_dataset = custom_class_balance(case_1_all_novelty_type_dataset, case_1_novelty_type_proportions)
-        case_2_novelty_type_proportions = [0.5, 0.167, 0.167, 0.167]
+        case_2_novelty_type_proportions = [0.5, 0.125, 0.125, 0.125, 0.125]
         self.case_2_novelty_type_dataset = custom_class_balance(case_2_all_novelty_type_dataset, case_2_novelty_type_proportions)
-        case_3_novelty_type_proportions = [0.5, 0.25, 0.25]
+        case_3_novelty_type_proportions = [0.5, 0.167, 0.167, 0.167]
         self.case_3_novelty_type_dataset = custom_class_balance(case_3_all_novelty_type_dataset, case_3_novelty_type_proportions)
 
         self.feedback_data = None
@@ -1089,7 +1129,7 @@ class NoveltyDetectorTrainer:
         # Define convergence parameters (early stopping + model selection)
         patience = 3
         epochs_since_improvement = 0
-        max_epochs = 5
+        max_epochs = 30
         min_epochs = 4
         best_accuracy = None
         best_accuracy_backbone_state_dict = None

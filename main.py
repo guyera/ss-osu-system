@@ -13,28 +13,31 @@ if __name__ == "__main__":
     p.add_argument('--pretrained-backbone-path', default='./unsupervisednoveltydetection/backbone_2.pth')
     p.add_argument('--api-stubs', action='store_true')
     p.add_argument('--log', action='store_true')
-    p.add_argument('--log-dir', default='./logs')
+    p.add_argument('--log-dir', default='./logsDete10')
     p.add_argument('--ignore-verb-novelty', default=False, action='store_true')
     p.add_argument('--detection-feedback', action='store_true')
     p.add_argument('--given-detection', default=False, action='store_true')
     p.add_argument('--train-csv-path', default='./dataset_v4/dataset_v4_2_train.csv')
     p.add_argument('--val-csv-path', default='./dataset_v4/dataset_v4_2_val.csv')
-    p.add_argument('--val-incident-csv-path', default='./dataset_v4/dataset_v4_2_cal_incident_corruption.csv')
-    p.add_argument('--trial-size', type=int, default=600)
+    p.add_argument('--val-incident-csv-path', default='./dataset_v4/dataset_v4_2_cal_incident.csv')
+    p.add_argument('--val-corruption-csv-path', default='./dataset_v4/dataset_v4_2_cal_corruption.csv')
+    p.add_argument('--trial-size', type=int, default=200)
     p.add_argument('--trial-batch-size', type=int, default=10)
     p.add_argument('--retraining-batch-size', type=int, default=80)
     p.add_argument('--disable-retraining', default=False, action='store_true')
     p.add_argument('--api-dir', default='./session/api')
     p.add_argument('--tests-dir', default='./session/tests')
-    p.add_argument('--url', default='http://localhost:6789')
+    p.add_argument('--url', default='http://localhost:8002')
     p.add_argument('--class_count', type=int, default=29)
     p.add_argument('--batch_size', type=int, default=4)
     p.add_argument('--domain', default='svo_classification')
     p.add_argument('--classification_feedback', action="store_true")
     p.add_argument('--detector_seed', type=int, default=1234)
     p.add_argument('--version', default='101')
-    p.add_argument('--sys_results_dir', default='./session/temp/sys_results_test')
+    p.add_argument('--sys_results_dir', default='./session/temp/SVO_10_test_trials_csv60_with_detection_feedback')
     p.add_argument('--test_ids', nargs="+", default=None)
+    p.add_argument('--hintA', default= False)
+    p.add_argument('--hintB', default= False)
     
     args = p.parse_args()
 
@@ -62,6 +65,7 @@ if __name__ == "__main__":
         train_csv_path=args.train_csv_path,
         val_csv_path=args.val_csv_path,
         val_incident_csv_path=args.val_incident_csv_path,
+        val_corruption_csv_path=args.val_corruption_csv_path,
         trial_size=args.trial_size,
         trial_batch_size=args.trial_batch_size,
         retraining_batch_size=args.retraining_batch_size,
@@ -74,6 +78,6 @@ if __name__ == "__main__":
         args.given_detection, args.data_root,
         args.sys_results_dir, args.url, args.batch_size,
         args.version, detection_threshold,
-        api, osu_int)
+        api, osu_int, args.hintA, args.hintB)
         
     test_session.run(args.detector_seed, args.test_ids)

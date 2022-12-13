@@ -9,12 +9,11 @@ from session.api_stubs import APIStubs
 import itertools
 import numpy as np
 
-
 class BBNSession:
     def __init__(self, protocol, domain, class_count, class_fb, detection_fb, given_detection,
                  image_directory, results_directory, api_url,
                  batch_size, version, detection_threshold,
-                 api_stubs, osu_interface):
+                 api_stubs, osu_interface, hintA, hintB):
 
         # self.agent = Agent(config['detectormodelpath'],
         #                    config['classifiermodelpath'],
@@ -48,6 +47,8 @@ class BBNSession:
         self.num_subject_classes = 5
         self.num_object_classes = 12
         self.num_verb_classes = 8
+        self.hintA = hintA
+        self.hintB = hintB
 
         # Turn this to True to get readable (S,O,V) triples for our top-3 in classification output.
         # Default is to get the 945 floats that UMD is requesting. 
@@ -130,8 +131,46 @@ class BBNSession:
 
             if set(returned_ids) != set(feedback_ids):
                 raise Exception('feedback returned ids not matching requested')
-            
+                       
             return [(id, val) for (id, val) in zip(returned_ids, returned_answers)]
+
+    def request_hint_typeA(self, session_id, test_id):
+        print(f'====> Asking for hint on test_id {test_id}')
+
+        response = requests.get(
+            f'{self.url}/session/hint',
+            {'session_id': session_id,
+                'test_id': test_id,
+                'hint_type': 'typeA',
+                }
+        )
+
+        data = response.content.decode('utf-8').split('\n')
+        # import ipdb; ipdb.set_trace()
+
+        print("TYPE A HINT ==> ")
+        print(data)
+
+        return data
+
+    def request_hint_typeB(self, session_id, test_id, round_id):
+        print(f'====> Asking for hint on test_id {test_id}')
+
+        response = requests.get(
+            f'{self.url}/session/hint',
+            {'session_id': session_id,
+                'test_id': test_id,
+                'round_id': round_id,
+                'hint_type': 'typeB',
+                }
+        )
+
+        data = response.content.decode('utf-8').split('\n')
+        # print("TYPE B HINT ==> ")
+        # print(data)
+
+        return data
+
 
     # def force_to_missing(self, s, v, o, missing_s, missing_o, free_s, free_v, free_o):
     #     """Force our answer to be consistent with missing_s and missing_o"""
@@ -189,7 +228,6 @@ class BBNSession:
         # self.history.add(filename, round_id, red_light, image_novelty_score, red_light_score,
         #                  classification_probs, top_layer)
 
-        # import ipdb; ipdb.set_trace()
         if self.probs_debug_format:
             output_probs = predicted_probs
         else:
@@ -284,7 +322,8 @@ class BBNSession:
 
                 # Need to remove possible final empty strings
                 test_ids = [test_id for test_id in test_ids if test_id.strip("\n\t\"',.") != ""]
-
+        
+        # import ipdb; ipdb.set_trace()
         self.hints = []
         if self.detection_fb:
             self.hints.append('novelty_instance_detection')
@@ -299,15 +338,15 @@ class BBNSession:
                     'novelty_detector_version': self.version,
                     'test_ids': test_ids,
                     'domain': self.domain,
-                    'hints': self.hints,
+                    # 'hints': self.hints,
                     'detection_threshold': self.detection_threshold, #self.detection_threshold,
-                    # 'hints': ['red_light' if given_detection else '']
+                    'hints': ['red_light' if self.given_detection else '']
                 }
             })
             session_id = ast.literal_eval(response.content.decode('utf-8'))['session_id']
-
         if self.osu_stubs:
             self.osu_stubs.start_session(session_id, detection_feedback=True, classification_feedback=False, given_detection=self.given_detection)
+
 
         print(f"=> initialized session: {session_id}")
 
@@ -332,14 +371,29 @@ class BBNSession:
     def run_test(self, session_id, test_id):
 
         # self.history = TestHistory()
-
+        # Request Hint Type A for given session Id and Test Id --> [test_id, kind_of_novelty]  
+        if self.hintA:      
+            hint_typeA = self.request_hint_typeA(session_id, test_id)[0].split(',')[-1]
+            if hint_typeA == 'object':
+                hint_typeA_data = 3
+            elif hint_typeA == 'event':
+                hint_typeA_data = 6
+            elif hint_typeA == 'environment':
+                hint_typeA_data = 7
+            elif hint_typeA == 'type0':
+                hint_typeA_data = 0
+            else: 
+                hint_typeA_data = None
+        else:
+            hint_typeA_data = None
+        print('Hint A is : ',hint_typeA_data)
         if self.api_stubs:
             metadata = self.api_stubs.get_metadata(test_id)
         else:
             metadata = ast.literal_eval(requests.get(
                 f"{self.url}/test/metadata?session_id={session_id}&test_id={test_id}")
                                         .content.decode('utf-8'))
-
+        print(metadata)
         if self.osu_stubs:
             self.osu_stubs.start_test(test_id)
 
@@ -355,10 +409,21 @@ class BBNSession:
 
         round_id = 0
 
+        # Request Hint Type A for given session Id, Test Id and round_id --> ['fname, 0/1', ... ]
+        
+        hintsBList = []
         while True:
             image_data = None
             filenames = None
+            if self.given_detection and self.hintB:
+                hint_typeB_data = self.request_hint_typeB(session_id, test_id, round_id)
+                hint_typeB_data = [bool(int(hint.split(',')[-1])) for hint in hint_typeB_data[:-1]]
+                print(hint_typeB_data)
+            else:
+                hint_typeB_data = None
 
+            hintsBList.append(hint_typeB_data)
+            
             if self.api_stubs:
                 image_data = self.api_stubs.image_data(test_id, round_id)
                 
@@ -398,12 +463,16 @@ class BBNSession:
                     image_path = image_data[0]
                     image_paths.append(image_path)
                     bbox_info = ','.join(image_data[1])
+
                     # The image width and height used to be supplied, and so are expected,
                     # but not used. They are supplied here as zeros. 
                     image_line = ','.join([image_path,'0', '0', bbox_info])
+                    # image_line = ','.join([image_path, bbox_info])
+
                     image_lines.append(image_line)
                 image_data = '\n'.join(image_lines)
                 ## Lance
+
 
                 ## GD
                 if self.given_detect_red_light_round is None and self.given_detection and (red_light_image in image_paths):
@@ -412,6 +481,7 @@ class BBNSession:
                 ## GDD
                 # if self.given_detect_red_light_round == round_id:
                 #     print(f' **** Turned on given_detect_red_light_round on round {round_id}')
+            
 
             detection_filename = os.path.join(
                 self.results_directory, "%s_%s_%s_detection.csv" % (session_id, test_id, round_id))
@@ -433,11 +503,10 @@ class BBNSession:
                     self.osu_stubs.given_detect_red_light(red_light_image)
                     # GDD
                     # print(f' **** Called osu_stubs.given_detect_red_light during round {round_id}')
-                novelty_preds, svo_preds = self.osu_stubs.process_round(test_id, round_id, image_data)
+                novelty_preds, svo_preds = self.osu_stubs.process_round(test_id, round_id, image_data, hint_typeA_data, hint_typeB_data)
                 novelty_lines = novelty_preds.splitlines()
                 svo_lines = svo_preds.splitlines()
 
-                # import ipdb; ipdb.set_trace()
                 
                 filenames = []
                 for (novelty_line, svo_line, image_line) in zip(novelty_lines, svo_lines, image_lines):
@@ -455,12 +524,18 @@ class BBNSession:
                     else:
                         if float(red_light_str) > 0.5:
                             red_light_declared = True
+                    
+                    
                         
                     missing_s, missing_o = self.check_for_missing(image_line)
                     self.write_file_entries(novelty_image_path, detection_file, classification_file,
                                             svo_preds, float(red_light_str), float(per_image_nov_str),
                                             round_id, red_light_declared,
                                             missing_s, missing_o)
+                if red_light_declared:
+                    self.osu_stubs.record_type67()
+                else:                        
+                    self.osu_stubs.record_type0()
             else:
                 pass
 
@@ -470,7 +545,6 @@ class BBNSession:
             ### LAR useful trace
             # print(f'===> Submitting results with test_type: {self.history.test_type}')
             # import ipdb; ipdb.set_trace()
-
             if self.api_stubs:
                 self.api_stubs.record_results(test_id, round_id,
                                          open(detection_filename, 'r').read(),
@@ -486,42 +560,44 @@ class BBNSession:
                     'detection_file': open(detection_filename, "r"),
                     'classification_file': open(classification_filename, "r")
                 })
-
+                        
             ## Handle classification feedback
-            if self.class_fb and red_light_declared:
-                feedback_ids = self.osu_stubs.choose_classification_feedback_ids(filenames, feedback_max_ids)
-                class_feedback_results = self.request_class_feedback(session_id, test_id, round_id, feedback_ids)
-                # self.record_feedback_stub(feedback_results)
-                # self.history.record_feedback(known_count, novel_count)
+            if self.detection_fb or self.class_fb:
+                if self.class_fb and red_light_declared:
+                    feedback_ids = self.osu_stubs.choose_classification_feedback_ids(filenames, feedback_max_ids)
+                    class_feedback_results = self.request_class_feedback(session_id, test_id, round_id, feedback_ids)
+                    # self.record_feedback_stub(feedback_results)
+                    # self.history.record_feedback(known_count, novel_count)
 
-            ## Handle detection feedback
-            if (self.detection_fb or self.given_detection) and red_light_declared:
-                # Lance: It should be OK to always call choose_detection_feedback_ids
-                # if self.given_detection:
-                #     feedback_ids = filenames
-                # else:
-                #     feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
-                #                                                           filenames, feedback_max_ids)
+                ## Handle detection feedback
+                if (self.detection_fb or self.given_detection) and red_light_declared:
+                    # Lance: It should be OK to always call choose_detection_feedback_ids
+                    # if self.given_detection:
+                    #     feedback_ids = filenames
+                    # else:
+                    #     feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
+                    #                                                           filenames, feedback_max_ids)
 
-                # GDD
-                # if self.given_detection:
-                #     print(f' **** About to call choose_detection_feedback_ids, round {round_id}')
+                    # GDD
+                    # if self.given_detection:
+                    #     print(f' **** About to call choose_detection_feedback_ids, round {round_id}')
+                    
+                    num_ids_to_request = len(filenames) if self.given_detection else feedback_max_ids
+                    feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
+                                                                                filenames, num_ids_to_request)
+                    detection_feedback_results = self.request_detection_feedback(session_id, test_id, round_id,
+                                                                                feedback_ids)
 
-                num_ids_to_request = len(filenames) if self.given_detection else feedback_max_ids
-                feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
-                                                                            filenames, num_ids_to_request)
-                detection_feedback_results = self.request_detection_feedback(session_id, test_id, round_id,
-                                                                             feedback_ids)
-                self.osu_stubs.record_detection_feedback(test_id, round_id, detection_feedback_results)
+                    self.osu_stubs.record_detection_feedback(test_id, round_id, detection_feedback_results)
 
-            ## LAR
-            ## Write characterization files after every round for experimental testing.
-            # characterization_filename = os.path.join(
-            #     self.results_directory, "%s_%s_%s_characterization_round.csv" % (session_id, test_id, round_id))
-            # compute_and_write_clusters(self.history, characterization_filename, max_novel_classes,
-            #                            min(max_novel_classes, self.bbn_max_clusters),
-            #                            self.bbn_min_novel_frac)
-            ## LAR
+                ## LAR
+                ## Write characterization files after every round for experimental testing.
+                # characterization_filename = os.path.join(
+                #     self.results_directory, "%s_%s_%s_characterization_round.csv" % (session_id, test_id, round_id))
+                # compute_and_write_clusters(self.history, characterization_filename, max_novel_classes,
+                #                            min(max_novel_classes, self.bbn_max_clusters),
+                #                            self.bbn_min_novel_frac)
+                ## LAR
 
             round_id += 1
 
@@ -544,6 +620,8 @@ class BBNSession:
         #     })
         #     print(response)
         #     print('==> sent characterization file')
+        # np.savetxt(test_id + "HintsB.csv", np.array(hintsBList), delimiter=",")
+
 
         if self.api_stubs:
             self.api_stubs.finish_test(test_id)
@@ -552,7 +630,7 @@ class BBNSession:
         else:
             test_end_response = requests.delete(
                 f"{self.url}/test?session_id={session_id}&test_id={test_id}")
-            # print(f'==> test end response: {test_end_response}')
+            print(f'==> test end response: {test_end_response}')
         if self.osu_stubs:
             self.osu_stubs.end_test(test_id)
 

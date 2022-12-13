@@ -703,6 +703,8 @@ class UnsupervisedNoveltyDetector:
             #      + P(S=s, V=v, O=o, not novel)
             #  = P(S=s, V=v, O=o | novel) * P(novel)
             #      + P(S=s, V=v, O=o, not novel) * P(not novel)
+
+
             merged_tuple_predictions = \
                 example_p_n * example_novelty_t67_predictions + \
                     (1 - example_p_n) * example_scg_predictions.to('cuda:0')
@@ -828,6 +830,9 @@ class UnsupervisedNoveltyDetector:
         verb_probs = []
         object_scores = []
         object_probs = []
+        example_subject_probs = None
+        example_verb_probs = None
+        example_object_probs = None
         for idx in range(len(spatial_features)):
             example_spatial_features = spatial_features[idx]
             example_subject_appearance_features = subject_appearance_features[idx]

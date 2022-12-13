@@ -213,6 +213,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
             verb_images = list()
             whole_images = list()
             
+
             for images, detections, targets in data_loader:
                 original_image_sizes = [img.shape[-2:] for img in images]
                 images, targets = i_transform(images, targets)
@@ -256,6 +257,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                     object_labels.append(object_label)
                     verb_labels.append(verb_label)
                     
+
                     if detection['subject_boxes'] is not None and detection['object_boxes'] is not None:
                         s_xmin, s_ymin, s_xmax, s_ymax = detection['subject_boxes'][0]
                         r_s_xmin, r_s_ymin, r_s_xmax, r_s_ymax = torch.round(
@@ -345,6 +347,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                         verb_images.append(None)
                         whole_images.append(box_transform(image_tensors[b_idx]))
                     else:
+                        import ipdb; ipdb.set_trace()
                         box_pair_spatial.append(None)
                         subject_roi_features.append(None)
                         object_roi_features.append(None)
