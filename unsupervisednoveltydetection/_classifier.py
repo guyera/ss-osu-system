@@ -198,6 +198,7 @@ class ClassifierV2:
         self.subject_classifier = self.subject_classifier.to(device)
         self.object_classifier = self.object_classifier.to(device)
         self.verb_classifier = self.verb_classifier.to(device)
+        self.confidence_calibrator = self.confidence_calibrator.to(device)
         return self
     
     def state_dict(self):
@@ -205,6 +206,8 @@ class ClassifierV2:
         state_dict['subject_classifier'] = _state_dict(self.subject_classifier)
         state_dict['object_classifier'] = _state_dict(self.object_classifier)
         state_dict['verb_classifier'] = _state_dict(self.verb_classifier)
+        state_dict['confidence_calibrator'] =\
+            self.confidence_calibrator.state_dict()
         return state_dict
 
     def load_state_dict(self, state_dict):
@@ -219,4 +222,7 @@ class ClassifierV2:
         _load_state_dict(
             self.verb_classifier,
             state_dict['verb_classifier']
+        )
+        self.confidence_calibrator.load_state_dict(
+            state_dict['confidence_calibrator']
         )

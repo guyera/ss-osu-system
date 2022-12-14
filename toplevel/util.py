@@ -66,7 +66,7 @@ class UnsupervisedNoveltyDetectionManager:
         self.p_type_alpha = p_type_alpha
 
         self.classifier = ClassifierV2(256, num_subject_classes, num_object_classes, num_verb_classes, num_spatial_features)
-        self.detector = UnsupervisedNoveltyDetector(classifier, num_subject_classes, num_object_classes, num_verb_classes)
+        self.detector = UnsupervisedNoveltyDetector(num_subject_classes, num_object_classes, num_verb_classes)
         
         pretrained_path = os.path.join(
             model_dir,
@@ -74,6 +74,8 @@ class UnsupervisedNoveltyDetectionManager:
             'unsupervised_novelty_detection_module'
         )
         state_dict = torch.load(pretrained_path)
+        self.classifier.load_state_dict(state_dict['module']['classifier'])
+        self.classifier = self.classifier.to('cuda:0')
         self.detector.load_state_dict(state_dict['module'])
         self.detector = self.detector.to('cuda:0')
         self.activation_statistical_model = ActivationStatisticalModel(backbone_architecture).to('cuda:0')
@@ -94,29 +96,12 @@ class UnsupervisedNoveltyDetectionManager:
     def get_calibrators(self):
         return self.case_1_logistic_regression, self.case_2_logistic_regression, self.case_3_logistic_regression
 
-    def top3(self, backbone, dataset, batch_p_type, trial_p_type, scg_predictions, p_ni):
-        spatial_features = []
-        subject_box_features = []
-        object_box_features = []
-        verb_box_features = []
-        
+    def top3(self, subject_probs, verb_probs, object_probs, batch_p_type, scg_predictions, p_ni):
         with torch.no_grad():
-            for example_spatial_features, _, _, _, _, _, _, example_subject_images, example_object_images, example_verb_images, whole_images in dataset:
-                spatial_feature = example_spatial_features if example_spatial_features is not None else None
-                subject_feature = backbone(example_subject_images.unsqueeze(0)).squeeze(0) if example_subject_images is not None else None
-                object_feature = backbone(example_object_images.unsqueeze(0)).squeeze(0) if example_object_images is not None else None
-                verb_feature = backbone(example_verb_images.unsqueeze(0)).squeeze(0) if example_verb_images is not None else None
-                
-                spatial_features.append(spatial_feature)
-                subject_box_features.append(subject_feature)
-                object_box_features.append(object_feature)
-                verb_box_features.append(verb_feature)
+            top3 = self.detector.top3(subject_probs, verb_probs, object_probs, batch_p_type)
 
-            top3 = self.detector.top3(spatial_features, subject_box_features, verb_box_features, 
-                object_box_features, batch_p_type)
-                        
-        assert not any([any([torch.isnan(p[1]) for p in preds]) for preds in top3['top3']]), "NaNs in unsupervied detector's top-3"
-                
+        assert not any([any([torch.isnan(p[1]) for p in preds]) for preds in top3['top3']]), "NaNs in unsupervised detector's top-3"
+
         for i, p in enumerate(top3['top3']):
             new_p = []
             for j in range(3):
@@ -127,7 +112,7 @@ class UnsupervisedNoveltyDetectionManager:
                     for k in range(3):
                         if new_svo[k] is not None and type(new_svo[k]) == torch.Tensor:
                             new_svo[k] = new_svo[k].item()
-                    
+
                     e = (tuple(new_svo), e[1])
 
                 else: 
@@ -136,9 +121,9 @@ class UnsupervisedNoveltyDetectionManager:
                 new_p.append(e)
 
             top3['top3'][i] = new_p
-                
+
         top3_merged = self.detector.merge_predictions(scg_predictions, top3['t67'], top3['cases'], top3['top3'], p_ni)
-            
+
         return top3_merged   
 
     def score(self, backbone, dataset):
@@ -176,6 +161,9 @@ class UnsupervisedNoveltyDetectionManager:
             results['subject_novelty_score'] = subject_scores
             results['verb_novelty_score'] = verb_scores
             results['object_novelty_score'] = object_scores
+            results['subject_probs'] = subject_probs
+            results['verb_probs'] = verb_probs
+            results['object_probs'] = object_probs
             p_t4 = self.detector.p_t4(subject_probs, verb_probs, object_probs)
             results['p_t4'] = p_t4
 

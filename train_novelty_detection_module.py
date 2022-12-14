@@ -14,7 +14,8 @@ backbone = Backbone(architecture)
 backbone = backbone.to(device)
 
 classifier = unsupervisednoveltydetection.ClassifierV2(256, 5, 12, 8, 72)
-detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(classifier, 5, 12, 8)
+classifier = classifier.to(device)
+detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(5, 12, 8)
 detector = detector.to(device)
 
 case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression().to(device)
@@ -32,8 +33,7 @@ end_time = time.time()
 print(f'Time: {end_time - start_time}')
 
 detector_state_dicts = {}
-detector_state_dicts['classifier'] = detector.classifier.state_dict()
-detector_state_dicts['confidence_calibrator'] = detector.confidence_calibrator.state_dict()
+detector_state_dicts['classifier'] = classifier.state_dict()
 with open('known_combinations.pth', 'rb') as f:
     known_combinations = pickle.load(f)
 detector_state_dicts['known_combinations'] = known_combinations

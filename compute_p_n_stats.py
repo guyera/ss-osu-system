@@ -36,7 +36,8 @@ backbone.eval()
 backbone = backbone
 
 classifier = unsupervisednoveltydetection.ClassifierV2(256, 5, 12, 8, 72)
-detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(classifier, 5, 12, 8)
+classifier = classifier.to(device)
+detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(5, 12, 8)
 detector = detector.to(device)
 state_dict = torch.load(
     os.path.join(
@@ -44,6 +45,7 @@ state_dict = torch.load(
         'unsupervised_novelty_detection_module.pth'
     )
 )
+classifier.load_state_dict(state_dict['module']['classifier'])
 detector.load_state_dict(state_dict['module'])
 
 activation_statistical_model = noveltydetection.utils.ActivationStatisticalModel(architecture).to(device)

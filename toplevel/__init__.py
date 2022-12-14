@@ -185,6 +185,9 @@ class TopLevelApp:
         subject_novelty_scores_u = unsupervised_results['subject_novelty_score']
         verb_novelty_scores_u = unsupervised_results['verb_novelty_score']
         object_novelty_scores_u = unsupervised_results['object_novelty_score']
+        subject_probs = unsupervised_results['subject_probs']
+        verb_probs = unsupervised_results['verb_probs']
+        object_probs = unsupervised_results['object_probs']
         assert len(subject_novelty_scores_u) == len(verb_novelty_scores_u) == len(object_novelty_scores_u)
 
         self.subj_novelty_scores_un += subject_novelty_scores_u
@@ -205,11 +208,11 @@ class TopLevelApp:
         self.per_image_p_type_separated6_7 = torch.cat([self.per_image_p_type_separated6_7, separated_p_type.cpu()])
         top3 = None
         top3_probs = None
-                
+
         if not self.given_detection:
-            top3, top3_probs = self._top3(scg_preds, p_ni, novelty_dataset, batch_p_type)
+            top3, top3_probs = self._top3(subject_probs, verb_probs, object_probs, scg_preds, p_ni, batch_p_type)
         else:
-            top3, top3_probs = self._top3_given_detection(scg_preds, p_ni, novelty_dataset, batch_p_type, img_paths)
+            top3, top3_probs = self._top3_given_detection(subject_probs, verb_probs, object_probs, scg_preds, p_ni, batch_p_type, img_paths)
         
 
         self.mergedSVO.append(top3)
@@ -342,18 +345,18 @@ class TopLevelApp:
         if not self.disable_retraining:
             self._retrain_supervised_detectors()                
 
-    def _top3(self, scg_preds, p_ni, novelty_dataset, batch_p_type):
+    def _top3(self, subject_probs, verb_probs, object_probs, scg_preds, p_ni, batch_p_type):
         top3 = None
         top3_probs = None
         # merged function is called inside top3
-        top3_merged = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist, scg_preds, p_ni)
+        top3_merged = self.und_manager.top3(subject_probs, verb_probs, object_probs, batch_p_type, scg_preds, p_ni)
         top3 = [[e[0] for e in m] for m in top3_merged]
         top3_probs = [[e[1] for e in m] for m in top3_merged]     
       
                        
         return top3, top3_probs
                        
-    def _top3_given_detection(self, scg_preds, p_ni, novelty_dataset, batch_p_type, img_paths):
+    def _top3_given_detection(self, subject_probs, verb_probs, object_probs, scg_preds, p_ni, batch_p_type, img_paths):
         top3 = None
         top3_probs = None
         
@@ -373,17 +376,17 @@ class TopLevelApp:
                 p_ni_for_top3 = np.copy(p_ni)
                 p_ni_for_top3[:idx] = 0                
                 
-                top3_merged = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist, scg_preds, p_ni_for_top3)
+                top3_merged = self.und_manager.top3(subject_probs, verb_probs, object_probs, batch_p_type, scg_preds, p_ni_for_top3)
                 
                 top3 = [[e[0] for e in m] for m in top3_merged]
                 top3_probs = [[e[1] for e in m] for m in top3_merged] 
             else:
-                top3_merged = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist, scg_preds, p_ni)
+                top3_merged = self.und_manager.top3(subject_probs, verb_probs, object_probs, batch_p_type, scg_preds, p_ni)
                 top3 = [[e[0] for e in m] for m in top3_merged]
                 top3_probs = [[e[1] for e in m] for m in top3_merged]     
         # just merge as usual 
         else:
-            top3_merged = self.und_manager.top3(self.backbone, novelty_dataset, batch_p_type, self.p_type_dist, scg_preds, p_ni)
+            top3_merged = self.und_manager.top3(subject_probs, verb_probs, object_probs, batch_p_type, scg_preds, p_ni)
             top3 = [[e[0] for e in m] for m in top3_merged]
             top3_probs = [[e[1] for e in m] for m in top3_merged]          
             

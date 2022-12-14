@@ -4,9 +4,6 @@ from abc import ABC, abstractmethod
 import torch
 import matplotlib.pyplot as plt
 
-from unsupervisednoveltydetection._classifier import ClassifierV2
-from unsupervisednoveltydetection._confidencecalibrator import\
-    ConfidenceCalibrator
 import unsupervisednoveltydetection.training
 
 class UnsupervisedNoveltyDetectorLogger:
@@ -26,11 +23,8 @@ class UnsupervisedNoveltyDetectorLogger:
         torch.save(self.object_novelty_scores, os.path.join(novelty_score_dir_path, 'object.pth'))
 
 class UnsupervisedNoveltyDetector:
-    def __init__(self, classifier, num_subj_cls, num_obj_cls, num_action_cls):
+    def __init__(self, num_subj_cls, num_obj_cls, num_action_cls):
         self.device = 'cpu'
-        
-        self.classifier = classifier
-        self.confidence_calibrator = ConfidenceCalibrator()
         
         self.known_svo_combinations = torch.zeros(num_subj_cls - 1, num_action_cls - 1, num_obj_cls - 1, dtype = torch.bool)
         self.known_sv_combinations = torch.zeros(num_subj_cls - 1, num_action_cls - 1, dtype = torch.bool)
@@ -43,8 +37,6 @@ class UnsupervisedNoveltyDetector:
     
     def to(self, device):
         self.device = device
-        self.classifier = self.classifier.to(device)
-        self.confidence_calibrator = self.confidence_calibrator.to(device)
         self.known_svo_combinations = self.known_svo_combinations.to(device)
         self.known_sv_combinations = self.known_sv_combinations.to(device)
         self.known_so_combinations = self.known_so_combinations.to(device)
@@ -87,16 +79,11 @@ class UnsupervisedNoveltyDetector:
         self.known_vo_combinations[(verb_indices, object_indices)] = True
 
     def load_state_dict(self, state_dict):
-        classifier_state_dict = state_dict['classifier']
-        confidence_calibrator_state_dict = state_dict['confidence_calibrator']
         known_combinations = state_dict['known_combinations']
         self.known_svo_set = known_combinations['svo']
         self.known_sv_set = known_combinations['sv']
         self.known_so_set = known_combinations['so']
         self.known_vo_set = known_combinations['vo']
-        
-        self.classifier.load_state_dict(classifier_state_dict)
-        self.confidence_calibrator.load_state_dict(confidence_calibrator_state_dict)
         
         self._update_known_combination_tensors()
 
@@ -462,60 +449,29 @@ class UnsupervisedNoveltyDetector:
         return sv_known_joint_probs.sum()
 
     # Note: p_type should be a tensor of size [N, 4]; it's per-image p_type
-    def top3(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features, p_type):
+    def top3(self, subject_probs, verb_probs, object_probs, p_type):
         predictions = []
         t67_joint_probs = []
         cases = []
         results = {}
         for idx in range(len(spatial_features)):
-            example_spatial_features = spatial_features[idx]
-            example_subject_appearance_features = subject_appearance_features[idx]
-            example_object_appearance_features = object_appearance_features[idx]
-            example_verb_appearance_features = verb_appearance_features[idx]
+            example_subject_probs = subject_probs[idx]
+            example_verb_probs = verb_probs[idx]
+            example_object_probs = object_probs[idx]
             cur_p_type = p_type[idx]
-            
-            if example_subject_appearance_features is not None:
-                example_subject_features = torch.flatten(example_subject_appearance_features).to(self.device)
 
-                subject_logits, subject_score = self.classifier.predict_score_subject(example_subject_features.unsqueeze(0))
-                
-                subject_score = subject_score.squeeze(0)
-
-                subject_probs = self.confidence_calibrator.calibrate_subject(subject_logits)
-                subject_probs = subject_probs.squeeze(0)
-
-            if example_object_appearance_features is not None:
-                example_object_features = torch.flatten(example_object_appearance_features).to(self.device)
-                
-                object_logits, object_score = self.classifier.predict_score_object(example_object_features.unsqueeze(0))
-                
-                object_score = object_score.squeeze(0)
-                
-                object_probs = self.confidence_calibrator.calibrate_object(object_logits)
-                object_probs = object_probs.squeeze(0)
-            
-            if example_verb_appearance_features is not None:
-                example_verb_features = torch.cat((torch.flatten(example_spatial_features), torch.flatten(example_verb_appearance_features))).to(self.device)
-                
-                verb_logits, verb_score = self.classifier.predict_score_verb(example_verb_features.unsqueeze(0))
-                
-                verb_score = verb_score.squeeze(0)
-
-                verb_probs = self.confidence_calibrator.calibrate_verb(verb_logits)
-                verb_probs = verb_probs.squeeze(0)
-                
-            if example_subject_appearance_features is not None and example_object_appearance_features is not None:
+            if example_subject_probs is not None and example_object_probs is not None:
                 # Case 1, S/V/O
                 example_case = 1
-                example_predictions, example_t67_joint_probs = self._case_1(subject_probs, object_probs, verb_probs, cur_p_type, 3)
-            elif example_subject_appearance_features is not None and example_object_appearance_features is None:
+                example_predictions, example_t67_joint_probs = self._case_1(example_subject_probs, example_object_probs, example_verb_probs, cur_p_type, 3)
+            elif example_subject_probs is not None:
                 # Case 2, S/V/None
                 example_case = 2
-                example_predictions, example_t67_joint_probs = self._case_2(subject_probs, verb_probs, cur_p_type, 3)
-            elif example_subject_appearance_features is None and example_object_appearance_features is not None:
+                example_predictions, example_t67_joint_probs = self._case_2(example_subject_probs, example_verb_probs, cur_p_type, 3)
+            else:
                 # Case 3, None/None/O
                 example_case = 3
-                example_predictions, example_t67_joint_probs = self._case_3(object_probs, cur_p_type, 3)
+                example_predictions, example_t67_joint_probs = self._case_3(example_object_probs, cur_p_type, 3)
 
             predictions.append(example_predictions)
             t67_joint_probs.append(example_t67_joint_probs)
@@ -530,106 +486,26 @@ class UnsupervisedNoveltyDetector:
 
         return results
 
-    def known_top3(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features):
+    def known_top3(self, subject_probs, verb_probs, object_probs):
         predictions = []
         for idx in range(len(spatial_features)):
-            example_spatial_features = spatial_features[idx]
-            example_subject_appearance_features = subject_appearance_features[idx]
-            example_object_appearance_features = object_appearance_features[idx]
-            example_verb_appearance_features = verb_appearance_features[idx]
-            
-            if example_subject_appearance_features is not None:
-                example_subject_features = torch.flatten(example_subject_appearance_features).to(self.device)
+            example_subject_probs = subject_probs[idx]
+            example_verb_probs = verb_probs[idx]
+            example_object_probs = object_probs[idx]
 
-                subject_logits = self.classifier.predict_subject(example_subject_features.unsqueeze(0))
-
-                subject_probs = self.confidence_calibrator.calibrate_subject(subject_logits)
-                subject_probs = subject_probs.squeeze(0)
-
-            if example_object_appearance_features is not None:
-                example_object_features = torch.flatten(example_object_appearance_features).to(self.device)
-                
-                object_logits = self.classifier.predict_object(example_object_features.unsqueeze(0))
-                
-                object_probs = self.confidence_calibrator.calibrate_object(object_logits)
-                object_probs = object_probs.squeeze(0)
-            
-            if example_verb_appearance_features is not None:
-                example_verb_features = torch.cat((torch.flatten(example_spatial_features), torch.flatten(example_verb_appearance_features))).to(self.device)
-                
-                verb_logits = self.classifier.predict_verb(example_verb_features.unsqueeze(0))
-                
-                verb_probs = self.confidence_calibrator.calibrate_verb(verb_logits)
-                verb_probs = verb_probs.squeeze(0)
-            
-            if example_subject_appearance_features is not None and example_object_appearance_features is not None:
+            if example_subject_probs is not None and example_object_probs is not None:
                 # Case 1, S/V/O
-                example_predictions = self._known_case_1(subject_probs, object_probs, verb_probs, 3)
-            elif example_subject_appearance_features is not None and example_object_appearance_features is None:
+                example_predictions = self._known_case_1(example_subject_probs, example_object_probs, example_verb_probs, 3)
+            elif example_subject_probs is not None:
                 # Case 2, S/V/None
-                example_predictions = self._known_case_2(subject_probs, verb_probs, 3)
-            elif example_subject_appearance_features is None and example_object_appearance_features is not None:
-                # Case 3, None/None/O
-                example_predictions = self._known_case_3(object_probs, 3)
+                example_predictions = self._known_case_2(example_subject_probs, example_verb_probs, 3)
             else:
-                return NotImplemented
-            
+                # Case 3, None/None/O
+                example_predictions = self._known_case_3(example_object_probs, 3)
+
             predictions.append(example_predictions)
 
         return predictions
-
-    def score_subject(self, subject_appearance_features):
-        novelty_scores = []
-        for example_subject_appearance_features in subject_appearance_features:
-            if example_subject_appearance_features is not None:
-                example_features = torch.flatten(example_subject_appearance_features).to(self.device)
-                
-                score = self.classifier.score_subject(example_features.unsqueeze(0))
-                score = score.squeeze(0)
-                novelty_scores.append(score)
-            else:
-                novelty_scores.append(None)
-            
-        return novelty_scores
-
-    def score_object(self, object_appearance_features):
-        novelty_scores = []
-        for example_object_appearance_features in object_appearance_features:
-            if example_object_appearance_features is not None:
-                example_features = torch.flatten(example_object_appearance_features).to(self.device)
-                
-                score = self.classifier.score_object(example_features.unsqueeze(0))
-                score = score.squeeze(0)
-                novelty_scores.append(score)
-            else:
-                novelty_scores.append(None)
-            
-        return novelty_scores
-
-    def score_verb(self, spatial_features, verb_appearance_features):
-        novelty_scores = []
-        for idx in range(len(verb_appearance_features)):
-            example_spatial_features = spatial_features[idx]
-            example_verb_appearance_features = verb_appearance_features[idx]
-            
-            if example_verb_appearance_features is not None and example_spatial_features is not None:
-                example_features = torch.cat((torch.flatten(example_spatial_features), torch.flatten(example_verb_appearance_features)))
-                example_features = example_features.to(self.device)
-                
-                score = self.classifier.score_verb(example_features.unsqueeze(0))
-                score = score.squeeze(0)
-                novelty_scores.append(score)
-            else:
-                novelty_scores.append(None)
-            
-        return novelty_scores
-    
-    def score(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features):
-        results = {}
-        results['subject_novelty_score'] = self.score_subject(subject_appearance_features)
-        results['object_novelty_score'] = self.score_object(object_appearance_features)
-        results['verb_novelty_score'] = self.score_verb(spatial_features, verb_appearance_features)
-        return results
 
     def merge_predictions(
             self,
@@ -804,7 +680,5 @@ class UnsupervisedNoveltyDetector:
 
 __all__ = [
     'UnsupervisedNoveltyDetector',
-    'UnsupervisedNoveltyDetectorLogger',
-    'ClassifierV2',
-    'ConfidenceCalibrator'
+    'UnsupervisedNoveltyDetectorLogger'
 ]
