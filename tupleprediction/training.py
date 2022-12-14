@@ -4,7 +4,6 @@ from tqdm import tqdm
 import torch
 
 import noveltydetectionfeatures
-import noveltydetection
 
 class SubjectBoxImageDataset(torch.utils.data.Dataset):
     def __init__(self, novelty_feature_dataset):
@@ -522,7 +521,7 @@ def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
     progress.close()
 
 
-class NoveltyDetectorTrainer:
+class TuplePredictorTrainer:
     def __init__(self, data_root, train_csv_path, val_csv_path, val_incident_csv_path, val_environment_csv_path, retraining_batch_size):
         train_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
             name = 'Custom',

@@ -24,7 +24,7 @@ case_3_logistic_regression = tupleprediction.Case3LogisticRegression().to(device
 
 activation_statistical_model = tupleprediction.ActivationStatisticalModel(architecture).to(device)
 
-trainer = unsupervisednoveltydetection.training.NoveltyDetectorTrainer('./', 'dataset_v4/dataset_v4_2_train.csv', 'dataset_v4/dataset_v4_2_val.csv', 'dataset_v4/dataset_v4_2_cal_incident.csv', 'dataset_v4/dataset_v4_2_cal_corruption.csv', 64)
+trainer = tupleprediction.training.TuplePredictorTrainer('./', 'dataset_v4/dataset_v4_2_train.csv', 'dataset_v4/dataset_v4_2_val.csv', 'dataset_v4/dataset_v4_2_cal_incident.csv', 'dataset_v4/dataset_v4_2_cal_corruption.csv', 64)
 
 start_time = time.time()
 trainer.prepare_for_retraining(backbone, classifier, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model)

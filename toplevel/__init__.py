@@ -13,7 +13,7 @@ from tupleprediction import compute_probability_novelty
 from adaptation.query_formulation import select_queries
 import pickle
 from scipy.stats import ks_2samp
-from unsupervisednoveltydetection.training import NoveltyDetectorTrainer
+from tupleprediction.training import TuplePredictorTrainer
 
 import os
 
@@ -129,7 +129,7 @@ class TopLevelApp:
             self.NUM_OBJECT_CLASSES,
             self.NUM_SPATIAL_FEATURES,
             0.98)
-        self.novelty_trainer = NoveltyDetectorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.val_corruption_csv_path, self.retraining_batch_size)
+        self.novelty_trainer = TuplePredictorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.val_corruption_csv_path, self.retraining_batch_size)
         
     def reset(self):
         self.post_red = False
@@ -606,7 +606,7 @@ class TopLevelApp:
         self.backbone = self.backbone.to('cuda:0')
         self.backbone.eval()
 
-        self.novelty_trainer = NoveltyDetectorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.val_corruption_csv_path, self.retraining_batch_size)
+        self.novelty_trainer = TuplePredictorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.val_corruption_csv_path, self.retraining_batch_size)
 
     def _retrain_supervised_detectors(self):
         t_star = torch.argmax(self.p_type_dist) + 1
