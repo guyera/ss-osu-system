@@ -49,7 +49,9 @@ save_dir = os.path.join(
     'pretrained-models',
     architecture.value['name']
 )
-os.makedirs(save_dir)
+if not os.path.exists(save_dir):
+    os.makedirs(save_dir)
+
 torch.save(
     backbone.state_dict(),
     os.path.join(save_dir, 'backbone.pth')

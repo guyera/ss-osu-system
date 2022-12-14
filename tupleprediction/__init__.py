@@ -10,6 +10,7 @@ from sklearn.neighbors import KernelDensity
 
 from backbone import Backbone
 from tupleprediction._tuplepredictor import TuplePredictor
+import tupleprediction.training as training
 
 class ActivationStatisticalModel:
     _bandwidths = {
