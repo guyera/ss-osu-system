@@ -678,12 +678,12 @@ class TopLevelApp:
             csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
             self.retraining_buffer.to_csv(csv_path, index=True)                
             self.novelty_trainer.add_feedback_data(self.data_root, csv_path)
-            self.novelty_trainer.prepare_for_retraining(self.backbone, self.und_manager.detector, 
+            self.novelty_trainer.prepare_for_retraining(self.backbone, self.und_manager.classifier, 
                 self.und_manager.case_1_logistic_regression,
                 self.und_manager.case_2_logistic_regression,
                 self.und_manager.case_3_logistic_regression,
                 self.und_manager.activation_statistical_model)
-            self.novelty_trainer.train_novelty_detection_module(self.backbone, self.und_manager.detector, 
+            self.novelty_trainer.train_novelty_detection_module(self.backbone, self.und_manager.classifier, 
                 self.und_manager.case_1_logistic_regression,
                 self.und_manager.case_2_logistic_regression,
                 self.und_manager.case_3_logistic_regression,

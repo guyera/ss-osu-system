@@ -652,17 +652,16 @@ class NoveltyDetectorTrainer:
     
     # Should be called before train_novelty_detection_module(), except when
     # training for the very first time manually by Alex. This prepares the
-    # backbone, detector, and novelty type logistic regressions for retraining.
+    # backbone, classifier, and novelty type logistic regressions for retraining.
     # Most likely this is done by fully randomizing them, but in the future
     # we might change the process to be e.g. a warm-start, shrink-and-perturb,
     # or crashing a single layer.
-    def prepare_for_retraining(self, backbone, detector, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model):
+    def prepare_for_retraining(self, backbone, classifier, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model):
         # Reset the backbone
         backbone.reset()
         
         # Reset the classifier and confidence calibrator
-        detector.classifier.reset()
-        detector.confidence_calibrator.reset()
+        classifier.reset()
 
         # Reset logistic regressions and statistical model
         case_1_logistic_regression.reset()
@@ -1387,20 +1386,20 @@ class NoveltyDetectorTrainer:
         fit_logistic_regression(case_2_logistic_regression, case_2_scores, case_2_labels, epochs = 3000)
         fit_logistic_regression(case_3_logistic_regression, case_3_scores, case_3_labels, epochs = 3000)
 
-    def train_novelty_detection_module(self, backbone, detector, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model):
-        subject_classifier = detector.classifier.subject_classifier
-        object_classifier = detector.classifier.object_classifier
-        verb_classifier = detector.classifier.verb_classifier
-        subject_calibrator = detector.confidence_calibrator.subject_calibrator
-        object_calibrator = detector.confidence_calibrator.object_calibrator
-        verb_calibrator = detector.confidence_calibrator.verb_calibrator
+    def train_novelty_detection_module(self, backbone, classifier, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model):
+        subject_classifier = classifier.subject_classifier
+        object_classifier = classifier.object_classifier
+        verb_classifier = classifier.verb_classifier
+        subject_calibrator = classifier.confidence_calibrator.subject_calibrator
+        object_calibrator = classifier.confidence_calibrator.object_calibrator
+        verb_calibrator = classifier.confidence_calibrator.verb_calibrator
         
         # Retrain the backbone and classifiers
         self.train_backbone_and_classifiers(backbone, subject_classifier, object_classifier, verb_classifier)
 
         self.fit_activation_statistics(backbone, activation_statistical_model)
         
-        # Retrain the detector's temperature scaling calibrators
+        # Retrain the classifier's temperature scaling calibrators
         self.calibrate_temperature_scalers(backbone, subject_classifier, object_classifier, verb_classifier, subject_calibrator, object_calibrator, verb_calibrator)
 
         # Retrain the logistic regressions
