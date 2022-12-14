@@ -1,0 +1,570 @@
+import torch
+
+class TuplePredictor:
+    def __init__(self, num_subj_cls, num_obj_cls, num_action_cls):
+        self.device = 'cpu'
+        
+        self.known_svo_combinations = torch.zeros(num_subj_cls - 1, num_action_cls - 1, num_obj_cls - 1, dtype = torch.bool)
+        self.known_sv_combinations = torch.zeros(num_subj_cls - 1, num_action_cls - 1, dtype = torch.bool)
+        self.known_so_combinations = torch.zeros(num_subj_cls - 1, num_obj_cls - 1, dtype = torch.bool)
+        self.known_vo_combinations = torch.zeros(num_action_cls - 1, num_obj_cls - 1, dtype = torch.bool)
+        self.known_svo_set = set()
+        self.known_sv_set = set()
+        self.known_so_set = set()
+        self.known_vo_set = set()
+    
+    def to(self, device):
+        self.device = device
+        self.known_svo_combinations = self.known_svo_combinations.to(device)
+        self.known_sv_combinations = self.known_sv_combinations.to(device)
+        self.known_so_combinations = self.known_so_combinations.to(device)
+        self.known_vo_combinations = self.known_vo_combinations.to(device)
+        return self
+
+    def _update_known_combination_tensors(self):
+        self.known_svo_combinations[:] = False
+        subject_indices = []
+        verb_indices = []
+        object_indices = []
+        for subject_index, verb_index, object_index in self.known_svo_set:
+            subject_indices.append(subject_index)
+            verb_indices.append(verb_index)
+            object_indices.append(object_index)
+        self.known_svo_combinations[(subject_indices, verb_indices, object_indices)] = True
+
+        self.known_sv_combinations[:] = False
+        subject_indices = []
+        verb_indices = []
+        for subject_index, verb_index in self.known_sv_set:
+            subject_indices.append(subject_index)
+            verb_indices.append(verb_index)
+        self.known_sv_combinations[(subject_indices, verb_indices)] = True
+
+        self.known_so_combinations[:] = False
+        subject_indices = []
+        object_indices = []
+        for subject_index, object_index in self.known_so_set:
+            subject_indices.append(subject_index)
+            object_indices.append(object_index)
+        self.known_so_combinations[(subject_indices, object_indices)] = True
+
+        self.known_vo_combinations[:] = False
+        verb_indices = []
+        object_indices = []
+        for verb_index, object_index in self.known_vo_set:
+            verb_indices.append(verb_index)
+            object_indices.append(object_index)
+        self.known_vo_combinations[(verb_indices, object_indices)] = True
+
+    def load_state_dict(self, state_dict):
+        known_combinations = state_dict['known_combinations']
+        self.known_svo_set = known_combinations['svo']
+        self.known_sv_set = known_combinations['sv']
+        self.known_so_set = known_combinations['so']
+        self.known_vo_set = known_combinations['vo']
+        
+        self._update_known_combination_tensors()
+
+    # Accepts four lists of tuples of integers, and removes those tuples from
+    # the corresponding sets of known tuples. Used for simulating type 4
+    # novelty.
+    def remove_known_tuples(self, svo_tuples = None, sv_tuples = None, so_tuples = None, vo_tuples = None):
+        if svo_tuples is not None:
+            for svo in svo_tuples:
+                if svo in self.known_svo_set:
+                    self.known_svo_set.remove(svo)
+        
+        if sv_tuples is not None:
+            for sv in sv_tuples:
+                if sv in self.known_sv_set:
+                    self.known_sv_set.remove(sv)
+        
+        if so_tuples is not None:
+            for so in so_tuples:
+                if so in self.known_so_set:
+                    self.known_so_set.remove(so)
+        
+        if vo_tuples is not None:
+            for vo in vo_tuples:
+                if vo in self.known_vo_set:
+                    self.known_vo_set.remove(vo)
+        
+        self._update_known_combination_tensors()
+    
+    def _case_1(self, subject_probs, object_probs, verb_probs, p_type, k):
+        t1_raw_joint_probs = verb_probs.unsqueeze(1) * object_probs.unsqueeze(0)
+        t1_known_joint_probs = self.known_vo_combinations.to(torch.int) * t1_raw_joint_probs
+        t1_known_joint_probs_sum = t1_known_joint_probs.sum()
+        if t1_known_joint_probs_sum.item() == 0:
+            t1_conditional_joint_probs = t1_known_joint_probs
+        else:
+            t1_conditional_joint_probs = t1_known_joint_probs / t1_known_joint_probs_sum
+        t1_joint_probs = t1_conditional_joint_probs * p_type[0]
+        
+        t2_raw_joint_probs = subject_probs.unsqueeze(1) * object_probs.unsqueeze(0)
+        t2_known_joint_probs = self.known_so_combinations.to(torch.int) * t2_raw_joint_probs
+        t2_known_joint_probs_sum = t2_known_joint_probs.sum()
+        if t2_known_joint_probs_sum.item() == 0:
+            t2_conditional_joint_probs = t2_known_joint_probs
+        else:
+            t2_conditional_joint_probs = t2_known_joint_probs / t2_known_joint_probs_sum
+        t2_joint_probs = t2_conditional_joint_probs * p_type[1]
+        
+        t3_raw_joint_probs = subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
+        t3_known_joint_probs = self.known_sv_combinations.to(torch.int) * t3_raw_joint_probs
+        t3_known_joint_probs_sum = t3_known_joint_probs.sum()
+        if t3_known_joint_probs_sum.item() == 0:
+            t3_conditional_joint_probs = t3_known_joint_probs
+        else:
+            t3_conditional_joint_probs = t3_known_joint_probs / t3_known_joint_probs_sum
+        t3_joint_probs = t3_conditional_joint_probs * p_type[2]
+        
+        t4_raw_joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
+        t4_unknown_joint_probs = (1 - self.known_svo_combinations.to(torch.int)) * t4_raw_joint_probs
+        t4_unknown_joint_probs_sum = t4_unknown_joint_probs.sum()
+        if t4_unknown_joint_probs_sum.item() == 0:
+            t4_conditional_joint_probs = t4_unknown_joint_probs
+        else:
+            t4_conditional_joint_probs = t4_unknown_joint_probs / t4_unknown_joint_probs_sum
+        t4_joint_probs = t4_conditional_joint_probs * p_type[3]
+
+        t67_raw_joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
+        t67_known_joint_probs = self.known_svo_combinations.to(torch.int) * t67_raw_joint_probs
+        t67_known_joint_probs_sum = t67_known_joint_probs.sum()
+        if t67_known_joint_probs_sum.item() == 0:
+            t67_conditional_joint_probs = t67_known_joint_probs
+        else:
+            t67_conditional_joint_probs = t67_known_joint_probs / t67_known_joint_probs_sum
+        t67_joint_probs = t67_conditional_joint_probs * p_type[4]
+        
+        # We've computed P(Correct | N_i), but we also have the case information.
+        # We need to compute:
+        #   P(Correct | N_i, case = 1)
+        # = P(Correct | N_i, type =/= 5)
+        # = P(Correct, type =/= 5 | N_i) / P(type =/= 5 | N_i)
+        ####### Correctness of a novel tuple implies the trial type, so type
+        ####### P(Correct, type =/= 5) = P(Correct). Type is also independent
+        ####### of N_i. So P(type =/= 5 | N_i) = P(type =/= 5).
+        # = P(Correct | N_i) / P(type =/= 5)
+        # = P(Correct | N_i) / (\sum_{t in [1, 2, 3, 4]} P(type = t)).
+        
+        # So divide each joint probability by the type normalizer, or sum of
+        # probabilities of possible types.
+        
+        type_normalizer = p_type[0] + p_type[1] + p_type[2] + p_type[3] + p_type[4]
+        
+        if type_normalizer > 0:
+            t1_joint_probs /= type_normalizer
+            t2_joint_probs /= type_normalizer
+            t3_joint_probs /= type_normalizer
+            t4_joint_probs /= type_normalizer
+            t67_joint_probs /= type_normalizer
+        
+        flattened_t1_joint_probs = torch.flatten(t1_joint_probs)
+        sorted_t1_joint_probs, sorted_t1_joint_prob_indices = torch.sort(flattened_t1_joint_probs, descending = True)
+        
+        flattened_t2_joint_probs = torch.flatten(t2_joint_probs)
+        sorted_t2_joint_probs, sorted_t2_joint_prob_indices = torch.sort(flattened_t2_joint_probs, descending = True)
+        
+        flattened_t3_joint_probs = torch.flatten(t3_joint_probs)
+        sorted_t3_joint_probs, sorted_t3_joint_prob_indices = torch.sort(flattened_t3_joint_probs, descending = True)
+        
+        flattened_t4_joint_probs = torch.flatten(t4_joint_probs)
+        sorted_t4_joint_probs, sorted_t4_joint_prob_indices = torch.sort(flattened_t4_joint_probs, descending = True)
+
+        example_predictions = []
+        for _ in range(k):
+            if sorted_t1_joint_probs[0] >= sorted_t2_joint_probs[0]\
+                    and sorted_t1_joint_probs[0] >= sorted_t3_joint_probs[0]\
+                    and sorted_t1_joint_probs[0] >= sorted_t4_joint_probs[0]:
+                flattened_index = int(sorted_t1_joint_prob_indices[0].item())
+                
+                verb_skip_interval = object_probs.shape[0]
+
+                verb_index = flattened_index // verb_skip_interval
+                verb_skip_total = verb_index * verb_skip_interval
+                flattened_index -= verb_skip_total
+                
+                object_index = flattened_index
+                
+                # Shift labels forward, to allow for anomaly = 0
+                example_predictions.append(((0, verb_index + 1, object_index + 1), sorted_t1_joint_probs[0]))
+                
+                sorted_t1_joint_probs = sorted_t1_joint_probs[1:]
+                sorted_t1_joint_prob_indices = sorted_t1_joint_prob_indices[1:]
+                
+            elif sorted_t2_joint_probs[0] >= sorted_t3_joint_probs[0]\
+                    and sorted_t2_joint_probs[0] >= sorted_t4_joint_probs[0]:
+                flattened_index = int(sorted_t2_joint_prob_indices[0].item())
+                
+                subject_skip_interval = object_probs.shape[0]
+                
+                subject_index = flattened_index // subject_skip_interval
+                subject_skip_total = subject_index * subject_skip_interval
+                flattened_index -= subject_skip_total
+                
+                object_index = flattened_index
+                
+                # Shift labels forward, to allow for anomaly = 0
+                example_predictions.append(((subject_index + 1, 0, object_index + 1), sorted_t2_joint_probs[0]))
+                
+                sorted_t2_joint_probs = sorted_t2_joint_probs[1:]
+                sorted_t2_joint_prob_indices = sorted_t2_joint_prob_indices[1:]
+                
+            elif sorted_t3_joint_probs[0] >= sorted_t4_joint_probs[0]:
+                flattened_index = int(sorted_t3_joint_prob_indices[0].item())
+                
+                subject_skip_interval = verb_probs.shape[0]
+
+                subject_index = flattened_index // subject_skip_interval
+                subject_skip_total = subject_index * subject_skip_interval
+                flattened_index -= subject_skip_total
+                
+                verb_index = flattened_index
+                
+                # Shift labels forward, to allow for anomaly = 0
+                example_predictions.append(((subject_index + 1, verb_index + 1, 0), sorted_t3_joint_probs[0]))
+                
+                sorted_t3_joint_probs = sorted_t3_joint_probs[1:]
+                sorted_t3_joint_prob_indices = sorted_t3_joint_prob_indices[1:]
+                
+            else:
+                flattened_index = int(sorted_t4_joint_prob_indices[0].item())
+                
+                subject_skip_interval = verb_probs.shape[0] * object_probs.shape[0]
+                verb_skip_interval = object_probs.shape[0]
+
+                subject_index = flattened_index // subject_skip_interval
+                subject_skip_total = subject_index * subject_skip_interval
+                flattened_index -= subject_skip_total
+                
+                verb_index = flattened_index // verb_skip_interval
+                verb_skip_total = verb_index * verb_skip_interval
+                flattened_index -= verb_skip_total
+                
+                object_index = flattened_index
+                
+                # Shift labels forward, to allow for anomaly = 0
+                example_predictions.append(((subject_index + 1, verb_index + 1, object_index + 1), sorted_t4_joint_probs[0]))
+                
+                sorted_t4_joint_probs = sorted_t4_joint_probs[1:]
+                sorted_t4_joint_prob_indices = sorted_t4_joint_prob_indices[1:]
+
+        return example_predictions, t67_joint_probs
+
+    def _case_2(self, subject_probs, verb_probs, p_type, k):
+        t1_raw_joint_probs = verb_probs
+        t1_joint_probs = t1_raw_joint_probs * p_type[0]
+        
+        t2_raw_joint_probs = subject_probs
+        t2_joint_probs = t2_raw_joint_probs * p_type[1]
+
+        t4_raw_joint_probs = subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
+        t4_unknown_joint_probs = (1 - self.known_sv_combinations.to(torch.int)) * t4_raw_joint_probs
+        t4_unknown_joint_probs_sum = t4_unknown_joint_probs.sum()
+        if t4_unknown_joint_probs_sum.item() == 0:
+            t4_conditional_joint_probs = t4_unknown_joint_probs
+        else:
+            t4_conditional_joint_probs = t4_unknown_joint_probs / t4_unknown_joint_probs_sum
+        t4_joint_probs = t4_conditional_joint_probs * p_type[3]
+
+        t67_raw_joint_probs = subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
+        t67_known_joint_probs = self.known_sv_combinations.to(torch.int) * t67_raw_joint_probs
+        t67_known_joint_probs_sum = t67_known_joint_probs.sum()
+        if t67_known_joint_probs_sum.item() == 0:
+            t67_conditional_joint_probs = t67_known_joint_probs
+        else:
+            t67_conditional_joint_probs = t67_known_joint_probs / t67_known_joint_probs_sum
+        t67_joint_probs = t67_conditional_joint_probs * p_type[4]
+        
+        type_normalizer = p_type[0] + p_type[1] + p_type[3] + p_type[4]
+        
+        if type_normalizer > 0:
+            t1_joint_probs /= type_normalizer
+            t2_joint_probs /= type_normalizer
+            t4_joint_probs /= type_normalizer
+            t67_joint_probs /= type_normalizer
+        
+        flattened_t1_joint_probs = torch.flatten(t1_joint_probs)
+        sorted_t1_joint_probs, sorted_t1_joint_prob_indices = torch.sort(flattened_t1_joint_probs, descending = True)
+        
+        flattened_t2_joint_probs = torch.flatten(t2_joint_probs)
+        sorted_t2_joint_probs, sorted_t2_joint_prob_indices = torch.sort(flattened_t2_joint_probs, descending = True)
+
+        flattened_t4_joint_probs = torch.flatten(t4_joint_probs)
+        sorted_t4_joint_probs, sorted_t4_joint_prob_indices = torch.sort(flattened_t4_joint_probs, descending = True)
+
+        example_predictions = []
+        for _ in range(k):
+            if sorted_t1_joint_probs[0] >= sorted_t2_joint_probs[0]\
+                    and sorted_t1_joint_probs[0] >= sorted_t4_joint_probs[0]:
+                flattened_index = int(sorted_t1_joint_prob_indices[0].item())
+                
+                verb_index = flattened_index
+                
+                # Shift labels forward, to allow for anomaly = 0
+                example_predictions.append(((0, verb_index + 1, -1), sorted_t1_joint_probs[0]))
+                
+                sorted_t1_joint_probs = sorted_t1_joint_probs[1:]
+                sorted_t1_joint_prob_indices = sorted_t1_joint_prob_indices[1:]
+                
+            elif sorted_t2_joint_probs[0] >= sorted_t4_joint_probs[0]:
+                flattened_index = int(sorted_t2_joint_prob_indices[0].item())
+                
+                subject_index = flattened_index
+                
+                # Shift labels forward, to allow for anomaly = 0
+                example_predictions.append(((subject_index + 1, 0, -1), sorted_t2_joint_probs[0]))
+                
+                sorted_t2_joint_probs = sorted_t2_joint_probs[1:]
+                sorted_t2_joint_prob_indices = sorted_t2_joint_prob_indices[1:]
+            else:
+                flattened_index = int(sorted_t4_joint_prob_indices[0].item())
+                
+                subject_skip_interval = verb_probs.shape[0]
+
+                subject_index = flattened_index // subject_skip_interval
+                subject_skip_total = subject_index * subject_skip_interval
+                flattened_index -= subject_skip_total
+                
+                verb_index = flattened_index
+                
+                # Shift labels forward, to allow for anomaly = 0
+                example_predictions.append(((subject_index + 1, verb_index + 1, -1), sorted_t4_joint_probs[0]))
+                
+                sorted_t4_joint_probs = sorted_t4_joint_probs[1:]
+                sorted_t4_joint_prob_indices = sorted_t4_joint_prob_indices[1:]
+        
+        return example_predictions, t67_joint_probs
+
+    def _case_3(self, object_probs, p_type, k):
+        t3_joint_prob = p_type[2]
+        
+        t67_conditional_joint_probs = object_probs
+        t67_joint_probs = t67_conditional_joint_probs * p_type[4]
+
+        type_normalizer = p_type[2] + p_type[4]
+        if type_normalizer > 0:
+            t3_joint_prob /= type_normalizer
+            t67_joint_probs /= type_normalizer
+
+        return [((-1, 0, 0), t3_joint_prob)], t67_joint_probs
+
+    def _compute_p_known_svo(self, subject_probs, verb_probs, object_probs):
+        svo_raw_joint_probs = (subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)).unsqueeze(2) * object_probs.unsqueeze(0).unsqueeze(1)
+        svo_known_joint_probs = (self.known_svo_combinations.to(torch.int)) * svo_raw_joint_probs
+        return svo_known_joint_probs.sum()
+
+    def _compute_p_known_sv(self, subject_probs, verb_probs):
+        sv_raw_joint_probs = subject_probs.unsqueeze(1) * verb_probs.unsqueeze(0)
+        sv_known_joint_probs = (self.known_sv_combinations.to(torch.int)) * sv_raw_joint_probs
+        return sv_known_joint_probs.sum()
+
+    # Note: p_type should be a tensor of size [N, 4]; it's per-image p_type
+    def top3(self, subject_probs, verb_probs, object_probs, p_type):
+        predictions = []
+        t67_joint_probs = []
+        cases = []
+        results = {}
+        for idx in range(len(spatial_features)):
+            example_subject_probs = subject_probs[idx]
+            example_verb_probs = verb_probs[idx]
+            example_object_probs = object_probs[idx]
+            cur_p_type = p_type[idx]
+
+            if example_subject_probs is not None and example_object_probs is not None:
+                # Case 1, S/V/O
+                example_case = 1
+                example_predictions, example_t67_joint_probs = self._case_1(example_subject_probs, example_object_probs, example_verb_probs, cur_p_type, 3)
+            elif example_subject_probs is not None:
+                # Case 2, S/V/None
+                example_case = 2
+                example_predictions, example_t67_joint_probs = self._case_2(example_subject_probs, example_verb_probs, cur_p_type, 3)
+            else:
+                # Case 3, None/None/O
+                example_case = 3
+                example_predictions, example_t67_joint_probs = self._case_3(example_object_probs, cur_p_type, 3)
+
+            predictions.append(example_predictions)
+            t67_joint_probs.append(example_t67_joint_probs)
+            cases.append(example_case)
+
+        # Excludes type 6/7 tuples
+        results['top3'] = predictions
+        # ALL type 6/7 tuples; needed for merging with SCG tuples
+        results['t67'] = t67_joint_probs 
+        # Example cases each in {1, 2, 3}. Needed for merging with SCG tuples
+        results['cases'] = cases
+
+        return results
+
+    def merge_predictions(
+            self,
+            scg_predictions,
+            novelty_t67_predictions,\
+            cases,
+            novelty_other_top3,
+            p_n):
+        # For each instance
+        merged_predictions = []
+        for idx in range(len(scg_predictions)):
+            example_scg_predictions = scg_predictions[idx]
+            example_novelty_t67_predictions = novelty_t67_predictions[idx]
+            example_case = cases[idx]
+            example_novelty_other_top3 = novelty_other_top3[idx]
+            example_p_n = p_n[idx]
+
+            # Compute merged tuple probabilities:
+            # P(S=s, V=v, O=o)
+            #  = P(S=s, V=v, O=o, novel)
+            #      + P(S=s, V=v, O=o, not novel)
+            #  = P(S=s, V=v, O=o | novel) * P(novel)
+            #      + P(S=s, V=v, O=o, not novel) * P(not novel)
+
+
+            merged_tuple_predictions = \
+                example_p_n * example_novelty_t67_predictions + \
+                    (1 - example_p_n) * example_scg_predictions.to('cuda:0')
+
+            # Flatten tuple predictions to shape [4*7*11] = [308] so that they
+            # can all be sorted / compared together to get the top 3
+            flattened_predictions = torch.flatten(merged_tuple_predictions)
+            # Sort to get top 3
+            sorted_predictions, sorted_indices = torch.sort(
+                flattened_predictions,
+                descending=True
+            )
+            top3 = sorted_predictions[:3]
+            top3_indices = sorted_indices[:3]
+
+            # Determine the case and unflatten appropriately to determine the
+            # individual S, V, and O class indices / labels
+            if example_case == 1:
+                # S, V, O
+                n_v = example_scg_predictions.shape[1]
+                n_o = example_scg_predictions.shape[2]
+                s_skip_interval = n_v * n_o
+                v_skip_interval = n_o
+                s_cls_label = (top3_indices / s_skip_interval).to(torch.long)
+                top3_indices -= s_cls_label * s_skip_interval
+                v_cls_label = (top3_indices / v_skip_interval).to(torch.long)
+                top3_indices -= v_cls_label * v_skip_interval
+                o_cls_label = top3_indices
+
+                # Add 1 to each predicted class label to account for label 0 =
+                # novel
+                s_cls_label = s_cls_label + 1
+                v_cls_label = v_cls_label + 1
+                o_cls_label = o_cls_label + 1
+            elif example_case == 2:
+                # S, V
+                n_v = example_scg_predictions.shape[1]
+                s_skip_interval = n_v
+                s_cls_label = (top3_indices / s_skip_interval).to(torch.long)
+                top3_indices -= s_cls_label * s_skip_interval
+                v_cls_label = top3_indices
+
+                # Add 1 to each predicted class label to account for label 0 =
+                # novel
+                s_cls_label = s_cls_label + 1
+                v_cls_label = v_cls_label + 1
+
+                # Set O label to -1, for "absent"
+                o_cls_label = torch.full_like(s_cls_label, -1)
+            else:
+                # O
+                o_cls_label = top3_indices
+
+                # Add 1 to each predicted class label to account for label 0 =
+                # novel
+                o_cls_label = o_cls_label + 1
+
+                # Set S label to -1 and V label to 0, for "absent" (yes, V is
+                # weird that way; "absent" and "novel" are both represented
+                # with zeros)
+                s_cls_label = torch.full_like(o_cls_label, -1)
+                v_cls_label = torch.full_like(o_cls_label, 0)
+
+            # Combine the labels into a list of the top 3 triples
+            top3_labels = [
+                (
+                    int(s_cls_label[i].cpu().item()),
+                    int(v_cls_label[i].cpu().item()),
+                    int(o_cls_label[i].cpu().item())
+                ) for i in range(3)
+            ]
+            
+            # Merge the top 3 type 0/6/7 tuple predictions
+            # (top3_labels) with the with the top 3 type 1/2/3/4 tuple
+            # predictions (example_novelty_other_top3). Recall that the
+            # type 1/2/3/4 predictions represent P(tuple = t | novel);
+            # we need to multiply them by P(novel) so that they are joint
+            # probabilities rather than conditional. i.e., for type 1/2/3/4
+            # tuple t:
+            # P(tuple = t)
+            #   = P(tuple = t, novel)
+            #   = P(tuple = t | novel) * P(novel)
+            merged_top3 = []
+            more = True
+            more_other = True
+            for _ in range(3):
+                novelty_other_triple = example_novelty_other_top3[0][0]
+                t0_67_triple = top3_labels[0]
+
+                novelty_other_prob = \
+                    example_novelty_other_top3[0][1] * example_p_n
+                t0_67_prob = top3[0]
+
+                if more and (not more_other or t0_67_prob >= novelty_other_prob):
+                    # The type 0/6/7 tuple has the greatest probability;
+                    # append it to the merged top 3, and remove it from the
+                    # list of top 3 type 0/6/7 tuples.
+                    merged_top3.append((t0_67_triple, t0_67_prob))
+                    top3_labels = top3_labels[1:]
+                    if len(top3) > 1:
+                        top3 = top3[1:]
+                    else:
+                        more = False
+                elif more_other and (not more or novelty_other_prob > t0_67_prob):
+                    # The type 1/2/3/4 tuple has the greatest probability;
+                    # append it to the merged top 3, and remove it from the
+                    # list of top 3 type 1/2/3/4 tuples.
+                    merged_top3.append((
+                        novelty_other_triple,
+                        novelty_other_prob
+                    ))
+                    if len(example_novelty_other_top3) > 1:
+                        example_novelty_other_top3 = example_novelty_other_top3[1:]
+                    else:
+                        more_other = False
+            merged_predictions.append(merged_top3)
+        return merged_predictions
+
+    def p_t4(self, subject_probs, verb_probs, object_probs):
+        # Now compute t4 probabilities based on each example's case
+        # TODO tensorize by case
+        p_t4 = []
+        for idx in range(len(subject_probs)):
+            example_subject_probs = subject_probs[idx]
+            example_verb_probs = verb_probs[idx]
+            example_object_probs = object_probs[idx]
+            assert ((example_subject_probs is not None and example_verb_probs is not None) or example_object_probs is not None)
+
+            if example_subject_probs is not None and example_object_probs is not None:
+                # Case 1. P(type = 4 | no novel boxes) = P(predicted SVO is a
+                # novel combination) = 1 - P(predicted SVO is a known
+                # combination)
+                p_t4.append(1 - self._compute_p_known_svo(example_subject_probs, example_verb_probs, example_object_probs))
+            elif example_subject_probs is not None:
+                # Case 2. P(type = 4 | no novel boxes) = P(predicted SV is a
+                # novel combination) = 1 - P(predicted SV is a known
+                # combination)
+                p_t4.append(1 - self._compute_p_known_sv(example_subject_probs, example_verb_probs))
+            else:
+                # Case 3. P(type = 4 | no novel boxes) = 0; there is just an
+                # object (no subject or verb), and so a novel combination would
+                # actually mean a novel object, which is considered a type 3
+                # novelty instead of type 4.
+                p_t4.append(torch.tensor(0.0, device = example_object_probs.device))
+
+        return p_t4

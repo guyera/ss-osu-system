@@ -37,8 +37,8 @@ backbone = backbone
 
 classifier = unsupervisednoveltydetection.ClassifierV2(256, 5, 12, 8, 72)
 classifier = classifier.to(device)
-detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(5, 12, 8)
-detector = detector.to(device)
+tuple_predictor = tupleprediction.TuplePredictor(5, 12, 8)
+tuple_predictor = tuple_predictor.to(device)
 state_dict = torch.load(
     os.path.join(
         pretrained_models_dir,
@@ -46,7 +46,7 @@ state_dict = torch.load(
     )
 )
 classifier.load_state_dict(state_dict['module']['classifier'])
-detector.load_state_dict(state_dict['module'])
+tuple_predictor.load_state_dict(state_dict['module'])
 
 activation_statistical_model = tupleprediction.ActivationStatisticalModel(architecture).to(device)
 activation_statistical_model.load_state_dict(state_dict['activation_statistical_model'])
@@ -124,7 +124,7 @@ with torch.no_grad():
     results['subject_novelty_score'] = subject_scores
     results['verb_novelty_score'] = verb_scores
     results['object_novelty_score'] = object_scores
-    p_t4 = detector.p_t4(subject_probs, verb_probs, object_probs)
+    p_t4 = tuple_predictor.p_t4(subject_probs, verb_probs, object_probs)
     results['p_t4'] = p_t4
     hint_b = torch.tensor(hint_b, dtype=torch.bool, device=device) if args.hint_b else None
 
@@ -173,7 +173,7 @@ with torch.no_grad():
     results['subject_novelty_score'] = subject_scores
     results['verb_novelty_score'] = verb_scores
     results['object_novelty_score'] = object_scores
-    p_t4 = detector.p_t4(subject_probs, verb_probs, object_probs)
+    p_t4 = tuple_predictor.p_t4(subject_probs, verb_probs, object_probs)
     results['p_t4'] = p_t4
     incident_hint_b = torch.tensor(incident_hint_b, dtype=torch.bool, device=device) if args.hint_b else None
 
@@ -222,7 +222,7 @@ with torch.no_grad():
     results['subject_novelty_score'] = subject_scores
     results['verb_novelty_score'] = verb_scores
     results['object_novelty_score'] = object_scores
-    p_t4 = detector.p_t4(subject_probs, verb_probs, object_probs)
+    p_t4 = tuple_predictor.p_t4(subject_probs, verb_probs, object_probs)
     results['p_t4'] = p_t4
     environment_hint_b = torch.tensor(environment_hint_b, dtype=torch.bool, device=device) if args.hint_b else None
 

@@ -1,14 +1,11 @@
 import torch
-from unsupervisednoveltydetection import\
-    UnsupervisedNoveltyDetector,\
-    ThresholdTrialLevelPType
 from tupleprediction import\
     ActivationStatisticalModel,\
     Case1LogisticRegression,\
     Case2LogisticRegression,\
-    Case3LogisticRegression
+    Case3LogisticRegression,\
+    TuplePredictor
 from unsupervisednoveltydetection import ClassifierV2
-
 
 class BatchContext:
     def __init__(self):
@@ -66,7 +63,7 @@ class UnsupervisedNoveltyDetectionManager:
         self.p_type_alpha = p_type_alpha
 
         self.classifier = ClassifierV2(256, num_subject_classes, num_object_classes, num_verb_classes, num_spatial_features)
-        self.detector = UnsupervisedNoveltyDetector(num_subject_classes, num_object_classes, num_verb_classes)
+        self.tuple_predictor = TuplePredictor(num_subject_classes, num_object_classes, num_verb_classes)
         
         pretrained_path = os.path.join(
             model_dir,
@@ -76,8 +73,8 @@ class UnsupervisedNoveltyDetectionManager:
         state_dict = torch.load(pretrained_path)
         self.classifier.load_state_dict(state_dict['module']['classifier'])
         self.classifier = self.classifier.to('cuda:0')
-        self.detector.load_state_dict(state_dict['module'])
-        self.detector = self.detector.to('cuda:0')
+        self.tuple_predictor.load_state_dict(state_dict['module'])
+        self.tuple_predictor = self.tuple_predictor.to('cuda:0')
         self.activation_statistical_model = ActivationStatisticalModel(backbone_architecture).to('cuda:0')
         self.activation_statistical_model.load_state_dict(state_dict['activation_statistical_model'])
         
@@ -98,9 +95,9 @@ class UnsupervisedNoveltyDetectionManager:
 
     def top3(self, subject_probs, verb_probs, object_probs, batch_p_type, scg_predictions, p_ni):
         with torch.no_grad():
-            top3 = self.detector.top3(subject_probs, verb_probs, object_probs, batch_p_type)
+            top3 = self.tuple_predictor.top3(subject_probs, verb_probs, object_probs, batch_p_type)
 
-        assert not any([any([torch.isnan(p[1]) for p in preds]) for preds in top3['top3']]), "NaNs in unsupervised detector's top-3"
+        assert not any([any([torch.isnan(p[1]) for p in preds]) for preds in top3['top3']]), "NaNs in tuple predictor's top-3"
 
         for i, p in enumerate(top3['top3']):
             new_p = []
@@ -122,7 +119,7 @@ class UnsupervisedNoveltyDetectionManager:
 
             top3['top3'][i] = new_p
 
-        top3_merged = self.detector.merge_predictions(scg_predictions, top3['t67'], top3['cases'], top3['top3'], p_ni)
+        top3_merged = self.tuple_predictor.merge_predictions(scg_predictions, top3['t67'], top3['cases'], top3['top3'], p_ni)
 
         return top3_merged   
 
@@ -164,7 +161,7 @@ class UnsupervisedNoveltyDetectionManager:
             results['subject_probs'] = subject_probs
             results['verb_probs'] = verb_probs
             results['object_probs'] = object_probs
-            p_t4 = self.detector.p_t4(subject_probs, verb_probs, object_probs)
+            p_t4 = self.tuple_predictor.p_t4(subject_probs, verb_probs, object_probs)
             results['p_t4'] = p_t4
 
         return results, incident_activation_statistical_scores
