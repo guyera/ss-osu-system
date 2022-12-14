@@ -5,7 +5,7 @@ from tupleprediction import\
     Case2LogisticRegression,\
     Case3LogisticRegression,\
     TuplePredictor
-from unsupervisednoveltydetection import ClassifierV2
+from boxclassifier import ClassifierV2
 
 class BatchContext:
     def __init__(self):

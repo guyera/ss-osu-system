@@ -6,7 +6,7 @@ import torch
 import sklearn.metrics
 import matplotlib.pyplot as plt
 
-import unsupervisednoveltydetection
+import boxclassifier
 import noveltydetectionfeatures
 import tupleprediction
 from backbone import Backbone
@@ -35,7 +35,7 @@ backbone = backbone.to(device)
 backbone.eval()
 backbone = backbone
 
-classifier = unsupervisednoveltydetection.ClassifierV2(256, 5, 12, 8, 72)
+classifier = boxclassifier.ClassifierV2(256, 5, 12, 8, 72)
 classifier = classifier.to(device)
 tuple_predictor = tupleprediction.TuplePredictor(5, 12, 8)
 tuple_predictor = tuple_predictor.to(device)

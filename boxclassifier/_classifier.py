@@ -1,7 +1,7 @@
 import torch
 
-from unsupervisednoveltydetection._utils import _state_dict, _load_state_dict
-from unsupervisednoveltydetection._confidencecalibrator import\
+from boxclassifier._utils import _state_dict, _load_state_dict
+from boxclassifier._confidencecalibrator import\
     ConfidenceCalibrator
 
 class ClassifierV2:

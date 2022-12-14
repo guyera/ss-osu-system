@@ -1,0 +1,1 @@
+from boxclassifier._classifier import ClassifierV2

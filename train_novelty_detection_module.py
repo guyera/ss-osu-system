@@ -4,7 +4,7 @@ import os
 
 import torch
 
-import unsupervisednoveltydetection
+import boxclassifier
 import tupleprediction
 from backbone import Backbone
 
@@ -13,7 +13,7 @@ architecture = Backbone.Architecture.swin_t
 backbone = Backbone(architecture)
 backbone = backbone.to(device)
 
-classifier = unsupervisednoveltydetection.ClassifierV2(256, 5, 12, 8, 72)
+classifier = boxclassifier.ClassifierV2(256, 5, 12, 8, 72)
 classifier = classifier.to(device)
 tuple_predictor = tupleprediction.TuplePredictor(5, 12, 8)
 tuple_predictor = tuple_predictor.to(device)

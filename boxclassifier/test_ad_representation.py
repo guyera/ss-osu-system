@@ -7,7 +7,7 @@ import sklearn.metrics
 import numpy as np
 
 import noveltydetectionfeatures
-import unsupervisednoveltydetection
+import boxclassifier
 
 import unittest
 
@@ -363,7 +363,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         )
         
         # Create classifier
-        classifier = unsupervisednoveltydetection.ClassifierV2(
+        classifier = boxclassifier.ClassifierV2(
             256,
             len(self.id_subject_labels) + 1, # Add 1 for anomaly label = 0
             len(self.id_object_labels) + 1, # Add 1 for anomaly label = 0

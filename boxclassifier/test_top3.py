@@ -2,7 +2,7 @@ import torch
 
 import unittest
 
-import unsupervisednoveltydetection
+import boxclassifier
 import noveltydetectionfeatures
 import noveltydetection
 from backbone import Backbone
@@ -14,16 +14,16 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
 
         backbone = Backbone(Backbone.Architecture.swin_t)
         
-        backbone_state_dict = torch.load('unsupervisednoveltydetection/' + backbone.architecture.name +'_backbone_2.pth')
+        backbone_state_dict = torch.load('boxclassifier/' + backbone.architecture.name +'_backbone_2.pth')
         backbone.load_state_dict(backbone_state_dict)
         backbone = backbone.to(self.device)
         backbone.eval()
         self.backbone = backbone
         
-        classifier = unsupervisednoveltydetection.ClassifierV2(256, 5, 12, 8, 72)
-        detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(classifier, 5, 12, 8)
+        classifier = boxclassifier.ClassifierV2(256, 5, 12, 8, 72)
+        detector = boxclassifier.UnsupervisedNoveltyDetector(classifier, 5, 12, 8)
         self.detector = detector.to(self.device)
-        state_dict = torch.load('unsupervisednoveltydetection/' +model_ +'_unsupervised_novelty_detection_module_2.pth')
+        state_dict = torch.load('boxclassifier/' +model_ +'_unsupervised_novelty_detection_module_2.pth')
         self.detector.load_state_dict(state_dict['module'])
 
         self.testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(

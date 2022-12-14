@@ -5,7 +5,8 @@ import os
 from torchvision.models import resnet50
 
 import noveltydetectionfeatures
-import unsupervisednoveltydetection
+import boxclassifier
+from boxclassifier._confidencecalibrator import ConfidenceCalibrator
 
 import unittest
 
@@ -53,7 +54,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         
         backbone = resnet50(pretrained = False)
         backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
-        backbone_state_dict = torch.load('unsupervisednoveltydetection/backbone_2.pth')
+        backbone_state_dict = torch.load('boxclassifier/backbone_2.pth')
         backbone.load_state_dict(backbone_state_dict)
         backbone = backbone.to(self.device)
         backbone.eval()
@@ -105,13 +106,13 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             shuffle = False
         )
         
-        module_state_dict = torch.load('unsupervisednoveltydetection/unsupervised_novelty_detection_module_2.pth')
+        module_state_dict = torch.load('boxclassifier/unsupervised_novelty_detection_module_2.pth')
         # Create classifier
-        classifier = unsupervisednoveltydetection.ClassifierV2(256, 5, 12, 8, 72)
+        classifier = boxclassifier.ClassifierV2(256, 5, 12, 8, 72)
         classifier.load_state_dict(module_state_dict['module']['classifier'])
         self.classifier = classifier.to(self.device)
         
-        calibrator = unsupervisednoveltydetection.ConfidenceCalibrator()
+        calibrator = ConfidenceCalibrator()
         calibrator.load_state_dict(module_state_dict['module']['confidence_calibrator'])
         self.calibrator = calibrator.to(self.device)
     

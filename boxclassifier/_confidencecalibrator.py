@@ -1,8 +1,6 @@
 import torch
 
-from unsupervisednoveltydetection._utils import _state_dict, _load_state_dict
-from unsupervisednoveltydetection._confidencecalibrator import\
-    ConfidenceCalibrator
+from boxclassifier._utils import _state_dict, _load_state_dict
 
 class TemperatureScaler(torch.nn.Module):
     def __init__(self):
