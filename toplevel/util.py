@@ -65,7 +65,7 @@ class UnsupervisedNoveltyDetectionManager:
        
         self.p_type_alpha = p_type_alpha
 
-        classifier = ClassifierV2(256, num_subject_classes, num_object_classes, num_verb_classes, num_spatial_features)
+        self.classifier = ClassifierV2(256, num_subject_classes, num_object_classes, num_verb_classes, num_spatial_features)
         self.detector = UnsupervisedNoveltyDetector(classifier, num_subject_classes, num_object_classes, num_verb_classes)
         
         pretrained_path = os.path.join(
@@ -149,6 +149,7 @@ class UnsupervisedNoveltyDetectionManager:
         # whole_image_features = []
         incident_activation_statistical_scores = []
         
+        # TODO tensorize by case
         with torch.no_grad():
             for example_spatial_features, _, _, _, _, _, _, example_subject_images, example_object_images, example_verb_images, whole_images  in dataset:
                 spatial_feature = example_spatial_features if example_spatial_features is not None else None
@@ -163,9 +164,19 @@ class UnsupervisedNoveltyDetectionManager:
 
                 whole_image_features = self.activation_statistical_model.compute_features(backbone, whole_images.unsqueeze(0))
                 incident_activation_statistical_scores.append(self.activation_statistical_model.score(whole_image_features).squeeze(0))
-        
-                            
-            results = self.detector.scores_and_p_t4(spatial_features, subject_box_features, verb_box_features, 
-                object_box_features)
-            
+
+            results = {}
+            subject_probs, subject_scores, verb_probs, verb_scores,\
+                object_probs, object_scores = self.classifier.predict_score(
+                        spatial_features,
+                        subject_box_features,
+                        verb_box_features,
+                        object_box_features
+                    )
+            results['subject_novelty_score'] = subject_scores
+            results['verb_novelty_score'] = verb_scores
+            results['object_novelty_score'] = object_scores
+            p_t4 = self.detector.p_t4(subject_probs, verb_probs, object_probs)
+            results['p_t4'] = p_t4
+
         return results, incident_activation_statistical_scores

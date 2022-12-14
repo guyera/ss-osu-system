@@ -773,76 +773,16 @@ class UnsupervisedNoveltyDetector:
             merged_predictions.append(merged_top3)
         return merged_predictions
 
-    def scores_and_p_t4(self, spatial_features, subject_appearance_features, verb_appearance_features, object_appearance_features):
-        subject_scores = []
-        subject_probs = []
-        verb_scores = []
-        verb_probs = []
-        object_scores = []
-        object_probs = []
-        example_subject_probs = None
-        example_verb_probs = None
-        example_object_probs = None
-        for idx in range(len(spatial_features)):
-            example_spatial_features = spatial_features[idx]
-            example_subject_appearance_features = subject_appearance_features[idx]
-            example_verb_appearance_features = verb_appearance_features[idx]
-            example_object_appearance_features = object_appearance_features[idx]
-            
-            if example_subject_appearance_features is not None:
-                example_subject_features = torch.flatten(example_subject_appearance_features).to(self.device)
-                
-                subject_logits, subject_score = self.classifier.predict_score_subject(example_subject_features.unsqueeze(0))
-                
-                subject_score = subject_score.squeeze(0)
-                subject_scores.append(subject_score)
-
-                example_subject_probs = self.confidence_calibrator.calibrate_subject(subject_logits)
-                example_subject_probs = example_subject_probs.squeeze(0)
-                subject_probs.append(example_subject_probs)
-            else:
-                subject_scores.append(None)
-                subject_probs.append(None)
-
-            if example_object_appearance_features is not None:
-                example_object_features = torch.flatten(example_object_appearance_features).to(self.device)
-                
-                object_logits, object_score = self.classifier.predict_score_object(example_object_features.unsqueeze(0))
-                
-                object_score = object_score.squeeze(0)
-                object_scores.append(object_score)
-                
-                example_object_probs = self.confidence_calibrator.calibrate_object(object_logits)
-                example_object_probs = example_object_probs.squeeze(0)
-                object_probs.append(example_object_probs)
-            else:
-                object_scores.append(None)
-                object_probs.append(None)
-            
-            if example_verb_appearance_features is not None:
-                example_verb_features = torch.cat((torch.flatten(example_spatial_features), torch.flatten(example_verb_appearance_features))).to(self.device)
-                
-                verb_logits, verb_score = self.classifier.predict_score_verb(example_verb_features.unsqueeze(0))
-                
-                verb_score = verb_score.squeeze(0)
-                verb_scores.append(verb_score)
-
-                example_verb_probs = self.confidence_calibrator.calibrate_verb(verb_logits)
-                example_verb_probs = example_verb_probs.squeeze(0)
-                verb_probs.append(example_verb_probs)
-            else:
-                verb_scores.append(None)
-                verb_probs.append(None)
-        
+    def p_t4(self, subject_probs, verb_probs, object_probs):
         # Now compute t4 probabilities based on each example's case
+        # TODO tensorize by case
         p_t4 = []
         for idx in range(len(subject_probs)):
-            assert ((example_subject_probs is not None and example_verb_probs is not None) or example_object_probs is not None)
-
             example_subject_probs = subject_probs[idx]
             example_verb_probs = verb_probs[idx]
             example_object_probs = object_probs[idx]
-            
+            assert ((example_subject_probs is not None and example_verb_probs is not None) or example_object_probs is not None)
+
             if example_subject_probs is not None and example_object_probs is not None:
                 # Case 1. P(type = 4 | no novel boxes) = P(predicted SVO is a
                 # novel combination) = 1 - P(predicted SVO is a known
@@ -853,25 +793,14 @@ class UnsupervisedNoveltyDetector:
                 # novel combination) = 1 - P(predicted SV is a known
                 # combination)
                 p_t4.append(1 - self._compute_p_known_sv(example_subject_probs, example_verb_probs))
-            elif example_object_probs is not None:
+            else:
                 # Case 3. P(type = 4 | no novel boxes) = 0; there is just an
                 # object (no subject or verb), and so a novel combination would
                 # actually mean a novel object, which is considered a type 3
                 # novelty instead of type 4.
                 p_t4.append(torch.tensor(0.0, device = example_object_probs.device))
-            else:
-                # Subject and object boxes cannot both be missing. Shouldn't
-                # have made it past earlier assert. If this error is raised,
-                # then there is a bug; investigate.
-                raise ValueError
-        
-        results = {}
-        results['subject_novelty_score'] = subject_scores
-        results['verb_novelty_score'] = verb_scores
-        results['object_novelty_score'] = object_scores
-        results['p_t4'] = p_t4
-        
-        return results
+
+        return p_t4
 
 __all__ = [
     'UnsupervisedNoveltyDetector',

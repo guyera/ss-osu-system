@@ -1,6 +1,8 @@
 import torch
 
 from unsupervisednoveltydetection._utils import _state_dict, _load_state_dict
+from unsupervisednoveltydetection._confidencecalibrator import\
+    ConfidenceCalibrator
 
 class ClassifierV2:
     def __init__(
@@ -22,6 +24,7 @@ class ClassifierV2:
         self.subject_classifier = torch.nn.Linear(self.bottleneck_dim, self.num_subj_cls - 1).to(self.device)
         self.object_classifier = torch.nn.Linear(self.bottleneck_dim, self.num_obj_cls - 1).to(self.device)
         self.verb_classifier = torch.nn.Linear(self.bottleneck_dim + self.spatial_encoding_dim, self.num_action_cls - 1).to(self.device)
+        self.confidence_calibrator = ConfidenceCalibrator()
     
     def predict(self, subject_features, object_features, verb_features):
         self.subject_classifier.eval()
@@ -31,6 +34,107 @@ class ClassifierV2:
         object_logits = self.object_classifier(object_features)
         verb_logits = self.verb_classifier(verb_features)
         return subject_logits, object_logits, verb_logits
+
+    def predict_score(self, spatial_features, subject_box_features, verb_box_features, object_box_features):
+        # Ensure equal numbers of all features
+        n = len(spatial_features)
+        assert len(subject_box_features) == n
+        assert len(verb_box_features) == n
+        assert len(object_box_features) == n
+
+        self.subject_classifier.eval()
+        self.object_classifier.eval()
+        self.verb_classifier.eval()
+
+        # Find non-none indices for each feature
+        non_none_subject_indices = []
+        non_none_verb_indices = []
+        non_none_object_indices = []
+        for idx in range(n):
+            if subject_box_features[idx] is not None:
+                non_none_subject_indices.append(idx)
+            if verb_box_features[idx] is not None:
+                non_none_verb_indices.append(idx)
+            if object_box_features[idx] is not None:
+                non_none_object_indices.append(idx)
+
+        # Construct feature tensors
+        non_none_spatial_features = torch.cat([
+            spatial_features[idx] for idx in non_none_verb_indices
+        ])
+        non_none_subject_box_features = torch.cat([
+            subject_box_features[idx] for idx in non_none_subject_indices
+        ])
+        non_none_verb_box_features = torch.cat([
+            verb_box_features[idx] for idx in non_none_verb_indices
+        ])
+        non_none_object_box_features = torch.cat([
+            object_box_features[idx] for idx in non_none_object_indices
+        ])
+        
+        subject_features = torch.flatten(
+            non_none_subject_box_features,
+            start_dim=1
+        )
+        verb_features = torch.cat(
+            (
+                torch.flatten(non_none_spatial_features, start_dim=1),
+                torch.flatten(non_none_verb_box_features, start_dim=1)
+            ),
+            dim=1
+        )
+        object_features = torch.flatten(
+            non_none_object_box_features,
+            start_dim=1
+        )
+
+        # Make predictions
+        subject_logits = self.subject_classifier(subject_features)
+        max_subject_logits, _ = torch.max(subject_logits, dim=1)
+        subject_scores = -max_subject_logits
+
+        verb_logits = self.verb_classifier(verb_features)
+        max_verb_logits, _ = torch.max(verb_logits, dim=1)
+        verb_scores = -max_verb_logits
+
+        object_logits = self.object_classifier(object_features)
+        max_object_logits, _ = torch.max(object_logits, dim=1)
+        object_scores = -max_object_logits
+
+        # Calibrate predictions
+        subject_probs, object_probs, verb_probs = \
+            self.confidence_calibrator.calibrate(
+                subject_logits,
+                object_logits,
+                verb_logits
+            )
+
+        # Expand predictions back to list form, inserting "Nones" where
+        # necessary
+        final_subject_probs = [None] * n
+        final_subject_scores = [None] * n
+        for idx, non_none_subject_index in enumerate(non_none_subject_indices):
+            final_subject_probs[non_none_subject_index] = subject_probs[idx]
+            final_subject_scores[non_none_subject_index] = subject_scores[idx]
+
+        final_verb_probs = [None] * n
+        final_verb_scores = [None] * n
+        for idx, non_none_verb_index in enumerate(non_none_verb_indices):
+            final_verb_probs[non_none_verb_index] = verb_probs[idx]
+            final_verb_scores[non_none_verb_index] = verb_scores[idx]
+
+        final_object_probs = [None] * n
+        final_object_scores = [None] * n
+        for idx, non_none_object_index in enumerate(non_none_object_indices):
+            final_object_probs[non_none_object_index] = object_probs[idx]
+            final_object_scores[non_none_object_index] = object_scores[idx]
+
+        return final_subject_probs,\
+            final_subject_scores,\
+            final_verb_probs,\
+            final_verb_scores,\
+            final_object_probs,\
+            final_object_scores
 
     def predict_score_subject(self, features):
         self.subject_classifier.eval()

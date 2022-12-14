@@ -228,16 +228,13 @@ def compute_probability_novelty(
     Parameters:
         subject_scores: List of N scalars, some of which may be None
             Subject novelty scores (negative max logits from the subject box
-            classifier, returned by
-            UnsupervisedNoveltyDetector.scores_and_p_t4()
+            classifier
         verb_scores: List of N scalars, some of which may be None
             Subject novelty scores (negative max logits from the verb box
-            classifier, returned by
-            UnsupervisedNoveltyDetector.scores_and_p_t4()
+            classifier
         object_scores: List of N scalars, some of which may be None
             Subject novelty scores (negative max logits from the object box
-            classifier, returned by
-            UnsupervisedNoveltyDetector.scores_and_p_t4()
+            classifier
         activation_statistical_scores: numpy.ndarray of shape [N]
             Whole-image novelty scores computed from a statistical model fit to
             PCA projections of early-layer activations extracted from whole
@@ -254,7 +251,7 @@ def compute_probability_novelty(
             when type 0 is frequently confused for type 2
         p_t4: Tensor of shape [N] or None
             p_t4[i] represents P(type = 4 | type = 0 or 4) for image i.
-            Returned by UnsupervisedNoveltyDetector.scores_and_p_t4(). If None,
+            Returned by UnsupervisedNoveltyDetector.p_t4(). If None,
             type 4 probabilities are set to zero.
         hint_a: int in {0, 1, 2, 3, 4, 5, 6, 7} or None
             Specifies the trial-level novelty type. 0 means the trial doesn't

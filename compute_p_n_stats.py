@@ -111,7 +111,19 @@ with torch.no_grad():
         else:
             hint_b.append(False)
 
-    results = detector.scores_and_p_t4(spatial_features, subject_box_features, verb_box_features, object_box_features)
+    results = {}
+    subject_probs, subject_scores, verb_probs, verb_scores, object_probs,\
+        object_scores = classifier.predict_score(
+            spatial_features,
+            subject_box_features,
+            verb_box_features,
+            object_box_features
+        )
+    results['subject_novelty_score'] = subject_scores
+    results['verb_novelty_score'] = verb_scores
+    results['object_novelty_score'] = object_scores
+    p_t4 = detector.p_t4(subject_probs, verb_probs, object_probs)
+    results['p_t4'] = p_t4
     hint_b = torch.tensor(hint_b, dtype=torch.bool, device=device) if args.hint_b else None
 
 subject_scores = results['subject_novelty_score']
@@ -148,7 +160,19 @@ with torch.no_grad():
         incident_activation_statistical_scores.append(activation_statistical_model.score(whole_image_features).squeeze(0))
         incident_hint_b.append(True)
 
-    results = detector.scores_and_p_t4(incident_spatial_features, incident_subject_box_features, incident_verb_box_features, incident_object_box_features)
+    results = {}
+    subject_probs, subject_scores, verb_probs, verb_scores, object_probs,\
+        object_scores = classifier.predict_score(
+            incident_spatial_features,
+            incident_subject_box_features,
+            incident_verb_box_features,
+            incident_object_box_features
+        )
+    results['subject_novelty_score'] = subject_scores
+    results['verb_novelty_score'] = verb_scores
+    results['object_novelty_score'] = object_scores
+    p_t4 = detector.p_t4(subject_probs, verb_probs, object_probs)
+    results['p_t4'] = p_t4
     incident_hint_b = torch.tensor(incident_hint_b, dtype=torch.bool, device=device) if args.hint_b else None
 
 incident_subject_scores = results['subject_novelty_score']
@@ -185,7 +209,19 @@ with torch.no_grad():
         environment_activation_statistical_scores.append(activation_statistical_model.score(whole_image_features).squeeze(0))
         environment_hint_b.append(True)
 
-    results = detector.scores_and_p_t4(environment_spatial_features, environment_subject_box_features, environment_verb_box_features, environment_object_box_features)
+    results = {}
+    subject_probs, subject_scores, verb_probs, verb_scores, object_probs,\
+        object_scores = classifier.predict_score(
+            environment_spatial_features,
+            environment_subject_box_features,
+            environment_verb_box_features,
+            environment_object_box_features
+        )
+    results['subject_novelty_score'] = subject_scores
+    results['verb_novelty_score'] = verb_scores
+    results['object_novelty_score'] = object_scores
+    p_t4 = detector.p_t4(subject_probs, verb_probs, object_probs)
+    results['p_t4'] = p_t4
     environment_hint_b = torch.tensor(environment_hint_b, dtype=torch.bool, device=device) if args.hint_b else None
 
 environment_subject_scores = results['subject_novelty_score']
