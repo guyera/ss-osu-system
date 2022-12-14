@@ -9,7 +9,7 @@ from ensemble import Ensemble
 from toplevel.util import *
 import noveltydetectionfeatures
 import pandas as pd
-from noveltydetection.utils import compute_probability_novelty
+from tupleprediction import compute_probability_novelty
 from adaptation.query_formulation import select_queries
 import pickle
 from scipy.stats import ks_2samp

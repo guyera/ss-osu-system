@@ -2,7 +2,7 @@ import torch
 from unsupervisednoveltydetection import\
     UnsupervisedNoveltyDetector,\
     ThresholdTrialLevelPType
-from noveltydetection.utils import\
+from tupleprediction import\
     ActivationStatisticalModel,\
     Case1LogisticRegression,\
     Case2LogisticRegression,\

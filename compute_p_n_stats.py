@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 import unsupervisednoveltydetection
 import noveltydetectionfeatures
-import noveltydetection
+import tupleprediction
 from backbone import Backbone
 
 parser = argparse.ArgumentParser()
@@ -48,7 +48,7 @@ state_dict = torch.load(
 classifier.load_state_dict(state_dict['module']['classifier'])
 detector.load_state_dict(state_dict['module'])
 
-activation_statistical_model = noveltydetection.utils.ActivationStatisticalModel(architecture).to(device)
+activation_statistical_model = tupleprediction.ActivationStatisticalModel(architecture).to(device)
 activation_statistical_model.load_state_dict(state_dict['activation_statistical_model'])
 
 testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
@@ -436,15 +436,15 @@ ax.text(0.95, 0.05, text, transform = ax.transAxes, fontsize = 14, verticalalign
 fig.savefig('subject_verb_scatter.jpg')
 plt.close(fig)
 
-case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression()
+case_1_logistic_regression = tupleprediction.Case1LogisticRegression()
 case_1_logistic_regression.load_state_dict(state_dict['case_1_logistic_regression'])
 case_1_logistic_regression = case_1_logistic_regression.to(device)
 
-case_2_logistic_regression = noveltydetection.utils.Case2LogisticRegression()
+case_2_logistic_regression = tupleprediction.Case2LogisticRegression()
 case_2_logistic_regression.load_state_dict(state_dict['case_2_logistic_regression'])
 case_2_logistic_regression = case_2_logistic_regression.to(device)
 
-case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression()
+case_3_logistic_regression = tupleprediction.Case3LogisticRegression()
 case_3_logistic_regression.load_state_dict(state_dict['case_3_logistic_regression'])
 case_3_logistic_regression = case_3_logistic_regression.to(device)
 
@@ -461,9 +461,9 @@ case_3_logistic_regression = case_3_logistic_regression.to(device)
 #activation_statistical_scores = [np.array(0) for _ in activation_statistical_scores]
 #incident_activation_statistical_scores = [np.array(0) for _ in incident_activation_statistical_scores]
 #environment_activation_statistical_scores = [np.array(0) for _ in environment_activation_statistical_scores]
-p_type, p_n, separated_p_type = noveltydetection.utils.compute_probability_novelty(subject_scores, verb_scores, object_scores, activation_statistical_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = p_t4, hint_a=args.hint_a, hint_b=hint_b) # This gives the best results (thankfully)
-incident_p_type, incident_p_n, incident_separated_p_type = noveltydetection.utils.compute_probability_novelty(incident_subject_scores, incident_verb_scores, incident_object_scores, incident_activation_statistical_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = incident_p_t4, hint_a=args.hint_a, hint_b=incident_hint_b)
-environment_p_type, environment_p_n, environment_separated_p_type = noveltydetection.utils.compute_probability_novelty(environment_subject_scores, environment_verb_scores, environment_object_scores, environment_activation_statistical_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = environment_p_t4, hint_a=args.hint_a, hint_b=environment_hint_b)
+p_type, p_n, separated_p_type = tupleprediction.compute_probability_novelty(subject_scores, verb_scores, object_scores, activation_statistical_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = p_t4, hint_a=args.hint_a, hint_b=hint_b) # This gives the best results (thankfully)
+incident_p_type, incident_p_n, incident_separated_p_type = tupleprediction.compute_probability_novelty(incident_subject_scores, incident_verb_scores, incident_object_scores, incident_activation_statistical_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = incident_p_t4, hint_a=args.hint_a, hint_b=incident_hint_b)
+environment_p_type, environment_p_n, environment_separated_p_type = tupleprediction.compute_probability_novelty(environment_subject_scores, environment_verb_scores, environment_object_scores, environment_activation_statistical_scores, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, ignore_t2_in_pni = False, p_t4 = environment_p_t4, hint_a=args.hint_a, hint_b=environment_hint_b)
 
 type_1_p_n = []
 type_1_p_type = []

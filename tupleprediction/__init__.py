@@ -10,20 +10,6 @@ from sklearn.neighbors import KernelDensity
 
 from backbone import Backbone
 
-def compute_partial_auc(nominal_scores, novel_scores):
-    nominal_trues = torch.zeros_like(nominal_scores)
-    novel_trues = torch.ones_like(novel_scores)
-
-    trues = torch.cat((nominal_trues, novel_trues), dim = 0)\
-        .data.cpu().numpy()
-    scores = torch.cat((nominal_scores, novel_scores), dim = 0)\
-        .data.cpu().numpy()
-
-    auc = sklearn.metrics.roc_auc_score(trues, scores, max_fpr = 0.25)
-
-    return auc
-
-
 class ActivationStatisticalModel:
     _bandwidths = {
         Backbone.Architecture.swin_t: 50,

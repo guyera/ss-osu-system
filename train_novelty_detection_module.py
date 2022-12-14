@@ -5,7 +5,7 @@ import os
 import torch
 
 import unsupervisednoveltydetection
-import noveltydetection
+import tupleprediction
 from backbone import Backbone
 
 device = 'cuda:0'
@@ -18,11 +18,11 @@ classifier = classifier.to(device)
 detector = unsupervisednoveltydetection.UnsupervisedNoveltyDetector(5, 12, 8)
 detector = detector.to(device)
 
-case_1_logistic_regression = noveltydetection.utils.Case1LogisticRegression().to(device)
-case_2_logistic_regression = noveltydetection.utils.Case2LogisticRegression().to(device)
-case_3_logistic_regression = noveltydetection.utils.Case3LogisticRegression().to(device)
+case_1_logistic_regression = tupleprediction.Case1LogisticRegression().to(device)
+case_2_logistic_regression = tupleprediction.Case2LogisticRegression().to(device)
+case_3_logistic_regression = tupleprediction.Case3LogisticRegression().to(device)
 
-activation_statistical_model = noveltydetection.utils.ActivationStatisticalModel(architecture).to(device)
+activation_statistical_model = tupleprediction.ActivationStatisticalModel(architecture).to(device)
 
 trainer = unsupervisednoveltydetection.training.NoveltyDetectorTrainer('./', 'dataset_v4/dataset_v4_2_train.csv', 'dataset_v4/dataset_v4_2_val.csv', 'dataset_v4/dataset_v4_2_cal_incident.csv', 'dataset_v4/dataset_v4_2_cal_corruption.csv', 64)
 
