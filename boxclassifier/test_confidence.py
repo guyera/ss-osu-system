@@ -111,13 +111,13 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             shuffle = False
         )
         
-        module_state_dict = torch.load(os.path.join(
+        classifier_state_dict = torch.load(os.path.join(
             pretrained_models_dir,
-            'unsupervised_novelty_detection_module.pth'
+            'classifier.pth'
         ))
         # Create classifier
         classifier = boxclassifier.ClassifierV2(256, 5, 12, 8, 72)
-        classifier.load_state_dict(module_state_dict['module']['classifier'])
+        classifier.load_state_dict(classifier_state_dict)
         self.classifier = classifier.to(self.device)
     
     def ece(self, confidences, correct):

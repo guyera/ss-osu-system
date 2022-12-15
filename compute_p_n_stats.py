@@ -38,17 +38,24 @@ classifier = boxclassifier.ClassifierV2(256, 5, 12, 8, 72)
 classifier = classifier.to(device)
 tuple_predictor = tupleprediction.TuplePredictor(5, 12, 8)
 tuple_predictor = tuple_predictor.to(device)
-state_dict = torch.load(
+
+classifier_state_dict = torch.load(
     os.path.join(
         pretrained_models_dir,
-        'unsupervised_novelty_detection_module.pth'
+        'classifier.pth'
     )
 )
-classifier.load_state_dict(state_dict['module']['classifier'])
-tuple_predictor.load_state_dict(state_dict['module'])
+tuple_prediction_state_dict = torch.load(
+    os.path.join(
+        pretrained_models_dir,
+        'tuple-prediction.pth'
+    )
+)
+classifier.load_state_dict(classifier_state_dict)
+tuple_predictor.load_state_dict(tuple_prediction_state_dict)
 
 activation_statistical_model = tupleprediction.ActivationStatisticalModel(architecture).to(device)
-activation_statistical_model.load_state_dict(state_dict['activation_statistical_model'])
+activation_statistical_model.load_state_dict(tuple_prediction_state_dict['activation_statistical_model'])
 
 testing_set = BoxImageDataset(
     name = 'Custom',
@@ -415,15 +422,15 @@ fig.savefig('subject_verb_scatter.jpg')
 plt.close(fig)
 
 case_1_logistic_regression = tupleprediction.Case1LogisticRegression()
-case_1_logistic_regression.load_state_dict(state_dict['case_1_logistic_regression'])
+case_1_logistic_regression.load_state_dict(tuple_prediction_state_dict['case_1_logistic_regression'])
 case_1_logistic_regression = case_1_logistic_regression.to(device)
 
 case_2_logistic_regression = tupleprediction.Case2LogisticRegression()
-case_2_logistic_regression.load_state_dict(state_dict['case_2_logistic_regression'])
+case_2_logistic_regression.load_state_dict(tuple_prediction_state_dict['case_2_logistic_regression'])
 case_2_logistic_regression = case_2_logistic_regression.to(device)
 
 case_3_logistic_regression = tupleprediction.Case3LogisticRegression()
-case_3_logistic_regression.load_state_dict(state_dict['case_3_logistic_regression'])
+case_3_logistic_regression.load_state_dict(tuple_prediction_state_dict['case_3_logistic_regression'])
 case_3_logistic_regression = case_3_logistic_regression.to(device)
 
 # TODO remove

@@ -46,7 +46,7 @@ class WholeImageDataset(torch.utils.data.Dataset):
         return len(self.novelty_feature_dataset)
 
     def __getitem__(self, idx):
-        _, _, _, _, _, _, _, _, _, _, whole_image = self.novelty_feature_dataset[idx]
+        _, _, _, _, _, _, _, whole_image = self.novelty_feature_dataset[idx]
         return whole_image
 
 def custom_cross_entropy(predictions, targets):

@@ -32,18 +32,15 @@ trainer.train_novelty_detection_module(backbone, classifier, case_1_logistic_reg
 end_time = time.time()
 print(f'Time: {end_time - start_time}')
 
-tuple_predictor_state_dicts = {}
-tuple_predictor_state_dicts['classifier'] = classifier.state_dict()
 with open('known_combinations.pth', 'rb') as f:
     known_combinations = pickle.load(f)
-tuple_predictor_state_dicts['known_combinations'] = known_combinations
 
-module_state_dicts = {}
-module_state_dicts['module'] = tuple_predictor_state_dicts
-module_state_dicts['case_1_logistic_regression'] = case_1_logistic_regression.state_dict()
-module_state_dicts['case_2_logistic_regression'] = case_2_logistic_regression.state_dict()
-module_state_dicts['case_3_logistic_regression'] = case_3_logistic_regression.state_dict()
-module_state_dicts['activation_statistical_model'] = activation_statistical_model.state_dict()
+tuple_prediction_state_dicts = {}
+tuple_prediction_state_dicts['known_combinations'] = known_combinations
+tuple_prediction_state_dicts['case_1_logistic_regression'] = case_1_logistic_regression.state_dict()
+tuple_prediction_state_dicts['case_2_logistic_regression'] = case_2_logistic_regression.state_dict()
+tuple_prediction_state_dicts['case_3_logistic_regression'] = case_3_logistic_regression.state_dict()
+tuple_prediction_state_dicts['activation_statistical_model'] = activation_statistical_model.state_dict()
 
 save_dir = os.path.join(
     'pretrained-models',
@@ -57,6 +54,10 @@ torch.save(
     os.path.join(save_dir, 'backbone.pth')
 )
 torch.save(
-    module_state_dicts,
-    os.path.join(save_dir, 'unsupervised_novelty_detection_module.pth')
+    classifier.state_dict(),
+    os.path.join(save_dir, 'classifier.pth')
+)
+torch.save(
+    tuple_prediction_state_dicts,
+    os.path.join(save_dir, 'tuple-prediction.pth')
 )

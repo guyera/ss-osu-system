@@ -67,27 +67,33 @@ class UnsupervisedNoveltyDetectionManager:
         
         pretrained_path = os.path.join(
             model_dir,
-            backbone_architecture.value['name'],
-            'unsupervised_novelty_detection_module.pth'
+            backbone_architecture.value['name']
         )
-        state_dict = torch.load(pretrained_path)
-        self.classifier.load_state_dict(state_dict['module']['classifier'])
+        classifier_state_dict = torch.load(os.path.join(
+            pretrained_path,
+            'classifier.pth'
+        ))
+        tuple_prediction_state_dict = torch.load(os.path.join(
+            pretrained_path,
+            'tuple-prediction.pth'
+        ))
+        self.classifier.load_state_dict(classifier_state_dict)
         self.classifier = self.classifier.to('cuda:0')
-        self.tuple_predictor.load_state_dict(state_dict['module'])
+        self.tuple_predictor.load_state_dict(tuple_prediction_state_dict)
         self.tuple_predictor = self.tuple_predictor.to('cuda:0')
         self.activation_statistical_model = ActivationStatisticalModel(backbone_architecture).to('cuda:0')
-        self.activation_statistical_model.load_state_dict(state_dict['activation_statistical_model'])
+        self.activation_statistical_model.load_state_dict(tuple_prediction_state_dict['activation_statistical_model'])
         
         self.case_1_logistic_regression = Case1LogisticRegression()
-        self.case_1_logistic_regression.load_state_dict(state_dict['case_1_logistic_regression'])
+        self.case_1_logistic_regression.load_state_dict(tuple_prediction_state_dict['case_1_logistic_regression'])
         self.case_1_logistic_regression = self.case_1_logistic_regression.to('cuda:0')
         
         self.case_2_logistic_regression = Case2LogisticRegression()
-        self.case_2_logistic_regression.load_state_dict(state_dict['case_2_logistic_regression'])
+        self.case_2_logistic_regression.load_state_dict(tuple_prediction_state_dict['case_2_logistic_regression'])
         self.case_2_logistic_regression = self.case_2_logistic_regression.to('cuda:0')
         
         self.case_3_logistic_regression = Case3LogisticRegression()
-        self.case_3_logistic_regression.load_state_dict(state_dict['case_3_logistic_regression'])
+        self.case_3_logistic_regression.load_state_dict(tuple_prediction_state_dict['case_3_logistic_regression'])
         self.case_3_logistic_regression = self.case_3_logistic_regression.to('cuda:0')          
             
     def get_calibrators(self):
