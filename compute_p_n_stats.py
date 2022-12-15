@@ -33,7 +33,6 @@ backbone_state_dict = torch.load(
 backbone.load_state_dict(backbone_state_dict)
 backbone = backbone.to(device)
 backbone.eval()
-backbone = backbone
 
 classifier = boxclassifier.ClassifierV2(256, 5, 12, 8, 72)
 classifier = classifier.to(device)

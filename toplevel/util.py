@@ -68,7 +68,7 @@ class UnsupervisedNoveltyDetectionManager:
         pretrained_path = os.path.join(
             model_dir,
             backbone_architecture.value['name'],
-            'unsupervised_novelty_detection_module'
+            'unsupervised_novelty_detection_module.pth'
         )
         state_dict = torch.load(pretrained_path)
         self.classifier.load_state_dict(state_dict['module']['classifier'])

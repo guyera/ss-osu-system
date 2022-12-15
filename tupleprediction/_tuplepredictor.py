@@ -366,7 +366,7 @@ class TuplePredictor:
         t67_joint_probs = []
         cases = []
         results = {}
-        for idx in range(len(spatial_features)):
+        for idx in range(len(subject_probs)):
             example_subject_probs = subject_probs[idx]
             example_verb_probs = verb_probs[idx]
             example_object_probs = object_probs[idx]

@@ -2,13 +2,13 @@ import torch
 import argparse
 import pickle
 import os
+import unittest
+
 from torchvision.models import resnet50
 
 from boximagedataset import BoxImageDataset
 import boxclassifier
-from boxclassifier._confidencecalibrator import ConfidenceCalibrator
-
-import unittest
+from backbone import Backbone
 
 class SubjectImageDataset(torch.utils.data.Dataset):
     def __init__(self, novelty_feature_dataset):
@@ -19,7 +19,7 @@ class SubjectImageDataset(torch.utils.data.Dataset):
         return len(self.novelty_feature_dataset)
 
     def __getitem__(self, idx):
-        _, labels, _, _, images, _, _ = self.novelty_feature_dataset[idx]
+        _, labels, _, _, images, _, _, _ = self.novelty_feature_dataset[idx]
         return images, labels
 
 class VerbImageDataset(torch.utils.data.Dataset):
@@ -31,7 +31,7 @@ class VerbImageDataset(torch.utils.data.Dataset):
         return len(self.novelty_feature_dataset)
 
     def __getitem__(self, idx):
-        spatial_encodings, _, _, labels, _, _, images = self.novelty_feature_dataset[idx]
+        spatial_encodings, _, _, labels, _, _, images, _ = self.novelty_feature_dataset[idx]
         return images, spatial_encodings, labels
         #return images, None, labels
 
@@ -44,7 +44,7 @@ class ObjectImageDataset(torch.utils.data.Dataset):
         return len(self.novelty_feature_dataset)
     
     def __getitem__(self, idx):
-        _, _, labels, _, _, images, _ = self.novelty_feature_dataset[idx]
+        _, _, labels, _, _, images, _, _ = self.novelty_feature_dataset[idx]
         return images, labels
 
 class TestConfidenceCalibrationMethods(unittest.TestCase):
@@ -52,9 +52,15 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         self.device = 'cuda:0'
         self.num_bins = 15
         
-        backbone = resnet50(pretrained = False)
-        backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
-        backbone_state_dict = torch.load('boxclassifier/backbone_2.pth')
+        architecture = Backbone.Architecture.swin_t
+        backbone = Backbone(architecture)
+        pretrained_models_dir = os.path.join(
+            'pretrained-models',
+            architecture.value['name']
+        )
+        backbone_state_dict = torch.load(
+            os.path.join(pretrained_models_dir, 'backbone.pth')
+        )
         backbone.load_state_dict(backbone_state_dict)
         backbone = backbone.to(self.device)
         backbone.eval()
@@ -62,8 +68,8 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         
         full_dataset = BoxImageDataset(
             name = 'Custom',
-            data_root = 'Custom',
-            csv_path = 'Custom/annotations/dataset_v4_val.csv',
+            data_root = './',
+            csv_path = 'dataset_v4/dataset_v4_2_val.csv',
             training = False,
             image_batch_size = 16
         )
@@ -71,7 +77,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         subject_indices = []
         verb_indices = []
         object_indices = []
-        for idx, (_, subject_label, object_label, verb_label, _, _, _) in enumerate(full_dataset):
+        for idx, (_, subject_label, object_label, verb_label, _, _, _, _) in enumerate(full_dataset):
             # Remove novel examples
             if (subject_label is not None and subject_label.item() == 0) or (verb_label is not None and verb_label.item() == 0) or (object_label is not None and object_label.item() == 0):
                 continue
@@ -105,15 +111,14 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             shuffle = False
         )
         
-        module_state_dict = torch.load('boxclassifier/unsupervised_novelty_detection_module_2.pth')
+        module_state_dict = torch.load(os.path.join(
+            pretrained_models_dir,
+            'unsupervised_novelty_detection_module.pth'
+        ))
         # Create classifier
         classifier = boxclassifier.ClassifierV2(256, 5, 12, 8, 72)
         classifier.load_state_dict(module_state_dict['module']['classifier'])
         self.classifier = classifier.to(self.device)
-        
-        calibrator = ConfidenceCalibrator()
-        calibrator.load_state_dict(module_state_dict['module']['confidence_calibrator'])
-        self.calibrator = calibrator.to(self.device)
     
     def ece(self, confidences, correct):
         bin_starts = torch.arange(self.num_bins, device = self.device, dtype = torch.float) / self.num_bins
@@ -157,7 +162,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 logits = self.classifier.predict_subject(features)
                 
                 uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)
-                calibrated_probabilities = self.calibrator.calibrate_subject(logits)
+                calibrated_probabilities = self.classifier.confidence_calibrator.calibrate_subject(logits)
                 
                 batch_uncalibrated_confidences, predictions =\
                     torch.max(uncalibrated_probabilities, dim = 1)
@@ -181,7 +186,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 logits = self.classifier.predict_object(features)
                 
                 uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)
-                calibrated_probabilities = self.calibrator.calibrate_object(logits)
+                calibrated_probabilities = self.classifier.confidence_calibrator.calibrate_object(logits)
                 
                 batch_uncalibrated_confidences, predictions =\
                     torch.max(uncalibrated_probabilities, dim = 1)
@@ -208,7 +213,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 logits = self.classifier.predict_verb(features)
                 
                 uncalibrated_probabilities = torch.nn.functional.softmax(logits, dim = 1)
-                calibrated_probabilities = self.calibrator.calibrate_verb(logits)
+                calibrated_probabilities = self.classifier.confidence_calibrator.calibrate_verb(logits)
                 
                 batch_uncalibrated_confidences, predictions =\
                     torch.max(uncalibrated_probabilities, dim = 1)

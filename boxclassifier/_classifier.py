@@ -59,16 +59,16 @@ class ClassifierV2:
                 non_none_object_indices.append(idx)
 
         # Construct feature tensors
-        non_none_spatial_features = torch.cat([
+        non_none_spatial_features = torch.stack([
             spatial_features[idx] for idx in non_none_verb_indices
         ])
-        non_none_subject_box_features = torch.cat([
+        non_none_subject_box_features = torch.stack([
             subject_box_features[idx] for idx in non_none_subject_indices
         ])
-        non_none_verb_box_features = torch.cat([
+        non_none_verb_box_features = torch.stack([
             verb_box_features[idx] for idx in non_none_verb_indices
         ])
-        non_none_object_box_features = torch.cat([
+        non_none_object_box_features = torch.stack([
             object_box_features[idx] for idx in non_none_object_indices
         ])
         

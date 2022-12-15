@@ -3,13 +3,11 @@ import argparse
 import pickle
 import os
 import math
+import unittest
 
+from backbone import Backbone
 from boximagedataset import BoxImageDataset
 import boxclassifier
-
-from torchvision.models import resnet50
-
-import unittest
 
 class SubjectImageDataset(torch.utils.data.Dataset):
     def __init__(self, novelty_feature_dataset):
@@ -48,13 +46,20 @@ class ObjectImageDataset(torch.utils.data.Dataset):
         _, _, labels, _, _, images, _, _ = self.novelty_feature_dataset[idx]
         return images, labels
 
-class TestConfidenceCalibrationMethods(unittest.TestCase):
+class TestClassifier(unittest.TestCase):
     def setUp(self):
         self.device = 'cuda:0'
         self.num_bins = 15
-        backbone = resnet50(pretrained = False)
-        backbone.fc = torch.nn.Linear(backbone.fc.weight.shape[1], 256)
-        backbone_state_dict = torch.load('boxclassifier/backbone_2.pth')
+
+        architecture = Backbone.Architecture.swin_t
+        backbone = Backbone(architecture)
+        pretrained_models_dir = os.path.join(
+            'pretrained-models',
+            architecture.value['name']
+        )
+        backbone_state_dict = torch.load(
+            os.path.join(pretrained_models_dir, 'backbone.pth')
+        )
         backbone.load_state_dict(backbone_state_dict)
         backbone = backbone.to(self.device)
         backbone.eval()
@@ -62,8 +67,8 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
 
         full_dataset = BoxImageDataset(
             name = 'Custom',
-            data_root = 'Custom',
-            csv_path = 'Custom/annotations/dataset_v4_val.csv',
+            data_root = './',
+            csv_path = 'dataset_v4/dataset_v4_2_val.csv',
             training = False,
             image_batch_size = 16
         )
@@ -110,7 +115,10 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         
         # Create classifier
         classifier = boxclassifier.ClassifierV2(256, 5, 12, 8, 72)
-        module_state_dict = torch.load('boxclassifier/unsupervised_novelty_detection_module_2.pth')
+        module_state_dict = torch.load(os.path.join(
+            pretrained_models_dir,
+            'unsupervised_novelty_detection_module.pth'
+        ))
         classifier.load_state_dict(module_state_dict['module']['classifier'])
         self.classifier = classifier.to(self.device)
     

@@ -1,35 +1,45 @@
-import torch
-
+import os
 import unittest
+
+import torch
 
 import boxclassifier
 from boximagedataset import BoxImageDataset
-import noveltydetection
 from backbone import Backbone
-
+from tupleprediction import TuplePredictor
 
 class TestConfidenceCalibrationMethods(unittest.TestCase):
     def setUp(self):
         self.device = 'cuda:0'
 
-        backbone = Backbone(Backbone.Architecture.swin_t)
-        
-        backbone_state_dict = torch.load('boxclassifier/' + backbone.architecture.name +'_backbone_2.pth')
+        architecture = Backbone.Architecture.swin_t
+        backbone = Backbone(architecture)
+        pretrained_models_dir = os.path.join(
+            'pretrained-models',
+            architecture.value['name']
+        )
+        backbone_state_dict = torch.load(
+            os.path.join(pretrained_models_dir, 'backbone.pth')
+        )
         backbone.load_state_dict(backbone_state_dict)
         backbone = backbone.to(self.device)
         backbone.eval()
         self.backbone = backbone
         
         classifier = boxclassifier.ClassifierV2(256, 5, 12, 8, 72)
-        detector = boxclassifier.UnsupervisedNoveltyDetector(classifier, 5, 12, 8)
+        self.classifier = classifier.to(self.device)
+        detector = TuplePredictor(5, 12, 8)
         self.detector = detector.to(self.device)
-        state_dict = torch.load('boxclassifier/' +model_ +'_unsupervised_novelty_detection_module_2.pth')
+        state_dict = torch.load(os.path.join(
+            pretrained_models_dir,
+            'unsupervised_novelty_detection_module.pth'
+        ))
         self.detector.load_state_dict(state_dict['module'])
 
         self.testing_set = BoxImageDataset(
             name = 'Custom',
-            data_root = 'Custom',
-            csv_path = 'Custom/annotations/dataset_v4_val.csv',
+            data_root = './',
+            csv_path = 'dataset_v4/dataset_v4_2_val.csv',
             training = False,
             image_batch_size = 16,
             feature_extraction_device = self.device
@@ -42,7 +52,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             object_box_features = []
             verb_box_features = []
             
-            for example_spatial_features, _, _, _, subject_label, object_label, verb_label, example_subject_images, example_object_images, example_verb_images, _ in self.testing_set:
+            for example_spatial_features, subject_label, object_label, verb_label, example_subject_images, example_object_images, example_verb_images, _ in self.testing_set:
                 if example_spatial_features is None or\
                         example_subject_images is None or\
                         example_object_images is None or\
@@ -56,7 +66,14 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 object_box_features.append(self.backbone(example_object_images.unsqueeze(0)).squeeze(0))
                 verb_box_features.append(self.backbone(example_verb_images.unsqueeze(0)).squeeze(0))
             
-            results = self.detector.top3(spatial_features, subject_box_features, verb_box_features, object_box_features, torch.tensor([1.0, 0.0, 0.0, 0.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
+            subject_probs, _, verb_probs, _, object_probs, _ =\
+                self.classifier.predict_score(
+                    spatial_features,
+                    subject_box_features,
+                    verb_box_features,
+                    object_box_features
+                )
+            results = self.detector.top3(subject_probs, verb_probs, object_probs, torch.tensor([1.0, 0.0, 0.0, 0.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
             for top3 in results['top3']:
                 previous_confidence = 1.0
                 for prediction in top3:
@@ -72,7 +89,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             object_box_features = []
             verb_box_features = []
             
-            for example_spatial_features, _, _, _, subject_label, object_label, verb_label, example_subject_images, example_object_images, example_verb_images, _ in self.testing_set:
+            for example_spatial_features, subject_label, object_label, verb_label, example_subject_images, example_object_images, example_verb_images, _ in self.testing_set:
                 if example_spatial_features is None or\
                         example_subject_images is None or\
                         example_object_images is None or\
@@ -86,7 +103,14 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 object_box_features.append(self.backbone(example_object_images.unsqueeze(0)).squeeze(0))
                 verb_box_features.append(self.backbone(example_verb_images.unsqueeze(0)).squeeze(0))
             
-            results = self.detector.top3(spatial_features, subject_box_features, verb_box_features, object_box_features, torch.tensor([0.0, 1.0, 0.0, 0.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
+            subject_probs, _, verb_probs, _, object_probs, _ =\
+                self.classifier.predict_score(
+                    spatial_features,
+                    subject_box_features,
+                    verb_box_features,
+                    object_box_features
+                )
+            results = self.detector.top3(subject_probs, verb_probs, object_probs, torch.tensor([0.0, 1.0, 0.0, 0.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
             for top3_idx, top3 in enumerate(results['top3']):
                 previous_confidence = 1.0
                 for prediction in top3:
@@ -102,7 +126,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             object_box_features = []
             verb_box_features = []
             
-            for example_spatial_features, _, _, _, subject_label, object_label, verb_label, example_subject_images, example_object_images, example_verb_images, _ in self.testing_set:
+            for example_spatial_features, subject_label, object_label, verb_label, example_subject_images, example_object_images, example_verb_images, _ in self.testing_set:
                 if example_spatial_features is None or\
                         example_subject_images is None or\
                         example_object_images is None or\
@@ -116,7 +140,14 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 object_box_features.append(self.backbone(example_object_images.unsqueeze(0)).squeeze(0))
                 verb_box_features.append(self.backbone(example_verb_images.unsqueeze(0)).squeeze(0))
             
-            results = self.detector.top3(spatial_features, subject_box_features, verb_box_features, object_box_features, torch.tensor([0.0, 0.0, 1.0, 0.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
+            subject_probs, _, verb_probs, _, object_probs, _ =\
+                self.classifier.predict_score(
+                    spatial_features,
+                    subject_box_features,
+                    verb_box_features,
+                    object_box_features
+                )
+            results = self.detector.top3(subject_probs, verb_probs, object_probs, torch.tensor([0.0, 0.0, 1.0, 0.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
             for top3 in results['top3']:
                 previous_confidence = 1.0
                 for prediction in top3:
@@ -132,7 +163,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             object_box_features = []
             verb_box_features = []
             
-            for example_spatial_features, _, _, _, subject_label, object_label, verb_label, example_subject_images, example_object_images, example_verb_images, _ in self.testing_set:
+            for example_spatial_features, subject_label, object_label, verb_label, example_subject_images, example_object_images, example_verb_images, _ in self.testing_set:
                 if example_spatial_features is None or\
                         example_subject_images is None or\
                         example_object_images is None or\
@@ -146,7 +177,14 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 object_box_features.append(self.backbone(example_object_images.unsqueeze(0)).squeeze(0))
                 verb_box_features.append(self.backbone(example_verb_images.unsqueeze(0)).squeeze(0))
             
-            results = self.detector.top3(spatial_features, subject_box_features, verb_box_features, object_box_features, torch.tensor([0.0, 0.0, 0.0, 1.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
+            subject_probs, _, verb_probs, _, object_probs, _ =\
+                self.classifier.predict_score(
+                    spatial_features,
+                    subject_box_features,
+                    verb_box_features,
+                    object_box_features
+                )
+            results = self.detector.top3(subject_probs, verb_probs, object_probs, torch.tensor([0.0, 0.0, 0.0, 1.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
             for top3 in results['top3']:
                 previous_confidence = 1.0
                 for prediction in top3:
@@ -162,7 +200,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             object_box_features = []
             verb_box_features = []
             
-            for example_spatial_features, _, _, _, subject_label, object_label, verb_label, example_subject_images, example_object_images, example_verb_images, _ in self.testing_set:
+            for example_spatial_features, subject_label, object_label, verb_label, example_subject_images, example_object_images, example_verb_images, _ in self.testing_set:
                 if example_spatial_features is None or\
                         example_subject_images is None or\
                         example_object_images is None or\
@@ -176,7 +214,14 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
                 object_box_features.append(self.backbone(example_object_images.unsqueeze(0)).squeeze(0))
                 verb_box_features.append(self.backbone(example_verb_images.unsqueeze(0)).squeeze(0))
                 
-            results = self.detector.top3(spatial_features, subject_box_features, verb_box_features, object_box_features, torch.tensor([0.33, 0.33, 0.34, 0.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
+            subject_probs, _, verb_probs, _, object_probs, _ =\
+                self.classifier.predict_score(
+                    spatial_features,
+                    subject_box_features,
+                    verb_box_features,
+                    object_box_features
+                )
+            results = self.detector.top3(subject_probs, verb_probs, object_probs, torch.tensor([0.33, 0.33, 0.34, 0.0, 0.0], device = self.device).unsqueeze(0).repeat(len(spatial_features), 1))
             for top3 in results['top3']:
                 previous_confidence = 1.0
                 for prediction in top3:
