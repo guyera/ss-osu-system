@@ -100,7 +100,6 @@ class BoxImageDataset(torch.utils.data.Dataset):
             csv_path,
             training,
             image_batch_size,
-            backbone,
             output_size = 7,
             sampling_ratio = 2,
             min_size = 800,

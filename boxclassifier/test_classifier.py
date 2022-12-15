@@ -65,8 +65,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             data_root = 'Custom',
             csv_path = 'Custom/annotations/dataset_v4_val.csv',
             training = False,
-            image_batch_size = 16,
-            backbone = backbone
+            image_batch_size = 16
         )
 
         subject_indices = []

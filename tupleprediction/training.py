@@ -529,7 +529,6 @@ class TuplePredictorTrainer:
             csv_path = train_csv_path,
             training = True,
             image_batch_size = 512,
-            backbone = None,
             cache_to_disk = True
         )
 
@@ -546,7 +545,6 @@ class TuplePredictorTrainer:
             csv_path = val_csv_path,
             training = False,
             image_batch_size = 512,
-            backbone = None,
             cache_to_disk = True
         )
         
@@ -578,7 +576,6 @@ class TuplePredictorTrainer:
             csv_path = val_incident_csv_path,
             training = False,
             image_batch_size = 512,
-            backbone = None,
             cache_to_disk = True
         )
         
@@ -593,7 +590,6 @@ class TuplePredictorTrainer:
             csv_path = val_environment_csv_path,
             training = False,
             image_batch_size = 512,
-            backbone = None,
             cache_to_disk = True
         )
         
@@ -639,7 +635,6 @@ class TuplePredictorTrainer:
             csv_path = csv_path,
             training = True,
             image_batch_size = 8,
-            backbone = None,
             cache_to_disk = False
         )
 

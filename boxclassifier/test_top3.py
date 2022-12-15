@@ -32,7 +32,6 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             csv_path = 'Custom/annotations/dataset_v4_val.csv',
             training = False,
             image_batch_size = 16,
-            backbone = backbone,
             feature_extraction_device = self.device
         )
 

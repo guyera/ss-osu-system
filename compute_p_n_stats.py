@@ -57,7 +57,6 @@ testing_set = BoxImageDataset(
     csv_path = 'dataset_v4/dataset_v4_2_val.csv',
     training = False,
     image_batch_size = 16,
-    backbone = backbone,
     feature_extraction_device = device
 )
 
@@ -67,7 +66,6 @@ incident_set = BoxImageDataset(
     csv_path = 'dataset_v4/dataset_v4_2_cal_incident.csv',
     training = False,
     image_batch_size = 16,
-    backbone = backbone,
     feature_extraction_device = device
 )
 
@@ -77,7 +75,6 @@ environment_set = BoxImageDataset(
     csv_path = 'dataset_v4/dataset_v4_2_cal_corruption.csv',
     training = False,
     image_batch_size = 16,
-    backbone = backbone,
     feature_extraction_device = device
 )
 

@@ -549,7 +549,6 @@ class TopLevelApp:
             csv_path = csv_path,
             training = False,
             image_batch_size = 16,
-            backbone = self.backbone,
             feature_extraction_device = 'cuda:0',
             cache_to_disk = False)
 

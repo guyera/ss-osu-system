@@ -26,12 +26,12 @@ def parse_args():
     parser.add_argument(
         '--data-root',
         type = str,
-        default = 'Custom'
+        default = './'
     )
     parser.add_argument(
         '--csv-path',
         type = str,
-        default = 'Custom/annotations/dataset_v4_train.csv'
+        default = 'dataset_v4/dataset_v4_2_train.csv'
     )
     parser.add_argument(
         '--num-subj-cls',
@@ -63,10 +63,8 @@ def parse_args():
     parser.add_argument(
         '--known-combinations-save-file',
         type = str,
-        required = True
+        default='known_combinations.pth'
     )
-
-
     args = parser.parse_args()
 
     return args
@@ -77,14 +75,12 @@ def main():
     # stored in disk, this will do that as well (so it might take awhile),
     # loading image_batch_size images at a time and computing features from
     # them.
-    backbone = resnet50(pretrained = True)
     training_set = BoxImageDataset(
         name = args.dataset_name,
         data_root = args.data_root,
         csv_path = args.csv_path,
         training = True,
         image_batch_size = args.image_batch_size,
-        backbone = backbone,
         feature_extraction_device = args.device
     )
     
