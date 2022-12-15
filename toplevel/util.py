@@ -133,7 +133,7 @@ class UnsupervisedNoveltyDetectionManager:
         
         # TODO tensorize by case
         with torch.no_grad():
-            for example_spatial_features, _, _, _, _, _, _, example_subject_images, example_object_images, example_verb_images, whole_images  in dataset:
+            for example_spatial_features, _, _, _, example_subject_images, example_object_images, example_verb_images, whole_images  in dataset:
                 spatial_feature = example_spatial_features if example_spatial_features is not None else None
                 subject_feature = backbone(example_subject_images.unsqueeze(0)).squeeze(0) if example_subject_images is not None else None
                 object_feature = backbone(example_object_images.unsqueeze(0)).squeeze(0) if example_object_images is not None else None

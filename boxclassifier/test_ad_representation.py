@@ -6,7 +6,7 @@ import math
 import sklearn.metrics
 import numpy as np
 
-import noveltydetectionfeatures
+from boximagedataset import BoxImageDataset
 import boxclassifier
 
 import unittest
@@ -198,8 +198,8 @@ class SubjectDataset(torch.utils.data.Dataset):
         return len(self.indices)
 
     def __getitem__(self, idx):
-        subject_features, _, _, subject_labels, _, _ = self.svo_dataset[self.indices[idx]]
-        return subject_features, subject_labels
+        _, subject_labels, _, _, subject_images, _, _, _ = self.svo_dataset[self.indices[idx]]
+        return subject_images, subject_labels
 
 class ObjectDataset(torch.utils.data.Dataset):
     def __init__(self, svo_dataset, train = False):
@@ -219,8 +219,8 @@ class ObjectDataset(torch.utils.data.Dataset):
         return len(self.indices)
 
     def __getitem__(self, idx):
-        _, object_features, _, _, object_labels, _ = self.svo_dataset[self.indices[idx]]
-        return object_features, object_labels
+        _, _, object_labels, _, _, object_images, _, _ = self.svo_dataset[self.indices[idx]]
+        return object_images, object_labels
 
 class VerbDataset(torch.utils.data.Dataset):
     def __init__(self, svo_dataset, train = False):
@@ -240,14 +240,14 @@ class VerbDataset(torch.utils.data.Dataset):
         return len(self.indices)
 
     def __getitem__(self, idx):
-        _, _, verb_features, _, _, verb_labels = self.svo_dataset[self.indices[idx]]
-        return verb_features, verb_labels
+        _, _, _, verb_labels, _, _, verb_images, _ = self.svo_dataset[self.indices[idx]]
+        return verb_images, verb_labels
 
 class TestConfidenceCalibrationMethods(unittest.TestCase):
     def setUp(self):
         self.device = 'cuda:0'
         self.num_bins = 15
-        training_set = noveltydetectionfeatures.NoveltyFeatureDataset(
+        training_set = BoxImageDataset(
             name = 'Custom',
             data_root = 'Custom',
             csv_path = 'Custom/annotations/dataset_v4_train.csv',
@@ -256,7 +256,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
             feature_extraction_device = self.device
         )
 
-        testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
+        testing_set = BoxImageDataset(
             name = 'Custom',
             data_root = 'Custom',
             csv_path = 'Custom/annotations/dataset_v4_val.csv',

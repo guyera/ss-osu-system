@@ -7,7 +7,7 @@ import sklearn.metrics
 import matplotlib.pyplot as plt
 
 import boxclassifier
-import noveltydetectionfeatures
+from boximagedataset import BoxImageDataset
 import tupleprediction
 from backbone import Backbone
 
@@ -51,7 +51,7 @@ tuple_predictor.load_state_dict(state_dict['module'])
 activation_statistical_model = tupleprediction.ActivationStatisticalModel(architecture).to(device)
 activation_statistical_model.load_state_dict(state_dict['activation_statistical_model'])
 
-testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
+testing_set = BoxImageDataset(
     name = 'Custom',
     data_root = './',
     csv_path = 'dataset_v4/dataset_v4_2_val.csv',
@@ -61,7 +61,7 @@ testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
     feature_extraction_device = device
 )
 
-incident_set = noveltydetectionfeatures.NoveltyFeatureDataset(
+incident_set = BoxImageDataset(
     name = 'Custom',
     data_root = './',
     csv_path = 'dataset_v4/dataset_v4_2_cal_incident.csv',
@@ -71,7 +71,7 @@ incident_set = noveltydetectionfeatures.NoveltyFeatureDataset(
     feature_extraction_device = device
 )
 
-environment_set = noveltydetectionfeatures.NoveltyFeatureDataset(
+environment_set = BoxImageDataset(
     name = 'Custom',
     data_root = './',
     csv_path = 'dataset_v4/dataset_v4_2_cal_corruption.csv',
@@ -82,9 +82,6 @@ environment_set = noveltydetectionfeatures.NoveltyFeatureDataset(
 )
 
 spatial_features = []
-subject_roi_features = []
-object_roi_features = []
-verb_roi_features = []
 subject_labels = []
 object_labels = []
 verb_labels = []
@@ -95,11 +92,8 @@ activation_statistical_scores = []
 hint_b = []
 
 with torch.no_grad():
-    for example_spatial_features, example_subject_roi_features, example_object_roi_features, example_verb_roi_features, subject_label, object_label, verb_label, example_subject_box_image, example_object_box_image, example_verb_box_image, example_whole_image in testing_set:
+    for example_spatial_features, subject_label, object_label, verb_label, example_subject_box_image, example_object_box_image, example_verb_box_image, example_whole_image in testing_set:
         spatial_features.append(example_spatial_features)
-        subject_roi_features.append(example_subject_roi_features)
-        object_roi_features.append(example_object_roi_features)
-        verb_roi_features.append(example_verb_roi_features)
         subject_labels.append(subject_label)
         object_labels.append(object_label)
         verb_labels.append(verb_label)
@@ -134,9 +128,6 @@ verb_scores = results['verb_novelty_score']
 p_t4 = results['p_t4']
 
 incident_spatial_features = []
-incident_subject_roi_features = []
-incident_object_roi_features = []
-incident_verb_roi_features = []
 incident_subject_labels = []
 incident_object_labels = []
 incident_verb_labels = []
@@ -147,11 +138,8 @@ incident_activation_statistical_scores = []
 incident_hint_b = []
 
 with torch.no_grad():
-    for example_spatial_features, example_subject_roi_features, example_object_roi_features, example_verb_roi_features, subject_label, object_label, verb_label, example_subject_box_image, example_object_box_image, example_verb_box_image, example_whole_image in incident_set:
+    for example_spatial_features, subject_label, object_label, verb_label, example_subject_box_image, example_object_box_image, example_verb_box_image, example_whole_image in incident_set:
         incident_spatial_features.append(example_spatial_features)
-        incident_subject_roi_features.append(example_subject_roi_features)
-        incident_object_roi_features.append(example_object_roi_features)
-        incident_verb_roi_features.append(example_verb_roi_features)
         incident_subject_labels.append(subject_label)
         incident_object_labels.append(object_label)
         incident_verb_labels.append(verb_label)
@@ -183,9 +171,6 @@ incident_verb_scores = results['verb_novelty_score']
 incident_p_t4 = results['p_t4']
 
 environment_spatial_features = []
-environment_subject_roi_features = []
-environment_object_roi_features = []
-environment_verb_roi_features = []
 environment_subject_labels = []
 environment_object_labels = []
 environment_verb_labels = []
@@ -196,11 +181,8 @@ environment_activation_statistical_scores = []
 environment_hint_b = []
 
 with torch.no_grad():
-    for example_spatial_features, example_subject_roi_features, example_object_roi_features, example_verb_roi_features, subject_label, object_label, verb_label, example_subject_box_image, example_object_box_image, example_verb_box_image, example_whole_image in environment_set:
+    for example_spatial_features, subject_label, object_label, verb_label, example_subject_box_image, example_object_box_image, example_verb_box_image, example_whole_image in environment_set:
         environment_spatial_features.append(example_spatial_features)
-        environment_subject_roi_features.append(example_subject_roi_features)
-        environment_object_roi_features.append(example_object_roi_features)
-        environment_verb_roi_features.append(example_verb_roi_features)
         environment_subject_labels.append(subject_label)
         environment_object_labels.append(object_label)
         environment_verb_labels.append(verb_label)

@@ -27,7 +27,6 @@ import sys
 import math
 #from .MLP_Fusion import MLP_Fusion
 from .MLP_Fusion import MLP_Fusion
-import noveltydetectionfeatures
 #import matplotlib.pyplot as plt
 
 from torch.autograd import Variable

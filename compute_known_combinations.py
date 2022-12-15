@@ -1,8 +1,10 @@
 import argparse
 import pickle
 
-import noveltydetectionfeatures
 from torchvision.models import resnet50
+
+from boximagedataset import BoxImageDataset
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description = 'Max Classifier Logits for Anomaly Detection'
@@ -76,7 +78,7 @@ def main():
     # loading image_batch_size images at a time and computing features from
     # them.
     backbone = resnet50(pretrained = True)
-    training_set = noveltydetectionfeatures.NoveltyFeatureDataset(
+    training_set = BoxImageDataset(
         name = args.dataset_name,
         data_root = args.data_root,
         csv_path = args.csv_path,
@@ -93,7 +95,7 @@ def main():
 
     # import ipdb; ipdb.set_trace
 
-    for _, _, _, _, subject_label, object_label, verb_label, _, _, _, _ in training_set:
+    for _, subject_label, object_label, verb_label, _, _, _, _ in training_set:
         if subject_label is not None and int(subject_label.item()) > 0:
             known_subject = True
         else:

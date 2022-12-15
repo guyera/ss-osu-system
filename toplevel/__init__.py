@@ -7,7 +7,7 @@ from data.data_factory import DataFactory
 from utils import custom_collate
 from ensemble import Ensemble
 from toplevel.util import *
-import noveltydetectionfeatures
+from boximagedataset import BoxImageDataset
 import pandas as pd
 from tupleprediction import compute_probability_novelty
 from adaptation.query_formulation import select_queries
@@ -544,7 +544,7 @@ class TopLevelApp:
             pin_memory=False,
             sampler=None)
             
-        novelty_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(name = 'Custom',
+        novelty_dataset = BoxImageDataset(name = 'Custom',
             data_root = self.data_root,
             csv_path = csv_path,
             training = False,

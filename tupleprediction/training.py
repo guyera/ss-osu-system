@@ -3,7 +3,7 @@ import copy
 from tqdm import tqdm
 import torch
 
-import noveltydetectionfeatures
+from boximagedataset import BoxImageDataset
 
 class SubjectBoxImageDataset(torch.utils.data.Dataset):
     def __init__(self, novelty_feature_dataset):
@@ -13,7 +13,7 @@ class SubjectBoxImageDataset(torch.utils.data.Dataset):
         return len(self.novelty_feature_dataset)
 
     def __getitem__(self, idx):
-        _, _, _, _, subject_label, _, _, subject_box_image, _, _, _ = self.novelty_feature_dataset[idx]
+        _, subject_label, _, _, subject_box_image, _, _, _ = self.novelty_feature_dataset[idx]
         return subject_box_image, subject_label
 
 class ObjectBoxImageDataset(torch.utils.data.Dataset):
@@ -24,7 +24,7 @@ class ObjectBoxImageDataset(torch.utils.data.Dataset):
         return len(self.novelty_feature_dataset)
 
     def __getitem__(self, idx):
-        _, _, _, _, _, object_label, _, _, object_box_image, _, _ = self.novelty_feature_dataset[idx]
+        _, _, object_label, _, _, object_box_image, _, _ = self.novelty_feature_dataset[idx]
         return object_box_image, object_label
 
 class VerbBoxImageDataset(torch.utils.data.Dataset):
@@ -35,7 +35,7 @@ class VerbBoxImageDataset(torch.utils.data.Dataset):
         return len(self.novelty_feature_dataset)
 
     def __getitem__(self, idx):
-        spatial_encodings, _, _, _, _, _, verb_label, _, _, verb_box_image, _ = self.novelty_feature_dataset[idx]
+        spatial_encodings, _, _, verb_label, _, _, verb_box_image, _ = self.novelty_feature_dataset[idx]
         return verb_box_image, spatial_encodings, verb_label
 
 class WholeImageDataset(torch.utils.data.Dataset):
@@ -64,7 +64,7 @@ def separate_data(dataset):
     novel_object_indices = []
     known_verb_indices = []
     novel_verb_indices = []
-    for idx, (_, _, _, _, subject_label, object_label, verb_label, _, _, _, _) in enumerate(dataset):
+    for idx, (_, subject_label, object_label, verb_label, _, _, _, _) in enumerate(dataset):
         if subject_label is not None:
             if subject_label == 0:
                 # Novel subject
@@ -105,7 +105,7 @@ def separate_data(dataset):
 
 def separate_known_whole_images(dataset):
     known_indices = []
-    for idx, (_, _, _, _, subject_label, object_label, verb_label, _, _, _, _) in enumerate(dataset):
+    for idx, (_, subject_label, object_label, verb_label, _, _, _, _) in enumerate(dataset):
         if subject_label is not None:
             if subject_label == 0:
                 # Novel subject
@@ -264,7 +264,7 @@ def separate_by_case(novelty_feature_dataset):
     # check was eliminated when updating to phase 3. We could reimplement it,
     # but it's not clear whether it's helpful.
     
-    for spatial_encodings, _, _, _, subject_label, object_label, verb_label, subject_box_image, object_box_image, verb_box_image, whole_image in novelty_feature_dataset:
+    for spatial_encodings, subject_label, object_label, verb_label, subject_box_image, object_box_image, verb_box_image, whole_image in novelty_feature_dataset:
         # Add the images and labels to the case inputs
         
         if subject_box_image is not None and object_box_image is not None:
@@ -523,7 +523,7 @@ def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
 
 class TuplePredictorTrainer:
     def __init__(self, data_root, train_csv_path, val_csv_path, val_incident_csv_path, val_environment_csv_path, retraining_batch_size):
-        train_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
+        train_dataset = BoxImageDataset(
             name = 'Custom',
             data_root = data_root,
             csv_path = train_csv_path,
@@ -540,7 +540,7 @@ class TuplePredictorTrainer:
             self.known_train_verb_dataset,\
             self.novel_train_verb_dataset = separate_data(train_dataset)
 
-        val_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
+        val_dataset = BoxImageDataset(
             name = 'Custom',
             data_root = data_root,
             csv_path = val_csv_path,
@@ -572,7 +572,7 @@ class TuplePredictorTrainer:
         case_3_val_novelty_type_dataset = to_case_3_novelty_type_dataset(case_3_val_dataset)
         self.activation_stats_training_dataset = separate_known_whole_images(val_dataset)
 
-        val_incident_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
+        val_incident_dataset = BoxImageDataset(
             name = 'Custom',
             data_root = data_root,
             csv_path = val_incident_csv_path,
@@ -587,7 +587,7 @@ class TuplePredictorTrainer:
         case_2_val_incident_novelty_type_dataset = to_case_2_phase_3_novelty_type_dataset(case_2_val_incident_dataset, 'incident')
         case_3_val_incident_novelty_type_dataset = to_case_3_phase_3_novelty_type_dataset(case_3_val_incident_dataset, 'incident')
 
-        val_environment_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
+        val_environment_dataset = BoxImageDataset(
             name = 'Custom',
             data_root = data_root,
             csv_path = val_environment_csv_path,
@@ -633,7 +633,7 @@ class TuplePredictorTrainer:
         self.retraining_batch_size = retraining_batch_size 
 
     def add_feedback_data(self, data_root, csv_path):
-        new_novel_dataset = noveltydetectionfeatures.NoveltyFeatureDataset(
+        new_novel_dataset = BoxImageDataset(
             name = 'Custom',
             data_root = data_root,
             csv_path = csv_path,

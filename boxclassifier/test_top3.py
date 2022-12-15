@@ -3,7 +3,7 @@ import torch
 import unittest
 
 import boxclassifier
-import noveltydetectionfeatures
+from boximagedataset import BoxImageDataset
 import noveltydetection
 from backbone import Backbone
 
@@ -26,7 +26,7 @@ class TestConfidenceCalibrationMethods(unittest.TestCase):
         state_dict = torch.load('boxclassifier/' +model_ +'_unsupervised_novelty_detection_module_2.pth')
         self.detector.load_state_dict(state_dict['module'])
 
-        self.testing_set = noveltydetectionfeatures.NoveltyFeatureDataset(
+        self.testing_set = BoxImageDataset(
             name = 'Custom',
             data_root = 'Custom',
             csv_path = 'Custom/annotations/dataset_v4_val.csv',

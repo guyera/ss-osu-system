@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from utils import custom_collate
 import torchvision
 
-class ResizePad:
+class _ResizePad:
     def __init__(self, size):
         self.size = size
     
@@ -71,7 +71,7 @@ class ResizePad:
 
         return padded_x
 
-class NoveltyFeatureDataset(torch.utils.data.Dataset):
+class BoxImageDataset(torch.utils.data.Dataset):
     """
     Params:
         name: As in data.data_factory.DataFactory()
@@ -110,9 +110,9 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
             feature_extraction_device = 'cpu',
             cache_to_disk = False):
         super().__init__()
-        
+
         filename = os.path.join(f'{os.path.splitext(csv_path)[0]}_novelty_features.pth')
-        
+
         if cache_to_disk:
             if not os.path.exists(filename):
                 print('Image features have not yet been computed. Computing image features...')
@@ -120,15 +120,12 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                 self._compute_image_features(name, data_root, csv_path, training, 
                     image_batch_size, feature_extraction_device, output_size, sampling_ratio, image_mean, image_std, 
                     min_size, max_size)
-            
+
                 data = {
                     'spatial_features': self.spatial_features,
                     'subject_labels': self.subject_labels,
                     'object_labels': self.object_labels,
                     'verb_labels': self.verb_labels,
-                    'subject_roi_features': self.subject_roi_features,
-                    'object_roi_features': self.object_roi_features,
-                    'verb_roi_features': self.verb_roi_features,
                     'subject_images': self.subject_images,
                     'object_images': self.object_images,
                     'verb_images': self.verb_images,
@@ -146,9 +143,6 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                 self.subject_labels = data['subject_labels']
                 self.object_labels = data['object_labels']
                 self.verb_labels = data['verb_labels']
-                self.subject_roi_features = data['subject_roi_features']
-                self.object_roi_features = data['object_roi_features']
-                self.verb_roi_features = data['verb_roi_features']
                 self.subject_images = data['subject_images']
                 self.object_images = data['object_images']
                 self.verb_images = data['verb_images']
@@ -159,7 +153,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                 min_size, max_size)
 
     def __getitem__(self, idx):
-        return self.spatial_features[idx], self.subject_roi_features[idx], self.object_roi_features[idx], self.verb_roi_features[idx], self.subject_labels[idx], self.object_labels[idx], self.verb_labels[idx] , self.subject_images[idx], self.object_images[idx], self.verb_images[idx], self.whole_images[idx]
+        return self.spatial_features[idx], self.subject_labels[idx], self.object_labels[idx], self.verb_labels[idx] , self.subject_images[idx], self.object_images[idx], self.verb_images[idx], self.whole_images[idx]
 
     def __len__(self):
         return len(self.spatial_features)
@@ -169,7 +163,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
         min_size, max_size):
 
         with torch.no_grad():
-            box_transform = torchvision.transforms.Compose([ResizePad(224), torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+            box_transform = torchvision.transforms.Compose([_ResizePad(224), torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
             dataset = DataFactory(
                 name = name,
                 data_root = data_root,
@@ -181,12 +175,6 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                 collate_fn = custom_collate,
                 #batch_size = image_batch_size
                 batch_size = 1
-            )
-            
-            box_roi_pool = MultiScaleRoIAlign(
-                featmap_names=['0', '1', '2', '3'],
-                output_size=output_size,
-                sampling_ratio=sampling_ratio
             )
             
             if image_mean is None:
@@ -205,9 +193,6 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
             subject_labels = list()
             object_labels = list()
             verb_labels = list()
-            subject_roi_features = list()
-            object_roi_features = list()
-            verb_roi_features = list()
             subject_images = list()
             object_images = list()
             verb_images = list()
@@ -290,10 +275,6 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                             [coords[x]], [coords[y]], [image_shapes[b_idx]]
                         ).detach().to(feature_extraction_device))
                         
-                        subject_roi_features.append(None)
-                        object_roi_features.append(None)
-                        verb_roi_features.append(None)
-                        
                         # Extract image boxes via cropping
                         subject_images.append(box_transform(image_tensors[b_idx, :, r_s_ymin: r_s_ymax, r_s_xmin: r_s_xmax]))
                         object_images.append(box_transform(image_tensors[b_idx, :, r_o_ymin: r_o_ymax, r_o_xmin: r_o_xmax]))
@@ -327,9 +308,6 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                         #     [coords[x]], [coords[y]], [image_shapes[b_idx]]
                         # ))
                         
-                        subject_roi_features.append(None)
-                        object_roi_features.append(None)
-                        verb_roi_features.append(None)
                         subject_images.append(box_transform(image_tensors[b_idx, :, r_s_ymin: r_s_ymax, r_s_xmin: r_s_xmax]))
                         object_images.append(None)
                         verb_images.append(box_transform(image_tensors[b_idx, :, r_s_ymin: r_s_ymax, r_s_xmin: r_s_xmax]))
@@ -339,9 +317,6 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                             detection['object_boxes'][0]).to(torch.int)
                         
                         box_pair_spatial.append(None)
-                        subject_roi_features.append(None)
-                        object_roi_features.append(None)
-                        verb_roi_features.append(None)
                         subject_images.append(None)
                         object_images.append(box_transform(image_tensors[b_idx, :, r_o_ymin: r_o_ymax, r_o_xmin: r_o_xmax]))
                         verb_images.append(None)
@@ -349,9 +324,6 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
                     else:
                         import ipdb; ipdb.set_trace()
                         box_pair_spatial.append(None)
-                        subject_roi_features.append(None)
-                        object_roi_features.append(None)
-                        verb_roi_features.append(None)
                         subject_images.append(None)
                         object_images.append(None)
                         verb_images.append(None)
@@ -361,24 +333,7 @@ class NoveltyFeatureDataset(torch.utils.data.Dataset):
             self.subject_labels = subject_labels
             self.object_labels = object_labels
             self.verb_labels = verb_labels
-            self.subject_roi_features = subject_roi_features
-            self.object_roi_features = object_roi_features
-            self.verb_roi_features = verb_roi_features
             self.subject_images = subject_images
             self.object_images = object_images
             self.verb_images = verb_images
             self.whole_images = whole_images
-
-def list_collate(batch):
-    spatial_features = [batch[0] for item in batch]
-    subject_roi_features = [batch[1] for item in batch]
-    object_roi_features = [batch[2] for item in batch]
-    verb_roi_features = [batch[3] for item in batch]
-    subject_labels = [batch[4] for item in batch]
-    object_labels = [batch[5] for item in batch]
-    verb_labels = [batch[6] for item in batch]
-    subject_images = [batch[7] for item in batch]
-    object_images = [batch[8] for item in batch]
-    verb_images = [batch[9] for item in batch]
-    whole_images = [batch[10] for item in batch]
-    return [spatial_features, subject_roi_features, object_roi_features, verb_roi_features, subject_labels, object_labels, verb_labels, subject_images, object_images, verb_images, whole_images]
