@@ -7,6 +7,8 @@ from tupleprediction import\
     TuplePredictor
 from boxclassifier import ClassifierV2
 
+import os
+
 class BatchContext:
     def __init__(self):
         self.query_mask = None

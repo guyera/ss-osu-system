@@ -17,13 +17,14 @@ from tupleprediction.training import TuplePredictorTrainer
 
 import os
 
+from backbone import Backbone
 
 class TopLevelApp:
     def __init__(self, ensemble_path, data_root, pretrained_models_dir, backbone_architecture,
         feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path, val_incident_csv_path,
         val_corruption_csv_path, trial_size, trial_batch_size, retraining_batch_size, disable_retraining):
 
-        self.pretrained_backbone_path = os.path.join(
+        pretrained_backbone_path = os.path.join(
             pretrained_models_dir,
             backbone_architecture.value['name'],
             'backbone.pth'
