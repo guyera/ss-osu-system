@@ -539,32 +539,3 @@ class TuplePredictor:
                         more_other = False
             merged_predictions.append(merged_top3)
         return merged_predictions
-
-    def p_t4(self, subject_probs, verb_probs, object_probs):
-        # Now compute t4 probabilities based on each example's case
-        # TODO tensorize by case
-        p_t4 = []
-        for idx in range(len(subject_probs)):
-            example_subject_probs = subject_probs[idx]
-            example_verb_probs = verb_probs[idx]
-            example_object_probs = object_probs[idx]
-            assert ((example_subject_probs is not None and example_verb_probs is not None) or example_object_probs is not None)
-
-            if example_subject_probs is not None and example_object_probs is not None:
-                # Case 1. P(type = 4 | no novel boxes) = P(predicted SVO is a
-                # novel combination) = 1 - P(predicted SVO is a known
-                # combination)
-                p_t4.append(1 - self._compute_p_known_svo(example_subject_probs, example_verb_probs, example_object_probs))
-            elif example_subject_probs is not None:
-                # Case 2. P(type = 4 | no novel boxes) = P(predicted SV is a
-                # novel combination) = 1 - P(predicted SV is a known
-                # combination)
-                p_t4.append(1 - self._compute_p_known_sv(example_subject_probs, example_verb_probs))
-            else:
-                # Case 3. P(type = 4 | no novel boxes) = 0; there is just an
-                # object (no subject or verb), and so a novel combination would
-                # actually mean a novel object, which is considered a type 3
-                # novelty instead of type 4.
-                p_t4.append(torch.tensor(0.0, device = example_object_probs.device))
-
-        return p_t4

@@ -15,6 +15,8 @@ backbone = backbone.to(device)
 
 classifier = boxclassifier.ClassifierV2(256, 5, 12, 8, 72)
 classifier = classifier.to(device)
+confidence_calibrator = boxclassifier.ConfidenceCalibrator()
+confidence_calibrator = confidence_calibrator.to(device)
 tuple_predictor = tupleprediction.TuplePredictor(5, 12, 8)
 tuple_predictor = tuple_predictor.to(device)
 
@@ -27,8 +29,8 @@ activation_statistical_model = tupleprediction.ActivationStatisticalModel(archit
 trainer = tupleprediction.training.TuplePredictorTrainer('./', 'dataset_v4/dataset_v4_2_train.csv', 'dataset_v4/dataset_v4_2_val.csv', 'dataset_v4/dataset_v4_2_cal_incident.csv', 'dataset_v4/dataset_v4_2_cal_corruption.csv', 64)
 
 start_time = time.time()
-trainer.prepare_for_retraining(backbone, classifier, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model)
-trainer.train_novelty_detection_module(backbone, classifier, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model)
+trainer.prepare_for_retraining(backbone, classifier, confidence_calibrator, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model)
+trainer.train_novelty_detection_module(backbone, classifier, confidence_calibrator, case_1_logistic_regression, case_2_logistic_regression, case_3_logistic_regression, activation_statistical_model)
 end_time = time.time()
 print(f'Time: {end_time - start_time}')
 
@@ -56,6 +58,10 @@ torch.save(
 torch.save(
     classifier.state_dict(),
     os.path.join(save_dir, 'classifier.pth')
+)
+torch.save(
+    confidence_calibrator.state_dict(),
+    os.path.join(save_dir, 'confidence-calibrator.pth')
 )
 torch.save(
     tuple_prediction_state_dicts,
