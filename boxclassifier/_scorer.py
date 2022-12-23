@@ -1,5 +1,22 @@
 from abc import ABC, abstractmethod
 
+class ImageScorer(ABC):
+    '''
+    Produces a single novelty signal for a single image with N boxes.
+
+    Parameters:
+        species_logits: Tensor of shape NxS, where S is the number of
+            unique species classes
+        activity_logits: Tensor of shape NxA, where A is the number of
+            unique activity classes
+
+    Returns:
+        Scalar tensor of novelty signal
+    '''
+    @abstractmethod
+    def score(self, species_logits, activity_logits):
+        return NotImplemented
+
 class Scorer(ABC):
     '''
     Produces novelty signals in the form of scalar scores for each image,
@@ -33,47 +50,50 @@ class Scorer(ABC):
     def n_scores(self):
         return NotImplemented
 
-class MaxAverageLogitScorer(Scorer):
+class CompositeImageScorer(Scorer):
+    def __init__(self, image_scorers):
+        self._image_scorers = image_scorers
+
     def score(self, species_logits, activity_logits, box_counts):
         split_species_logits = torch.split(species_logits, box_counts, dim=0)
         split_activity_logits = torch.split(activity_logits, box_counts, dim=0)
-        avg_max_species_logits = []
-        max_avg_species_logits = []
-        avg_max_activity_logits = []
-        max_avg_activity_logits = []
+        scores = []
         for img_species_logits, img_activity_logits in\
                 zip(split_species_logits, split_activity_logits):
-            img_max_species_logits, _ = torch.max(img_species_logits, dim=1)
-            img_avg_species_logits = img_species_logits.mean(dim=0)
-            img_avg_max_species_logit = img_max_species_logits.mean()
-            img_max_avg_species_logit, _ =\
-                torch.max(img_avg_species_logits, dim=0)
-            avg_max_species_logits.append(img_avg_max_species_logit)
-            max_avg_species_logits.append(img_max_avg_species_logit)
-
-            img_max_activity_logits, _ = torch.max(img_activity_logits, dim=1)
-            img_avg_activity_logits = img_activity_logits.mean(dim=0)
-            img_avg_max_activity_logit = img_max_activity_logits.mean()
-            img_max_avg_activity_logit, _ =\
-                torch.max(img_avg_activity_logits, dim=0)
-            avg_max_activity_logits.append(img_avg_max_activity_logit)
-            max_avg_activity_logits.append(img_max_avg_activity_logit)
-
-        avg_max_species_logits = torch.stack(avg_max_species_logits, dim=0)
-        max_avg_species_logits = torch.stack(max_avg_species_logits, dim=0)
-        avg_max_activity_logits = torch.stack(avg_max_activity_logits, dim=0)
-        max_avg_activity_logits = torch.stack(max_avg_activity_logits, dim=0)
-        
-        scores = torch.stack(
-            (
-                avg_max_species_logits,
-                max_avg_species_logits,
-                avg_max_activity_logits,
-                max_avg_activity_logits
-            ),
-            dim=1
-        )
+            img_scores = [
+                img_scorer.score(img_species_logits, img_activity_logits)\
+                    for img_scorer in self._image_scorers
+            ]
+            img_scores = torch.stack(img_scores, dim=0)
+            scores.append(img_scores)
+        scores = torch.stack(scores, dim=0)
         return scores
 
     def n_scores(self):
-        return 4
+        return len(self._image_scorers)
+
+def _avg_max_logit_image_score(self, logits):
+    max_logits, _ = torch.max(logits, dim=1)
+    avg_max_logit = max_logits.mean()
+    return avg_max_logit
+
+def _max_avg_logit_image_score(self, logits):
+    avg_logits = logits.mean(dim=0)
+    max_avg_logit, _ = torch.max(avg_logits, dim=0)
+    return max_avg_logit
+
+class AvgMaxSpeciesLogitImageScorer(ImageScorer):
+    def score(self, species_logits, activity_logits):
+        return _avg_max_logit_image_score(species_logits)
+
+class MaxAvgSpeciesLogitImageScorer(ImageScorer):
+    def score(self, species_logits, activity_logits):
+        return _max_avg_logit_image_score(species_logits)
+
+class AvgMaxActivityLogitImageScorer(ImageScorer):
+    def score(self, species_logits, activity_logits):
+        return _avg_max_logit_image_score(activity_logits)
+
+class MaxAvgActivityLogitImageScorer(ImageScorer):
+    def score(self, species_logits, activity_logits):
+        return _max_avg_logit_image_score(activity_logits)
