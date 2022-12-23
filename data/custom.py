@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 from PIL import Image
+import json
 
 from typing import Any, Optional, List, Callable, Tuple
 from torch.utils.data import Dataset
@@ -49,7 +50,7 @@ class CustomDet(Dataset):
             and its target as entry and returns a transformed version.
     """
 
-    def __init__(self, root: str, csv_path: str,
+    def __init__(self, root: str, csv_path: str, json_path: str,
                  transform: Optional[Callable] = None,
                  target_transform: Optional[Callable] = None,
                  transforms: Optional[Callable] = None) -> None:
@@ -67,7 +68,7 @@ class CustomDet(Dataset):
         self.root = root
 
         # Load annotations
-        self._load_annotation_and_metadata(csv_path)
+        self._load_annotation_and_metadata(csv_path, json_path)
 
     def __len__(self) -> int:
         """Return the number of images"""
@@ -81,12 +82,9 @@ class CustomDet(Dataset):
         Returns:
             tuple[image, target]: By default, the tuple consists of a PIL image and a
                 dict with the following keys:
-                    "boxes_s": list[list[4]]
-                    "boxes_o": list[list[4]]
-                    "hoi":: list[N]
-                    "verb": list[N]
-                    "object": list[N]
-                    "subject" : list[N]
+                    "boxes": list[list[4]]
+                    "species": None or list[N]
+                    "activity" : None or list[N]
         """
         intra_idx = self._idx[i]
         return self._transforms(
@@ -97,10 +95,7 @@ class CustomDet(Dataset):
     def get_detections(self, idx: int):
         det = dict()
 
-        det["object_boxes"] = self._anno[idx]['boxes_o']
-        det["subject_boxes"] = self._anno[idx]['boxes_s']
-        det["object_labels"] = self._anno[idx]["object"]
-        det["subject_labels"] = self._anno[idx]["subject"]
+        det["boxes"] = self._anno[idx]['boxes']
 
         return det
 
@@ -121,30 +116,6 @@ class CustomDet(Dataset):
         reprstr += '\tNumber of images: {}\n'.format(self.__len__())
         return reprstr
 
-    @property
-    def annotations(self) -> List[dict]:
-        return self._anno
-
-    @property
-    def objects(self) -> List[str]:
-        """
-        Object names
-
-        Returns:
-            list[str]
-        """
-        return self._objects.copy()
-
-    @property
-    def verbs(self) -> List[str]:
-        """
-        Verb (action) names
-
-        Returns:
-            list[str]
-        """
-        return self._verbs.copy()
-
     def filename(self, idx: int) -> str:
         """Return the image file name given the index"""
         return os.path.join(self.root, self._filenames[self._idx[idx]])
@@ -153,20 +124,20 @@ class CustomDet(Dataset):
     #     """Return the size (width, height) of an image"""
     #     return self._image_sizes[self._idx[idx]]
 
-    def _load_annotation_and_metadata(self, f: str) -> None:
+    def _load_annotation_and_metadata(self, df_f: str, json_f: str) -> None:
         """
         Arguments:
-            f(str): path for csv 
+            df_f(str): path for csv 
+            json_f(str): path for json
         """
 
-        df = pd.read_csv(f)
+        df = pd.read_csv(df_f)
 
-        self._filenames = list(df['new_image_path'])
-        self._objects = list(df['object_name'].unique())
-        self._subjects = list(df['subject_name'].unique())
-        self._verbs = list(df['verb_name'].unique())
+        self._filenames = list(df['image_path'])
 
-        self._anno = self.create_annotation(df)
+        box_dict = json.load(json_f)
+
+        self._anno = self.create_annotation(df, box_dict)
 
         # self._image_sizes = self.create_sizes(df)
 
@@ -174,43 +145,28 @@ class CustomDet(Dataset):
 
         self._idx = idx
 
-    def create_annotation(self, df):
+    def create_annotation(self, df, box_dict):
         # TODO : Make This Faster
         annots = list()
         
         for i, row in df.iterrows():
             annot = dict()
 
-            boxes_s = list()
-            boxes_o = list()
-            objects = list()
-            subjects = list()
-            verbs = list()
+            boxes = list()
+            species = list()
+            activities = list()
             
-            boxes_s.append([row["subject_xmin"], row["subject_ymin"], row["subject_xmax"], row["subject_ymax"]])
-            boxes_o.append([row["object_xmin"], row["object_ymin"], row["object_xmax"], row["object_ymax"]])
-            objects.append(row["object_id"])
-            subjects.append(row["subject_id"])
-            verbs.append(row["verb_id"])
+            species.append(row['species'])
+            activities.append(row['activity'])
+            image_path = row['image_path']
+            basename = os.path.basename(image_path)
+            img_boxes = box_dict[basename]
+            boxes.append(box_dict[basename])
 
-            annot["boxes_s"] = boxes_s
-            annot["boxes_o"] = boxes_o
-            annot["object"] = objects
-            annot["subject"] = subjects
-            annot["verb"] = verbs
+            annot["boxes"] = boxes
+            annot["species"] = species
+            annot["activity"] = activities
 
             annots.append(annot)
 
         return annots
-
-    def create_correspondence(self, df, objects, verbs):
-        corr = df.groupby(['object_name', 'verb_name']).size().reset_index().rename(columns={0: 'count'})
-        corr["object_id"] = corr['object_name'].apply(lambda x: objects.index(x))
-        corr["verb_id"] = corr['verb_name'].apply(lambda x: verbs.index(x))
-
-        corr['idx'] = range(len(corr))
-
-        return corr[['idx', 'object_id', 'verb_id']].values.tolist()
-
-    # def create_sizes(self, df):
-    #     return df[['image_width', 'image_height']].values.tolist()

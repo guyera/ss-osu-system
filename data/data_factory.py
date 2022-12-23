@@ -98,39 +98,12 @@ class DataFactory(Dataset):
     def __len__(self):
         return len(self.dataset)
 
-    def filter_detections(self, detection):
-        """Perform NMS and remove low scoring examples"""
-
-        boxes = torch.as_tensor(detection['boxes'])
-        labels = torch.as_tensor(detection['labels'])
-
-        # Filter out low scoring human boxes
-        subject_idxs = torch.nonzero(labels == self.subject_idx).squeeze(1)
-        object_idxs = torch.nonzero(labels != self.subject_idx).squeeze(1)
-
-        subject_boxes = boxes[subject_idxs].view(-1, 4)
-        subject_labels = labels[subject_idxs].view(-1)
-
-        object_boxes = boxes[object_idxs].view(-1, 4)
-        object_labels = labels[object_idxs].view(-1)
-
-        if self.training:
-            return dict(subject_boxes=subject_boxes, subject_labels=subject_labels,
-                        object_boxes=object_boxes, object_labels=object_labels)
-        else:
-            return dict(subject_boxes=subject_boxes, subject_labels=subject_labels,
-                        object_boxes=object_boxes, object_labels=object_labels,
-                        img_id=detection['img_id'])
-
     def flip_boxes(self, detection, target, w):
-        detection['subject_boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['subject_boxes'])
-        detection['object_boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['object_boxes'])
-        target['boxes_s'] = pocket.ops.horizontal_flip_boxes(w, target['boxes_s'])
-        target['boxes_o'] = pocket.ops.horizontal_flip_boxes(w, target['boxes_o'])
+        detection['boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['boxes'])
+        target['boxes'] = pocket.ops.horizontal_flip_boxes(w, target['boxes'])
 
     def __getitem__(self, i):
         image, target = self.dataset[i]
-        target["labels"] = target['verb']
         detections = self.dataset.get_detections(i)
         detection = pocket.ops.to_tensor(detections, input_format='dict')
 
