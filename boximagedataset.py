@@ -2,7 +2,7 @@ import pickle
 import os
 import torch
 import pocket
-from utils import compute_spatial_encodings, binary_focal_loss
+from utils import binary_focal_loss
 from torchvision.ops import MultiScaleRoIAlign
 from torchvision.models.detection import transform
 from models.scg.scg import HOINetworkTransform
@@ -77,15 +77,7 @@ class BoxImageDataset(torch.utils.data.Dataset):
         name: As in data.data_factory.DataFactory()
         data_root: As in data.data_factory.DataFactory()
         csv_path: As in data.data_factory.DataFactory()
-        num_subj_cls: As in data.data_factory.DataFactory()
-        num_obj_cls: As in data.data_factory.DataFactory()
-        num_action_cls: As in data.data_factory.DataFactory()
         training: As in data.data_factory.DataFactory()
-        image_batch_size: If the features have not yet been computed as
-            persisted to disk, then they will be. This is done by constructing
-            a data loader for the raw image data and precomputing the features.
-            This parameter specifies the batch size to use on the raw image
-            data in such a case.
         output_size: As in torchvision.ops.MultiScaleRoIAlign()
         sampling_ratio: As in torchvision.ops.MultiScaleRoIAlign()
         min_size: As in models.scg.scg.HOINetworkTransform()
@@ -99,14 +91,12 @@ class BoxImageDataset(torch.utils.data.Dataset):
             data_root,
             csv_path,
             training,
-            image_batch_size,
             output_size = 7,
             sampling_ratio = 2,
             min_size = 800,
             max_size = 1333,
             image_mean = None,
             image_std = None,
-            feature_extraction_device = 'cpu',
             cache_to_disk = False):
         super().__init__()
 
@@ -117,17 +107,13 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 print('Image features have not yet been computed. Computing image features...')
 
                 self._compute_image_features(name, data_root, csv_path, training, 
-                    image_batch_size, feature_extraction_device, output_size, sampling_ratio, image_mean, image_std, 
+                    output_size, sampling_ratio, image_mean, image_std, 
                     min_size, max_size)
 
                 data = {
-                    'spatial_features': self.spatial_features,
-                    'subject_labels': self.subject_labels,
-                    'object_labels': self.object_labels,
-                    'verb_labels': self.verb_labels,
-                    'subject_images': self.subject_images,
-                    'object_images': self.object_images,
-                    'verb_images': self.verb_images,
+                    'species_labels': self.species_labels,
+                    'activity_labels': self.activity_labels,
+                    'box_images': self.box_images,
                     'whole_images': self.whole_images
                 }
 
@@ -138,27 +124,23 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 with open(filename, 'rb') as f:
                     data = pickle.load(f)
             
-                self.spatial_features = data['spatial_features']
-                self.subject_labels = data['subject_labels']
-                self.object_labels = data['object_labels']
-                self.verb_labels = data['verb_labels']
-                self.subject_images = data['subject_images']
-                self.object_images = data['object_images']
-                self.verb_images = data['verb_images']
+                self.species_labels = data['species_labels']
+                self.activity_labels = data['activity_labels']
+                self.box_images = data['box_images']
                 self.whole_images = data['whole_images']
         else:
             self._compute_image_features(name, data_root, csv_path, training, 
-                image_batch_size, feature_extraction_device, output_size, sampling_ratio, image_mean, image_std, 
+                output_size, sampling_ratio, image_mean, image_std, 
                 min_size, max_size)
 
     def __getitem__(self, idx):
-        return self.spatial_features[idx], self.subject_labels[idx], self.object_labels[idx], self.verb_labels[idx] , self.subject_images[idx], self.object_images[idx], self.verb_images[idx], self.whole_images[idx]
+        return self.species_labels[idx], self.activity_labels[idx], self.box_images[idx], self.whole_images[idx]
 
     def __len__(self):
-        return len(self.spatial_features)
+        return len(self.species_labels)
 
     def _compute_image_features(self, name, data_root, csv_path, training, 
-        image_batch_size, feature_extraction_device, output_size, sampling_ratio, image_mean, image_std, 
+        output_size, sampling_ratio, image_mean, image_std, 
         min_size, max_size):
 
         with torch.no_grad():
@@ -167,12 +149,12 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 name = name,
                 data_root = data_root,
                 csv_path = csv_path,
-                training = training)
-            
+                training = training
+            )
+
             data_loader = DataLoader(
                 dataset = dataset,
                 collate_fn = custom_collate,
-                #batch_size = image_batch_size
                 batch_size = 1
             )
             
@@ -188,15 +170,10 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 image_std
             )
             
-            box_pair_spatial = list()
-            subject_labels = list()
-            object_labels = list()
-            verb_labels = list()
-            subject_images = list()
-            object_images = list()
-            verb_images = list()
+            species_labels = list()
+            activity_labels = list()
+            box_images = list()
             whole_images = list()
-            
 
             for images, detections, targets in data_loader:
                 original_image_sizes = [img.shape[-2:] for img in images]
@@ -204,135 +181,38 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 for det, o_im_s, im_s in zip(
                         detections, original_image_sizes, images.image_sizes
                 ):
-                    sub_boxes = det['subject_boxes']
-                    if sub_boxes[0][0].item() == -1:
-                        det['subject_boxes'] = None
-                    else:
-                        sub_boxes = transform.resize_boxes(sub_boxes, o_im_s, im_s)
-                        det['subject_boxes'] = sub_boxes
-                    
-                    obj_boxes = det['object_boxes']
-                    if obj_boxes[0][0].item() == -1:
-                        det['object_boxes'] = None
-                    else:
-                        obj_boxes = transform.resize_boxes(obj_boxes, o_im_s, im_s)
-                        det['object_boxes'] = obj_boxes
-                
-                image_tensors = images.tensors.to(feature_extraction_device)
+                    det['boxes'] = transform.resize_boxes(
+                        det['boxes'],
+                        o_im_s,
+                        im_s
+                    )
+
+                image_tensors = images.tensors
                 image_shapes = images.image_sizes
                 
                 for b_idx, detection in enumerate(detections):
                     if targets is None:
-                        subject_label = None
-                        object_label = None
-                        verb_label = None
+                        img_species_labels = None
+                        img_activity_labels = None
                     else:
-                        subject_label = targets[b_idx]['subject'][0].detach()
-                        object_label = targets[b_idx]['object'][0].detach()
-                        verb_label = targets[b_idx]['verb'][0].detach()
-                        raw_subject_label = subject_label
-                        raw_object_label = object_label
-                        raw_verb_label = verb_label
-                        subject_label = None if raw_subject_label.item() == -1 else raw_subject_label
-                        object_label = None if raw_object_label.item() == -1 else raw_object_label
-                        verb_label = None if raw_subject_label.item() == -1 else raw_verb_label
-                    
-                    subject_labels.append(subject_label)
-                    object_labels.append(object_label)
-                    verb_labels.append(verb_label)
-                    
+                        img_species_labels = targets[b_idx]['species'].detach()
+                        img_activity_labels = targets[b_idx]['activity'].detach()
 
-                    if detection['subject_boxes'] is not None and detection['object_boxes'] is not None:
-                        s_xmin, s_ymin, s_xmax, s_ymax = detection['subject_boxes'][0]
-                        r_s_xmin, r_s_ymin, r_s_xmax, r_s_ymax = torch.round(
-                            detection['subject_boxes'][0]).to(torch.int)
-                        
-                        o_xmin, o_ymin, o_xmax, o_ymax = detection['object_boxes'][0]
-                        r_o_xmin, r_o_ymin, r_o_xmax, r_o_ymax = torch.round(
-                            detection['object_boxes'][0]).to(torch.int)
-                        
-                        v_xmin = min(s_xmin, o_xmin)
-                        v_ymin = min(s_ymin, o_ymin)
-                        v_xmax = max(s_xmax, o_xmax)
-                        v_ymax = max(s_ymax, o_ymax)
+                    species_labels.append(img_species_labels)
+                    activity_labels.append(img_activity_labels)
 
-                        r_v_xmin = min(r_s_xmin, r_o_xmin)
-                        r_v_ymin = min(r_s_ymin, r_o_ymin)
-                        r_v_xmax = max(r_s_xmax, r_o_xmax)
-                        r_v_ymax = max(r_s_ymax, r_o_ymax)
+                    img_boxes = []
+                    for xmin, ymin, xmax, ymax in detection['boxes']
+                        r_xmin, r_ymin, r_xmax, r_ymax = torch.round(
+                            box_detection
+                        ).to(torch.int)
 
-                        verb_box_coords = torch.tensor([[v_xmin, v_ymin, v_xmax, v_ymax]])
-                    
-                        x, y = torch.meshgrid(
-                            torch.arange(1),
-                            torch.arange(2)
-                        )
-                        x = x.flatten()
-                        y = y.flatten()
-                        coords = torch.cat([detection['subject_boxes'], detection['object_boxes']])
-                        box_pair_spatial.append(compute_spatial_encodings(
-                            [coords[x]], [coords[y]], [image_shapes[b_idx]]
-                        ).detach().to(feature_extraction_device))
-                        
                         # Extract image boxes via cropping
-                        subject_images.append(box_transform(image_tensors[b_idx, :, r_s_ymin: r_s_ymax, r_s_xmin: r_s_xmax]))
-                        object_images.append(box_transform(image_tensors[b_idx, :, r_o_ymin: r_o_ymax, r_o_xmin: r_o_xmax]))
-                        verb_images.append(box_transform(image_tensors[b_idx, :, r_v_ymin: r_v_ymax, r_v_xmin: r_v_xmax]))
-                        whole_images.append(box_transform(image_tensors[b_idx]))
-                    elif detection['subject_boxes'] is not None:
-                        r_s_xmin, r_s_ymin, r_s_xmax, r_s_ymax = torch.round(
-                            detection['subject_boxes'][0]).to(torch.int)
-                        
-                        verb_box_coords = detection['subject_boxes'].clone().detach()
-                        
-                        x, y = torch.meshgrid(
-                            torch.arange(1),
-                            torch.arange(2)
-                        )
-                        x = x.flatten()
-                        y = y.flatten()
-                        coords = torch.cat([detection['subject_boxes'], detection['subject_boxes']])
-                        box_pair_spatial.append(compute_spatial_encodings(
-                            [coords[x]], [coords[y]], [image_shapes[b_idx]]
-                        ).detach().to(feature_extraction_device))
-                        
-                        # x, y = torch.meshgrid(
-                        #     torch.arange(1),
-                        #     torch.arange(1)
-                        # )
-                        # x = x.flatten()
-                        # y = y.flatten()
-                        # coords = torch.cat([detection['subject_boxes'], []])
-                        # box_pair_spatial.append(compute_spatial_encodings(
-                        #     [coords[x]], [coords[y]], [image_shapes[b_idx]]
-                        # ))
-                        
-                        subject_images.append(box_transform(image_tensors[b_idx, :, r_s_ymin: r_s_ymax, r_s_xmin: r_s_xmax]))
-                        object_images.append(None)
-                        verb_images.append(box_transform(image_tensors[b_idx, :, r_s_ymin: r_s_ymax, r_s_xmin: r_s_xmax]))
-                        whole_images.append(box_transform(image_tensors[b_idx]))
-                    elif detection['object_boxes'] is not None:
-                        r_o_xmin, r_o_ymin, r_o_xmax, r_o_ymax = torch.round(
-                            detection['object_boxes'][0]).to(torch.int)
-                        
-                        box_pair_spatial.append(None)
-                        subject_images.append(None)
-                        object_images.append(box_transform(image_tensors[b_idx, :, r_o_ymin: r_o_ymax, r_o_xmin: r_o_xmax]))
-                        verb_images.append(None)
-                        whole_images.append(box_transform(image_tensors[b_idx]))
-                    else:
-                        import ipdb; ipdb.set_trace()
-                        box_pair_spatial.append(None)
-                        subject_images.append(None)
-                        object_images.append(None)
-                        verb_images.append(None)
-                        whole_images.append(None)
+                        img_boxes.append(box_transform(image_tensors[b_idx, :, r_ymin : r_ymax, r_xmin : r_xmax]))
+                    box_images.append(torch.stack(img_boxes, dim=0))
+                    whole_images.append(box_transform(image_tensors[b_idx]))
 
-            self.spatial_features = box_pair_spatial
-            self.subject_labels = subject_labels
-            self.object_labels = object_labels
-            self.verb_labels = verb_labels
-            self.subject_images = subject_images
-            self.object_images = object_images
-            self.verb_images = verb_images
+            self.species_labels = species_labels
+            self.activity_labels = activity_labels
+            self.box_images = box_images
             self.whole_images = whole_images
