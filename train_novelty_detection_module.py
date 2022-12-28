@@ -7,6 +7,7 @@ import torch
 import boxclassifier
 import tupleprediction
 from backbone import Backbone
+import scoring
 
 device = 'cuda:0'
 architecture = Backbone.Architecture.swin_t
@@ -24,7 +25,7 @@ case_1_logistic_regression = tupleprediction.Case1LogisticRegression().to(device
 case_2_logistic_regression = tupleprediction.Case2LogisticRegression().to(device)
 case_3_logistic_regression = tupleprediction.Case3LogisticRegression().to(device)
 
-activation_statistical_model = tupleprediction.ActivationStatisticalModel(architecture).to(device)
+activation_statistical_model = scoring.ActivationStatisticalModel(architecture).to(device)
 
 trainer = tupleprediction.training.TuplePredictorTrainer('./', 'dataset_v4/dataset_v4_2_train.csv', 'dataset_v4/dataset_v4_2_val.csv', 'dataset_v4/dataset_v4_2_cal_incident.csv', 'dataset_v4/dataset_v4_2_cal_corruption.csv', 64)
 

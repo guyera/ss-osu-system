@@ -1,10 +1,10 @@
 import torch
 from tupleprediction import\
-    ActivationStatisticalModel,\
     Case1LogisticRegression,\
     Case2LogisticRegression,\
     Case3LogisticRegression,\
     TuplePredictor
+from scoring import ActivationStatisticalModel
 from boxclassifier import ClassifierV2
 
 import os

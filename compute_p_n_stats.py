@@ -10,6 +10,7 @@ import boxclassifier
 from boximagedataset import BoxImageDataset
 import tupleprediction
 from backbone import Backbone
+import scoring
 
 parser = argparse.ArgumentParser()
 
@@ -54,7 +55,7 @@ tuple_prediction_state_dict = torch.load(
 classifier.load_state_dict(classifier_state_dict)
 tuple_predictor.load_state_dict(tuple_prediction_state_dict)
 
-activation_statistical_model = tupleprediction.ActivationStatisticalModel(architecture).to(device)
+activation_statistical_model = scoring.ActivationStatisticalModel(architecture).to(device)
 activation_statistical_model.load_state_dict(tuple_prediction_state_dict['activation_statistical_model'])
 
 testing_set = BoxImageDataset(
