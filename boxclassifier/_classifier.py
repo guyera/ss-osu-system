@@ -6,19 +6,19 @@ class ClassifierV2:
     def __init__(
             self,
             bottleneck_dim,
-            num_subj_cls,
-            num_action_cls,
+            n_species_cls,
+            n_activity_cls,
             spatial_encoding_dim):
         self.device = 'cpu'
         self.bottleneck_dim = bottleneck_dim
-        self.num_subj_cls = num_subj_cls
-        self.num_action_cls = num_action_cls
+        self.n_species_cls = n_species_cls
+        self.n_activity_cls = n_activity_cls
         self.spatial_encoding_dim = spatial_encoding_dim
         self.reset()
 
     def reset(self):
-        self.species_classifier = torch.nn.Linear(self.bottleneck_dim, self.num_subj_cls - 1).to(self.device)
-        self.activity_classifier = torch.nn.Linear(self.bottleneck_dim + self.spatial_encoding_dim, self.num_action_cls - 1).to(self.device)
+        self.species_classifier = torch.nn.Linear(self.bottleneck_dim, self.n_species_cls - 1).to(self.device)
+        self.activity_classifier = torch.nn.Linear(self.bottleneck_dim + self.spatial_encoding_dim, self.n_activity_cls - 1).to(self.device)
     
     def predict(self, box_features):
         self.species_classifier.eval()
