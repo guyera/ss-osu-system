@@ -101,11 +101,15 @@ class TuplePredictorTrainer:
             retraining_batch_size,
             n_species_cls,
             n_activity_cls):
+        self._n_species_cls = n_species_cls
+        self._n_activity_cls = n_activity_cls
         self._train_dataset = BoxImageDataset(
             name = 'Custom',
             data_root = data_root,
             csv_path = train_csv_path,
             training = True,
+            n_species_cls=n_species_cls,
+            n_activity_cls=n_activity_cls,
             image_batch_size = 512,
             cache_to_disk = False
         )
@@ -115,6 +119,8 @@ class TuplePredictorTrainer:
             data_root = data_root,
             csv_path = val_csv_path,
             training = False,
+            n_species_cls=n_species_cls,
+            n_activity_cls=n_activity_cls,
             image_batch_size = 512,
             cache_to_disk = False
         )
@@ -145,6 +151,8 @@ class TuplePredictorTrainer:
             data_root = data_root,
             csv_path = val_environment_csv_path,
             training = False,
+            n_species_cls=n_species_cls,
+            n_activity_cls=n_activity_cls,
             image_batch_size = 512,
             cache_to_disk = False
         )
@@ -167,6 +175,8 @@ class TuplePredictorTrainer:
             data_root = data_root,
             csv_path = csv_path,
             training = True,
+            n_species_cls=self._n_species_cls,
+            n_activity_cls=self._n_activity_cls,
             image_batch_size = 8,
             cache_to_disk = False
         )

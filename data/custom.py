@@ -51,10 +51,13 @@ class CustomDet(Dataset):
     """
 
     def __init__(self, root: str, csv_path: str, json_path: str,
-                 transform: Optional[Callable] = None,
-                 target_transform: Optional[Callable] = None,
-                 transforms: Optional[Callable] = None) -> None:
+                n_species_cls: int, n_activity_cls: int,
+                transform: Optional[Callable] = None,
+                target_transform: Optional[Callable] = None,
+                transforms: Optional[Callable] = None) -> None:
         super(CustomDet, self).__init__()
+        self._n_species_cls = n_species_cls
+        self._n_activity_cls = n_activity_cls
 
         if transforms is None:
             self._transforms = StandardTransform(transform, target_transform)
@@ -63,7 +66,6 @@ class CustomDet(Dataset):
             self._transforms = transforms
         else:
             self._transforms = transforms
-
 
         self.root = root
 

@@ -90,6 +90,8 @@ class BoxImageDataset(torch.utils.data.Dataset):
             data_root,
             csv_path,
             training,
+            n_species_cls,
+            n_activity_cls,
             min_size = 800,
             max_size = 1333,
             image_mean = None,
@@ -100,9 +102,11 @@ class BoxImageDataset(torch.utils.data.Dataset):
 
         self._dataset = DataFactory(
             name=name,
-            data_root = data_root,
-            csv_path = csv_path,
-            training = training
+            data_root=data_root,
+            n_species_cls=n_species_cls,
+            n_activity_cls=n_activity_cls,
+            csv_path=csv_path,
+            training=training
         )
         self._box_transform = torchvision.transforms.Compose([_ResizePad(224), torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
 
