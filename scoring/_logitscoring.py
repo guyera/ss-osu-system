@@ -11,17 +11,37 @@ def _max_avg_logit_image_score(self, logits):
     return max_avg_logit
 
 class AvgMaxSpeciesLogitImageScorer(ImageScorer):
+    def __init__(self, n_known_species_cls):
+        self._n_known_species_cls = n_known_species_cls
+
     def score(self, species_logits, activity_logits):
-        return _avg_max_logit_image_score(species_logits)
+        return _avg_max_logit_image_score(
+            species_logits[:, :self._n_known_species_cls]
+        )
 
 class MaxAvgSpeciesLogitImageScorer(ImageScorer):
+    def __init__(self, n_known_species_cls):
+        self._n_known_species_cls = n_known_species_cls
+
     def score(self, species_logits, activity_logits):
-        return _max_avg_logit_image_score(species_logits)
+        return _max_avg_logit_image_score(
+            species_logits[:, :self._n_known_species_cls]
+        )
 
 class AvgMaxActivityLogitImageScorer(ImageScorer):
-    def score(self, species_logits, activity_logits):
-        return _avg_max_logit_image_score(activity_logits)
+    def __init__(self, n_known_activity_cls):
+        self._n_known_activity_cls = n_known_activity_cls
+
+    def score(self, activity_logits, activity_logits):
+        return _avg_max_logit_image_score(
+            activity_logits[:, :self._n_known_activity_cls]
+        )
 
 class MaxAvgActivityLogitImageScorer(ImageScorer):
-    def score(self, species_logits, activity_logits):
-        return _max_avg_logit_image_score(activity_logits)
+    def __init__(self, n_known_activity_cls):
+        self._n_known_activity_cls = n_known_activity_cls
+
+    def score(self, activity_logits, activity_logits):
+        return _max_avg_logit_image_score(
+            activity_logits[:, :self._n_known_activity_cls]
+        )

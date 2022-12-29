@@ -7,11 +7,15 @@ import torch
 from boximagedataset import BoxImageDataset
 
 class NoveltyTypeDataset(Dataset):
-    def __init__(self, box_image_dataset, n_species_cls, n_activity_cls):
+    def __init__(
+            self,
+            box_image_dataset,
+            n_known_species_cls,
+            n_known_activity_cls):
         super().__init__()
         self._box_image_dataset = box_image_dataset
-        self._n_species_cls = n_species_cls
-        self._n_activity_cls = n_activity_cls
+        self._n_known_species_cls = n_known_species_cls
+        self._n_known_activity_cls = n_known_activity_cls
 
     def __len__(self):
         return len(self._box_image_dataset)
@@ -20,13 +24,13 @@ class NoveltyTypeDataset(Dataset):
         species_labels, activity_labels, box_images, whole_image = \
             self._box_image_dataset[idx]
 
-        if torch.any(species_labels >= self._n_species_cls):
+        if torch.any(species_labels[self._n_known_species_cls:] > 0):
             type_label = 1
-        elif torch.any(activity_label >= self._n_activity_cls):
+        elif torch.any(activity_labels[self._n_known_activity_cls:] > 0):
             type_label = 2
-        elif not torch.all(species_labels == species_labels[0]):
+        elif (species_labels > 0).to(torch.int).sum() > 1:
             type_label = 3
-        elif not torch.all(activity_labels == activity_labels[0]):
+        elif (activity_labels > 0).to(torch.int).sum() > 1:
             type_label = 4
         else:
             type_label = 0
@@ -43,27 +47,30 @@ class EnvironmentNoveltyTypeDataset(Dataset):
         return len(self._box_image_dataset)
 
     def __getitem__(self, idx):
-        species_labels, activity_labels, box_images, whole_image = \
+        _, _, box_images, whole_image = \
             self._box_image_dataset[idx]
 
         return box_images, whole_image, 5
 
 
-def separate_known_images(dataset, n_species_cls, n_activity_cls):
+def separate_known_images(dataset, n_known_species_cls, n_known_activity_cls):
     known_indices = []
-    for idx, (species_label, activity_label, _, _) in enumerate(dataset):
-        if species_label is not None:
-            if species_label >= n_species_cls:
-                # Novel species
-                continue
-
-        if activity_label is not None:
-            if activity_label >= n_activity_cls:
-                # Novel activity
-                continue
+    for idx, (species_labels, activity_labels, _, _) in enumerate(dataset):
+        if torch.any(species_labels[n_known_species_cls:] > 0):
+            # Novel species
+            continue
+        if torch.any(activity_labels[n_known_activity_cls:] > 0):
+            # Novel activity
+            continue
+        elif (species_labels > 0).to(torch.int).sum() > 1:
+            # Two or more known species
+            continue
+        elif (activity_labels > 0).to(torch.int).sum() > 1:
+            # Two or more known activities
+            continue
 
         known_indices.append(idx)
-    
+
     return torch.utils.data.Subset(dataset, known_indices)
 
 
@@ -100,7 +107,9 @@ class TuplePredictorTrainer:
             val_environment_csv_path,
             retraining_batch_size,
             n_species_cls,
-            n_activity_cls):
+            n_activity_cls,
+            n_known_species_cls,
+            n_known_activity_cls):
         self._n_species_cls = n_species_cls
         self._n_activity_cls = n_activity_cls
         self._train_dataset = BoxImageDataset(
@@ -135,15 +144,15 @@ class TuplePredictorTrainer:
         # Label val data by novelty type
         val_novelty_type_dataset = NoveltyTypeDataset(
             self._val_dataset,
-            n_species_cls,
-            n_activity_cls
+            n_known_species_cls,
+            n_known_activity_cls
         )
 
         # Extract whole images
         self._activation_stats_training_dataset = separate_known_images(
             self._val_dataset,
-            n_species_cls,
-            n_activity_cls
+            n_known_species_cls,
+            n_known_activity_cls
         )
 
         val_environment_dataset = BoxImageDataset(
@@ -580,10 +589,10 @@ class TuplePredictorTrainer:
                 box_features = backbone(flattened_box_images)
                 batch_species_logits = species_classifier(box_features)
                 species_logits.append(batch_species_logits)
-                species_labels.append(batch_species_labels)
+                species_labels.append(flattened_species_labels)
                 batch_activity_logits = activity_classifier(box_features)
                 activity_logits.append(batch_activity_logits)
-                activity_labels.append(batch_activity_labels)
+                activity_labels.append(flattened_activity_labels)
 
             species_logits = torch.cat(species_logits, dim = 0)
             species_labels = torch.cat(species_labels, dim = 0)
@@ -654,26 +663,6 @@ class TuplePredictorTrainer:
                 flattened_box_images = flattened_box_images.to(device)
                 whole_images = whole_images.to(device)
                 batch_labels = batch_labels.to(device)
-
-                # Construct per-box labels.
-                one_hot_species_labels = torch.argmax(
-                    batch_species_labels,
-                    dim=1
-                )
-                flattened_species_labels = torch.cat([
-                    torch.full(box_count, species_label, device=device)\
-                        for species_label, box_count in\
-                            zip(one_hot_species_labels, box_counts)
-                ])
-                one_hot_activity_labels = torch.argmax(
-                    batch_activity_labels,
-                    dim=1
-                )
-                flattened_activity_labels = torch.cat([
-                    torch.full(box_count, activity_label, device=device)\
-                        for activity_label, box_count in\
-                            zip(one_hot_activity_labels, box_counts)
-                ])
 
                 # Extract box features
                 box_features = backbone(flattened_box_images)

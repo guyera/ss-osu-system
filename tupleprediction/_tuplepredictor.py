@@ -10,14 +10,14 @@ Notation:
 class TuplePredictor:
     '''
     Parameters:
-        n_species_cls: int
+        n_known_species_cls: int
             The number of known species classes
-        n_activity_cls: int
+        n_known_activity_cls: int
             The number of known activity classes
     '''
-    def __init__(self, n_species_cls, n_activity_cls):
-        self._n_species_cls = n_species_cls
-        self._n_activity_cls = n_activity_cls
+    def __init__(self, n_known_species_cls, n_known_activity_cls):
+        self._n_known_species_cls = n_known_species_cls
+        self._n_known_activity_cls = n_known_activity_cls
 
     def _species(self, species_probs, p_type):
         # NOTE: Every probability here is implicitly conditioned on the box
@@ -27,7 +27,7 @@ class TuplePredictor:
         # independent given the box images themselves because a box should
         # generally be a sufficient statistic for the label.
         n = species_probs.shape[0]
-        known_species_probs = species_probs[:self._n_species_cls]
+        known_species_probs = species_probs[:self._n_known_species_cls]
 
         # If the novelty type is 0, 3, 5, or 6, then we know the species vector
         # vector only contains known species, and the labels are the same
@@ -96,7 +96,7 @@ class TuplePredictor:
         # We'll condition on them one at a time, starting with the former:
         # For known s:
         # P(S_j=s, <2 known species) = P(S_j=s, all other S_j in {s, novel})
-        novel_species_probs = species_probs[self._n_species_cls:]
+        novel_species_probs = species_probs[self._n_known_species_cls:]
         combined_novel_species_probs = novel_species_probs.sum(dim=1)
         known_or_novel_species_probs = \
             known_species_probs + combined_novel_species_probs[:, None]
@@ -125,9 +125,9 @@ class TuplePredictor:
 
         # Extract known and novel parts of conditional probabilities
         known_unique_species_cond_probs = \
-            unique_species_cond_probs[:self._n_species_cls]
+            unique_species_cond_probs[:self._n_known_species_cls]
         novel_unique_species_cond_probs = \
-            unique_species_cond_probs[self._n_species_cls:]
+            unique_species_cond_probs[self._n_known_species_cls:]
 
         # unique_species_cond_probs represents P(S_j=s | c), where c is the
         # condition: there are 0 or 1 unique species among the boxes.
@@ -178,7 +178,7 @@ class TuplePredictor:
         # independent given the box images themselves because a box should
         # generally be a sufficient statistic for the label.
         n = activity_probs.shape[0]
-        known_activity_probs = activity_probs[:self._n_activity_cls]
+        known_activity_probs = activity_probs[:self._n_known_activity_cls]
 
         # If the novelty type is 0, 2, 4, or 6, then we know the activity vector
         # vector only contains known activities, and the labels are the same
@@ -242,7 +242,7 @@ class TuplePredictor:
         # We'll condition on them one at a time, starting with the former:
         # For known s:
         # P(S_j=s, <3 known activity) = P(S_j=s, all other S_j in {s, novel})
-        novel_activity_probs = activity_probs[self._n_activity_cls:]
+        novel_activity_probs = activity_probs[self._n_known_activity_cls:]
         combined_novel_activity_probs = novel_activity_probs.sum(dim=1)
         known_or_novel_activity_probs = \
             known_activity_probs + combined_novel_activity_probs[:, None]
@@ -271,9 +271,9 @@ class TuplePredictor:
 
         # Extract known and novel parts of conditional probabilities
         known_unique_activity_cond_probs = \
-            unique_activity_cond_probs[:self._n_activity_cls]
+            unique_activity_cond_probs[:self._n_known_activity_cls]
         novel_unique_activity_cond_probs = \
-            unique_activity_cond_probs[self._n_activity_cls:]
+            unique_activity_cond_probs[self._n_known_activity_cls:]
 
         # unique_activity_cond_probs represents P(S_j=s | c), where c is the
         # condition: there are 0 or 1 unique activity among the boxes.
