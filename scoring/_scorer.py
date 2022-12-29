@@ -53,6 +53,8 @@ class Scorer(ABC):
         species_logits: Tensor of shape MxS
         activity_logits: Tensor of shape MxA
         whole_image_features: Tensor of shape NxD
+        box_counts: List[int] of length N
+            box_counts[i] specifies the number of boxes in image i
 
     Returns:
         Tensor of shape MxL, where L is the number of scores produced for
@@ -63,7 +65,8 @@ class Scorer(ABC):
             self,
             species_logits,
             activity_logits,
-            whole_image_features):
+            whole_image_features,
+            box_counts):
         return NotImplemented
 
     '''
@@ -106,10 +109,13 @@ class ScorerFromImageScorer(Scorer):
             self,
             species_logits,
             activity_logits,
-            whole_image_features):
+            whole_image_features,
+            box_counts):
         scores = []
+        split_species_logits = torch.split(species_logits, box_counts, dim=0)
+        split_activity_logits = torch.split(activity_logits, box_counts, dim=0)
         for img_species_logits, img_activity_logits in\
-                zip(species_logits, activity_logits):
+                zip(split_species_logits, split_activity_logits):
             img_scores = self._image_scorer.score(
                 img_species_logits,
                 img_activity_logits
@@ -132,12 +138,14 @@ class CompositeScorer(Scorer):
             self,
             species_logits,
             activity_logits,
-            whole_image_features):
+            whole_image_features,
+            box_counts):
         scores = [
             scorer.score(
                 species_logits,
                 activity_logits,
-                whole_image_features
+                whole_image_features,
+                box_counts
             ) for scorer in self._scorers
         ]
         return torch.cat(scores, dim=1)

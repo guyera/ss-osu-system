@@ -106,6 +106,21 @@ class DataFactory(Dataset):
         image, target = self.dataset[i]
         detections = self.dataset.get_detections(i)
         detection = pocket.ops.to_tensor(detections, input_format='dict')
+        # Box dimensions are xmin, ymin, width, height, relative to the image
+        # size. Translate to absolute dimensions in order of xmin, ymin, xmax,
+        # ymax.
+        height = image.shape[-2]
+        width = image.shape[-1]
+        detection['boxes'][:, 0] =\
+            torch.round(detection['boxes'][:, 0] * width).to(torch.int)
+        detection['boxes'][:, 1] =\
+            torch.round(detection['boxes'][:, 1] * height).to(torch.int)
+        detection['boxes'][:, 2] =\
+            torch.round(detection['boxes'][:, 2] * width).to(torch.int) +\
+                detection['boxes'][:, 0]
+        detection['boxes'][:, 3] =\
+            torch.round(detection['boxes'][:, 3] * height).to(torch.int) +\
+                detection['boxes'][:, 1]
 
         if not self.training:
             detection['img_id'] = self.dataset.filename(i)

@@ -82,20 +82,23 @@ class CustomDet(Dataset):
         Returns:
             tuple[image, target]: By default, the tuple consists of a PIL image and a
                 dict with the following keys:
-                    "boxes": list[list[4]]
                     "species": None or list[N]
                     "activity" : None or list[N]
         """
         intra_idx = self._idx[i]
+        target = dict()
+        annot = self._anno[intra_idx]
+        target['species'] = annot['species']
+        target['activity'] = annot['activity']
         return self._transforms(
             self.load_image(os.path.join(self.root, self._filenames[intra_idx])),
-            self._anno[intra_idx]
+            target
         )
 
     def get_detections(self, idx: int):
         det = dict()
 
-        det["boxes"] = self._anno[idx]['boxes']
+        det['boxes'] = self._anno[idx]['boxes']
 
         return det
 
@@ -120,10 +123,6 @@ class CustomDet(Dataset):
         """Return the image file name given the index"""
         return os.path.join(self.root, self._filenames[self._idx[idx]])
 
-    # def image_size(self, idx: int) -> Tuple[int, int]:
-    #     """Return the size (width, height) of an image"""
-    #     return self._image_sizes[self._idx[idx]]
-
     def _load_annotation_and_metadata(self, df_f: str, json_f: str) -> None:
         """
         Arguments:
@@ -138,8 +137,6 @@ class CustomDet(Dataset):
         box_dict = json.load(json_f)
 
         self._anno = self.create_annotation(df, box_dict)
-
-        # self._image_sizes = self.create_sizes(df)
 
         idx = list(range(len(df)))
 
@@ -156,8 +153,23 @@ class CustomDet(Dataset):
             species = list()
             activities = list()
             
-            species.append(row['species'])
-            activities.append(row['activity'])
+            cur_species = torch.zeroes(self._n_species_cls)
+            for species_idx in [1, 2, 3]:
+                id_string = f'agent{species_idx}_id'
+                count_string = f'agent{species_idx}_count'
+                species_id = row[id_string]
+                species_count = row[count_string]
+                if species_id is None:
+                    break
+                cur_species[species_id] = species_count
+            cur_activity = torch.zeros(2, dtype=torch.bool)
+            if row['activity_standing'] == 1:
+                cur_activity[0] = True
+            if row['activity_moving'] == 1:
+                cur_activity[1] = True
+
+            species.append(cur_species)
+            activities.append(cur_activity)
             image_path = row['image_path']
             basename = os.path.basename(image_path)
             img_boxes = box_dict[basename]
