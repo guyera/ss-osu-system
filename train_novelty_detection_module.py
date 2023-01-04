@@ -8,8 +8,8 @@ import boxclassifier
 import tupleprediction
 from backbone import Backbone
 from scoring import\
-    ActivationStatisticalModel,
-    make_logit_scorer,
+    ActivationStatisticalModel,\
+    make_logit_scorer,\
     CompositeScorer
 
 device = 'cuda:0'
@@ -17,10 +17,10 @@ architecture = Backbone.Architecture.swin_t
 backbone = Backbone(architecture)
 backbone = backbone.to(device)
 
-n_species_cls = 50 # TODO Determine
-n_activity_cls = 4
-n_known_species_cls = 30 # TODO Determine
+n_known_species_cls = 10
+n_species_cls = 30 # TODO Determine
 n_known_activity_cls = 2
+n_activity_cls = 4 # TODO Determine
 
 classifier = boxclassifier.ClassifierV2(256, n_species_cls, n_activity_cls)
 classifier = classifier.to(device)
@@ -30,19 +30,18 @@ tuple_predictor = tupleprediction.TuplePredictor(
     n_known_species_cls,
     n_known_activity_cls
 )
-tuple_predictor = tuple_predictor.to(device)
 
 activation_statistical_model = ActivationStatisticalModel(
     architecture
 ).to(device)
-logit_scorer = make_logit_scorer()
+logit_scorer = make_logit_scorer(n_known_species_cls, n_known_activity_cls)
 scorer = CompositeScorer((activation_statistical_model, logit_scorer))
 
 novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
     scorer.n_scores()
 ).to(device)
 
-trainer = tupleprediction.training.TuplePredictorTrainer('./', 'dataset_v4/dataset_v4_2_train.csv', 'dataset_v4/dataset_v4_2_val.csv', 'dataset_v4/dataset_v4_2_cal_corruption.csv', 64, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls)
+trainer = tupleprediction.training.TuplePredictorTrainer('./', 'dataset_v4/train.csv', 'dataset_v4/valid.csv', 64, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls)
 
 start_time = time.time()
 trainer.prepare_for_retraining(backbone, classifier, confidence_calibrator, novelty_type_classifier, activation_statistical_model)

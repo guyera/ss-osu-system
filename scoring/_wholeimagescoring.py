@@ -3,6 +3,7 @@ import torch
 from sklearn.neighbors import KernelDensity
 
 from backbone import Backbone
+from scoring._scorer import Scorer
 
 class ActivationStatisticalModel(Scorer):
     _bandwidths = {
@@ -46,7 +47,12 @@ class ActivationStatisticalModel(Scorer):
             box_counts):
         # Compute and return negative log likelihood under self._kde
         projected_features = self.pca_reduce(self._v, whole_image_features, 64)
-        return -self._kde.score_samples(projected_features.cpu().numpy())
+        np_scores = -self._kde.score_samples(projected_features.cpu().numpy())
+        scores = torch.from_numpy(np_scores).to(self._device)[:, None]
+        return scores
+
+    def n_scores(self):
+        return 1
 
     def reset(self):
         self._v = None
@@ -59,3 +65,16 @@ class ActivationStatisticalModel(Scorer):
         return self
 
     def state_dict(self):
+        sd = {}
+        if self._v is not None:
+            sd['v'] = self._v.to('cpu')
+        else:
+            sd['v'] = None
+        sd['kde'] = self._kde
+        return sd
+
+    def load_state_dict(self, sd):
+        self._v = sd['v']
+        self._kde = sd['kde']
+        if self._device is not None and self._v is not None:
+            self._v = self._v.to(self._device)

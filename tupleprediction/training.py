@@ -6,70 +6,11 @@ import torch
 
 from boximagedataset import BoxImageDataset
 
-class NoveltyTypeDataset(Dataset):
-    def __init__(
-            self,
-            box_image_dataset,
-            n_known_species_cls,
-            n_known_activity_cls):
-        super().__init__()
-        self._box_image_dataset = box_image_dataset
-        self._n_known_species_cls = n_known_species_cls
-        self._n_known_activity_cls = n_known_activity_cls
-
-    def __len__(self):
-        return len(self._box_image_dataset)
-
-    def __getitem__(self, idx):
-        species_labels, activity_labels, box_images, whole_image = \
-            self._box_image_dataset[idx]
-
-        if torch.any(species_labels[self._n_known_species_cls:] > 0):
-            type_label = 1
-        elif torch.any(activity_labels[self._n_known_activity_cls:] > 0):
-            type_label = 2
-        elif (species_labels > 0).to(torch.int).sum() > 1:
-            type_label = 3
-        elif (activity_labels > 0).to(torch.int).sum() > 1:
-            type_label = 4
-        else:
-            type_label = 0
-        
-        return box_images, whole_image, type_label
-
-
-class EnvironmentNoveltyTypeDataset(Dataset):
-    def __init__(self, box_image_dataset):
-        super().__init__()
-        self._box_image_dataset = box_image_dataset
-
-    def __len__(self):
-        return len(self._box_image_dataset)
-
-    def __getitem__(self, idx):
-        _, _, box_images, whole_image = \
-            self._box_image_dataset[idx]
-
-        return box_images, whole_image, 5
-
-
 def separate_known_images(dataset, n_known_species_cls, n_known_activity_cls):
     known_indices = []
-    for idx, (species_labels, activity_labels, _, _) in enumerate(dataset):
-        if torch.any(species_labels[n_known_species_cls:] > 0):
-            # Novel species
-            continue
-        if torch.any(activity_labels[n_known_activity_cls:] > 0):
-            # Novel activity
-            continue
-        elif (species_labels > 0).to(torch.int).sum() > 1:
-            # Two or more known species
-            continue
-        elif (activity_labels > 0).to(torch.int).sum() > 1:
-            # Two or more known activities
-            continue
-
-        known_indices.append(idx)
+    for idx, (_, _, novelty_type_label, _, _) in enumerate(dataset):
+        if novelty_type_label == 0:
+            known_indices.append(idx)
 
     return torch.utils.data.Subset(dataset, known_indices)
 
@@ -104,7 +45,6 @@ class TuplePredictorTrainer:
             data_root,
             train_csv_path,
             val_csv_path,
-            val_environment_csv_path,
             retraining_batch_size,
             n_species_cls,
             n_activity_cls,
@@ -118,9 +58,7 @@ class TuplePredictorTrainer:
             csv_path = train_csv_path,
             training = True,
             n_species_cls=n_species_cls,
-            n_activity_cls=n_activity_cls,
-            image_batch_size = 512,
-            cache_to_disk = False
+            n_activity_cls=n_activity_cls
         )
 
         self._val_dataset = BoxImageDataset(
@@ -129,9 +67,7 @@ class TuplePredictorTrainer:
             csv_path = val_csv_path,
             training = False,
             n_species_cls=n_species_cls,
-            n_activity_cls=n_activity_cls,
-            image_batch_size = 512,
-            cache_to_disk = False
+            n_activity_cls=n_activity_cls
         )
 
         # TODO class balancing? In the SVO system, we balanced 50/50 known
@@ -141,38 +77,12 @@ class TuplePredictorTrainer:
         # from each of 6 data loaders, which naturally balanced them, when
         # training the classifier: S/V/O x known/novel
 
-        # Label val data by novelty type
-        val_novelty_type_dataset = NoveltyTypeDataset(
-            self._val_dataset,
-            n_known_species_cls,
-            n_known_activity_cls
-        )
-
         # Extract whole images
         self._activation_stats_training_dataset = separate_known_images(
             self._val_dataset,
             n_known_species_cls,
             n_known_activity_cls
         )
-
-        val_environment_dataset = BoxImageDataset(
-            name = 'Custom',
-            data_root = data_root,
-            csv_path = val_environment_csv_path,
-            training = False,
-            n_species_cls=n_species_cls,
-            n_activity_cls=n_activity_cls,
-            image_batch_size = 512,
-            cache_to_disk = False
-        )
-        
-        val_environment_novelty_type_dataset =\
-            EnvironmentNoveltyTypeDataset(val_environment_dataset)
-
-        self._novelty_type_dataset = torch.utils.data.ConcatDataset((
-            val_novelty_type_dataset,
-            val_environment_novelty_type_dataset
-        ))
 
         self._feedback_data = None
 
@@ -185,9 +95,7 @@ class TuplePredictorTrainer:
             csv_path = csv_path,
             training = True,
             n_species_cls=self._n_species_cls,
-            n_activity_cls=self._n_activity_cls,
-            image_batch_size = 8,
-            cache_to_disk = False
+            n_activity_cls=self._n_activity_cls
         )
 
         # Put new feedback data in list
@@ -242,7 +150,7 @@ class TuplePredictorTrainer:
         n_species_correct = 0
         n_activity_correct = 0
 
-        for species_labels, activity_labels, box_images, whole_images in\
+        for species_labels, activity_labels, _, box_images, whole_images in\
                 data_loader:
             # Flatten the boxes across images and extract per-image box
             # counts.
@@ -334,7 +242,7 @@ class TuplePredictorTrainer:
             n_species_correct = 0
             n_activity_correct = 0
 
-            for species_labels, activity_labels, box_images, whole_images in\
+            for species_labels, activity_labels, _, box_images, whole_images in\
                     data_loader:
                 # Flatten the boxes across images and extract per-image box
                 # counts.
@@ -515,7 +423,7 @@ class TuplePredictorTrainer:
 
         all_features = []
         with torch.no_grad():
-            for _, _, _, batch in activation_stats_training_loader:
+            for _, _, _, _, batch in activation_stats_training_loader:
                 batch = batch.to(device)
                 features = activation_statistical_model.compute_features(
                     backbone,
@@ -553,7 +461,7 @@ class TuplePredictorTrainer:
             species_labels = []
             activity_logits = []
             activity_labels = []
-            for batch_species_labels, batch_activity_labels, box_images, _ in\
+            for batch_species_labels, batch_activity_labels, _, box_images, _ in\
                     cal_loader:
                 # Flatten the boxes across images and extract per-image box
                 # counts.
@@ -643,8 +551,8 @@ class TuplePredictorTrainer:
 
         device = backbone.device
 
-        novelty_type_loader = torch.utils.data.DataLoader(
-            self._novelty_type_dataset,
+        val_loader = torch.utils.data.DataLoader(
+            self._val_dataset,
             batch_size = 32,
             shuffle = False
         )
@@ -653,7 +561,7 @@ class TuplePredictorTrainer:
             # Extract novelty scores and labels
             scores = []
             labels = []
-            for box_images, whole_images, batch_labels in novelty_type_loader:
+            for _, _, batch_labels, box_images, whole_images in val_loader:
                 # Flatten the boxes across images and extract per-image box
                 # counts.
                 box_counts = [x.shape[0] for x in box_images]

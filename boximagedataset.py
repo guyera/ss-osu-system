@@ -141,12 +141,14 @@ class BoxImageDataset(torch.utils.data.Dataset):
             if targets is None:
                 species_labels = None
                 activity_labels = None
+                novelty_type_labels = None
             else:
                 species_labels = target['species'].detach()
                 activity_labels = target['activity'].detach()
+                novelty_type_labels = target['novelty_type'].detach()
 
             box_images = []
-            for xmin, ymin, xmax, ymax in detection['boxes']
+            for xmin, ymin, xmax, ymax in detection['boxes']:
                 r_xmin = torch.round(xmin).to(torch.int)
                 r_ymin = torch.round(ymin).to(torch.int)
                 r_xmax = torch.round(xmax).to(torch.int)
@@ -161,4 +163,8 @@ class BoxImageDataset(torch.utils.data.Dataset):
             box_images = torch.stack(box_images, dim=0)
             whole_image = self._box_transform(image_tensor)
 
-            return species_labels, activity_labels, box_images, whole_image
+            return species_labels,\
+                activity_labels,\
+                novelty_type_labels,\
+                box_images,\
+                whole_image

@@ -7,18 +7,16 @@ class ClassifierV2:
             self,
             bottleneck_dim,
             n_species_cls,
-            n_activity_cls,
-            spatial_encoding_dim):
+            n_activity_cls):
         self.device = 'cpu'
         self.bottleneck_dim = bottleneck_dim
         self.n_species_cls = n_species_cls
         self.n_activity_cls = n_activity_cls
-        self.spatial_encoding_dim = spatial_encoding_dim
         self.reset()
 
     def reset(self):
-        self.species_classifier = torch.nn.Linear(self.bottleneck_dim, self.n_species_cls - 1).to(self.device)
-        self.activity_classifier = torch.nn.Linear(self.bottleneck_dim + self.spatial_encoding_dim, self.n_activity_cls - 1).to(self.device)
+        self.species_classifier = torch.nn.Linear(self.bottleneck_dim, self.n_species_cls).to(self.device)
+        self.activity_classifier = torch.nn.Linear(self.bottleneck_dim, self.n_activity_cls).to(self.device)
     
     def predict(self, box_features):
         self.species_classifier.eval()

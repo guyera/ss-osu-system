@@ -8,5 +8,6 @@ from scoring._logitscoring import\
     AvgMaxSpeciesLogitImageScorer,\
     MaxAvgSpeciesLogitImageScorer,\
     AvgMaxActivityLogitImageScorer,\
-    MaxAvgActivityLogitImageScorer
+    MaxAvgActivityLogitImageScorer,\
+    make_logit_scorer
 from scoring._wholeimagescoring import ActivationStatisticalModel

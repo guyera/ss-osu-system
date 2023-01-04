@@ -1,8 +1,11 @@
 import os
+import math
 import pandas as pd
 from PIL import Image
 import json
+from ast import literal_eval
 
+import torch
 from typing import Any, Optional, List, Callable, Tuple
 from torch.utils.data import Dataset
 
@@ -90,8 +93,9 @@ class CustomDet(Dataset):
         intra_idx = self._idx[i]
         target = dict()
         annot = self._anno[intra_idx]
-        target['species'] = annot['species']
-        target['activity'] = annot['activity']
+        target['species'] = annot['species'].clone().detach()
+        target['activity'] = annot['activity'].clone().detach()
+        target['novelty_type'] = annot['novelty_type'].clone().detach()
         return self._transforms(
             self.load_image(os.path.join(self.root, self._filenames[intra_idx])),
             target
@@ -133,10 +137,13 @@ class CustomDet(Dataset):
         """
 
         df = pd.read_csv(df_f)
+        df = df.astype({'activities_id': object})
+        df['activities_id'] = df['activities_id'].apply(literal_eval)
 
         self._filenames = list(df['image_path'])
 
-        box_dict = json.load(json_f)
+        with open(json_f) as f:
+            box_dict = json.load(f)
 
         self._anno = self.create_annotation(df, box_dict)
 
@@ -151,35 +158,33 @@ class CustomDet(Dataset):
         for i, row in df.iterrows():
             annot = dict()
 
-            boxes = list()
-            species = list()
-            activities = list()
-            
-            cur_species = torch.zeroes(self._n_species_cls)
+            species = torch.zeros(self._n_species_cls)
             for species_idx in [1, 2, 3]:
                 id_string = f'agent{species_idx}_id'
                 count_string = f'agent{species_idx}_count'
                 species_id = row[id_string]
                 species_count = row[count_string]
-                if species_id is None:
+                if math.isnan(species_id):
                     break
-                cur_species[species_id] = species_count
-            cur_activity = torch.zeros(2, dtype=torch.bool)
-            if row['activity_standing'] == 1:
-                cur_activity[0] = True
-            if row['activity_moving'] == 1:
-                cur_activity[1] = True
+                species[int(species_id)] = species_count
+            activities = torch.zeros(self._n_activity_cls, dtype=torch.long)
+            activity_ids = row['activities_id']
+            activities[activity_ids] = 1
 
-            species.append(cur_species)
-            activities.append(cur_activity)
             image_path = row['image_path']
             basename = os.path.basename(image_path)
-            img_boxes = box_dict[basename]
-            boxes.append(box_dict[basename])
+            boxes = box_dict[basename]
+
+            novelty_type = torch.tensor(row['novelty_type'], dtype=torch.long)
+            # There is no novelty type 1, but we want novelty type class labels
+            # to be contiguous. Adjust labels appropriately.
+            if novelty_type >= 2:
+                novelty_type = novelty_type - 1
 
             annot["boxes"] = boxes
             annot["species"] = species
             annot["activity"] = activities
+            annot['novelty_type'] = novelty_type
 
             annots.append(annot)
 

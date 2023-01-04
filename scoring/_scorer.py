@@ -57,7 +57,7 @@ class Scorer(ABC):
             box_counts[i] specifies the number of boxes in image i
 
     Returns:
-        Tensor of shape MxL, where L is the number of scores produced for
+        Tensor of shape NxL, where L is the number of scores produced for
             each image.
     '''
     @abstractmethod
@@ -123,6 +123,9 @@ class ScorerFromImageScorer(Scorer):
             scores.append(img_scores)
         scores = torch.stack(scores, dim=0)
         return scores
+
+    def n_scores(self):
+        return self._image_scorer.n_scores()
 
 '''
 Composes multiple Scorer objects into one, concatenating their score tensors
