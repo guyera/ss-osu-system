@@ -9,7 +9,6 @@ from models.scg.scg import HOINetworkTransform
 import pocket.models as models
 from data.data_factory import DataFactory
 from torch.utils.data import DataLoader, DistributedSampler
-from utils import custom_collate
 import torchvision
 
 class _ResizePad:
@@ -92,6 +91,7 @@ class BoxImageDataset(torch.utils.data.Dataset):
             training,
             n_species_cls,
             n_activity_cls,
+            label_mapper,
             min_size = 800,
             max_size = 1333,
             image_mean = None,
@@ -105,6 +105,7 @@ class BoxImageDataset(torch.utils.data.Dataset):
             data_root=data_root,
             n_species_cls=n_species_cls,
             n_activity_cls=n_activity_cls,
+            label_mapper=label_mapper,
             csv_path=csv_path,
             training=training
         )
@@ -123,14 +124,15 @@ class BoxImageDataset(torch.utils.data.Dataset):
         )
 
     def __len__(self):
-        return len(self.species_labels)
+        return len(self._dataset)
 
     def __getitem__(self, idx):
         with torch.no_grad():
             image, detection, target = self._dataset[idx]
             original_image_size = image.shape[-2:]
-            images, targets = i_transform([image], [target])
+            images, targets = self._i_transform([image], [target])
             image_tensor = images.tensors[0]
+            image_size = images.image_sizes[0]
             target = targets[0]
             detection['boxes'] = transform.resize_boxes(
                 detection['boxes'],

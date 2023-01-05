@@ -1,10 +1,12 @@
-import copy
+from copy import deepcopy
 
 from tqdm import tqdm
 from torch.utils.data import Dataset
 import torch
 
 from boximagedataset import BoxImageDataset
+from utils import custom_collate
+from labelmapping import LabelMapper
 
 def separate_known_images(dataset, n_known_species_cls, n_known_activity_cls):
     known_indices = []
@@ -49,16 +51,22 @@ class TuplePredictorTrainer:
             n_species_cls,
             n_activity_cls,
             n_known_species_cls,
-            n_known_activity_cls):
+            n_known_activity_cls,
+            label_mapping):
         self._n_species_cls = n_species_cls
         self._n_activity_cls = n_activity_cls
+        self._static_label_mapper =\
+            LabelMapper(label_mapping=deepcopy(label_mapping), update=False)
+        self._dynamic_label_mapper =\
+            LabelMapper(label_mapping, update=True)
         self._train_dataset = BoxImageDataset(
             name = 'Custom',
             data_root = data_root,
             csv_path = train_csv_path,
             training = True,
             n_species_cls=n_species_cls,
-            n_activity_cls=n_activity_cls
+            n_activity_cls=n_activity_cls,
+            label_mapper=self._dynamic_label_mapper
         )
 
         self._val_dataset = BoxImageDataset(
@@ -67,7 +75,8 @@ class TuplePredictorTrainer:
             csv_path = val_csv_path,
             training = False,
             n_species_cls=n_species_cls,
-            n_activity_cls=n_activity_cls
+            n_activity_cls=n_activity_cls,
+            label_mapper=self._static_label_mapper
         )
 
         # TODO class balancing? In the SVO system, we balanced 50/50 known
@@ -95,15 +104,16 @@ class TuplePredictorTrainer:
             csv_path = csv_path,
             training = True,
             n_species_cls=self._n_species_cls,
-            n_activity_cls=self._n_activity_cls
+            n_activity_cls=self._n_activity_cls,
+            label_mapper=self._dynamic_label_mapper
         )
 
         # Put new feedback data in list
-        if self.feedback_data is None:
-            self.feedback_data = new_novel_dataset
+        if self._feedback_data is None:
+            self._feedback_data = new_novel_dataset
         else:
-            self.feedback_data = torch.utils.data.ConcatDataset(
-                [self.feedback_data, new_novel_dataset]
+            self._feedback_data = torch.utils.data.ConcatDataset(
+                [self._feedback_data, new_novel_dataset]
             )
     
     # Should be called before train_novelty_detection_module(), except when
@@ -166,13 +176,13 @@ class TuplePredictorTrainer:
             # Construct per-box labels.
             one_hot_species_labels = torch.argmax(species_labels, dim=1)
             flattened_species_labels = torch.cat([
-                torch.full(box_count, species_label, device=device)\
+                torch.full((box_count,), species_label, device=device)\
                     for species_label, box_count in\
                         zip(one_hot_species_labels, box_counts)
             ])
             one_hot_activity_labels = torch.argmax(activity_labels, dim=1)
             flattened_activity_labels = torch.cat([
-                torch.full(box_count, activity_label, device=device)\
+                torch.full((box_count,), activity_label, device=device)\
                     for activity_label, box_count in\
                         zip(one_hot_activity_labels, box_counts)
             ])
@@ -205,13 +215,13 @@ class TuplePredictorTrainer:
             n_examples += flattened_box_images.shape[0]
 
             species_correct = torch.argmax(species_preds, dim=1) == \
-                flattened_species_label
+                flattened_species_labels
             n_species_correct += int(
                 species_correct.to(torch.int).sum().detach().cpu().item()
             )
 
             activity_correct = torch.argmax(activity_preds, dim=1) == \
-                flattened_activity_label
+                flattened_activity_labels
             n_activity_correct += int(
                 activity_correct.to(torch.int).sum().detach().cpu().item()
             )
@@ -258,13 +268,13 @@ class TuplePredictorTrainer:
                 # Construct per-box labels.
                 one_hot_species_labels = torch.argmax(species_labels, dim=1)
                 flattened_species_labels = torch.cat([
-                    torch.full(box_count, species_label, device=device)\
+                    torch.full((box_count,), species_label, device=device)\
                         for species_label, box_count in\
                             zip(one_hot_species_labels, box_counts)
                 ])
                 one_hot_activity_labels = torch.argmax(activity_labels, dim=1)
                 flattened_activity_labels = torch.cat([
-                    torch.full(box_count, activity_label, device=device)\
+                    torch.full((box_count,), activity_label, device=device)\
                         for activity_label, box_count in\
                             zip(one_hot_activity_labels, box_counts)
                 ])
@@ -280,13 +290,13 @@ class TuplePredictorTrainer:
                 n_examples += flattened_box_images.shape[0]
 
                 species_correct = torch.argmax(species_preds, dim=1) == \
-                    flattened_species_label
+                    flattened_species_labels
                 n_species_correct += int(
                     species_correct.to(torch.int).sum().detach().cpu().item()
                 )
 
                 activity_correct = torch.argmax(activity_preds, dim=1) == \
-                    flattened_activity_label
+                    flattened_activity_labels
                 n_activity_correct += int(
                     activity_correct.to(torch.int).sum().detach().cpu().item()
                 )
@@ -304,15 +314,18 @@ class TuplePredictorTrainer:
             backbone,
             species_classifier,
             activity_classifier):
-        if self.feedback_data is not None:
+        if self._feedback_data is not None:
             train_dataset = torch.utils.data.ConcatDataset((
-                self._train_dataset, self.feedback_data
+                self._train_dataset, self._feedback_data
             ))
+        else:
+            train_dataset = self._train_dataset
 
         train_loader = torch.utils.data.DataLoader(
             train_dataset,
-            batch_size=self.retraining_batch_size,
-            shuffle=True
+            batch_size=self._retraining_batch_size,
+            shuffle=True,
+            collate_fn=custom_collate
         )
 
         # Construct validation loaders for early stopping / model selection.
@@ -325,7 +338,8 @@ class TuplePredictorTrainer:
         val_loader = torch.utils.data.DataLoader(
             self._val_dataset,
             batch_size=256,
-            shuffle=False
+            shuffle=False,
+            collate_fn=custom_collate
         )
 
         # Retrain the backbone and classifiers
@@ -384,11 +398,11 @@ class TuplePredictorTrainer:
                     epochs_since_improvement = 0
                     best_accuracy = mean_val_accuracy
                     best_accuracy_backbone_state_dict =\
-                        copy.deepcopy(backbone.state_dict())
+                        deepcopy(backbone.state_dict())
                     best_accuracy_species_classifier_state_dict =\
-                        copy.deepcopy(species_classifier.state_dict())
+                        deepcopy(species_classifier.state_dict())
                     best_accuracy_activity_classifier_state_dict =\
-                        copy.deepcopy(activity_classifier.state_dict())
+                        deepcopy(activity_classifier.state_dict())
                 else:
                     epochs_since_improvement += 1
                     if epochs_since_improvement >= patience:
@@ -415,7 +429,8 @@ class TuplePredictorTrainer:
         activation_stats_training_loader = torch.utils.data.DataLoader(
             self._activation_stats_training_dataset,
             batch_size = 32,
-            shuffle = False
+            shuffle = False,
+            collate_fn=custom_collate
         )
         backbone.eval()
 
@@ -443,7 +458,8 @@ class TuplePredictorTrainer:
         cal_loader = torch.utils.data.DataLoader(
             self._val_dataset,
             batch_size=256,
-            shuffle=False
+            shuffle=False,
+            collate_fn=custom_collate
         )
 
         # Set everything to eval mode for calibration, except the calibrators
@@ -474,21 +490,15 @@ class TuplePredictorTrainer:
                 flattened_box_images = flattened_box_images.to(device)
 
                 # Construct per-box labels.
-                one_hot_species_labels = torch.argmax(
-                    batch_species_labels,
-                    dim=1
-                )
+                one_hot_species_labels = torch.argmax(batch_species_labels, dim=1)
                 flattened_species_labels = torch.cat([
-                    torch.full(box_count, species_label, device=device)\
+                    torch.full((box_count,), species_label, device=device)\
                         for species_label, box_count in\
                             zip(one_hot_species_labels, box_counts)
                 ])
-                one_hot_activity_labels = torch.argmax(
-                    batch_activity_labels,
-                    dim=1
-                )
+                one_hot_activity_labels = torch.argmax(batch_activity_labels, dim=1)
                 flattened_activity_labels = torch.cat([
-                    torch.full(box_count, activity_label, device=device)\
+                    torch.full((box_count,), activity_label, device=device)\
                         for activity_label, box_count in\
                             zip(one_hot_activity_labels, box_counts)
                 ])
@@ -554,7 +564,8 @@ class TuplePredictorTrainer:
         val_loader = torch.utils.data.DataLoader(
             self._val_dataset,
             batch_size = 32,
-            shuffle = False
+            shuffle = False,
+            collate_fn=custom_collate
         )
         
         with torch.no_grad():

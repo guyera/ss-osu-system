@@ -11,6 +11,8 @@ from scoring import\
     ActivationStatisticalModel,\
     make_logit_scorer,\
     CompositeScorer
+from data.custom import build_species_label_mapping
+from labelmapping import LabelMapper
 
 device = 'cuda:0'
 architecture = Backbone.Architecture.swin_t
@@ -21,6 +23,8 @@ n_known_species_cls = 10
 n_species_cls = 30 # TODO Determine
 n_known_activity_cls = 2
 n_activity_cls = 4 # TODO Determine
+train_csv_path = 'dataset_v4/train.csv'
+val_csv_path = 'dataset_v4/valid.csv'
 
 classifier = boxclassifier.ClassifierV2(256, n_species_cls, n_activity_cls)
 classifier = classifier.to(device)
@@ -41,7 +45,8 @@ novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
     scorer.n_scores()
 ).to(device)
 
-trainer = tupleprediction.training.TuplePredictorTrainer('./', 'dataset_v4/train.csv', 'dataset_v4/valid.csv', 64, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls)
+label_mapping = build_species_label_mapping(train_csv_path)
+trainer = tupleprediction.training.TuplePredictorTrainer('dataset_v4/', train_csv_path, val_csv_path, 16, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping)
 
 start_time = time.time()
 trainer.prepare_for_retraining(backbone, classifier, confidence_calibrator, novelty_type_classifier, activation_statistical_model)

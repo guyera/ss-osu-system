@@ -80,6 +80,7 @@ class DataFactory(Dataset):
             data_root,
             n_species_cls,
             n_activity_cls,
+            label_mapper,
             csv_path=None,
             flip=False,
             box_score_thresh_h=0.2,
@@ -92,7 +93,7 @@ class DataFactory(Dataset):
             raise ValueError("Unknown dataset ", name)
 
         json_path = f'{os.path.splitext(csv_path)[0]}.json'
-        self.dataset = CustomDet(root=data_root, csv_path=csv_path, json_path=json_path, n_species_cls=n_species_cls, n_activity_cls=n_activity_cls, target_transform=pocket.ops.ToTensor(input_format='dict'))
+        self.dataset = CustomDet(root=data_root, csv_path=csv_path, json_path=json_path, n_species_cls=n_species_cls, n_activity_cls=n_activity_cls, label_mapper=label_mapper, target_transform=pocket.ops.ToTensor(input_format='dict'))
 
         self.name = name
 
@@ -115,8 +116,7 @@ class DataFactory(Dataset):
         # Box dimensions are xmin, ymin, width, height, relative to the image
         # size. Translate to absolute dimensions in order of xmin, ymin, xmax,
         # ymax.
-        height = image.shape[-2]
-        width = image.shape[-1]
+        width, height = image.size
         detection['boxes'][:, 0] =\
             torch.round(detection['boxes'][:, 0] * width).to(torch.int)
         detection['boxes'][:, 1] =\

@@ -9,6 +9,7 @@ import torch
 from typing import Any, Optional, List, Callable, Tuple
 from torch.utils.data import Dataset
 
+from labelmapping import LabelMapper
 
 class StandardTransform:
     """https://github.com/pytorch/vision/blob/master/torchvision/datasets/vision.py"""
@@ -55,6 +56,7 @@ class CustomDet(Dataset):
 
     def __init__(self, root: str, csv_path: str, json_path: str,
                 n_species_cls: int, n_activity_cls: int,
+                label_mapper: LabelMapper,
                 transform: Optional[Callable] = None,
                 target_transform: Optional[Callable] = None,
                 transforms: Optional[Callable] = None) -> None:
@@ -73,7 +75,7 @@ class CustomDet(Dataset):
         self.root = root
 
         # Load annotations
-        self._load_annotation_and_metadata(csv_path, json_path)
+        self._load_annotation_and_metadata(csv_path, json_path, label_mapper)
 
     def __len__(self) -> int:
         """Return the number of images"""
@@ -129,7 +131,7 @@ class CustomDet(Dataset):
         """Return the image file name given the index"""
         return os.path.join(self.root, self._filenames[self._idx[idx]])
 
-    def _load_annotation_and_metadata(self, df_f: str, json_f: str) -> None:
+    def _load_annotation_and_metadata(self, df_f: str, json_f: str, label_mapper) -> None:
         """
         Arguments:
             df_f(str): path for csv 
@@ -145,13 +147,13 @@ class CustomDet(Dataset):
         with open(json_f) as f:
             box_dict = json.load(f)
 
-        self._anno = self.create_annotation(df, box_dict)
+        self._anno = self.create_annotation(df, box_dict, label_mapper)
 
         idx = list(range(len(df)))
 
         self._idx = idx
 
-    def create_annotation(self, df, box_dict):
+    def create_annotation(self, df, box_dict, label_mapper):
         # TODO : Make This Faster
         annots = list()
         
@@ -166,7 +168,9 @@ class CustomDet(Dataset):
                 species_count = row[count_string]
                 if math.isnan(species_id):
                     break
-                species[int(species_id)] = species_count
+                mapped_label = label_mapper(int(species_id))
+                if mapped_label is not None:
+                    species[mapped_label] = species_count
             activities = torch.zeros(self._n_activity_cls, dtype=torch.long)
             activity_ids = row['activities_id']
             activities[activity_ids] = 1
@@ -189,3 +193,19 @@ class CustomDet(Dataset):
             annots.append(annot)
 
         return annots
+
+def build_species_label_mapping(csv_path):
+    df = pd.read_csv(csv_path)
+    unique_species_list = []
+    unique_species = set()
+    for i, row in df.iterrows():
+        for species_idx in [1, 2, 3]:
+            id_string = f'agent{species_idx}_id'
+            species_id = row[id_string]
+            if math.isnan(species_id):
+                break
+            species_id = int(species_id)
+            if not species_id in unique_species:
+                unique_species.add(species_id)
+                unique_species_list.append(species_id)
+    return {k: v for v, k in enumerate(unique_species_list)}
