@@ -21,7 +21,7 @@ backbone = backbone.to(device)
 
 training_image_batch_size = 64
 training_batch_size = 64
-training_buffer_size = 256
+training_buffer_size = 64
 n_known_species_cls = 10
 n_species_cls = 30 # TODO Determine
 n_known_activity_cls = 2

@@ -2,7 +2,7 @@ from copy import deepcopy
 import numpy as np
 
 from tqdm import tqdm
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Subset, ConcatDataset
 import torch
 
 from boximagedataset import BoxImageDataset
@@ -16,7 +16,8 @@ class BufferedBoxImageDataLoader:
                 dataloader: DataLoader,
                 batch_size: int,
                 buffer_size: int,
-                shuffle: bool):
+                shuffle: bool,
+                discard_incomplete_batch: bool):
             self._itr = iter(dataloader)
             self._batch_size = batch_size
             self._buffer_boxes = None
@@ -24,6 +25,7 @@ class BufferedBoxImageDataLoader:
             self._buffer_activity_labels = None
             self._buffer_size = buffer_size
             self._shuffle = shuffle
+            self._discard_incomplete_batch = discard_incomplete_batch
 
         def __next__(self):
             # Try to fill up the buffer
@@ -77,20 +79,25 @@ class BufferedBoxImageDataLoader:
                         )
             except StopIteration as e:
                 pass
-            
+
+            if (self._buffer_boxes is None) or len(self._buffer_boxes) == 0:
+                raise StopIteration
+
             # If we hit the end of the underlying iterator (it raised a
             # StopIteration), then the buffer might not be full. If the buffer 
-            # is not full enough to sample a batch, then raise a StopIteration.
-            if (self._buffer_boxes is None) or\
-                    (len(self._buffer_boxes) < self._batch_size):
+            # is not full enough to sample a batch, and the configuration is set
+            # to discard incomplete batches, then raise a StopIteration.
+            if (len(self._buffer_boxes) < self._batch_size) and\
+                    self._discard_incomplete_batch:
                 raise StopIteration
 
             # Sample a batch of box images and return
+            cur_batch_size = min(self._batch_size, len(self._buffer_boxes))
             if self._shuffle:
                 # Select random indices and extract the boxes and labels
                 indices = np.random.choice(
                     list(range(len(self._buffer_boxes))),
-                    size=self._batch_size,
+                    size=cur_batch_size,
                     replace=False
                 ).tolist()
                 selected_boxes = self._buffer_boxes[indices]
@@ -110,18 +117,18 @@ class BufferedBoxImageDataLoader:
                     self._buffer_activity_labels[mask_indices]
             else:
                 # Select the first N instances, where N is the batch size
-                selected_boxes = self._buffer_boxes[:self._batch_size]
+                selected_boxes = self._buffer_boxes[:cur_batch_size]
                 selected_species_labels =\
-                    self._buffer_species_labels[:self._batch_size]
+                    self._buffer_species_labels[:cur_batch_size]
                 selected_activity_labels =\
-                    self._buffer_activity_labels[:self._batch_size]
+                    self._buffer_activity_labels[:cur_batch_size]
 
                 # Remove selected instances from buffer
-                self._buffer_boxes = self._buffer_boxes[self._batch_size]
+                self._buffer_boxes = self._buffer_boxes[cur_batch_size:]
                 self._buffer_species_labels =\
-                    self._buffer_species_labels[self._batch_size]
+                    self._buffer_species_labels[cur_batch_size:]
                 self._buffer_activity_labels =\
-                    self._buffer_activity_labels[self._batch_size]
+                    self._buffer_activity_labels[cur_batch_size:]
 
             return selected_species_labels,\
                 selected_activity_labels,\
@@ -151,23 +158,27 @@ class BufferedBoxImageDataLoader:
             image_batch_size: int,
             box_batch_size: int,
             buffer_size: int,
-            shuffle: bool):
+            shuffle: bool,
+            discard_incomplete_batch: bool):
         self._dataloader = DataLoader(
             dataset,
             batch_size=image_batch_size,
             shuffle=shuffle,
-            collate_fn=custom_collate
+            collate_fn=custom_collate,
+            num_workers=8
         )
         self._box_batch_size = box_batch_size
         self._buffer_size = buffer_size
         self._shuffle = shuffle
+        self._discard_incomplete_batch = discard_incomplete_batch
 
     def __iter__(self):
         return self.Iter(
             self._dataloader,
             self._box_batch_size,
             self._buffer_size,
-            self._shuffle
+            self._shuffle,
+            self._discard_incomplete_batch
         )
 
 def separate_known_images(dataset, n_known_species_cls, n_known_activity_cls):
@@ -223,7 +234,7 @@ class TuplePredictorTrainer:
             LabelMapper(label_mapping=deepcopy(label_mapping), update=False)
         self._dynamic_label_mapper =\
             LabelMapper(label_mapping, update=True)
-        self._train_dataset = BoxImageDataset(
+        train_dataset = BoxImageDataset(
             name = 'Custom',
             data_root = data_root,
             csv_path = train_csv_path,
@@ -233,7 +244,13 @@ class TuplePredictorTrainer:
             label_mapper=self._dynamic_label_mapper
         )
 
-        self._val_dataset = BoxImageDataset(
+        val_known_indices = list(range(200))
+        training_indices = list(range(200, len(train_dataset)))
+        
+        self._val_known_dataset = Subset(train_dataset, val_known_indices)
+        self._train_dataset = Subset(train_dataset, training_indices)
+
+        val_dataset = BoxImageDataset(
             name = 'Custom',
             data_root = data_root,
             csv_path = val_csv_path,
@@ -243,6 +260,11 @@ class TuplePredictorTrainer:
             label_mapper=self._static_label_mapper
         )
 
+        self._val_dataset = ConcatDataset((
+            self._val_known_dataset,
+            val_dataset
+        ))
+
         # TODO class balancing? In the SVO system, we balanced 50/50 known
         # and novel examples to avoid biasing P(N_i) toward 1. But maybe it
         # doesn't matter here since we aren't using P(N_i) for merging
@@ -251,7 +273,7 @@ class TuplePredictorTrainer:
         # training the classifier: S/V/O x known/novel
 
         # Extract whole images
-        self._activation_stats_training_dataset = separate_known_images(
+        self._val_known_dataset = separate_known_images(
             self._val_dataset,
             n_known_species_cls,
             n_known_activity_cls
@@ -305,15 +327,67 @@ class TuplePredictorTrainer:
         novelty_type_classifier.reset()
         activation_statistical_model.reset()
 
-    def train_epoch(self,
+    def _train_batch(
+            self,
+            backbone,
+            species_classifier,
+            activity_classifier,
+            optimizer,
+            species_labels,
+            activity_labels,
+            box_images):
+        # Determine the device to use based on the backbone's fc weights
+        device = backbone.device
+
+        # Move to device
+        species_labels = species_labels.to(device)
+        activity_labels = activity_labels.to(device)
+        box_images = box_images.to(device)
+
+        # Extract box features
+        box_features = backbone(box_images)
+
+        # Compute logits by passing the features through the appropriate
+        # classifiers
+        species_preds = species_classifier(box_features)
+        activity_preds = activity_classifier(box_features)
+
+        species_loss = torch.nn.functional.cross_entropy(
+            species_preds,
+            species_labels
+        )
+        activity_loss = torch.nn.functional.cross_entropy(
+            activity_preds,
+            activity_labels
+        )
+
+        loss = species_loss + activity_loss
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        species_correct = torch.argmax(species_preds, dim=1) == \
+            species_labels
+        n_species_correct = int(
+            species_correct.to(torch.int).sum().detach().cpu().item()
+        )
+
+        activity_correct = torch.argmax(activity_preds, dim=1) == \
+            activity_labels
+        n_activity_correct = int(
+            activity_correct.to(torch.int).sum().detach().cpu().item()
+        )
+        
+        return loss.detach().cpu().item(),\
+            n_species_correct,\
+            n_activity_correct
+
+    def _train_epoch(self,
             data_loader,
             backbone,
             species_classifier,
             activity_classifier,
             optimizer):
-        # Determine the device to use based on the backbone's fc weights
-        device = backbone.device
-        
         # Set everything to train mode
         backbone.train()
         species_classifier.train()
@@ -327,49 +401,22 @@ class TuplePredictorTrainer:
         n_activity_correct = 0
 
         for species_labels, activity_labels, box_images in data_loader:
-            # Move to device
-            species_labels = species_labels.to(device)
-            activity_labels = activity_labels.to(device)
-            box_images = box_images.to(device)
+            batch_loss, batch_n_species_correct, batch_n_activity_correct =\
+                self._train_batch(
+                    backbone,
+                    species_classifier,
+                    activity_classifier,
+                    optimizer,
+                    species_labels,
+                    activity_labels,
+                    box_images
+                )
 
-            # Extract box features
-            box_features = backbone(box_images)
-
-            # Compute logits by passing the features through the appropriate
-            # classifiers
-            species_preds = species_classifier(box_features)
-            activity_preds = activity_classifier(box_features)
-
-            species_loss = torch.nn.functional.cross_entropy(
-                species_preds,
-                species_labels
-            )
-            activity_loss = torch.nn.functional.cross_entropy(
-                activity_preds,
-                activity_labels
-            )
-
-            batch_loss = species_loss + activity_loss
-            optimizer.zero_grad()
-            batch_loss.backward()
-            optimizer.step()
-
-            sum_loss += batch_loss.detach().cpu().item()
-
+            sum_loss += batch_loss
             n_iterations += 1
             n_examples += box_images.shape[0]
-
-            species_correct = torch.argmax(species_preds, dim=1) == \
-                species_labels
-            n_species_correct += int(
-                species_correct.to(torch.int).sum().detach().cpu().item()
-            )
-
-            activity_correct = torch.argmax(activity_preds, dim=1) == \
-                activity_labels
-            n_activity_correct += int(
-                activity_correct.to(torch.int).sum().detach().cpu().item()
-            )
+            n_species_correct += batch_n_species_correct
+            n_activity_correct += batch_n_activity_correct
 
         mean_loss = sum_loss / n_iterations
 
@@ -380,7 +427,44 @@ class TuplePredictorTrainer:
 
         return mean_loss, mean_accuracy
 
-    def val_epoch(
+    def _val_batch(
+            self,
+            backbone,
+            species_classifier,
+            activity_classifier,
+            species_labels,
+            activity_labels,
+            box_images):
+        device = backbone.device
+
+        # Move to device
+        species_labels = species_labels.to(device)
+        activity_labels = activity_labels.to(device)
+        box_images = box_images.to(device)
+
+        # Extract box features
+        box_features = backbone(box_images)
+
+        # Compute logits by passing the features through the appropriate
+        # classifiers
+        species_preds = species_classifier(box_features)
+        activity_preds = activity_classifier(box_features)
+
+        species_correct = torch.argmax(species_preds, dim=1) == \
+            species_labels
+        n_species_correct = int(
+            species_correct.to(torch.int).sum().detach().cpu().item()
+        )
+
+        activity_correct = torch.argmax(activity_preds, dim=1) == \
+            activity_labels
+        n_activity_correct = int(
+            activity_correct.to(torch.int).sum().detach().cpu().item()
+        )
+
+        return n_species_correct, n_activity_correct
+
+    def _val_epoch(
             self,
             data_loader,
             backbone,
@@ -391,60 +475,23 @@ class TuplePredictorTrainer:
             species_classifier.eval()
             activity_classifier.eval()
 
-            device = backbone.device
-
             n_examples = 0
             n_species_correct = 0
             n_activity_correct = 0
 
-            for species_labels, activity_labels, _, box_images, whole_images in\
-                    data_loader:
-                # Flatten the boxes across images and extract per-image box
-                # counts.
-                box_counts = [x.shape[0] for x in box_images]
-                flattened_box_images = torch.cat(box_images, dim=0)
-
-                # Move to device
-                species_labels = species_labels.to(device)
-                activity_labels = activity_labels.to(device)
-                flattened_box_images = flattened_box_images.to(device)
-                whole_images = whole_images.to(device)
-
-                # Construct per-box labels.
-                one_hot_species_labels = torch.argmax(species_labels, dim=1)
-                flattened_species_labels = torch.cat([
-                    torch.full((box_count,), species_label, device=device)\
-                        for species_label, box_count in\
-                            zip(one_hot_species_labels, box_counts)
-                ])
-                one_hot_activity_labels = torch.argmax(activity_labels, dim=1)
-                flattened_activity_labels = torch.cat([
-                    torch.full((box_count,), activity_label, device=device)\
-                        for activity_label, box_count in\
-                            zip(one_hot_activity_labels, box_counts)
-                ])
-
-                # Extract box features
-                box_features = backbone(flattened_box_images)
-
-                # Compute logits by passing the features through the appropriate
-                # classifiers
-                species_preds = species_classifier(box_features)
-                activity_preds = activity_classifier(box_features)
-
-                n_examples += flattened_box_images.shape[0]
-
-                species_correct = torch.argmax(species_preds, dim=1) == \
-                    flattened_species_labels
-                n_species_correct += int(
-                    species_correct.to(torch.int).sum().detach().cpu().item()
-                )
-
-                activity_correct = torch.argmax(activity_preds, dim=1) == \
-                    flattened_activity_labels
-                n_activity_correct += int(
-                    activity_correct.to(torch.int).sum().detach().cpu().item()
-                )
+            for species_labels, activity_labels, box_images in data_loader:
+                batch_n_species_correct, batch_n_activity_correct =\
+                    self._val_batch(
+                        backbone,
+                        species_classifier,
+                        activity_classifier,
+                        species_labels,
+                        activity_labels,
+                        box_images
+                    )
+                n_examples += box_images.shape[0]
+                n_species_correct += batch_n_species_correct
+                n_activity_correct += batch_n_activity_correct
 
             mean_species_accuracy = float(n_species_correct) / n_examples
             mean_activity_accuracy = float(n_activity_correct) / n_examples
@@ -471,7 +518,8 @@ class TuplePredictorTrainer:
             self._retraining_image_batch_size,
             self._retraining_batch_size,
             self._retraining_buffer_size,
-            True
+            True,
+            False
         )
 
         # Construct validation loaders for early stopping / model selection.
@@ -481,11 +529,13 @@ class TuplePredictorTrainer:
         # data to measure novelty detection performance. These currently aren't
         # being stored (except in a special form for the logistic regressions),
         # so we'd have to modify __init__().
-        val_loader = torch.utils.data.DataLoader(
-            self._val_dataset,
-            batch_size=256,
-            shuffle=False,
-            collate_fn=custom_collate
+        val_loader = BufferedBoxImageDataLoader(
+            self._val_known_dataset,
+            self._retraining_image_batch_size,
+            self._retraining_batch_size,
+            self._retraining_buffer_size,
+            False,
+            False
         )
 
         # Retrain the backbone and classifiers
@@ -502,8 +552,11 @@ class TuplePredictorTrainer:
         # Define convergence parameters (early stopping + model selection)
         patience = 3
         epochs_since_improvement = 0
-        max_epochs = 30
-        min_epochs = 4
+        # TODO switch back
+        # max_epochs = 30
+        # min_epochs = 4
+        max_epochs = 1
+        min_epochs = 1
         best_accuracy = None
         best_accuracy_backbone_state_dict = None
         best_accuracy_species_classifier_state_dict = None
@@ -516,7 +569,7 @@ class TuplePredictorTrainer:
         )
         for epoch in progress:
             # Train for one full epoch
-            mean_train_loss, mean_train_accuracy = self.train_epoch(
+            mean_train_loss, mean_train_accuracy = self._train_epoch(
                 train_loader, 
                 backbone,
                 species_classifier,
@@ -526,7 +579,7 @@ class TuplePredictorTrainer:
                 
             # Measure validation accuracy for early stopping / model selection.
             if epoch >= min_epochs - 1:
-                mean_val_accuracy = self.val_epoch(
+                mean_val_accuracy = self._val_epoch(
                     val_loader,
                     backbone,
                     species_classifier,
@@ -536,7 +589,7 @@ class TuplePredictorTrainer:
                 progress.set_description((
                     f'Training backbone and classifiers... | Train Loss: '
                     f'{mean_train_loss} | Train Acc: '
-                    f'{mean_known_train_accuracy} | Val Acc: '
+                    f'{mean_train_accuracy} | Val Acc: '
                     f'{mean_val_accuracy}'
                 ))
                 
@@ -573,7 +626,7 @@ class TuplePredictorTrainer:
             backbone,
             activation_statistical_model):
         activation_stats_training_loader = torch.utils.data.DataLoader(
-            self._activation_stats_training_dataset,
+            self._val_known_dataset,
             batch_size = 32,
             shuffle = False,
             collate_fn=custom_collate
@@ -602,7 +655,7 @@ class TuplePredictorTrainer:
             species_calibrator,
             activity_calibrator):
         cal_loader = torch.utils.data.DataLoader(
-            self._val_dataset,
+            self._val_known_dataset,
             batch_size=256,
             shuffle=False,
             collate_fn=custom_collate
@@ -744,7 +797,7 @@ class TuplePredictorTrainer:
                     )
 
                 # Compute novelty scores
-                batch_scores = scorer(
+                batch_scores = scorer.score(
                     species_logits,
                     activity_logits,
                     whole_image_features,
