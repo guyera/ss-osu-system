@@ -48,7 +48,9 @@ class ActivationStatisticalModel(Scorer):
         # Compute and return negative log likelihood under self._kde
         projected_features = self.pca_reduce(self._v, whole_image_features, 64)
         np_scores = -self._kde.score_samples(projected_features.cpu().numpy())
-        scores = torch.from_numpy(np_scores).to(self._device)[:, None]
+        scores = torch.from_numpy(np_scores)\
+            .to(self._device)[:, None]\
+            .to(torch.float)
         return scores
 
     def n_scores(self):

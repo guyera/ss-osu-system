@@ -5,12 +5,12 @@ from scoring._scorer import\
     CompositeImageScorer,\
     ScorerFromImageScorer
 
-def _avg_max_logit_image_score(self, logits):
+def _avg_max_logit_image_score(logits):
     max_logits, _ = torch.max(logits, dim=1)
-    avg_max_logit = max_logits.mean(keepdim=True)
+    avg_max_logit = max_logits.mean(dim=0, keepdim=True)
     return avg_max_logit
 
-def _max_avg_logit_image_score(self, logits):
+def _max_avg_logit_image_score(logits):
     avg_logits = logits.mean(dim=0)
     max_avg_logit, _ = torch.max(avg_logits, dim=0, keepdim=True)
     return max_avg_logit
