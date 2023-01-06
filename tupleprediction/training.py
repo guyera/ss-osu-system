@@ -1,12 +1,174 @@
 from copy import deepcopy
+import numpy as np
 
 from tqdm import tqdm
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import torch
 
 from boximagedataset import BoxImageDataset
 from utils import custom_collate
 from labelmapping import LabelMapper
+
+class BufferedBoxImageDataLoader:
+    class Iter:
+        def __init__(
+                self,
+                dataloader: DataLoader,
+                batch_size: int,
+                buffer_size: int,
+                shuffle: bool):
+            self._itr = iter(dataloader)
+            self._batch_size = batch_size
+            self._buffer_boxes = None
+            self._buffer_species_labels = None
+            self._buffer_activity_labels = None
+            self._buffer_size = buffer_size
+            self._shuffle = shuffle
+
+        def __next__(self):
+            # Try to fill up the buffer
+            try:
+                while (self._buffer_boxes is None) or\
+                        (len(self._buffer_boxes) < self._buffer_size):
+                    # Sample a batch from the underlying iterator
+                    species_labels, activity_labels, _, box_images, _ =\
+                        next(self._itr)
+
+                    # Flatten / concatenate the box images and repeat the
+                    # labels per-box
+                    box_counts = [x.shape[0] for x in box_images]
+                    box_images = torch.cat(box_images, dim=0)
+                    one_hot_species_labels = torch.argmax(species_labels, dim=1)
+                    flattened_species_labels = torch.cat([
+                        torch.full((box_count,), species_label)\
+                            for species_label, box_count in\
+                                zip(one_hot_species_labels, box_counts)
+                    ])
+                    one_hot_activity_labels = torch.argmax(activity_labels, dim=1)
+                    flattened_activity_labels = torch.cat([
+                        torch.full((box_count,), activity_label)\
+                            for activity_label, box_count in\
+                                zip(one_hot_activity_labels, box_counts)
+                    ])
+
+                    # Update the buffer
+                    if self._buffer_boxes is None:
+                        self._buffer_boxes = box_images
+                        self._buffer_species_labels = flattened_species_labels
+                        self._buffer_activity_labels = flattened_activity_labels
+                    else:
+                        self._buffer_boxes = torch.cat(
+                            (self._buffer_boxes, box_images),
+                            dim=0
+                        )
+                        self._buffer_species_labels = torch.cat(
+                            (
+                                self._buffer_species_labels,
+                                flattened_species_labels
+                            ),
+                            dim=0
+                        )
+                        self._buffer_activity_labels = torch.cat(
+                            (
+                                self._buffer_activity_labels,
+                                flattened_activity_labels
+                            ),
+                            dim=0
+                        )
+            except StopIteration as e:
+                pass
+            
+            # If we hit the end of the underlying iterator (it raised a
+            # StopIteration), then the buffer might not be full. If the buffer 
+            # is not full enough to sample a batch, then raise a StopIteration.
+            if (self._buffer_boxes is None) or\
+                    (len(self._buffer_boxes) < self._batch_size):
+                raise StopIteration
+
+            # Sample a batch of box images and return
+            if self._shuffle:
+                # Select random indices and extract the boxes and labels
+                indices = np.random.choice(
+                    list(range(len(self._buffer_boxes))),
+                    size=self._batch_size,
+                    replace=False
+                ).tolist()
+                selected_boxes = self._buffer_boxes[indices]
+                selected_species_labels = self._buffer_species_labels[indices]
+                selected_activity_labels = self._buffer_activity_labels[indices]
+
+                # Remove selected instances from buffer
+                mask_indices = torch.ones(
+                    len(self._buffer_boxes),
+                    dtype=torch.bool
+                )
+                mask_indices[indices] = False
+                self._buffer_boxes = self._buffer_boxes[mask_indices]
+                self._buffer_species_labels =\
+                    self._buffer_species_labels[mask_indices]
+                self._buffer_activity_labels =\
+                    self._buffer_activity_labels[mask_indices]
+            else:
+                # Select the first N instances, where N is the batch size
+                selected_boxes = self._buffer_boxes[:self._batch_size]
+                selected_species_labels =\
+                    self._buffer_species_labels[:self._batch_size]
+                selected_activity_labels =\
+                    self._buffer_activity_labels[:self._batch_size]
+
+                # Remove selected instances from buffer
+                self._buffer_boxes = self._buffer_boxes[self._batch_size]
+                self._buffer_species_labels =\
+                    self._buffer_species_labels[self._batch_size]
+                self._buffer_activity_labels =\
+                    self._buffer_activity_labels[self._batch_size]
+
+            return selected_species_labels,\
+                selected_activity_labels,\
+                selected_boxes
+
+    '''
+    Parameters:
+        dataset: BoxImageDataset
+            Underlying dataset from which to pull box images and labels
+        image_batch_size: int
+            Batch size with which to sample images from the underlying dataset;
+            should be small enough to support the maximum number of boxes which
+            could occur in a batch
+        box_batch_size: int
+            Batch size of boxes output by this dataset's iterator
+        buffer_size: int
+            Size of underlying buffer of box images. Must be larger than or
+            equal to box_batch_size. The larger the buffer size, the less
+            correlated the boxes (a larger buffer means the sampled boxes
+            are less likely to have been cropped from the same image).
+        shuffle: bool
+            Specifies whether to shuffle images and boxes
+    '''
+    def __init__(
+            self,
+            dataset: BoxImageDataset,
+            image_batch_size: int,
+            box_batch_size: int,
+            buffer_size: int,
+            shuffle: bool):
+        self._dataloader = DataLoader(
+            dataset,
+            batch_size=image_batch_size,
+            shuffle=shuffle,
+            collate_fn=custom_collate
+        )
+        self._box_batch_size = box_batch_size
+        self._buffer_size = buffer_size
+        self._shuffle = shuffle
+
+    def __iter__(self):
+        return self.Iter(
+            self._dataloader,
+            self._box_batch_size,
+            self._buffer_size,
+            self._shuffle
+        )
 
 def separate_known_images(dataset, n_known_species_cls, n_known_activity_cls):
     known_indices = []
@@ -47,7 +209,9 @@ class TuplePredictorTrainer:
             data_root,
             train_csv_path,
             val_csv_path,
+            retraining_image_batch_size,
             retraining_batch_size,
+            retraining_buffer_size,
             n_species_cls,
             n_activity_cls,
             n_known_species_cls,
@@ -95,7 +259,9 @@ class TuplePredictorTrainer:
 
         self._feedback_data = None
 
+        self._retraining_image_batch_size = retraining_image_batch_size 
         self._retraining_batch_size = retraining_batch_size 
+        self._retraining_buffer_size = retraining_buffer_size 
 
     def add_feedback_data(self, data_root, csv_path):
         new_novel_dataset = BoxImageDataset(
@@ -160,35 +326,14 @@ class TuplePredictorTrainer:
         n_species_correct = 0
         n_activity_correct = 0
 
-        for species_labels, activity_labels, _, box_images, whole_images in\
-                data_loader:
-            # Flatten the boxes across images and extract per-image box
-            # counts.
-            box_counts = [x.shape[0] for x in box_images]
-            flattened_box_images = torch.cat(box_images, dim=0)
-
+        for species_labels, activity_labels, box_images in data_loader:
             # Move to device
             species_labels = species_labels.to(device)
             activity_labels = activity_labels.to(device)
-            flattened_box_images = flattened_box_images.to(device)
-            whole_images = whole_images.to(device)
-
-            # Construct per-box labels.
-            one_hot_species_labels = torch.argmax(species_labels, dim=1)
-            flattened_species_labels = torch.cat([
-                torch.full((box_count,), species_label, device=device)\
-                    for species_label, box_count in\
-                        zip(one_hot_species_labels, box_counts)
-            ])
-            one_hot_activity_labels = torch.argmax(activity_labels, dim=1)
-            flattened_activity_labels = torch.cat([
-                torch.full((box_count,), activity_label, device=device)\
-                    for activity_label, box_count in\
-                        zip(one_hot_activity_labels, box_counts)
-            ])
+            box_images = box_images.to(device)
 
             # Extract box features
-            box_features = backbone(flattened_box_images)
+            box_features = backbone(box_images)
 
             # Compute logits by passing the features through the appropriate
             # classifiers
@@ -197,11 +342,11 @@ class TuplePredictorTrainer:
 
             species_loss = torch.nn.functional.cross_entropy(
                 species_preds,
-                flattened_species_labels
+                species_labels
             )
             activity_loss = torch.nn.functional.cross_entropy(
                 activity_preds,
-                flattened_activity_labels
+                activity_labels
             )
 
             batch_loss = species_loss + activity_loss
@@ -212,16 +357,16 @@ class TuplePredictorTrainer:
             sum_loss += batch_loss.detach().cpu().item()
 
             n_iterations += 1
-            n_examples += flattened_box_images.shape[0]
+            n_examples += box_images.shape[0]
 
             species_correct = torch.argmax(species_preds, dim=1) == \
-                flattened_species_labels
+                species_labels
             n_species_correct += int(
                 species_correct.to(torch.int).sum().detach().cpu().item()
             )
 
             activity_correct = torch.argmax(activity_preds, dim=1) == \
-                flattened_activity_labels
+                activity_labels
             n_activity_correct += int(
                 activity_correct.to(torch.int).sum().detach().cpu().item()
             )
@@ -321,11 +466,12 @@ class TuplePredictorTrainer:
         else:
             train_dataset = self._train_dataset
 
-        train_loader = torch.utils.data.DataLoader(
+        train_loader = BufferedBoxImageDataLoader(
             train_dataset,
-            batch_size=self._retraining_batch_size,
-            shuffle=True,
-            collate_fn=custom_collate
+            self._retraining_image_batch_size,
+            self._retraining_batch_size,
+            self._retraining_buffer_size,
+            True
         )
 
         # Construct validation loaders for early stopping / model selection.

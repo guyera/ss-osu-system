@@ -25,7 +25,9 @@ if __name__ == "__main__":
     p.add_argument('--val-corruption-csv-path', default='./dataset_v4/dataset_v4_2_cal_corruption.csv')
     p.add_argument('--trial-size', type=int, default=200)
     p.add_argument('--trial-batch-size', type=int, default=10)
-    p.add_argument('--retraining-batch-size', type=int, default=80)
+    p.add_argument('--retraining-image-batch-size', type=int, default=64)
+    p.add_argument('--retraining-batch-size', type=int, default=64)
+    p.add_argument('--retraining-buffer-size', type=int, default=256)
     p.add_argument('--disable-retraining', default=False, action='store_true')
     p.add_argument('--api-dir', default='./session/api')
     p.add_argument('--tests-dir', default='./session/tests')
@@ -70,7 +72,9 @@ if __name__ == "__main__":
         val_corruption_csv_path=args.val_corruption_csv_path,
         trial_size=args.trial_size,
         trial_batch_size=args.trial_batch_size,
+        retraining_image_batch_size=args.retraining_image_batch_size,
         retraining_batch_size=args.retraining_batch_size,
+        retraining_buffer_size=args.retraining_buffer_size,
         disable_retraining=args.disable_retraining)
     
     api = APIStubs(args.api_dir, args.tests_dir) if args.api_stubs else None

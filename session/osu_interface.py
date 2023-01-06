@@ -7,7 +7,7 @@ from toplevel import TopLevelApp
 class OSUInterface:
     def __init__(self, scg_ensemble, data_root, pretrained_models_dir, backbone_architecture,
         feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path, val_incident_csv_path,
-        val_corruption_csv_path, trial_batch_size, trial_size, retraining_batch_size, disable_retraining):
+        val_corruption_csv_path, trial_batch_size, trial_size, retraining_image_batch_size, retraining_batch_size, retraining_buffer_size, disable_retraining):
 
         self.app = TopLevelApp(ensemble_path=scg_ensemble, 
             data_root=data_root,
@@ -24,7 +24,9 @@ class OSUInterface:
             val_corruption_csv_path= val_corruption_csv_path,
             trial_size=trial_size,
             trial_batch_size=trial_batch_size,
+            retraining_image_batch_size=retraining_image_batch_size,
             retraining_batch_size=retraining_batch_size,
+            retraining_buffer_size=retraining_buffer_size,
             disable_retraining=disable_retraining)
 
         self.temp_path = pathlib.Path('./session/temp/')
