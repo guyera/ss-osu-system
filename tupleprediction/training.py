@@ -552,11 +552,8 @@ class TuplePredictorTrainer:
         # Define convergence parameters (early stopping + model selection)
         patience = 3
         epochs_since_improvement = 0
-        # TODO switch back
-        # max_epochs = 30
-        # min_epochs = 4
-        max_epochs = 1
-        min_epochs = 1
+        max_epochs = 30
+        min_epochs = 4
         best_accuracy = None
         best_accuracy_backbone_state_dict = None
         best_accuracy_species_classifier_state_dict = None
