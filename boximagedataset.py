@@ -71,6 +71,24 @@ class _ResizePad:
         return padded_x
 
 class BoxImageDataset(torch.utils.data.Dataset):
+    class LabelDataset(torch.utils.data.Dataset):
+        def __init__(self, dataset):
+            self._dataset = dataset
+
+    def __len__(self):
+        return len(self._dataset)
+
+    def __getitem__(self, idx):
+        with torch.no_grad():
+            target = self._dataset.label(idx)
+            species_labels = target['species'].detach()
+            activity_labels = target['activity'].detach()
+            novelty_type_labels = target['novelty_type'].detach()
+
+            return species_labels,\
+                activity_labels,\
+                novelty_type_labels
+
     """
     Params:
         name: As in data.data_factory.DataFactory()
@@ -140,14 +158,9 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 image_size
             )
 
-            if targets is None:
-                species_labels = None
-                activity_labels = None
-                novelty_type_labels = None
-            else:
-                species_labels = target['species'].detach()
-                activity_labels = target['activity'].detach()
-                novelty_type_labels = target['novelty_type'].detach()
+            species_labels = target['species'].detach()
+            activity_labels = target['activity'].detach()
+            novelty_type_labels = target['novelty_type'].detach()
 
             box_images = []
             for xmin, ymin, xmax, ymax in detection['boxes']:
@@ -170,3 +183,6 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 novelty_type_labels,\
                 box_images,\
                 whole_image
+
+    def label_dataset(self):
+        return self.LabelDataset(self._dataset)

@@ -103,6 +103,29 @@ class CustomDet(Dataset):
             target
         )
 
+    def label(self, i: int) -> tuple:
+        """
+        Arguments:
+            i(int): Index to an image
+
+        Returns:
+            tuple[image, target]: By default, the tuple consists of a PIL image and a
+                dict with the following keys:
+                    "species": None or list[N]
+                    "activity" : None or list[N]
+        """
+        intra_idx = self._idx[i]
+        target = dict()
+        annot = self._anno[intra_idx]
+        target['species'] = annot['species'].clone().detach()
+        target['activity'] = annot['activity'].clone().detach()
+        target['novelty_type'] = annot['novelty_type'].clone().detach()
+        _, transformed_target = self._transforms(
+            None,
+            target
+        )
+        return transformed_target
+
     def get_detections(self, idx: int):
         det = dict()
 

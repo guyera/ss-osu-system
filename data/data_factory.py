@@ -138,3 +138,6 @@ class DataFactory(Dataset):
         image = pocket.ops.to_tensor(image, 'pil')
 
         return image, detection, target
+
+    def label(self, i):
+        return self.dataset.label(i)
