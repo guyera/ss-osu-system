@@ -244,8 +244,10 @@ class TuplePredictorTrainer:
             label_mapper=self._dynamic_label_mapper
         )
 
-        val_known_indices = list(range(200))
-        training_indices = list(range(200, len(train_dataset)))
+        val_known_indices = [x / 200.0 * len(train_dataset) for x in range(200)]
+        val_known_indices_set = set(val_known_indices)
+        training_indices = [x for x in range(len(train_dataset)) if\
+            not x in val_known_indices_set]
         
         self._val_known_dataset = Subset(train_dataset, val_known_indices)
         self._train_dataset = Subset(train_dataset, training_indices)
