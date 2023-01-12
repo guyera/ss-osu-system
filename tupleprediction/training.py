@@ -168,7 +168,8 @@ class TuplePredictorTrainer:
             n_species_cls=n_species_cls,
             n_activity_cls=n_activity_cls,
             label_mapper=self._dynamic_label_mapper,
-            box_transform=self._box_transform
+            box_transform=self._box_transform,
+            cache_dir=os.path.join('.data-cache', 'train')
         )
 
         val_known_indices = [int(x / 200.0 * len(train_dataset)) for x in range(200)]
@@ -187,7 +188,8 @@ class TuplePredictorTrainer:
             n_species_cls=n_species_cls,
             n_activity_cls=n_activity_cls,
             label_mapper=self._static_label_mapper,
-            box_transform=self._box_transform
+            box_transform=self._box_transform,
+            cache_dir=os.path.join('.data-cache', 'val')
         )
 
         self._val_dataset = ConcatDataset((
