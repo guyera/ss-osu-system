@@ -55,7 +55,8 @@ class BoxImageDataset(torch.utils.data.Dataset):
             max_size = 1333,
             image_mean = None,
             image_std = None,
-            box_transform=None):
+            box_transform=None,
+            cache_dir=None):
         super().__init__()
 
         filename = os.path.join(f'{os.path.splitext(csv_path)[0]}_novelty_features.pth')
@@ -69,7 +70,6 @@ class BoxImageDataset(torch.utils.data.Dataset):
             csv_path=csv_path,
             training=training
         )
-        self._box_transform = box_transform
 
         if image_mean is None:
             image_mean = [0.485, 0.456, 0.406]
@@ -83,11 +83,44 @@ class BoxImageDataset(torch.utils.data.Dataset):
             image_std
         )
 
+        self._box_transform = box_transform
+
+        self._cache_dir = cache_dir
+
     def __len__(self):
         return len(self._dataset)
 
+    def _load_cached_data(self, cache_file):
+        t = torch.load(cache_file)
+        species_labels = t[0]
+        activity_labels = t[1]
+        novelty_type_labels = t[2]
+        box_images = t[3]
+        whole_image = t[4]
+
+        return species_labels,\
+            activity_labels,\
+            novelty_type_labels,\
+            box_images,\
+            whole_image
+
+    def _get_cache_file(self, idx):
+        cache_file = self._cache_dir
+        if self._box_transform is not None:
+            cache_file =\
+                os.path.join(cache_file, self._box_transform.path())
+        cache_file = os.path.join(cache_file, f'{idx}.pth')
+        return cache_file
+
     def __getitem__(self, idx):
         with torch.no_grad():
+            if self._cache_dir is not None:
+                cache_file = self._get_cache_file(idx)
+                if os.path.exists(cache_file):
+                    return self._load_cached_data(cache_file)
+
+            # If we made it this far, then the data could not be loaded from
+            # the cache. Proceed to load it normally.
             image, detection, target = self._dataset[idx]
             original_image_size = image.shape[-2:]
             images, targets = self._i_transform([image], [target])
@@ -118,6 +151,18 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 box_images.append(raw_box_image)
             box_images = torch.stack(box_images, dim=0)
             whole_image = self._box_transform(image_tensor)
+
+            # Cache data if configured to do so
+            if self._cache_dir is not None:
+                cache_file = self._get_cache_file(idx)
+                t = (
+                    species_labels,
+                    activity_labels,
+                    novelty_type_labels,
+                    box_images,
+                    whole_image
+                )
+                torch.save(t, cache_file)
 
             return species_labels,\
                 activity_labels,\
