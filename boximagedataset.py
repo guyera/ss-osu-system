@@ -11,65 +11,6 @@ from data.data_factory import DataFactory
 from torch.utils.data import DataLoader, DistributedSampler
 import torchvision
 
-class _ResizePad:
-    def __init__(self, size):
-        self.size = size
-    
-    def __call__(self, x):
-        # Determine which side length (height or width) is smaller and bigger
-        if x.shape[-2] > x.shape[-1]:
-            min_side_length_idx = -1
-            max_side_length_idx = -2
-        else:
-            min_side_length_idx = -2
-            max_side_length_idx = -1
-        
-        min_side_length = x.shape[min_side_length_idx]
-        max_side_length = x.shape[max_side_length_idx]
-
-        # Determine the scale factor such that the maximum side length is equal
-        # to self.size
-        scale_factor = float(self.size) / max_side_length
-
-        # Determine the new minimum side length by applying that same scale
-        # factor
-        new_min_side_length = int(min_side_length * scale_factor)
-        
-        # Construct the new size list
-        if min_side_length_idx == -2:
-            new_size = [new_min_side_length, self.size]
-        else:
-            new_size = [self.size, new_min_side_length]
-        
-        # Resize x to the new size
-        resized_x = torchvision.transforms.functional.resize(x, new_size)
-        
-        # X needs to be padded to square. Determine the amount of padding
-        # necessary, i.e. the difference between the max and min side lengths.
-        padding = self.size - new_min_side_length
-        if padding != 0:
-            if min_side_length_idx == -2:
-                # Height is smaller than width. Vertical padding is necessary.
-                left_padding = 0
-                top_padding = int(padding / 2)
-                right_padding = 0
-                bottom_padding = padding - top_padding
-            else:
-                # Width is smaller than height. Horizontal padding is necessary.
-                left_padding = int(padding / 2)
-                top_padding = 0
-                right_padding = padding - left_padding
-                bottom_padding = 0
-            # Pad resized_x to square
-            padded_x = torchvision.transforms.functional.pad(resized_x, [left_padding, top_padding, right_padding, bottom_padding])
-        else:
-            # The new minimum side length is equal to the new maximum side
-            # length, i.e. resized_x is already a square and doesn't need to
-            # be padded.
-            padded_x = resized_x
-
-        return padded_x
-
 class BoxImageDataset(torch.utils.data.Dataset):
     class LabelDataset(torch.utils.data.Dataset):
         def __init__(self, dataset):
@@ -113,7 +54,8 @@ class BoxImageDataset(torch.utils.data.Dataset):
             min_size = 800,
             max_size = 1333,
             image_mean = None,
-            image_std = None):
+            image_std = None,
+            box_transform=None):
         super().__init__()
 
         filename = os.path.join(f'{os.path.splitext(csv_path)[0]}_novelty_features.pth')
@@ -127,7 +69,7 @@ class BoxImageDataset(torch.utils.data.Dataset):
             csv_path=csv_path,
             training=training
         )
-        self._box_transform = torchvision.transforms.Compose([_ResizePad(224), torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+        self._box_transform = box_transform
 
         if image_mean is None:
             image_mean = [0.485, 0.456, 0.406]
@@ -170,11 +112,10 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 r_ymax = torch.round(ymax).to(torch.int)
 
                 # Crop out image boxes
-                box_images.append(
-                    self._box_transform(
-                        image_tensor[:, r_ymin : r_ymax, r_xmin : r_xmax]
-                    )
-                )
+                box_image = image_tensor[:, r_ymin : r_ymax, r_xmin : r_xmax]
+                if self._box_transform is not None:
+                    box_image = self._box_transform(box_image)
+                box_images.append(raw_box_image)
             box_images = torch.stack(box_images, dim=0)
             whole_image = self._box_transform(image_tensor)
 

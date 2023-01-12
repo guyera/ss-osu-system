@@ -12,6 +12,7 @@ import torch
 from boximagedataset import BoxImageDataset
 from utils import custom_collate
 from labelmapping import LabelMapper
+from transforms import Compose, Normalize, ResizePad
 
 
 '''
@@ -155,6 +156,10 @@ class TuplePredictorTrainer:
             LabelMapper(label_mapping=deepcopy(label_mapping), update=False)
         self._dynamic_label_mapper =\
             LabelMapper(label_mapping, update=True)
+        self._box_transform = Compose([
+            ResizePad(224),
+            Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ])
         train_dataset = BoxImageDataset(
             name = 'Custom',
             data_root = data_root,
@@ -162,7 +167,8 @@ class TuplePredictorTrainer:
             training = True,
             n_species_cls=n_species_cls,
             n_activity_cls=n_activity_cls,
-            label_mapper=self._dynamic_label_mapper
+            label_mapper=self._dynamic_label_mapper,
+            box_transform=self._box_transform
         )
 
         val_known_indices = [int(x / 200.0 * len(train_dataset)) for x in range(200)]
@@ -180,7 +186,8 @@ class TuplePredictorTrainer:
             training = False,
             n_species_cls=n_species_cls,
             n_activity_cls=n_activity_cls,
-            label_mapper=self._static_label_mapper
+            label_mapper=self._static_label_mapper,
+            box_transform=self._box_transform
         )
 
         self._val_dataset = ConcatDataset((
@@ -216,7 +223,8 @@ class TuplePredictorTrainer:
             training = True,
             n_species_cls=self._n_species_cls,
             n_activity_cls=self._n_activity_cls,
-            label_mapper=self._dynamic_label_mapper
+            label_mapper=self._dynamic_label_mapper,
+            box_transform=self._box_transform
         )
 
         # Put new feedback data in list
