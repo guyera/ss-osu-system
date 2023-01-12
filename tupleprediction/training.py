@@ -428,7 +428,8 @@ class TuplePredictorTrainer:
             self,
             backbone,
             species_classifier,
-            activity_classifier):
+            activity_classifier,
+            train_sampler_fn=None):
         if self._feedback_data is not None:
             train_dataset = ConcatDataset((
                 self._train_dataset, self._feedback_data
@@ -437,12 +438,21 @@ class TuplePredictorTrainer:
             train_dataset = self._train_dataset
 
         train_dataset = FlattenedBoxImageDataset(train_dataset)
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=self._retraining_batch_size,
-            shuffle=True,
-            num_workers=32
-        )
+        if train_sampler_fn is not None:
+            train_sampler = train_sampler_fn(train_dataset)
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=self._retraining_batch_size,
+                num_workers=32,
+                sampler=train_sampler
+            )
+        else:
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=self._retraining_batch_size,
+                shuffle=True,
+                num_workers=32
+            )
 
         # Construct validation loaders for early stopping / model selection.
         # I'm assuming our model selection strategy will be based solely on the
@@ -486,6 +496,11 @@ class TuplePredictorTrainer:
             desc='Training backbone and classifiers...'
         )
         for epoch in progress:
+            if train_loader.sampler is not None:
+                # Set the sampler epoch for shuffling when running in
+                # distributed mode
+                train_loader.sampler.set_epoch(epoch)
+
             # Train for one full epoch
             mean_train_loss, mean_train_accuracy = self._train_epoch(
                 train_loader, 
@@ -747,7 +762,8 @@ class TuplePredictorTrainer:
             confidence_calibrator,
             novelty_type_classifier,
             activation_statistical_model,
-            scorer):
+            scorer,
+            train_sampler_fn=None):
         species_classifier = classifier.species_classifier
         activity_classifier = classifier.activity_classifier
         species_calibrator = confidence_calibrator.species_calibrator
@@ -757,7 +773,8 @@ class TuplePredictorTrainer:
         self.train_backbone_and_classifiers(
             backbone,
             species_classifier,
-            activity_classifier
+            activity_classifier,
+            train_sampler_fn=train_sampler_fn
         )
 
         self.fit_activation_statistics(

@@ -4,6 +4,7 @@ import os
 
 import torch
 import torch.distributed as dist
+from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 import boxclassifier
@@ -18,8 +19,16 @@ from labelmapping import LabelMapper
 
 dist.init_process_group('nccl')
 rank = dist.get_rank()
+world_size = dist.get_world_size()
 device_id = rank
 device = f'cuda:{device_id}'
+
+def train_sampler_fn(train_dataset):
+    return DistributedSampler(
+        train_dataset,
+        num_replicas=world_size,
+        rank=rank
+    )
 
 architecture = Backbone.Architecture.swin_t
 backbone = Backbone(architecture)
@@ -73,7 +82,8 @@ activity_calibrator = confidence_calibrator.activity_calibrator
 trainer.train_backbone_and_classifiers(
     backbone,
     species_classifier,
-    activity_classifier
+    activity_classifier,
+    train_sampler_fn=train_sampler_fn
 )
 
 trainer.fit_activation_statistics(
