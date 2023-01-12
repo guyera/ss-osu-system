@@ -75,19 +75,19 @@ class BoxImageDataset(torch.utils.data.Dataset):
         def __init__(self, dataset):
             self._dataset = dataset
 
-    def __len__(self):
-        return len(self._dataset)
+        def __len__(self):
+            return len(self._dataset)
 
-    def __getitem__(self, idx):
-        with torch.no_grad():
-            target = self._dataset.label(idx)
-            species_labels = target['species'].detach()
-            activity_labels = target['activity'].detach()
-            novelty_type_labels = target['novelty_type'].detach()
+        def __getitem__(self, idx):
+            with torch.no_grad():
+                target = self._dataset.label(idx)
+                species_labels = target['species'].detach()
+                activity_labels = target['activity'].detach()
+                novelty_type_labels = target['novelty_type'].detach()
 
-            return species_labels,\
-                activity_labels,\
-                novelty_type_labels
+                return species_labels,\
+                    activity_labels,\
+                    novelty_type_labels
 
     """
     Params:
@@ -186,3 +186,6 @@ class BoxImageDataset(torch.utils.data.Dataset):
 
     def label_dataset(self):
         return self.LabelDataset(self._dataset)
+
+    def box_count(self, i):
+        return self._dataset.box_count(i)

@@ -1,4 +1,5 @@
 import torch
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from boxclassifier._utils import _state_dict, _load_state_dict
 
@@ -47,18 +48,28 @@ class ClassifierV2:
         self.activity_classifier = self.activity_classifier.to(device)
         return self
     
-    def state_dict(self):
+    def state_dict(self, *args, **kwargs):
         state_dict = {}
-        state_dict['species_classifier'] = _state_dict(self.species_classifier)
-        state_dict['activity_classifier'] = _state_dict(self.activity_classifier)
+        state_dict['species_classifier'] =\
+            self.species_classifier.state_dict(*args, **kwargs)
+        state_dict['activity_classifier'] =\
+            self.activity_classifier.state_dict(*args, **kwargs)
         return state_dict
 
     def load_state_dict(self, state_dict):
-        _load_state_dict(
-            self.species_classifier,
+        self.species_classifier.load_state_dict(
             state_dict['species_classifier']
         )
-        _load_state_dict(
-            self.activity_classifier,
+        self.activity_classifier.load_state_dict(
             state_dict['activity_classifier']
+        )
+
+    def ddp(self, device_ids=None):
+        self.species_classifier = DDP(
+            self.species_classifier,
+            device_ids=device_ids
+        )
+        self.activity_classifier = DDP(
+            self.activity_classifier,
+            device_ids=device_ids
         )

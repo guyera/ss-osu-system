@@ -2,184 +2,105 @@ from copy import deepcopy
 import numpy as np
 
 from tqdm import tqdm
-from torch.utils.data import Dataset, DataLoader, Subset, ConcatDataset
+from torch.utils.data import\
+    Dataset,\
+    DataLoader,\
+    Subset as TorchSubset,\
+    ConcatDataset as TorchConcatDataset
 import torch
 
 from boximagedataset import BoxImageDataset
 from utils import custom_collate
 from labelmapping import LabelMapper
 
-class BufferedBoxImageDataLoader:
-    class Iter:
-        def __init__(
-                self,
-                dataloader: DataLoader,
-                batch_size: int,
-                buffer_size: int,
-                shuffle: bool,
-                discard_incomplete_batch: bool):
-            self._itr = iter(dataloader)
-            self._batch_size = batch_size
-            self._buffer_boxes = None
-            self._buffer_species_labels = None
-            self._buffer_activity_labels = None
-            self._buffer_size = buffer_size
-            self._shuffle = shuffle
-            self._discard_incomplete_batch = discard_incomplete_batch
 
-        def __next__(self):
-            # Try to fill up the buffer
-            try:
-                while (self._buffer_boxes is None) or\
-                        (len(self._buffer_boxes) < self._buffer_size):
-                    # Sample a batch from the underlying iterator
-                    species_labels, activity_labels, _, box_images, _ =\
-                        next(self._itr)
+'''
+Custom Subset dataset class that works with BoxImageDatasets and derivatives,
+forwarding label_dataset() and box_count() to the underlying dataset
+appropriately.
+'''
+class Subset(Dataset):
+    def __init__(self, dataset, indices):
+        self._dataset = dataset
+        self._indices = indices
 
-                    # Flatten / concatenate the box images and repeat the
-                    # labels per-box
-                    box_counts = [x.shape[0] for x in box_images]
-                    box_images = torch.cat(box_images, dim=0)
-                    one_hot_species_labels = torch.argmax(species_labels, dim=1)
-                    flattened_species_labels = torch.cat([
-                        torch.full((box_count,), species_label)\
-                            for species_label, box_count in\
-                                zip(one_hot_species_labels, box_counts)
-                    ])
-                    one_hot_activity_labels = torch.argmax(activity_labels, dim=1)
-                    flattened_activity_labels = torch.cat([
-                        torch.full((box_count,), activity_label)\
-                            for activity_label, box_count in\
-                                zip(one_hot_activity_labels, box_counts)
-                    ])
+    def __len__(self):
+        return len(self._indices)
 
-                    # Update the buffer
-                    if self._buffer_boxes is None:
-                        self._buffer_boxes = box_images
-                        self._buffer_species_labels = flattened_species_labels
-                        self._buffer_activity_labels = flattened_activity_labels
-                    else:
-                        self._buffer_boxes = torch.cat(
-                            (self._buffer_boxes, box_images),
-                            dim=0
-                        )
-                        self._buffer_species_labels = torch.cat(
-                            (
-                                self._buffer_species_labels,
-                                flattened_species_labels
-                            ),
-                            dim=0
-                        )
-                        self._buffer_activity_labels = torch.cat(
-                            (
-                                self._buffer_activity_labels,
-                                flattened_activity_labels
-                            ),
-                            dim=0
-                        )
-            except StopIteration as e:
-                pass
+    def __getitem__(self, idx):
+        return self._dataset[self._indices[idx]]
 
-            if (self._buffer_boxes is None) or len(self._buffer_boxes) == 0:
-                raise StopIteration
+    def label_dataset(self):
+        return TorchSubset(self._dataset.label_dataset(), self._indices)
 
-            # If we hit the end of the underlying iterator (it raised a
-            # StopIteration), then the buffer might not be full. If the buffer 
-            # is not full enough to sample a batch, and the configuration is set
-            # to discard incomplete batches, then raise a StopIteration.
-            if (len(self._buffer_boxes) < self._batch_size) and\
-                    self._discard_incomplete_batch:
-                raise StopIteration
+    def box_count(self, idx):
+        return self._dataset.box_count(self._indices[idx])
 
-            # Sample a batch of box images and return
-            cur_batch_size = min(self._batch_size, len(self._buffer_boxes))
-            if self._shuffle:
-                # Select random indices and extract the boxes and labels
-                indices = np.random.choice(
-                    list(range(len(self._buffer_boxes))),
-                    size=cur_batch_size,
-                    replace=False
-                ).tolist()
-                selected_boxes = self._buffer_boxes[indices]
-                selected_species_labels = self._buffer_species_labels[indices]
-                selected_activity_labels = self._buffer_activity_labels[indices]
 
-                # Remove selected instances from buffer
-                mask_indices = torch.ones(
-                    len(self._buffer_boxes),
-                    dtype=torch.bool
-                )
-                mask_indices[indices] = False
-                self._buffer_boxes = self._buffer_boxes[mask_indices]
-                self._buffer_species_labels =\
-                    self._buffer_species_labels[mask_indices]
-                self._buffer_activity_labels =\
-                    self._buffer_activity_labels[mask_indices]
-            else:
-                # Select the first N instances, where N is the batch size
-                selected_boxes = self._buffer_boxes[:cur_batch_size]
-                selected_species_labels =\
-                    self._buffer_species_labels[:cur_batch_size]
-                selected_activity_labels =\
-                    self._buffer_activity_labels[:cur_batch_size]
+'''
+Custom ConcatDataset class that works with BoxImageDatasets and derivatives,
+forwarding label_dataset() and box_count() to the underlying dataset
+appropriately.
+'''
+class ConcatDataset(Dataset):
+    def __init__(self, datasets):
+        self._datasets = datasets
+        self._lens = [len(x) for x in datasets]
+        self._len = sum(self._lens)
 
-                # Remove selected instances from buffer
-                self._buffer_boxes = self._buffer_boxes[cur_batch_size:]
-                self._buffer_species_labels =\
-                    self._buffer_species_labels[cur_batch_size:]
-                self._buffer_activity_labels =\
-                    self._buffer_activity_labels[cur_batch_size:]
+    def __len__(self):
+        return self._len
 
-            return selected_species_labels,\
-                selected_activity_labels,\
-                selected_boxes
+    def __getitem__(self, idx):
+        len_idx = 0
+        while idx >= self._lens[len_idx]:
+            idx -= self._lens[len_idx]
+            len_idx += 1
+        return self._datasets[len_idx][idx]
 
-    '''
-    Parameters:
-        dataset: BoxImageDataset
-            Underlying dataset from which to pull box images and labels
-        image_batch_size: int
-            Batch size with which to sample images from the underlying dataset;
-            should be small enough to support the maximum number of boxes which
-            could occur in a batch
-        box_batch_size: int
-            Batch size of boxes output by this dataset's iterator
-        buffer_size: int
-            Size of underlying buffer of box images. Must be larger than or
-            equal to box_batch_size. The larger the buffer size, the less
-            correlated the boxes (a larger buffer means the sampled boxes
-            are less likely to have been cropped from the same image).
-        shuffle: bool
-            Specifies whether to shuffle images and boxes
-    '''
-    def __init__(
-            self,
-            dataset: BoxImageDataset,
-            image_batch_size: int,
-            box_batch_size: int,
-            buffer_size: int,
-            shuffle: bool,
-            discard_incomplete_batch: bool):
-        self._dataloader = DataLoader(
-            dataset,
-            batch_size=image_batch_size,
-            shuffle=shuffle,
-            collate_fn=custom_collate,
-            num_workers=8
-        )
-        self._box_batch_size = box_batch_size
-        self._buffer_size = buffer_size
-        self._shuffle = shuffle
-        self._discard_incomplete_batch = discard_incomplete_batch
+    def label_dataset(self):
+        return TorchConcatDataset([x.label_dataset() for x in self._datasets])
 
-    def __iter__(self):
-        return self.Iter(
-            self._dataloader,
-            self._box_batch_size,
-            self._buffer_size,
-            self._shuffle,
-            self._discard_incomplete_batch
-        )
+    def box_count(self, idx):
+        len_idx = 0
+        while idx >= self._lens[len_idx]:
+            idx -= self._lens[len_idx]
+            len_idx += 1
+        return self._datasets[len_idx].box_count(idx)
+
+class FlattenedBoxImageDataset(Dataset):
+    def __init__(self, box_image_dataset):
+        self._dataset = box_image_dataset
+        box_counts = [
+            box_image_dataset.box_count(x)\
+                for x in range(len(box_image_dataset))
+        ]
+        box_to_img_mapping = []
+        box_to_local_box_mapping = []
+        for img_idx, box_count in enumerate(box_counts):
+            for i in range(box_count):
+                box_to_img_mapping.append(img_idx)
+                box_to_local_box_mapping.append(i)
+        self._box_to_img_mapping = box_to_img_mapping
+        self._box_to_local_box_mapping = box_to_local_box_mapping
+
+    def __len__(self):
+        return len(self._box_to_img_mapping)
+
+    def __getitem__(self, idx):
+        img_idx = self._box_to_img_mapping[idx]
+        local_box_idx = self._box_to_local_box_mapping[idx]
+        species_labels, activity_labels, _, box_images, _ =\
+            self._dataset[img_idx]
+
+        # Flatten / concatenate the box images and repeat the
+        # labels per-box
+        one_hot_species_label = torch.argmax(species_labels, dim=0)
+        one_hot_activity_label = torch.argmax(activity_labels, dim=0)
+        box_image = box_images[local_box_idx]
+
+        return one_hot_species_label, one_hot_activity_label, box_image
+
 
 def separate_known_images(dataset, n_known_species_cls, n_known_activity_cls):
     known_indices = []
@@ -187,7 +108,7 @@ def separate_known_images(dataset, n_known_species_cls, n_known_activity_cls):
         if novelty_type_label == 0:
             known_indices.append(idx)
 
-    return torch.utils.data.Subset(dataset, known_indices)
+    return Subset(dataset, known_indices)
 
 
 def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
@@ -244,7 +165,7 @@ class TuplePredictorTrainer:
             label_mapper=self._dynamic_label_mapper
         )
 
-        val_known_indices = [x / 200.0 * len(train_dataset) for x in range(200)]
+        val_known_indices = [int(x / 200.0 * len(train_dataset)) for x in range(200)]
         val_known_indices_set = set(val_known_indices)
         training_indices = [x for x in range(len(train_dataset)) if\
             not x in val_known_indices_set]
@@ -302,7 +223,7 @@ class TuplePredictorTrainer:
         if self._feedback_data is None:
             self._feedback_data = new_novel_dataset
         else:
-            self._feedback_data = torch.utils.data.ConcatDataset(
+            self._feedback_data = ConcatDataset(
                 [self._feedback_data, new_novel_dataset]
             )
     
@@ -509,19 +430,17 @@ class TuplePredictorTrainer:
             species_classifier,
             activity_classifier):
         if self._feedback_data is not None:
-            train_dataset = torch.utils.data.ConcatDataset((
+            train_dataset = ConcatDataset((
                 self._train_dataset, self._feedback_data
             ))
         else:
             train_dataset = self._train_dataset
 
-        train_loader = BufferedBoxImageDataLoader(
+        train_dataset = FlattenedBoxImageDataset(train_dataset)
+        train_loader = DataLoader(
             train_dataset,
-            self._retraining_image_batch_size,
-            self._retraining_batch_size,
-            self._retraining_buffer_size,
-            True,
-            False
+            batch_size=self._retraining_batch_size,
+            shuffle=True
         )
 
         # Construct validation loaders for early stopping / model selection.
@@ -531,13 +450,11 @@ class TuplePredictorTrainer:
         # data to measure novelty detection performance. These currently aren't
         # being stored (except in a special form for the logistic regressions),
         # so we'd have to modify __init__().
-        val_loader = BufferedBoxImageDataLoader(
-            self._val_known_dataset,
-            self._retraining_image_batch_size,
-            self._retraining_batch_size,
-            self._retraining_buffer_size,
-            False,
-            False
+        val_dataset = FlattenedBoxImageDataset(self._val_known_dataset)
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=self._retraining_batch_size,
+            shuffle=False
         )
 
         # Retrain the backbone and classifiers
@@ -624,7 +541,7 @@ class TuplePredictorTrainer:
             self,
             backbone,
             activation_statistical_model):
-        activation_stats_training_loader = torch.utils.data.DataLoader(
+        activation_stats_training_loader = DataLoader(
             self._val_known_dataset,
             batch_size = 32,
             shuffle = False,
@@ -653,7 +570,7 @@ class TuplePredictorTrainer:
             activity_classifier,
             species_calibrator,
             activity_calibrator):
-        cal_loader = torch.utils.data.DataLoader(
+        cal_loader = DataLoader(
             self._val_known_dataset,
             batch_size=256,
             shuffle=False,
@@ -759,7 +676,7 @@ class TuplePredictorTrainer:
 
         device = backbone.device
 
-        val_loader = torch.utils.data.DataLoader(
+        val_loader = DataLoader(
             self._val_dataset,
             batch_size = 32,
             shuffle = False,

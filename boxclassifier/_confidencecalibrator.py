@@ -45,20 +45,18 @@ class ConfidenceCalibrator:
         self.activity_calibrator = self.activity_calibrator.to(device)
         return self
     
-    def state_dict(self):
+    def state_dict(self, *args, **kwargs):
         state_dict = {}
         state_dict['species_calibrator'] =\
-            _state_dict(self.species_calibrator)
+            self.species_calibrator.state_dict(*args, **kwargs)
         state_dict['activity_calibrator'] =\
-            _state_dict(self.activity_calibrator)
+            self.activity_calibrator.state_dict(*args, **kwargs)
         return state_dict
 
     def load_state_dict(self, state_dict):
-        _load_state_dict(
-            self.species_calibrator,
+        self.species_calibrator.load_state_dict(
             state_dict['species_calibrator']
         )
-        _load_state_dict(
-            self.activity_calibrator,
+        self.activity_calibrator.load_state_dict(
             state_dict['activity_calibrator']
         )

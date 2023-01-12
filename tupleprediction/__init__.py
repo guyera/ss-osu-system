@@ -44,16 +44,6 @@ class NoveltyTypeClassifier(torch.nn.Module):
         self.device = device
         return self
 
-    def state_dict(self):
-        raw_state_dict = super().state_dict()
-        return {k: v.cpu() for k, v in raw_state_dict.items()}
-
-    def load_state_dict(self, cpu_state_dict):
-        moved_state_dict = {
-            k: v.to(self.device) for k, v in cpu_state_dict.items()
-        }
-        super().load_state_dict(moved_state_dict)
-
 # TODO tensorize
 def compute_probability_novelty(
         scores,

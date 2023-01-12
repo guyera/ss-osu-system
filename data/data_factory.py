@@ -141,3 +141,6 @@ class DataFactory(Dataset):
 
     def label(self, i):
         return self.dataset.label(i)
+
+    def box_count(self, i):
+        return self.dataset.box_count(i)

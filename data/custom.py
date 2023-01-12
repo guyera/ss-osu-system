@@ -217,6 +217,10 @@ class CustomDet(Dataset):
 
         return annots
 
+    def box_count(self, i):
+        boxes = self._anno[i]['boxes']
+        return len(boxes)
+
 def build_species_label_mapping(csv_path):
     df = pd.read_csv(csv_path)
     unique_species_list = []

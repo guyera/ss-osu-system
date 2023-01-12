@@ -3,6 +3,8 @@ import time
 import os
 
 import torch
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 import boxclassifier
 import tupleprediction
@@ -14,7 +16,11 @@ from scoring import\
 from data.custom import build_species_label_mapping
 from labelmapping import LabelMapper
 
-device = 'cuda:0'
+dist.init_process_group('nccl')
+rank = dist.get_rank()
+device_id = rank
+device = f'cuda:{device_id}'
+
 architecture = Backbone.Architecture.swin_t
 backbone = Backbone(architecture)
 backbone = backbone.to(device)
@@ -51,9 +57,49 @@ novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
 label_mapping = build_species_label_mapping(train_csv_path)
 trainer = tupleprediction.training.TuplePredictorTrainer('dataset_v4/', train_csv_path, val_csv_path, training_image_batch_size, training_batch_size, training_buffer_size, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping)
 
-start_time = time.time()
 trainer.prepare_for_retraining(backbone, classifier, confidence_calibrator, novelty_type_classifier, activation_statistical_model)
-trainer.train_novelty_detection_module(backbone, classifier, confidence_calibrator, novelty_type_classifier, activation_statistical_model, scorer)
+
+backbone = DDP(backbone, device_ids=[device_id])
+classifier.ddp(device_ids=[device_id])
+
+start_time = time.time()
+
+species_classifier = classifier.species_classifier
+activity_classifier = classifier.activity_classifier
+species_calibrator = confidence_calibrator.species_calibrator
+activity_calibrator = confidence_calibrator.activity_calibrator
+
+# Retrain the backbone and classifiers
+trainer.train_backbone_and_classifiers(
+    backbone,
+    species_classifier,
+    activity_classifier
+)
+
+trainer.fit_activation_statistics(
+    backbone.module,
+    activation_statistical_model
+)
+
+# Retrain the classifier's temperature scaling calibrators
+trainer.calibrate_temperature_scalers(
+    backbone.module,
+    species_classifier,
+    activity_classifier,
+    species_calibrator,
+    activity_calibrator
+)
+
+# Retrain the logistic regressions
+trainer.train_novelty_type_logistic_regressions(
+    backbone.module,
+    species_classifier,
+    activity_classifier,
+    novelty_type_classifier,
+    activation_statistical_model,
+    scorer
+)
+
 end_time = time.time()
 print(f'Time: {end_time - start_time}')
 
@@ -72,19 +118,20 @@ save_dir = os.path.join(
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 
-torch.save(
-    backbone.state_dict(),
-    os.path.join(save_dir, 'backbone.pth')
-)
-torch.save(
-    classifier.state_dict(),
-    os.path.join(save_dir, 'classifier.pth')
-)
-torch.save(
-    confidence_calibrator.state_dict(),
-    os.path.join(save_dir, 'confidence-calibrator.pth')
-)
-torch.save(
-    tuple_prediction_state_dicts,
-    os.path.join(save_dir, 'tuple-prediction.pth')
-)
+if rank == 0:
+    torch.save(
+        backbone.state_dict(),
+        os.path.join(save_dir, 'backbone.pth')
+    )
+    torch.save(
+        classifier.state_dict(),
+        os.path.join(save_dir, 'classifier.pth')
+    )
+    torch.save(
+        confidence_calibrator.state_dict(),
+        os.path.join(save_dir, 'confidence-calibrator.pth')
+    )
+    torch.save(
+        tuple_prediction_state_dicts,
+        os.path.join(save_dir, 'tuple-prediction.pth')
+    )
