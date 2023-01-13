@@ -589,12 +589,16 @@ class TuplePredictorTrainer:
         mean_train_accuracy = None
         mean_val_accuracy = None
 
-        if checkpoint:
-            checkpoint_dir = os.path.join(
+        def get_checkpoint_dir():
+            return os.path.join(
                 '.checkpoint',
                 self._box_transform.path(),
-                self._post_cache_train_transform.path()
+                self._post_cache_train_transform.path(),
+                f'lr={lr}'
             )
+
+        if checkpoint:
+            checkpoint_dir = get_checkpoint_dir()
             training_checkpoint = os.path.join(checkpoint_dir, 'training.pth')
             validation_checkpoint =\
                 os.path.join(checkpoint_dir, 'validation.pth')
@@ -628,12 +632,17 @@ class TuplePredictorTrainer:
         training_loss_curve = {}
         training_accuracy_curve = {}
         validation_accuracy_curve = {}
-        if log and self._allow_write:
-            log_dir = os.path.join(
+
+        def get_log_dir():
+            return os.path.join(
                 '.log',
                 self._box_transform.path(),
-                self._post_cache_train_transform.path()
+                self._post_cache_train_transform.path(),
+                f'lr={lr}'
             )
+
+        if log and self._allow_write:
+            log_dir = get_log_dir()
             training_log = os.path.join(log_dir, 'training.pkl')
             validation_log =\
                 os.path.join(log_dir, 'validation.pkl')
@@ -681,11 +690,7 @@ class TuplePredictorTrainer:
             )
 
             if checkpoint and self._allow_write:
-                checkpoint_dir = os.path.join(
-                    '.checkpoint',
-                    self._box_transform.path(),
-                    self._post_cache_train_transform.path()
-                )
+                checkpoint_dir = get_checkpoint_dir()
                 training_checkpoint =\
                     os.path.join(checkpoint_dir, 'training.pth')
                 os.makedirs(checkpoint_dir, exist_ok=True)
@@ -703,11 +708,7 @@ class TuplePredictorTrainer:
             if log and self._allow_write:
                 training_loss_curve[epoch] = mean_train_loss
                 training_accuracy_curve[epoch] = mean_train_accuracy
-                log_dir = os.path.join(
-                    '.log',
-                    self._box_transform.path(),
-                    self._post_cache_train_transform.path()
-                )
+                log_dir = get_log_dir()
                 os.makedirs(log_dir, exist_ok=True)
                 training_log = os.path.join(log_dir, 'training.pkl')
                 
@@ -739,11 +740,7 @@ class TuplePredictorTrainer:
                     epochs_since_improvement += 1
 
                 if checkpoint and self._allow_write:
-                    checkpoint_dir = os.path.join(
-                        '.checkpoint',
-                        self._box_transform.path(),
-                        self._post_cache_train_transform.path()
-                    )
+                    checkpoint_dir = get_checkpoint_dir()
                     validation_checkpoint =\
                         os.path.join(checkpoint_dir, 'validation.pth')
                     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -762,11 +759,7 @@ class TuplePredictorTrainer:
 
                 if log and self._allow_write:
                     validation_accuracy_curve[epoch] = mean_val_accuracy
-                    log_dir = os.path.join(
-                        '.log',
-                        self._box_transform.path(),
-                        self._post_cache_train_transform.path()
-                    )
+                    log_dir = get_log_dir()
                     os.makedirs(log_dir, exist_ok=True)
                     validation_log = os.path.join(log_dir, 'validation.pkl')
                     
