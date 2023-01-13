@@ -23,3 +23,5 @@ sys_test/
 test_trials_*
 Last30*
 SVO_*
+.data-cache
+*.sh

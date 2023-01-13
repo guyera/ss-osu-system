@@ -1,5 +1,6 @@
 from copy import deepcopy
 import numpy as np
+import os
 
 from tqdm import tqdm
 from torch.utils.data import\
@@ -12,7 +13,7 @@ import torch
 from boximagedataset import BoxImageDataset
 from utils import custom_collate
 from labelmapping import LabelMapper
-from transforms import Compose, Normalize, ResizePad
+from transforms import Compose, Normalize, ResizePad, RandAugment
 
 
 '''
@@ -103,6 +104,32 @@ class FlattenedBoxImageDataset(Dataset):
         return one_hot_species_label, one_hot_activity_label, box_image
 
 
+class TransformingBoxImageDataset(Dataset):
+    def __init__(self, dataset, transform):
+        self._dataset = dataset
+        self._transform = transform
+
+    def __len__(self):
+        return len(self._dataset)
+
+    def __getitem__(self, idx):
+        species_labels,\
+            activity_labels,\
+            novelty_type_labels,\
+            box_images,\
+            whole_image =\
+                self._dataset[img_idx]
+
+        box_images = self._transform(box_images)
+        whole_image = self._transform(whole_image)
+
+        return species_labels,\
+            activity_labels,\
+            novelty_type_labels,\
+            box_images,\
+            whole_images
+
+
 def separate_known_images(dataset, n_known_species_cls, n_known_activity_cls):
     known_indices = []
     for idx, (_, _, novelty_type_label, _, _) in enumerate(dataset):
@@ -149,17 +176,19 @@ class TuplePredictorTrainer:
             n_activity_cls,
             n_known_species_cls,
             n_known_activity_cls,
-            label_mapping):
+            label_mapping,
+            write_cache=False):
         self._n_species_cls = n_species_cls
         self._n_activity_cls = n_activity_cls
         self._static_label_mapper =\
             LabelMapper(label_mapping=deepcopy(label_mapping), update=False)
         self._dynamic_label_mapper =\
             LabelMapper(label_mapping, update=True)
-        self._box_transform = Compose([
-            ResizePad(224),
-            Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ])
+        self._box_transform = ResizePad(224)
+        normalize = Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        self._post_cache_train_transform = Compose(RandAugment(), normalize)
+        self._post_cache_val_transform = normalize
+
         train_dataset = BoxImageDataset(
             name = 'Custom',
             data_root = data_root,
@@ -169,16 +198,24 @@ class TuplePredictorTrainer:
             n_activity_cls=n_activity_cls,
             label_mapper=self._dynamic_label_mapper,
             box_transform=self._box_transform,
-            cache_dir=os.path.join('.data-cache', 'train')
+            cache_dir=os.path.join('.data-cache', 'train'),
+            write_cache=write_cache
         )
+        train_dataset.commit_cache()
 
         val_known_indices = [int(x / 200.0 * len(train_dataset)) for x in range(200)]
         val_known_indices_set = set(val_known_indices)
         training_indices = [x for x in range(len(train_dataset)) if\
             not x in val_known_indices_set]
         
-        self._val_known_dataset = Subset(train_dataset, val_known_indices)
-        self._train_dataset = Subset(train_dataset, training_indices)
+        self._val_known_dataset = TransformingBoxImageDataset(
+            Subset(train_dataset, val_known_indices),
+            self._post_cache_val_transform
+        )
+        self._train_dataset = TransformingBoxImageDataset(
+            Subset(train_dataset, training_indices),
+            self._post_cache_train_transform
+        )
 
         val_dataset = BoxImageDataset(
             name = 'Custom',
@@ -189,12 +226,17 @@ class TuplePredictorTrainer:
             n_activity_cls=n_activity_cls,
             label_mapper=self._static_label_mapper,
             box_transform=self._box_transform,
-            cache_dir=os.path.join('.data-cache', 'val')
+            cache_dir=os.path.join('.data-cache', 'val'),
+            write_cache=write_cache
         )
+        val_dataset.commit_cache()
 
         self._val_dataset = ConcatDataset((
             self._val_known_dataset,
-            val_dataset
+            TransformingBoxImageDataset(
+                val_dataset,
+                self._post_cache_val_transform
+            )
         ))
 
         # TODO class balancing? In the SVO system, we balanced 50/50 known
@@ -203,14 +245,6 @@ class TuplePredictorTrainer:
         # SCG / non-SCG predictions. We also previously would sample a batch
         # from each of 6 data loaders, which naturally balanced them, when
         # training the classifier: S/V/O x known/novel
-
-        # Extract whole images
-        self._val_known_dataset = separate_known_images(
-            self._val_dataset,
-            n_known_species_cls,
-            n_known_activity_cls
-        )
-
         self._feedback_data = None
 
         self._retraining_image_batch_size = retraining_image_batch_size 
@@ -227,6 +261,10 @@ class TuplePredictorTrainer:
             n_activity_cls=self._n_activity_cls,
             label_mapper=self._dynamic_label_mapper,
             box_transform=self._box_transform
+        )
+        new_novel_dataset = TransformingBoxImageDataset(
+            new_novel_dataset,
+            self._post_cache_train_transform
         )
 
         # Put new feedback data in list

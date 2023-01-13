@@ -64,7 +64,7 @@ novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
 ).to(device)
 
 label_mapping = build_species_label_mapping(train_csv_path)
-trainer = tupleprediction.training.TuplePredictorTrainer('dataset_v4/', train_csv_path, val_csv_path, training_image_batch_size, training_batch_size, training_buffer_size, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping)
+trainer = tupleprediction.training.TuplePredictorTrainer('dataset_v4/', train_csv_path, val_csv_path, training_image_batch_size, training_batch_size, training_buffer_size, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping, write_cache=(rank == 0))
 
 trainer.prepare_for_retraining(backbone, classifier, confidence_calibrator, novelty_type_classifier, activation_statistical_model)
 

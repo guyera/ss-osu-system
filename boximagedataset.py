@@ -11,6 +11,9 @@ from data.data_factory import DataFactory
 from torch.utils.data import DataLoader, DistributedSampler
 import torchvision
 
+from torchvision.transforms.functional import to_pil_image, to_tensor
+from PIL import Image
+
 class BoxImageDataset(torch.utils.data.Dataset):
     class LabelDataset(torch.utils.data.Dataset):
         def __init__(self, dataset):
@@ -56,7 +59,8 @@ class BoxImageDataset(torch.utils.data.Dataset):
             image_mean = None,
             image_std = None,
             box_transform=None,
-            cache_dir=None):
+            cache_dir=None,
+            write_cache=False):
         super().__init__()
 
         filename = os.path.join(f'{os.path.splitext(csv_path)[0]}_novelty_features.pth')
@@ -85,18 +89,38 @@ class BoxImageDataset(torch.utils.data.Dataset):
 
         self._box_transform = box_transform
 
+        if box_transform is not None:
+            cache_dir =\
+                os.path.join(cache_dir, box_transform.path())
         self._cache_dir = cache_dir
+        self._write_cache = write_cache
 
     def __len__(self):
         return len(self._dataset)
 
-    def _load_cached_data(self, cache_file):
-        t = torch.load(cache_file)
+    def _load_cached_data(self, cache_dir):
+        label_cache_file =\
+            os.path.join(cache_dir, f'labels.pth')
+        t = torch.load(label_cache_file)
         species_labels = t[0]
         activity_labels = t[1]
         novelty_type_labels = t[2]
-        box_images = t[3]
-        whole_image = t[4]
+
+        whole_image_cache_file =\
+            os.path.join(cache_dir, 'whole_image.JPG')
+        pil_whole_image = Image.open(whole_image_cache_file)
+        whole_image = to_tensor(pil_whole_image)
+
+        box_images_cache_dir = os.path.join(cache_dir, 'box_images')
+        _, _, box_image_files = next(os.walk(box_images_cache_dir))
+        box_images = []
+        for box_image_file in box_image_files:
+            box_image_cache_file =\
+                os.path.join(box_images_cache_dir, box_image_file)
+            pil_box_image = Image.open(box_image_cache_file)
+            box_image = to_tensor(pil_box_image)
+            box_images.append(box_image)
+        box_images = torch.stack(box_images, dim=0)
 
         return species_labels,\
             activity_labels,\
@@ -104,20 +128,12 @@ class BoxImageDataset(torch.utils.data.Dataset):
             box_images,\
             whole_image
 
-    def _get_cache_file(self, idx):
-        cache_file = self._cache_dir
-        if self._box_transform is not None:
-            cache_file =\
-                os.path.join(cache_file, self._box_transform.path())
-        cache_file = os.path.join(cache_file, f'{idx}.pth')
-        return cache_file
-
     def __getitem__(self, idx):
         with torch.no_grad():
             if self._cache_dir is not None:
-                cache_file = self._get_cache_file(idx)
-                if os.path.exists(cache_file):
-                    return self._load_cached_data(cache_file)
+                cur_cache_dir = os.path.join(self._cache_dir, f'{idx}')
+                if os.path.exists(cur_cache_dir):
+                    return self._load_cached_data(cur_cache_dir)
 
             # If we made it this far, then the data could not be loaded from
             # the cache. Proceed to load it normally.
@@ -148,21 +164,36 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 box_image = image_tensor[:, r_ymin : r_ymax, r_xmin : r_xmax]
                 if self._box_transform is not None:
                     box_image = self._box_transform(box_image)
-                box_images.append(raw_box_image)
+                box_images.append(box_image)
             box_images = torch.stack(box_images, dim=0)
             whole_image = self._box_transform(image_tensor)
 
             # Cache data if configured to do so
-            if self._cache_dir is not None:
-                cache_file = self._get_cache_file(idx)
-                t = (
-                    species_labels,
-                    activity_labels,
-                    novelty_type_labels,
-                    box_images,
-                    whole_image
-                )
-                torch.save(t, cache_file)
+            if self._cache_dir is not None and self._write_cache:
+                cur_cache_dir = os.path.join(self._cache_dir, f'{idx}')
+                if not os.path.exists(cur_cache_dir):
+                    os.makedirs(cur_cache_dir, exist_ok=True)
+                    label_cache_file =\
+                        os.path.join(cur_cache_dir, f'labels.pth')
+                    t = (
+                        species_labels,
+                        activity_labels,
+                        novelty_type_labels
+                    )
+                    torch.save(t, label_cache_file)
+
+                    whole_image_cache_file =\
+                        os.path.join(cur_cache_dir, 'whole_image.JPG')
+                    pil_whole_image = to_pil_image(whole_image)
+                    pil_whole_image.save(whole_image_cache_file)
+
+                    box_images_cache_dir = os.path.join(cur_cache_dir, 'box_images')
+                    os.makedirs(box_images_cache_dir, exist_ok=True)
+                    for box_idx, box_image in enumerate(box_images):
+                        box_image_cache_file =\
+                            os.path.join(box_images_cache_dir, f'{box_idx}.JPG')
+                        pil_box_image = to_pil_image(box_image)
+                        pil_box_image.save(box_image_cache_file)
 
             return species_labels,\
                 activity_labels,\
@@ -175,3 +206,9 @@ class BoxImageDataset(torch.utils.data.Dataset):
 
     def box_count(self, i):
         return self._dataset.box_count(i)
+
+    def commit_cache(self):
+        if not os.path.exists(self._cache_dir):
+            print('Caching data...')
+            for _ in self:
+                pass
