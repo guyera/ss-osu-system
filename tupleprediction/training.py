@@ -206,9 +206,7 @@ class TuplePredictorTrainer:
             data_root,
             train_csv_path,
             val_csv_path,
-            retraining_image_batch_size,
             retraining_batch_size,
-            retraining_buffer_size,
             n_species_cls,
             n_activity_cls,
             n_known_species_cls,
@@ -290,9 +288,7 @@ class TuplePredictorTrainer:
         # training the classifier: S/V/O x known/novel
         self._feedback_data = None
 
-        self._retraining_image_batch_size = retraining_image_batch_size 
         self._retraining_batch_size = retraining_batch_size 
-        self._retraining_buffer_size = retraining_buffer_size 
         self._allow_write = allow_write
 
     def add_feedback_data(self, data_root, csv_path):

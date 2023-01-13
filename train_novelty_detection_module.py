@@ -52,12 +52,10 @@ def train_sampler_fn(train_dataset):
     )
 
 architecture = Backbone.Architecture.swin_t
-backbone = Backbone(architecture)
+backbone = Backbone(architecture, pretrained=False)
 backbone = backbone.to(device)
 
-training_image_batch_size = 64
 training_batch_size = 64
-training_buffer_size = 64
 n_known_species_cls = 10
 n_species_cls = 30 # TODO Determine
 n_known_activity_cls = 2
@@ -85,7 +83,7 @@ novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
 ).to(device)
 
 label_mapping = build_species_label_mapping(train_csv_path)
-trainer = tupleprediction.training.TuplePredictorTrainer('dataset_v4/', train_csv_path, val_csv_path, training_image_batch_size, training_batch_size, training_buffer_size, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping, augmentation=args.augmentation, allow_write=(rank == 0))
+trainer = tupleprediction.training.TuplePredictorTrainer('dataset_v4/', train_csv_path, val_csv_path, training_batch_size, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping, augmentation=args.augmentation, allow_write=(rank == 0))
 
 trainer.prepare_for_retraining(backbone, classifier, confidence_calibrator, novelty_type_classifier, activation_statistical_model)
 
