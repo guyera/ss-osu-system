@@ -118,7 +118,7 @@ class TransformingBoxImageDataset(Dataset):
             novelty_type_labels,\
             box_images,\
             whole_image =\
-                self._dataset[img_idx]
+                self._dataset[idx]
 
         box_images = self._transform(box_images)
         whole_image = self._transform(whole_image)
@@ -127,7 +127,13 @@ class TransformingBoxImageDataset(Dataset):
             activity_labels,\
             novelty_type_labels,\
             box_images,\
-            whole_images
+            whole_image
+
+    def label_dataset(self):
+        return self._dataset.label_dataset()
+
+    def box_count(self, idx):
+        return self._dataset.box_count(idx)
 
 
 def separate_known_images(dataset, n_known_species_cls, n_known_activity_cls):
@@ -186,7 +192,7 @@ class TuplePredictorTrainer:
             LabelMapper(label_mapping, update=True)
         self._box_transform = ResizePad(224)
         normalize = Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        self._post_cache_train_transform = Compose(RandAugment(), normalize)
+        self._post_cache_train_transform = Compose((RandAugment(), normalize))
         self._post_cache_val_transform = normalize
 
         train_dataset = BoxImageDataset(

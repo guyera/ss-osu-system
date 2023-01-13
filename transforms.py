@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import os
 
+import torch
 from torchvision.transforms import\
     Normalize as TorchNormalize,\
     RandAugment as TorchRandAugment
@@ -42,7 +43,7 @@ class RandAugment(NamedTransform):
         self._transform = TorchRandAugment(*args, **kwargs)
 
     def __call__(self, x):
-        return self._transform(x)
+        return self._transform((x * 256).to(torch.uint8)).to(torch.float) / 256
 
     def path(self):
         return 'randaugment'
