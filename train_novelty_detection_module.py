@@ -1,6 +1,7 @@
 import pickle
 import time
 import os
+import argparse
 
 import torch
 import torch.distributed as dist
@@ -9,6 +10,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 import boxclassifier
 import tupleprediction
+from tupleprediction.training import Augmentation
 from backbone import Backbone
 from scoring import\
     ActivationStatisticalModel,\
@@ -16,6 +18,25 @@ from scoring import\
     CompositeScorer
 from data.custom import build_species_label_mapping
 from labelmapping import LabelMapper
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument(
+    '--lr',
+    type=float,
+    default=0.0005,
+    help='Learning rate for backbone and classifiers'
+)
+
+parser.add_argument(
+    '--augmentation',
+    type=Augmentation,
+    choices=list(Augmentation),
+    default=Augmentation.rand_augment,
+    help='Augmentation strategy'
+)
+
+args = parser.parse_args()
 
 dist.init_process_group('nccl')
 rank = dist.get_rank()
@@ -64,7 +85,7 @@ novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
 ).to(device)
 
 label_mapping = build_species_label_mapping(train_csv_path)
-trainer = tupleprediction.training.TuplePredictorTrainer('dataset_v4/', train_csv_path, val_csv_path, training_image_batch_size, training_batch_size, training_buffer_size, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping, write_cache=(rank == 0))
+trainer = tupleprediction.training.TuplePredictorTrainer('dataset_v4/', train_csv_path, val_csv_path, training_image_batch_size, training_batch_size, training_buffer_size, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping, augmentation=args.augmentation, allow_write=(rank == 0))
 
 trainer.prepare_for_retraining(backbone, classifier, confidence_calibrator, novelty_type_classifier, activation_statistical_model)
 
@@ -83,7 +104,13 @@ trainer.train_backbone_and_classifiers(
     backbone,
     species_classifier,
     activity_classifier,
-    train_sampler_fn=train_sampler_fn
+    args.lr,
+    train_sampler_fn=train_sampler_fn,
+    checkpoint=True,
+    log=True,
+    patience=None,
+    min_epochs=1,
+    max_epochs=50
 )
 
 trainer.fit_activation_statistics(

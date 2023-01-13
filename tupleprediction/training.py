@@ -1,6 +1,8 @@
 from copy import deepcopy
 import numpy as np
 import os
+from enum import Enum
+import pickle as pkl
 
 from tqdm import tqdm
 from torch.utils.data import\
@@ -11,10 +13,23 @@ from torch.utils.data import\
 import torch
 
 from boximagedataset import BoxImageDataset
-from utils import custom_collate
+from utils import custom_collate, gen_tqdm_description
 from labelmapping import LabelMapper
-from transforms import Compose, Normalize, ResizePad, RandAugment
+from transforms import\
+    Compose,\
+    Normalize,\
+    ResizePad,\
+    RandAugment,\
+    RandomHorizontalFlip
 
+
+class Augmentation(Enum):
+    rand_augment = 'rand-augment'
+    horizontal_flip = 'horizontal-flip'
+    none = 'none'
+
+    def __str__(self):
+        return self.value
 
 '''
 Custom Subset dataset class that works with BoxImageDatasets and derivatives,
@@ -154,22 +169,38 @@ def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
     )
     logistic_regression.fit_standardization_statistics(scores)
     
-    progress = tqdm(range(epochs), desc = 'Fitting logistic regression...')
+    loss_item = None
+    progress = tqdm(
+        range(epochs),
+        desc=gen_tqdm_description(
+            'Fitting logistic regression...',
+            loss=loss_item
+        )
+    )
     for epoch in progress:
         optimizer.zero_grad()
         logits = logistic_regression(scores)
         loss = criterion(logits, labels)
         loss.backward()
         optimizer.step()
-        
-        progress.set_description((
-            f'Fitting logistic regression... | Loss: '
-            f'{loss.detach().cpu().item()}'
-        ))
+
+        loss_item = loss.detach().cpu().item()
+        progress.set_description(
+            gen_tqdm_description(
+                'Fitting logistic regression...',
+                loss=loss_item
+            )
+        )
     progress.close()
 
 
 class TuplePredictorTrainer:
+    augmentation_dict = {
+        Augmentation.rand_augment: RandAugment,
+        Augmentation.horizontal_flip: RandomHorizontalFlip,
+        Augmentation.none: None
+    }
+
     def __init__(
             self,
             data_root,
@@ -183,7 +214,8 @@ class TuplePredictorTrainer:
             n_known_species_cls,
             n_known_activity_cls,
             label_mapping,
-            write_cache=False):
+            augmentation=Augmentation.rand_augment,
+            allow_write=False):
         self._n_species_cls = n_species_cls
         self._n_activity_cls = n_activity_cls
         self._static_label_mapper =\
@@ -192,7 +224,12 @@ class TuplePredictorTrainer:
             LabelMapper(label_mapping, update=True)
         self._box_transform = ResizePad(224)
         normalize = Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        self._post_cache_train_transform = Compose((RandAugment(), normalize))
+        augmentation_ctor = self.augmentation_dict[augmentation]
+        if augmentation_ctor is not None:
+            self._post_cache_train_transform =\
+                Compose((augmentation_ctor(), normalize))
+        else:
+            self._post_cache_train_transform = normalize
         self._post_cache_val_transform = normalize
 
         train_dataset = BoxImageDataset(
@@ -205,7 +242,7 @@ class TuplePredictorTrainer:
             label_mapper=self._dynamic_label_mapper,
             box_transform=self._box_transform,
             cache_dir=os.path.join('.data-cache', 'train'),
-            write_cache=write_cache
+            write_cache=allow_write
         )
         train_dataset.commit_cache()
 
@@ -233,7 +270,7 @@ class TuplePredictorTrainer:
             label_mapper=self._static_label_mapper,
             box_transform=self._box_transform,
             cache_dir=os.path.join('.data-cache', 'val'),
-            write_cache=write_cache
+            write_cache=allow_write
         )
         val_dataset.commit_cache()
 
@@ -256,6 +293,7 @@ class TuplePredictorTrainer:
         self._retraining_image_batch_size = retraining_image_batch_size 
         self._retraining_batch_size = retraining_batch_size 
         self._retraining_buffer_size = retraining_buffer_size 
+        self._allow_write = allow_write
 
     def add_feedback_data(self, data_root, csv_path):
         new_novel_dataset = BoxImageDataset(
@@ -483,7 +521,13 @@ class TuplePredictorTrainer:
             backbone,
             species_classifier,
             activity_classifier,
-            train_sampler_fn=None):
+            lr,
+            train_sampler_fn=None,
+            checkpoint=False,
+            log=False,
+            patience=3,
+            min_epochs=3,
+            max_epochs=30):
         if self._feedback_data is not None:
             train_dataset = ConcatDataset((
                 self._train_dataset, self._feedback_data
@@ -529,27 +573,99 @@ class TuplePredictorTrainer:
             list(backbone.parameters())\
                 + list(species_classifier.parameters())\
                 + list(activity_classifier.parameters()),
-            0.0005,
+            lr,
             momentum=0.9,
             weight_decay=1e-3
         )
 
         # Define convergence parameters (early stopping + model selection)
-        patience = 3
+        start_epoch = 0
         epochs_since_improvement = 0
-        max_epochs = 30
-        min_epochs = 4
         best_accuracy = None
         best_accuracy_backbone_state_dict = None
         best_accuracy_species_classifier_state_dict = None
         best_accuracy_activity_classifier_state_dict = None
+        mean_train_loss = None
+        mean_train_accuracy = None
+        mean_val_accuracy = None
+
+        if checkpoint:
+            checkpoint_dir = os.path.join(
+                '.checkpoint',
+                self._box_transform.path(),
+                self._post_cache_train_transform.path()
+            )
+            training_checkpoint = os.path.join(checkpoint_dir, 'training.pth')
+            validation_checkpoint =\
+                os.path.join(checkpoint_dir, 'validation.pth')
+            
+            if os.path.exists(training_checkpoint):
+                sd = torch.load(
+                    training_checkpoint,
+                    map_location=backbone.device
+                )
+                backbone.load_state_dict(sd['backbone'])
+                species_classifier.load_state_dict(sd['species_classifier'])
+                activity_classifier.load_state_dict(sd['activity_classifier'])
+                optimizer.load_state_dict(sd['optimizer'])
+                start_epoch = sd['start_epoch']
+                mean_train_loss = sd['mean_train_loss']
+                mean_train_accuracy = sd['mean_train_accuracy']
+            if os.path.exists(validation_checkpoint):
+                sd = torch.load(
+                    validation_checkpoint,
+                    map_location=backbone.device
+                )
+                epochs_since_improvement = sd['epochs_since_improvement']
+                best_accuracy = sd['accuracy']
+                best_accuracy_backbone_state_dict = sd['backbone_state_dict']
+                best_accuracy_species_classifier_state_dict =\
+                    sd['species_classifier_state_dict']
+                best_accuracy_activity_classifier_state_dict =\
+                    sd['activity_classifier_state_dict']
+                mean_val_accuracy = sd['mean_val_accuracy']
+
+        training_loss_curve = {}
+        training_accuracy_curve = {}
+        validation_accuracy_curve = {}
+        if log and self._allow_write:
+            log_dir = os.path.join(
+                '.log',
+                self._box_transform.path(),
+                self._post_cache_train_transform.path()
+            )
+            training_log = os.path.join(log_dir, 'training.pkl')
+            validation_log =\
+                os.path.join(log_dir, 'validation.pkl')
+
+            if os.path.exists(training_log):
+                with open(training_log, 'rb') as f:
+                    sd = pkl.load(f)
+                    training_loss_curve = sd['training_loss_curve']
+                    training_accuracy_curve = sd['training_accuracy_curve']
+
+            if os.path.exists(validation_log):
+                with open(validation_log, 'rb') as f:
+                    validation_accuracy_curve = pkl.load(f)
 
         # Train
         progress = tqdm(
-            range(max_epochs),
-            desc='Training backbone and classifiers...'
+            range(start_epoch, max_epochs),
+            desc=gen_tqdm_description(
+                'Training backbone and classifiers...',
+                train_loss=mean_train_loss,
+                train_accuracy=mean_train_accuracy,
+                val_accuracy=mean_val_accuracy
+            ),
+            total=max_epochs,
+            initial=start_epoch
         )
         for epoch in progress:
+            if patience is not None and epochs_since_improvement >= patience:
+                # We haven't improved in several epochs. Time to stop
+                # training.
+                break
+
             if train_loader.sampler is not None:
                 # Set the sampler epoch for shuffling when running in
                 # distributed mode
@@ -563,7 +679,44 @@ class TuplePredictorTrainer:
                 activity_classifier,
                 optimizer
             )
+
+            if checkpoint and self._allow_write:
+                checkpoint_dir = os.path.join(
+                    '.checkpoint',
+                    self._box_transform.path(),
+                    self._post_cache_train_transform.path()
+                )
+                training_checkpoint =\
+                    os.path.join(checkpoint_dir, 'training.pth')
+                os.makedirs(checkpoint_dir, exist_ok=True)
+
+                sd = {}
+                sd['backbone'] = backbone.state_dict()
+                sd['species_classifier'] = species_classifier.state_dict()
+                sd['activity_classifier'] = activity_classifier.state_dict()
+                sd['optimizer'] = optimizer.state_dict()
+                sd['start_epoch'] = epoch + 1
+                sd['mean_train_loss'] = mean_train_loss
+                sd['mean_train_accuracy'] = mean_train_accuracy
+                torch.save(sd, training_checkpoint)
+
+            if log and self._allow_write:
+                training_loss_curve[epoch] = mean_train_loss
+                training_accuracy_curve[epoch] = mean_train_accuracy
+                log_dir = os.path.join(
+                    '.log',
+                    self._box_transform.path(),
+                    self._post_cache_train_transform.path()
+                )
+                os.makedirs(log_dir, exist_ok=True)
+                training_log = os.path.join(log_dir, 'training.pkl')
                 
+                with open(training_log, 'wb') as f:
+                    sd = {}
+                    sd['training_loss_curve'] = training_loss_curve
+                    sd['training_accuracy_curve'] = training_accuracy_curve
+                    pkl.dump(sd, f)
+
             # Measure validation accuracy for early stopping / model selection.
             if epoch >= min_epochs - 1:
                 mean_val_accuracy = self._val_epoch(
@@ -572,14 +725,7 @@ class TuplePredictorTrainer:
                     species_classifier,
                     activity_classifier
                 )
-                
-                progress.set_description((
-                    f'Training backbone and classifiers... | Train Loss: '
-                    f'{mean_train_loss} | Train Acc: '
-                    f'{mean_train_accuracy} | Val Acc: '
-                    f'{mean_val_accuracy}'
-                ))
-                
+
                 if best_accuracy is None or mean_val_accuracy > best_accuracy:
                     epochs_since_improvement = 0
                     best_accuracy = mean_val_accuracy
@@ -591,13 +737,54 @@ class TuplePredictorTrainer:
                         deepcopy(activity_classifier.state_dict())
                 else:
                     epochs_since_improvement += 1
-                    if epochs_since_improvement >= patience:
-                        # We haven't improved in several epochs. Time to stop
-                        # training.
-                        break
+
+                if checkpoint and self._allow_write:
+                    checkpoint_dir = os.path.join(
+                        '.checkpoint',
+                        self._box_transform.path(),
+                        self._post_cache_train_transform.path()
+                    )
+                    validation_checkpoint =\
+                        os.path.join(checkpoint_dir, 'validation.pth')
+                    os.makedirs(checkpoint_dir, exist_ok=True)
+
+                    sd = {}
+                    sd['epochs_since_improvement'] = epochs_since_improvement
+                    sd['accuracy'] = best_accuracy
+                    sd['backbone_state_dict'] =\
+                        best_accuracy_backbone_state_dict
+                    sd['species_classifier_state_dict'] =\
+                        best_accuracy_species_classifier_state_dict
+                    sd['activity_classifier_state_dict'] =\
+                        best_accuracy_activity_classifier_state_dict
+                    sd['mean_val_accuracy'] = mean_val_accuracy
+                    torch.save(sd, validation_checkpoint)
+
+                if log and self._allow_write:
+                    validation_accuracy_curve[epoch] = mean_val_accuracy
+                    log_dir = os.path.join(
+                        '.log',
+                        self._box_transform.path(),
+                        self._post_cache_train_transform.path()
+                    )
+                    os.makedirs(log_dir, exist_ok=True)
+                    validation_log = os.path.join(log_dir, 'validation.pkl')
+                    
+                    with open(validation_log, 'wb') as f:
+                        pkl.dump(validation_accuracy_curve, f)
+
+            progress.set_description(
+                gen_tqdm_description(
+                    'Training backbone and classifiers...',
+                    train_loss=mean_train_loss,
+                    train_accuracy=mean_train_accuracy,
+                    val_accuracy=mean_val_accuracy
+                )
+            )
+
         progress.close()
 
-        # Load the best accuracy state dicts
+        # Load the best-accuracy state dicts
         # NOTE To save GPU memory, we could temporarily move the models to the
         # CPU before copying or loading their state dicts.
         backbone.load_state_dict(best_accuracy_backbone_state_dict)
@@ -801,7 +988,6 @@ class TuplePredictorTrainer:
             labels = torch.cat(labels, dim = 0)
 
         # Fit the logistic regression
-        print('Fitting novelty type logistic regression...')
         fit_logistic_regression(
             novelty_type_classifier,
             scores,
@@ -817,7 +1003,13 @@ class TuplePredictorTrainer:
             novelty_type_classifier,
             activation_statistical_model,
             scorer,
-            train_sampler_fn=None):
+            lr=0.0005,
+            checkpoint=False,
+            log=False,
+            train_sampler_fn=None,
+            patience=3,
+            min_epochs=3,
+            max_epochs=30):
         species_classifier = classifier.species_classifier
         activity_classifier = classifier.activity_classifier
         species_calibrator = confidence_calibrator.species_calibrator
@@ -828,7 +1020,13 @@ class TuplePredictorTrainer:
             backbone,
             species_classifier,
             activity_classifier,
-            train_sampler_fn=train_sampler_fn
+            lr,
+            train_sampler_fn=train_sampler_fn,
+            checkpoint=checkpoint,
+            log=log,
+            patience=patience,
+            min_epochs=min_epochs,
+            max_epochs=max_epochs
         )
 
         self.fit_activation_statistics(

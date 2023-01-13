@@ -401,3 +401,9 @@ def fpn_backbone(backbone):
     out_channels = 256
     return BackboneWithFPN(backbone, return_layers, in_channels_list, out_channels, extra_blocks=extra_blocks)
 
+def gen_tqdm_description(title, **kwargs):
+    desc = title
+    for k, v in kwargs.items():
+        if v is not None:
+            desc = f'{desc} | {k}: {v}'
+    return desc

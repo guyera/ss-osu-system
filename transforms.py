@@ -48,6 +48,18 @@ class RandAugment(NamedTransform):
     def path(self):
         return 'randaugment'
 
+
+class RandomHorizontalFlip(NamedTransform):
+    def __init__(self, *args, **kwargs):
+        self._tarnsform = TorchRandomHorizontalFlip(*args, **kwargs)
+
+    def __call__(self, x):
+        return self._transform(x)
+
+    def path(self):
+        return 'horizontal-flip'
+
+
 class ResizePad(NamedTransform):
     def __init__(self, size):
         self.size = size
