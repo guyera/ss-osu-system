@@ -26,3 +26,5 @@ SVO_*
 .data-cache
 *.sh
 pretrained-models
+.log
+.checkpoint

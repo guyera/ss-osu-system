@@ -4,7 +4,8 @@ import os
 import torch
 from torchvision.transforms import\
     Normalize as TorchNormalize,\
-    RandAugment as TorchRandAugment
+    RandAugment as TorchRandAugment,\
+    RandomHorizontalFlip as TorchRandomHorizontalFlip
 from torchvision.transforms.functional import resize, pad
 
 class NamedTransform(ABC):
@@ -51,7 +52,7 @@ class RandAugment(NamedTransform):
 
 class RandomHorizontalFlip(NamedTransform):
     def __init__(self, *args, **kwargs):
-        self._tarnsform = TorchRandomHorizontalFlip(*args, **kwargs)
+        self._transform = TorchRandomHorizontalFlip(*args, **kwargs)
 
     def __call__(self, x):
         return self._transform(x)
