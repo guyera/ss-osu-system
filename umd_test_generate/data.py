@@ -7,13 +7,14 @@ Stores items by class an provides feeds
 
 import pandas as pd
 
-from enums import NoveltyType, InstanceType
+from enums import NoveltyType, EnvironmentType, Id2noveltyType, get_subnovelty_varname
 from item import Item
 
 class Data:
     def __init__(self):
         pass
 
+    '''
     def load_train(self, csv_file, log):
         df = pd.read_csv(csv_file)
         self.train_count = len(df)
@@ -52,13 +53,44 @@ class Data:
                   f'{len(self.train_novel)} novel instances.\n')
         log.write(f'Found {len(self.known_svo)} distinct known SVO combinations\n')
         log.write(f'Found {len(self.known_sv)} distinct known SV combinations\n')
+    '''
+
+    def load_train(self, csv_file, log):
+        df = pd.read_csv(csv_file)
+        self.train_count = len(df)
+        self.train_valid = []
+        self.train_invalid = []
+        self.known_species = set()
+        self.known_activities = set()
+        self.kwown_environments = set()
+
+        for _tuple in df.itertuples():
+            item = Item(_tuple)
+
+            if not item.valid:
+                self.train_invalid.append(item)
+                continue
+
+            self.train_valid.append(item)
+            self.known_species.add(item.agent1_name)
+            self.kwown_environments.add(item.environment_id)
+            assert len(item.activities) <= 1
+            if len(item.activities) > 0:
+                self.known_activities.add(item.activities[0])
+            
+        log.write(f'Found {self.train_count} items, {len(self.train_valid)} valid.\n')
+        if self.train_invalid:
+            log.write(f'Skipped {len(self.train_invalid)} invalid items.\n')
+            for item in self.train_invalid:
+                log.write(f'Skipping invalid item: ')
+                item.debug_print(log)
 
 
     def load_val(self, csv_file, log):
         self.val_invalid = []
-        self.val_ignored = []
-        self.val_bad_combo = []
         self.bins = {novelty_type: [] for novelty_type in NoveltyType}
+        for sub_nov in EnvironmentType:
+            self.bins[sub_nov] = []
         df = pd.read_csv(csv_file)
         self.val_count = len(df)
         log.write(f'Found {self.val_count} total val items.\n')
@@ -67,41 +99,21 @@ class Data:
             if not item.valid:
                 self.val_invalid.append(item)
                 continue
-            # Filtering out s-1v0 cases at Tom's suggestion
-            ### Removing this as part of the all_valid change
-            # if item.s == -1 and item.v == 0:
-            #     self.val_ignored.append(item)
-            #     continue
 
-            # if item.novelty_type == NoveltyType.NOVEL_COMB_V_MISS_O:
-            #     if ((item.instance_type == InstanceType.BOTH_PRESENT and
-            #          (item.s, item.v, item.o) in self.known_svo) or
-            #         (item.instance_type == InstanceType.O_MISSING and
-            #          (item.s, item.v) in self.known_sv)):
-            #             self.val_bad_combo.append(item)
-            #             ## LAR HACK!! Disabling this test!!
-            #             #continue
             self.bins[item.novelty_type].append(item)
+            if item.environment_id is not None and item.environment_id != 0:
+                if item not in self.bins[get_subnovelty_varname(item.environment_id, item.novelty_type_id)]:
+                    self.bins[get_subnovelty_varname(item.environment_id, item.novelty_type_id)].append(item)
+        
+        # for kb in self.bins:
+        #     print('////////// bins:', kb, '******', 'size', len(self.bins[kb]))
+            
         if self.val_invalid:
             log.write(f'Skipping {len(self.val_invalid)} invalid val items:\n')
             for item in self.val_invalid:
                 log.write(f'Skipping invalid item: ')
                 item.debug_print(log)
             log.write('\n')
-        if self.val_ignored:
-            log.write(f'Skipping {len(self.val_ignored)} valid val items that we do not want to use:\n')
-            for item in self.val_ignored:
-                log.write(f'Skipping ignored item: ')
-                item.debug_print(log)
-            log.write('\n')
-        # if self.val_bad_combo:
-        #     ## LAR HACK
-        #     log.write(f'Found but not skipping {len(self.val_bad_combo)} apparently but not actually NOVEL_COMB:\n')
-        #     #log.write(f'Skipping {len(self.val_bad_combo)} apparently but not actually NOVEL_COMB:\n')
-        #     for item in self.val_bad_combo:
-        #         log.write(f'Skipping non NOVEL_COMB: ')
-        #         item.debug_print(log)
-        #     log.write('\n')
 
     def print_val_counts(self, log):
         log.write(f'\nCount of all valid val items: {self.val_count}\n')
@@ -110,17 +122,31 @@ class Data:
             bins_total += len(self.bins[novelty_type])
         log.write(f'Total assigned to novelty bins: {bins_total}\n')
         log.write(f'\nCounts by novelty type\n')
-        log.write(f'  Train Known: {len(self.train_known)}\n')
+        log.write(f'  Train: {len(self.train_valid)}\n')
         for novelty_type in NoveltyType:
             log.write(f'  Type {novelty_type.value} {novelty_type.name}: {len(self.bins[novelty_type])}\n')
+        
+        # write environment subnovelty (type 6) bins to the log file
+        for env_subnov in EnvironmentType:
+            log.write(f'  Subnovelty type {env_subnov.value} {env_subnov.name}: {len(self.bins[env_subnov])}\n')
 
 
     def debug_list(self, log):
         for novelty_type in NoveltyType:
             log.write(f'\n*** Type {novelty_type.value} {novelty_type.name} ***\n')
+            # print('>>>> novelty type:', novelty_type, '   size of bin:', len(self.bins[novelty_type]))
+            log.write(f"{'filename':30} {'agent1':10}:{'count'} {'agent2':10}:{'count'} {'agent3':10}:{'count'} {'activities'} {'env_id'} \n")
+
             for item in self.bins[novelty_type]:
                 item.debug_print(log)
+        # write environment subnovelty (type 6) to the log
+        for env_subnov in EnvironmentType:
+            log.write(f'\n*** Type {env_subnov.value} {env_subnov.name} ***\n')
+            log.write(f"{'filename':30} {'agent1':10}:{'count'} {'agent2':10}:{'count'} {'agent3':10}:{'count'} {'activities'} {'env_id'} \n")
+            for item in self.bins[env_subnov]:
+                item.debug_print(log)
 
+    '''
     def print_known_combos_buggy(self, combos, log):
         first_combo = combos[0]
         s_val = first_combo[0]
@@ -145,3 +171,5 @@ class Data:
         duples = sorted(self.known_sv)
         if duples:
             self.print_known_combos(duples, log)
+    '''
+
