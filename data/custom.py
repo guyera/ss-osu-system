@@ -59,10 +59,12 @@ class CustomDet(Dataset):
                 label_mapper: LabelMapper,
                 transform: Optional[Callable] = None,
                 target_transform: Optional[Callable] = None,
-                transforms: Optional[Callable] = None) -> None:
+                transforms: Optional[Callable] = None,
+                image_filter='nonblank') -> None:
         super(CustomDet, self).__init__()
         self._n_species_cls = n_species_cls
         self._n_activity_cls = n_activity_cls
+        self._image_filter = image_filter
 
         if transforms is None:
             self._transforms = StandardTransform(transform, target_transform)
@@ -162,6 +164,8 @@ class CustomDet(Dataset):
         """
 
         df = pd.read_csv(df_f)
+        if self._image_filter == 'nonblank':
+            df = df[~(df['agent1_count'].isna())]
         df = df.astype({'activities_id': object})
         df['activities_id'] = df['activities_id'].apply(literal_eval)
 
