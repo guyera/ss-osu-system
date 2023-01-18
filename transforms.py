@@ -26,6 +26,14 @@ class Compose(NamedTransform):
         return os.path.join(*([t.path() for t in self._transforms]))
 
 
+class NoOpTransform(NamedTransform):
+    def __call__(self, x):
+        return x
+
+    def path(self):
+        return 'none'
+
+
 class Normalize(NamedTransform):
     def __init__(self, mean, std):
         self._mean = mean

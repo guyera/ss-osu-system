@@ -20,7 +20,8 @@ from transforms import\
     Normalize,\
     ResizePad,\
     RandAugment,\
-    RandomHorizontalFlip
+    RandomHorizontalFlip,\
+    NoOpTransform
 
 
 class Augmentation(Enum):
@@ -198,7 +199,7 @@ class TuplePredictorTrainer:
     augmentation_dict = {
         Augmentation.rand_augment: RandAugment,
         Augmentation.horizontal_flip: RandomHorizontalFlip,
-        Augmentation.none: None
+        Augmentation.none: NoOpTransform
     }
 
     def __init__(
@@ -213,7 +214,8 @@ class TuplePredictorTrainer:
             n_known_activity_cls,
             label_mapping,
             augmentation=Augmentation.rand_augment,
-            allow_write=False):
+            allow_write=False,
+            n_known_val=1000):
         self._n_species_cls = n_species_cls
         self._n_activity_cls = n_activity_cls
         self._static_label_mapper =\
@@ -223,11 +225,8 @@ class TuplePredictorTrainer:
         self._box_transform = ResizePad(224)
         normalize = Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         augmentation_ctor = self.augmentation_dict[augmentation]
-        if augmentation_ctor is not None:
-            self._post_cache_train_transform =\
-                Compose((augmentation_ctor(), normalize))
-        else:
-            self._post_cache_train_transform = normalize
+        self._post_cache_train_transform =\
+            Compose((augmentation_ctor(), normalize))
         self._post_cache_val_transform = normalize
 
         train_dataset = BoxImageDataset(
@@ -244,7 +243,12 @@ class TuplePredictorTrainer:
         )
         train_dataset.commit_cache()
 
-        val_known_indices = [int(x / 200.0 * len(train_dataset)) for x in range(200)]
+        val_known_indices_gen = np.random.Generator(np.random.PCG64(0))
+        val_known_indices = val_known_indices_gen.choice(
+            list(range(len(train_dataset))),
+            size=n_known_val,
+            replace=False
+        ).tolist()
         val_known_indices_set = set(val_known_indices)
         training_indices = [x for x in range(len(train_dataset)) if\
             not x in val_known_indices_set]
@@ -346,7 +350,8 @@ class TuplePredictorTrainer:
             optimizer,
             species_labels,
             activity_labels,
-            box_images):
+            box_images,
+            label_smoothing):
         # Determine the device to use based on the backbone's fc weights
         device = backbone.device
 
@@ -365,11 +370,13 @@ class TuplePredictorTrainer:
 
         species_loss = torch.nn.functional.cross_entropy(
             species_preds,
-            species_labels
+            species_labels,
+            label_smoothing=label_smoothing
         )
         activity_loss = torch.nn.functional.cross_entropy(
             activity_preds,
-            activity_labels
+            activity_labels,
+            label_smoothing=label_smoothing
         )
 
         loss = species_loss + activity_loss
@@ -398,7 +405,8 @@ class TuplePredictorTrainer:
             backbone,
             species_classifier,
             activity_classifier,
-            optimizer):
+            optimizer,
+            label_smoothing):
         # Set everything to train mode
         backbone.train()
         species_classifier.train()
@@ -420,7 +428,8 @@ class TuplePredictorTrainer:
                     optimizer,
                     species_labels,
                     activity_labels,
-                    box_images
+                    box_images,
+                    label_smoothing
                 )
 
             sum_loss += batch_loss
@@ -523,7 +532,8 @@ class TuplePredictorTrainer:
             log=False,
             patience=3,
             min_epochs=3,
-            max_epochs=30):
+            max_epochs=30,
+            label_smoothing=0.0):
         if self._feedback_data is not None:
             train_dataset = ConcatDataset((
                 self._train_dataset, self._feedback_data
@@ -590,7 +600,8 @@ class TuplePredictorTrainer:
                 '.checkpoint',
                 self._box_transform.path(),
                 self._post_cache_train_transform.path(),
-                f'lr={lr}'
+                f'lr={lr}',
+                f'label_smoothing={label_smoothing:.2f}'
             )
 
         if checkpoint:
@@ -634,7 +645,8 @@ class TuplePredictorTrainer:
                 '.log',
                 self._box_transform.path(),
                 self._post_cache_train_transform.path(),
-                f'lr={lr}'
+                f'lr={lr}',
+                f'label_smoothing={label_smoothing:.2f}'
             )
 
         if log and self._allow_write:
@@ -682,7 +694,8 @@ class TuplePredictorTrainer:
                 backbone,
                 species_classifier,
                 activity_classifier,
-                optimizer
+                optimizer,
+                label_smoothing
             )
 
             if checkpoint and self._allow_write:
@@ -998,7 +1011,8 @@ class TuplePredictorTrainer:
             train_sampler_fn=None,
             patience=3,
             min_epochs=3,
-            max_epochs=30):
+            max_epochs=30,
+            label_smoothing=0.0):
         species_classifier = classifier.species_classifier
         activity_classifier = classifier.activity_classifier
         species_calibrator = confidence_calibrator.species_calibrator
@@ -1015,7 +1029,8 @@ class TuplePredictorTrainer:
             log=log,
             patience=patience,
             min_epochs=min_epochs,
-            max_epochs=max_epochs
+            max_epochs=max_epochs,
+            label_smoothing=label_smoothing
         )
 
         self.fit_activation_statistics(

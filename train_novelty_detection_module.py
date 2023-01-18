@@ -24,8 +24,15 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
     '--lr',
     type=float,
-    default=0.0005,
+    default=0.005,
     help='Learning rate for backbone and classifiers'
+)
+
+parser.add_argument(
+    '--label-smoothing',
+    type=float,
+    default=0.0,
+    help='Label smoothing for training backbone and classifiers'
 )
 
 parser.add_argument(
@@ -34,6 +41,20 @@ parser.add_argument(
     choices=list(Augmentation),
     default=Augmentation.rand_augment,
     help='Augmentation strategy'
+)
+
+parser.add_argument(
+    '--batch-size',
+    type=int,
+    default=64,
+    help='Batch size for training backbone and box classifiers'
+)
+
+parser.add_argument(
+    '--n-known-val',
+    type=int,
+    default=1000,
+    help='Number of known validation instances to pull from the training CSV'
 )
 
 args = parser.parse_args()
@@ -55,7 +76,6 @@ architecture = Backbone.Architecture.swin_t
 backbone = Backbone(architecture, pretrained=False)
 backbone = backbone.to(device)
 
-training_batch_size = 64
 n_known_species_cls = 10
 n_species_cls = 30 # TODO Determine
 n_known_activity_cls = 2
@@ -83,7 +103,7 @@ novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
 ).to(device)
 
 label_mapping = build_species_label_mapping(train_csv_path)
-trainer = tupleprediction.training.TuplePredictorTrainer('dataset_v4/', train_csv_path, val_csv_path, training_batch_size, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping, augmentation=args.augmentation, allow_write=(rank == 0))
+trainer = tupleprediction.training.TuplePredictorTrainer('dataset_v4/', train_csv_path, val_csv_path, args.batch_size, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping, augmentation=args.augmentation, allow_write=(rank == 0), n_known_val=args.n_known_val)
 
 trainer.prepare_for_retraining(backbone, classifier, confidence_calibrator, novelty_type_classifier, activation_statistical_model)
 
@@ -108,7 +128,8 @@ trainer.train_backbone_and_classifiers(
     log=True,
     patience=None,
     min_epochs=1,
-    max_epochs=50
+    max_epochs=50,
+    label_smoothing=args.label_smoothing
 )
 
 trainer.fit_activation_statistics(
