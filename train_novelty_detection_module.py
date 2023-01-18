@@ -10,7 +10,9 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 import boxclassifier
 import tupleprediction
-from tupleprediction.training import Augmentation
+from tupleprediction.training import\
+    Augmentation,\
+    SchedulerType
 from backbone import Backbone
 from scoring import\
     ActivationStatisticalModel,\
@@ -55,6 +57,14 @@ parser.add_argument(
     type=int,
     default=1000,
     help='Number of known validation instances to pull from the training CSV'
+)
+
+parser.add_argument(
+    '--scheduler-type',
+    type=SchedulerType,
+    choices=list(SchedulerType),
+    default=SchedulerType.none,
+    help='Type of learning rate scheduler to use'
 )
 
 args = parser.parse_args()
@@ -129,7 +139,8 @@ trainer.train_backbone_and_classifiers(
     patience=None,
     min_epochs=1,
     max_epochs=50,
-    label_smoothing=args.label_smoothing
+    label_smoothing=args.label_smoothing,
+    scheduler_type=args.scheduler_type
 )
 
 trainer.fit_activation_statistics(

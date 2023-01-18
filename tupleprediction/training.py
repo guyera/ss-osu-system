@@ -11,6 +11,7 @@ from torch.utils.data import\
     Subset as TorchSubset,\
     ConcatDataset as TorchConcatDataset
 import torch
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from boximagedataset import BoxImageDataset
 from utils import custom_collate, gen_tqdm_description
@@ -27,6 +28,13 @@ from transforms import\
 class Augmentation(Enum):
     rand_augment = 'rand-augment'
     horizontal_flip = 'horizontal-flip'
+    none = 'none'
+
+    def __str__(self):
+        return self.value
+
+class SchedulerType(Enum):
+    cosine = 'cosine'
     none = 'none'
 
     def __str__(self):
@@ -200,6 +208,11 @@ class TuplePredictorTrainer:
         Augmentation.rand_augment: RandAugment,
         Augmentation.horizontal_flip: RandomHorizontalFlip,
         Augmentation.none: NoOpTransform
+    }
+
+    scheduler_dict = {
+        SchedulerType.cosine: CosineAnnealingLR,
+        SchedulerType.none: None
     }
 
     def __init__(
@@ -533,7 +546,8 @@ class TuplePredictorTrainer:
             patience=3,
             min_epochs=3,
             max_epochs=30,
-            label_smoothing=0.0):
+            label_smoothing=0.0,
+            scheduler_type=SchedulerType.none):
         if self._feedback_data is not None:
             train_dataset = ConcatDataset((
                 self._train_dataset, self._feedback_data
@@ -584,6 +598,11 @@ class TuplePredictorTrainer:
             weight_decay=1e-3
         )
 
+        # Init scheduler to None. It will be constructed after loading
+        # the optimizer state dict, or after failing to do so
+        scheduler = None
+        scheduler_ctor = self.scheduler_dict[scheduler_type]
+
         # Define convergence parameters (early stopping + model selection)
         start_epoch = 0
         epochs_since_improvement = 0
@@ -622,6 +641,13 @@ class TuplePredictorTrainer:
                 start_epoch = sd['start_epoch']
                 mean_train_loss = sd['mean_train_loss']
                 mean_train_accuracy = sd['mean_train_accuracy']
+
+                if scheduler_ctor is not None:
+                    scheduler = scheduler_ctor(
+                        optimizer,
+                        max_epochs
+                    )
+                    scheduler.load_state_dict(sd['scheduler'])
             if os.path.exists(validation_checkpoint):
                 sd = torch.load(
                     validation_checkpoint,
@@ -635,7 +661,14 @@ class TuplePredictorTrainer:
                 best_accuracy_activity_classifier_state_dict =\
                     sd['activity_classifier_state_dict']
                 mean_val_accuracy = sd['mean_val_accuracy']
-
+        
+        # If we didn't load an optimizer state dict, and so the scheduler
+        # hasn't been constructed yet, then construct it
+        if scheduler_ctor is not None and scheduler is None:
+            scheduler = scheduler_ctor(
+                optimizer,
+                max_epochs
+            )
         training_loss_curve = {}
         training_accuracy_curve = {}
         validation_accuracy_curve = {}
@@ -712,6 +745,8 @@ class TuplePredictorTrainer:
                 sd['start_epoch'] = epoch + 1
                 sd['mean_train_loss'] = mean_train_loss
                 sd['mean_train_accuracy'] = mean_train_accuracy
+                if scheduler is not None:
+                    sd['scheduler'] = scheduler.state_dict()
                 torch.save(sd, training_checkpoint)
 
             if log and self._allow_write:
@@ -1012,7 +1047,8 @@ class TuplePredictorTrainer:
             patience=3,
             min_epochs=3,
             max_epochs=30,
-            label_smoothing=0.0):
+            label_smoothing=0.0,
+            scheduler_type=SchedulerType.none):
         species_classifier = classifier.species_classifier
         activity_classifier = classifier.activity_classifier
         species_calibrator = confidence_calibrator.species_calibrator
@@ -1030,7 +1066,8 @@ class TuplePredictorTrainer:
             patience=patience,
             min_epochs=min_epochs,
             max_epochs=max_epochs,
-            label_smoothing=label_smoothing
+            label_smoothing=label_smoothing,
+            scheduler_type=scheduler_type
         )
 
         self.fit_activation_statistics(
