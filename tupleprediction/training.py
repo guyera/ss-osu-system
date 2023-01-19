@@ -541,8 +541,8 @@ class TuplePredictorTrainer:
             activity_classifier,
             lr,
             train_sampler_fn=None,
-            checkpoint=False,
-            log=False,
+            root_checkpoint_dir=None,
+            root_log_dir=None,
             patience=3,
             min_epochs=3,
             max_epochs=30,
@@ -616,14 +616,14 @@ class TuplePredictorTrainer:
 
         def get_checkpoint_dir():
             return os.path.join(
-                '.checkpoint',
+                root_checkpoint_dir,
                 self._box_transform.path(),
                 self._post_cache_train_transform.path(),
                 f'lr={lr}',
                 f'label_smoothing={label_smoothing:.2f}'
             )
 
-        if checkpoint:
+        if root_checkpoint_dir is not None:
             checkpoint_dir = get_checkpoint_dir()
             training_checkpoint = os.path.join(checkpoint_dir, 'training.pth')
             validation_checkpoint =\
@@ -675,14 +675,14 @@ class TuplePredictorTrainer:
 
         def get_log_dir():
             return os.path.join(
-                '.log',
+                root_log_dir,
                 self._box_transform.path(),
                 self._post_cache_train_transform.path(),
                 f'lr={lr}',
                 f'label_smoothing={label_smoothing:.2f}'
             )
 
-        if log and self._allow_write:
+        if root_log_dir is not None and self._allow_write:
             log_dir = get_log_dir()
             training_log = os.path.join(log_dir, 'training.pkl')
             validation_log =\
@@ -731,7 +731,7 @@ class TuplePredictorTrainer:
                 label_smoothing
             )
 
-            if checkpoint and self._allow_write:
+            if root_checkpoint_dir is not None and self._allow_write:
                 checkpoint_dir = get_checkpoint_dir()
                 training_checkpoint =\
                     os.path.join(checkpoint_dir, 'training.pth')
@@ -749,7 +749,7 @@ class TuplePredictorTrainer:
                     sd['scheduler'] = scheduler.state_dict()
                 torch.save(sd, training_checkpoint)
 
-            if log and self._allow_write:
+            if root_log_dir is not None and self._allow_write:
                 training_loss_curve[epoch] = mean_train_loss
                 training_accuracy_curve[epoch] = mean_train_accuracy
                 log_dir = get_log_dir()
@@ -783,7 +783,7 @@ class TuplePredictorTrainer:
                 else:
                     epochs_since_improvement += 1
 
-                if checkpoint and self._allow_write:
+                if root_checkpoint_dir is not None and self._allow_write:
                     checkpoint_dir = get_checkpoint_dir()
                     validation_checkpoint =\
                         os.path.join(checkpoint_dir, 'validation.pth')
@@ -801,7 +801,7 @@ class TuplePredictorTrainer:
                     sd['mean_val_accuracy'] = mean_val_accuracy
                     torch.save(sd, validation_checkpoint)
 
-                if log and self._allow_write:
+                if root_log_dir is not None and self._allow_write:
                     validation_accuracy_curve[epoch] = mean_val_accuracy
                     log_dir = get_log_dir()
                     os.makedirs(log_dir, exist_ok=True)
@@ -1041,8 +1041,8 @@ class TuplePredictorTrainer:
             activation_statistical_model,
             scorer,
             lr=0.0005,
-            checkpoint=False,
-            log=False,
+            root_checkpoint_dir=None,
+            root_log_dir=None,
             train_sampler_fn=None,
             patience=3,
             min_epochs=3,
@@ -1061,8 +1061,8 @@ class TuplePredictorTrainer:
             activity_classifier,
             lr,
             train_sampler_fn=train_sampler_fn,
-            checkpoint=checkpoint,
-            log=log,
+            root_checkpoint_dir=root_checkpoint_dir,
+            root_log_dir=root_log_dir,
             patience=patience,
             min_epochs=min_epochs,
             max_epochs=max_epochs,

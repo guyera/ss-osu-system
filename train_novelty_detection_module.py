@@ -74,6 +74,20 @@ parser.add_argument(
     help='Max number of epochs for training backbone and classifiers'
 )
 
+parser.add_argument(
+    '--root-checkpoint-dir',
+    type=str,
+    default=None,
+    help='Checkpoint directory'
+)
+
+parser.add_argument(
+    '--root-log-dir',
+    type=str,
+    default=None,
+    help='Log directory'
+)
+
 args = parser.parse_args()
 
 dist.init_process_group('nccl')
@@ -141,8 +155,8 @@ trainer.train_backbone_and_classifiers(
     activity_classifier,
     args.lr,
     train_sampler_fn=train_sampler_fn,
-    checkpoint=True,
-    log=True,
+    root_checkpoint_dir=args.root_checkpoint_dir,
+    root_log_dir=args.root_log_dir,
     patience=None,
     min_epochs=1,
     max_epochs=args.max_epochs,
