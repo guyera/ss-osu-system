@@ -89,7 +89,7 @@ class BoxImageDataset(torch.utils.data.Dataset):
 
         self._box_transform = box_transform
 
-        if box_transform is not None:
+        if box_transform is not None and cache_dir is not None:
             cache_dir =\
                 os.path.join(cache_dir, box_transform.path())
         self._cache_dir = cache_dir

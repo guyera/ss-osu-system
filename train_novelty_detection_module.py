@@ -111,8 +111,8 @@ n_known_species_cls = 10
 n_species_cls = 30 # TODO Determine
 n_known_activity_cls = 2
 n_activity_cls = 4 # TODO Determine
-train_csv_path = 'dataset_v4/train.csv'
-val_csv_path = 'dataset_v4/valid.csv'
+train_csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train.csv'
+val_csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/calib.csv'
 
 classifier = boxclassifier.ClassifierV2(256, n_species_cls, n_activity_cls)
 classifier = classifier.to(device)
@@ -134,7 +134,7 @@ novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
 ).to(device)
 
 label_mapping = build_species_label_mapping(train_csv_path)
-trainer = tupleprediction.training.TuplePredictorTrainer('dataset_v4/', train_csv_path, val_csv_path, args.batch_size, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping, augmentation=args.augmentation, allow_write=(rank == 0), n_known_val=args.n_known_val)
+trainer = tupleprediction.training.TuplePredictorTrainer('/nfs/hpc/share/sail_on3/', train_csv_path, val_csv_path, args.batch_size, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping, augmentation=args.augmentation, allow_write=(rank == 0), n_known_val=args.n_known_val)
 
 trainer.prepare_for_retraining(backbone, classifier, confidence_calibrator, novelty_type_classifier, activation_statistical_model)
 
