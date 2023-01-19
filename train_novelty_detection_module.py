@@ -33,7 +33,7 @@ parser.add_argument(
 parser.add_argument(
     '--label-smoothing',
     type=float,
-    default=0.0,
+    default=0.05,
     help='Label smoothing for training backbone and classifiers'
 )
 
@@ -63,7 +63,7 @@ parser.add_argument(
     '--scheduler-type',
     type=SchedulerType,
     choices=list(SchedulerType),
-    default=SchedulerType.none,
+    default=SchedulerType.cosine,
     help='Type of learning rate scheduler to use'
 )
 
