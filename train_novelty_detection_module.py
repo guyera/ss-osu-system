@@ -55,7 +55,7 @@ parser.add_argument(
 parser.add_argument(
     '--n-known-val',
     type=int,
-    default=1000,
+    default=4068,
     help='Number of known validation instances to pull from the training CSV'
 )
 
