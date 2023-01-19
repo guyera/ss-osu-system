@@ -143,62 +143,59 @@ trainer.train_backbone_and_classifiers(
     scheduler_type=args.scheduler_type
 )
 
-trainer.fit_activation_statistics(
-    backbone.module,
-    activation_statistical_model
-)
-
-# Retrain the classifier's temperature scaling calibrators
-trainer.calibrate_temperature_scalers(
-    backbone.module,
-    species_classifier,
-    activity_classifier,
-    species_calibrator,
-    activity_calibrator
-)
-
-# Retrain the logistic regressions
-trainer.train_novelty_type_logistic_regressions(
-    backbone.module,
-    species_classifier,
-    activity_classifier,
-    novelty_type_classifier,
-    activation_statistical_model,
-    scorer
-)
-
-end_time = time.time()
-print(f'Time: {end_time - start_time}')
-
-with open('known_combinations.pth', 'rb') as f:
-    known_combinations = pickle.load(f)
-
-tuple_prediction_state_dicts = {}
-tuple_prediction_state_dicts['known_combinations'] = known_combinations
-tuple_prediction_state_dicts['novelty_type_classifier'] = novelty_type_classifier.state_dict()
-tuple_prediction_state_dicts['activation_statistical_model'] = activation_statistical_model.state_dict()
-
-save_dir = os.path.join(
-    'pretrained-models',
-    architecture.value['name']
-)
-if not os.path.exists(save_dir):
-    os.makedirs(save_dir)
-
 if rank == 0:
-    torch.save(
-        backbone.state_dict(),
-        os.path.join(save_dir, 'backbone.pth')
+    trainer.fit_activation_statistics(
+        backbone.module,
+        activation_statistical_model
     )
-    torch.save(
-        classifier.state_dict(),
-        os.path.join(save_dir, 'classifier.pth')
+
+    # Retrain the classifier's temperature scaling calibrators
+    trainer.calibrate_temperature_scalers(
+        backbone.module,
+        species_classifier,
+        activity_classifier,
+        species_calibrator,
+        activity_calibrator
     )
-    torch.save(
-        confidence_calibrator.state_dict(),
-        os.path.join(save_dir, 'confidence-calibrator.pth')
+
+    # Retrain the logistic regressions
+    trainer.train_novelty_type_logistic_regressions(
+        backbone.module,
+        species_classifier,
+        activity_classifier,
+        novelty_type_classifier,
+        activation_statistical_model,
+        scorer
     )
-    torch.save(
-        tuple_prediction_state_dicts,
-        os.path.join(save_dir, 'tuple-prediction.pth')
+
+    end_time = time.time()
+    print(f'Time: {end_time - start_time}')
+
+    tuple_prediction_state_dicts = {}
+    tuple_prediction_state_dicts['novelty_type_classifier'] = novelty_type_classifier.state_dict()
+    tuple_prediction_state_dicts['activation_statistical_model'] = activation_statistical_model.state_dict()
+
+    save_dir = os.path.join(
+        'pretrained-models',
+        architecture.value['name']
     )
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    if rank == 0:
+        torch.save(
+            backbone.state_dict(),
+            os.path.join(save_dir, 'backbone.pth')
+        )
+        torch.save(
+            classifier.state_dict(),
+            os.path.join(save_dir, 'classifier.pth')
+        )
+        torch.save(
+            confidence_calibrator.state_dict(),
+            os.path.join(save_dir, 'confidence-calibrator.pth')
+        )
+        torch.save(
+            tuple_prediction_state_dicts,
+            os.path.join(save_dir, 'tuple-prediction.pth')
+        )
