@@ -67,6 +67,13 @@ parser.add_argument(
     help='Type of learning rate scheduler to use'
 )
 
+parser.add_argument(
+    '--max-epochs',
+    type=int,
+    default=600,
+    help='Max number of epochs for training backbone and classifiers'
+)
+
 args = parser.parse_args()
 
 dist.init_process_group('nccl')
@@ -138,7 +145,7 @@ trainer.train_backbone_and_classifiers(
     log=True,
     patience=None,
     min_epochs=1,
-    max_epochs=50,
+    max_epochs=args.max_epochs,
     label_smoothing=args.label_smoothing,
     scheduler_type=args.scheduler_type
 )
