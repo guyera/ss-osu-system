@@ -134,7 +134,7 @@ novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
 ).to(device)
 
 label_mapping = build_species_label_mapping(train_csv_path)
-trainer = tupleprediction.training.TuplePredictorTrainer('/nfs/hpc/share/sail_on3/', train_csv_path, val_csv_path, args.batch_size, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping, augmentation=args.augmentation, allow_write=(rank == 0), n_known_val=args.n_known_val)
+trainer = tupleprediction.training.TuplePredictorTrainer('/nfs/hpc/share/sail_on3/', train_csv_path, val_csv_path, args.batch_size, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping, augmentation=args.augmentation, allow_write=(rank == 0), n_known_val=args.n_known_val, root_cache_dir='/nfs/hpc/share/sail_on3/.data-cache')
 
 trainer.prepare_for_retraining(backbone, classifier, confidence_calibrator, novelty_type_classifier, activation_statistical_model)
 

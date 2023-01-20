@@ -228,7 +228,8 @@ class TuplePredictorTrainer:
             label_mapping,
             augmentation=Augmentation.rand_augment,
             allow_write=False,
-            n_known_val=1000):
+            n_known_val=1000,
+            root_cache_dir=None):
         self._n_species_cls = n_species_cls
         self._n_activity_cls = n_activity_cls
         self._static_label_mapper =\
@@ -242,6 +243,13 @@ class TuplePredictorTrainer:
             Compose((augmentation_ctor(), normalize))
         self._post_cache_val_transform = normalize
 
+        if root_cache_dir is not None:
+            train_cache_dir = os.path.join(root_cache_dir, 'train')
+            val_cache_dir = os.path.join(root_cache_dir, 'val')
+        else:
+            train_cache_dir = None
+            val_cache_dir = None
+
         train_dataset = BoxImageDataset(
             name = 'Custom',
             data_root = data_root,
@@ -251,7 +259,7 @@ class TuplePredictorTrainer:
             n_activity_cls=n_activity_cls,
             label_mapper=self._dynamic_label_mapper,
             box_transform=self._box_transform,
-            cache_dir=os.path.join('.data-cache', 'train'),
+            cache_dir=train_cache_dir,
             write_cache=allow_write
         )
         train_dataset.commit_cache()
@@ -284,7 +292,7 @@ class TuplePredictorTrainer:
             n_activity_cls=n_activity_cls,
             label_mapper=self._static_label_mapper,
             box_transform=self._box_transform,
-            cache_dir=os.path.join('.data-cache', 'val'),
+            cache_dir=val_cache_dir,
             write_cache=allow_write
         )
         val_dataset.commit_cache()
@@ -561,7 +569,7 @@ class TuplePredictorTrainer:
             train_loader = DataLoader(
                 train_dataset,
                 batch_size=self._retraining_batch_size,
-                num_workers=32,
+                num_workers=4,
                 sampler=train_sampler
             )
         else:
@@ -569,7 +577,7 @@ class TuplePredictorTrainer:
                 train_dataset,
                 batch_size=self._retraining_batch_size,
                 shuffle=True,
-                num_workers=32
+                num_workers=4
             )
 
         # Construct validation loaders for early stopping / model selection.
@@ -584,7 +592,7 @@ class TuplePredictorTrainer:
             val_dataset,
             batch_size=self._retraining_batch_size,
             shuffle=False,
-            num_workers=32
+            num_workers=4
         )
 
         # Retrain the backbone and classifiers
@@ -841,7 +849,7 @@ class TuplePredictorTrainer:
             batch_size = 32,
             shuffle = False,
             collate_fn=custom_collate,
-            num_workers=32
+            num_workers=4
         )
         backbone.eval()
 
@@ -871,7 +879,7 @@ class TuplePredictorTrainer:
             batch_size=256,
             shuffle=False,
             collate_fn=custom_collate,
-            num_workers=32
+            num_workers=4
         )
 
         # Set everything to eval mode for calibration, except the calibrators
@@ -978,7 +986,7 @@ class TuplePredictorTrainer:
             batch_size = 32,
             shuffle = False,
             collate_fn=custom_collate,
-            num_workers=32
+            num_workers=4
         )
         
         with torch.no_grad():

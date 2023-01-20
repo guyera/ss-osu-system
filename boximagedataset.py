@@ -208,7 +208,7 @@ class BoxImageDataset(torch.utils.data.Dataset):
         return self._dataset.box_count(i)
 
     def commit_cache(self):
-        if not os.path.exists(self._cache_dir):
+        if self._cache_dir is not None and not os.path.exists(self._cache_dir):
             print('Caching data...')
             for _ in self:
                 pass
