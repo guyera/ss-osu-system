@@ -33,12 +33,23 @@ class Augmentation(Enum):
     def __str__(self):
         return self.value
 
+
 class SchedulerType(Enum):
     cosine = 'cosine'
     none = 'none'
 
     def __str__(self):
         return self.value
+
+
+class BackboneTrainingType(Enum):
+    end_to_end = 'end-to-end'
+    classifiers = 'classifiers'
+    side_tuning = 'side-tuning'
+
+    def __str__(self):
+        return self.value
+
 
 '''
 Custom Subset dataset class that works with BoxImageDatasets and derivatives,
@@ -840,6 +851,219 @@ class TuplePredictorTrainer:
             best_accuracy_activity_classifier_state_dict
         )
 
+
+    def train_classifiers(
+            self,
+            backbone,
+            species_classifier,
+            activity_classifier,
+            lr,
+            train_sampler_fn=None,
+            root_log_dir=None,
+            patience=3,
+            min_epochs=3,
+            max_epochs=30,
+            label_smoothing=0.0):
+        if self._feedback_data is not None:
+            train_dataset = ConcatDataset((
+                self._train_dataset, self._feedback_data
+            ))
+        else:
+            train_dataset = self._train_dataset
+
+        train_dataset = FlattenedBoxImageDataset(train_dataset)
+        if train_sampler_fn is not None:
+            train_sampler = train_sampler_fn(train_dataset)
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=self._retraining_batch_size,
+                num_workers=2,
+                sampler=train_sampler
+            )
+        else:
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=self._retraining_batch_size,
+                shuffle=True,
+                num_workers=2
+            )
+
+        # Construct validation loaders for early stopping / model selection.
+        # I'm assuming our model selection strategy will be based solely on the
+        # validation classification accuracy and not based on novelty detection
+        # capabilities in any way. Otherwise, we can use the novel validation
+        # data to measure novelty detection performance. These currently aren't
+        # being stored (except in a special form for the logistic regressions),
+        # so we'd have to modify __init__().
+        val_dataset = FlattenedBoxImageDataset(self._val_known_dataset)
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=self._retraining_batch_size,
+            shuffle=False,
+            num_workers=2
+        )
+
+        # Retrain the backbone and classifiers
+        # Construct the optimizer
+        optimizer = torch.optim.SGD(
+            list(species_classifier.parameters())\
+                + list(activity_classifier.parameters()),
+            lr,
+            momentum=0.9,
+            weight_decay=1e-3
+        )
+
+        # Define convergence parameters (early stopping + model selection)
+        epochs_since_improvement = 0
+        best_accuracy = None
+        best_accuracy_backbone_state_dict = None
+        best_accuracy_species_classifier_state_dict = None
+        best_accuracy_activity_classifier_state_dict = None
+        mean_train_loss = None
+        mean_train_accuracy = None
+        mean_val_accuracy = None
+
+        # If we didn't load an optimizer state dict, and so the scheduler
+        # hasn't been constructed yet, then construct it
+        training_loss_curve = {}
+        training_accuracy_curve = {}
+        validation_accuracy_curve = {}
+
+        def get_log_dir():
+            return os.path.join(
+                root_log_dir,
+                self._box_transform.path(),
+                self._post_cache_train_transform.path(),
+                f'lr={lr}',
+                f'label_smoothing={label_smoothing:.2f}'
+            )
+
+        # TODO extract feature vectors from backbone without gradients
+        # TODO
+        # TODO
+        # TODO
+        # TODO make this whole function polymorphic; its signature is different
+        # from train_backbone_and_classifiers (end-to-end training), and so
+        # it doesn't make sense to forward arguments from
+        # train_novelty_detection_module. It'll have to be part of a
+        # public-facing concrete instance of an abstraction, as will
+        # train_backbone_and_classifiers and "train_with_side_tuning".
+
+        # Train
+        progress = tqdm(
+            range(max_epochs),
+            desc=gen_tqdm_description(
+                'Training backbone and classifiers...',
+                train_loss=mean_train_loss,
+                train_accuracy=mean_train_accuracy,
+                val_accuracy=mean_val_accuracy
+            ),
+            total=max_epochs
+        )
+        for epoch in progress:
+            if patience is not None and epochs_since_improvement >= patience:
+                # We haven't improved in several epochs. Time to stop
+                # training.
+                break
+
+            if train_loader.sampler is not None:
+                # Set the sampler epoch for shuffling when running in
+                # distributed mode
+                train_loader.sampler.set_epoch(epoch)
+
+            # Train for one full epoch
+            mean_train_loss, mean_train_accuracy = self._train_epoch(
+                train_loader, 
+                backbone,
+                species_classifier,
+                activity_classifier,
+                optimizer,
+                label_smoothing
+            )
+
+            if root_log_dir is not None and self._allow_write:
+                training_loss_curve[epoch] = mean_train_loss
+                training_accuracy_curve[epoch] = mean_train_accuracy
+                log_dir = get_log_dir()
+                os.makedirs(log_dir, exist_ok=True)
+                training_log = os.path.join(log_dir, 'training.pkl')
+                
+                with open(training_log, 'wb') as f:
+                    sd = {}
+                    sd['training_loss_curve'] = training_loss_curve
+                    sd['training_accuracy_curve'] = training_accuracy_curve
+                    pkl.dump(sd, f)
+
+            # Measure validation accuracy for early stopping / model selection.
+            if epoch >= min_epochs - 1:
+                mean_val_accuracy = self._val_epoch(
+                    val_loader,
+                    backbone,
+                    species_classifier,
+                    activity_classifier
+                )
+
+                if best_accuracy is None or mean_val_accuracy > best_accuracy:
+                    epochs_since_improvement = 0
+                    best_accuracy = mean_val_accuracy
+                    best_accuracy_backbone_state_dict =\
+                        deepcopy(backbone.state_dict())
+                    best_accuracy_species_classifier_state_dict =\
+                        deepcopy(species_classifier.state_dict())
+                    best_accuracy_activity_classifier_state_dict =\
+                        deepcopy(activity_classifier.state_dict())
+                else:
+                    epochs_since_improvement += 1
+
+                if root_checkpoint_dir is not None and self._allow_write:
+                    checkpoint_dir = get_checkpoint_dir()
+                    validation_checkpoint =\
+                        os.path.join(checkpoint_dir, 'validation.pth')
+                    os.makedirs(checkpoint_dir, exist_ok=True)
+
+                    sd = {}
+                    sd['epochs_since_improvement'] = epochs_since_improvement
+                    sd['accuracy'] = best_accuracy
+                    sd['backbone_state_dict'] =\
+                        best_accuracy_backbone_state_dict
+                    sd['species_classifier_state_dict'] =\
+                        best_accuracy_species_classifier_state_dict
+                    sd['activity_classifier_state_dict'] =\
+                        best_accuracy_activity_classifier_state_dict
+                    sd['mean_val_accuracy'] = mean_val_accuracy
+                    torch.save(sd, validation_checkpoint)
+
+                if root_log_dir is not None and self._allow_write:
+                    validation_accuracy_curve[epoch] = mean_val_accuracy
+                    log_dir = get_log_dir()
+                    os.makedirs(log_dir, exist_ok=True)
+                    validation_log = os.path.join(log_dir, 'validation.pkl')
+                    
+                    with open(validation_log, 'wb') as f:
+                        pkl.dump(validation_accuracy_curve, f)
+
+            progress.set_description(
+                gen_tqdm_description(
+                    'Training backbone and classifiers...',
+                    train_loss=mean_train_loss,
+                    train_accuracy=mean_train_accuracy,
+                    val_accuracy=mean_val_accuracy
+                )
+            )
+
+        progress.close()
+
+        # Load the best-accuracy state dicts
+        # NOTE To save GPU memory, we could temporarily move the models to the
+        # CPU before copying or loading their state dicts.
+        backbone.load_state_dict(best_accuracy_backbone_state_dict)
+        species_classifier.load_state_dict(
+            best_accuracy_species_classifier_state_dict
+        )
+        activity_classifier.load_state_dict(
+            best_accuracy_activity_classifier_state_dict
+        )
+
     def fit_activation_statistics(
             self,
             backbone,
@@ -1056,27 +1280,49 @@ class TuplePredictorTrainer:
             min_epochs=3,
             max_epochs=30,
             label_smoothing=0.0,
-            scheduler_type=SchedulerType.none):
+            scheduler_type=SchedulerType.none,
+            backbone_training_type=BackboneTrainingType.classifiers):
         species_classifier = classifier.species_classifier
         activity_classifier = classifier.activity_classifier
         species_calibrator = confidence_calibrator.species_calibrator
         activity_calibrator = confidence_calibrator.activity_calibrator
         
         # Retrain the backbone and classifiers
-        self.train_backbone_and_classifiers(
-            backbone,
-            species_classifier,
-            activity_classifier,
-            lr,
-            train_sampler_fn=train_sampler_fn,
-            root_checkpoint_dir=root_checkpoint_dir,
-            root_log_dir=root_log_dir,
-            patience=patience,
-            min_epochs=min_epochs,
-            max_epochs=max_epochs,
-            label_smoothing=label_smoothing,
-            scheduler_type=scheduler_type
-        )
+        if backbone_training_type == BackboneTrainingType.end_to_end:
+            self.train_backbone_and_classifiers(
+                backbone,
+                species_classifier,
+                activity_classifier,
+                lr,
+                train_sampler_fn=train_sampler_fn,
+                root_checkpoint_dir=root_checkpoint_dir,
+                root_log_dir=root_log_dir,
+                patience=patience,
+                min_epochs=min_epochs,
+                max_epochs=max_epochs,
+                label_smoothing=label_smoothing,
+                scheduler_type=scheduler_type
+            )
+        elif backbone_training_type == BackboneTrainingType.classifiers:
+            # TODO
+            self.train_classifiers(
+                backbone,
+                species_classifier,
+                activity_classifier,
+                lr,
+                train_sampler_fn=train_sampler_fn,
+                root_log_dir=root_log_dir,
+                patience=patience,
+                min_epochs=min_epochs,
+                max_epochs=max_epochs,
+                label_smoothing=label_smoothing
+            )
+            pass
+        elif backbone_training_type == BackboneTrainingType.side_tuning:
+            # TODO
+            pass
+        else:
+            raise NotImplementedError
 
         self.fit_activation_statistics(
             backbone,
