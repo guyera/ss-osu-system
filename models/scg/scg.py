@@ -68,14 +68,6 @@ class HOINetworkTransform(transform.GeneralizedRCNNTransform):
             mode='bilinear', align_corners=False,
             recompute_scale_factor=True
         )[0]
-        if target is None:
-            return image, target
-
-        target['boxes_s'] = transform.resize_boxes(target['boxes_s'],
-                                                   (h, w), image.shape[-2:])
-        target['boxes_o'] = transform.resize_boxes(target['boxes_o'],
-                                                   (h, w), image.shape[-2:])
-
         return image, target
 
     def postprocess(self, results, image_shapes, original_image_sizes):

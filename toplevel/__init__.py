@@ -22,7 +22,7 @@ from backbone import Backbone
 class TopLevelApp:
     def __init__(self, ensemble_path, data_root, pretrained_models_dir, backbone_architecture,
         feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path, val_incident_csv_path,
-        val_corruption_csv_path, trial_size, trial_batch_size, retraining_batch_size, disable_retraining):
+        val_corruption_csv_path, trial_size, trial_batch_size, retraining_image_batch_size, retraining_batch_size, retraining_buffer_size, disable_retraining):
 
         pretrained_backbone_path = os.path.join(
             pretrained_models_dir,
@@ -108,7 +108,9 @@ class TopLevelApp:
             'verb_id', 'original_verb_id', 'image_width', 'image_height',
             'subject_ymin', 'subject_xmin', 'subject_ymax', 'subject_xmax',
             'object_ymin', 'object_xmin', 'object_ymax', 'object_xmax'])
+        self.retraining_image_batch_size = retraining_image_batch_size
         self.retraining_batch_size = retraining_batch_size
+        self.retraining_buffer_size = retraining_buffer_size
         self.disable_retraining = disable_retraining
         # self.disable_retraining = True
 
@@ -130,7 +132,7 @@ class TopLevelApp:
             self.NUM_OBJECT_CLASSES,
             self.NUM_SPATIAL_FEATURES,
             0.98)
-        self.novelty_trainer = TuplePredictorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.val_corruption_csv_path, self.retraining_batch_size)
+        self.novelty_trainer = TuplePredictorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.val_corruption_csv_path, self.retraining_image_batch_size, self.retraining_batch_size, self.retraining_buffer_size)
         
     def reset(self):
         self.post_red = False
@@ -606,7 +608,7 @@ class TopLevelApp:
         self.backbone = self.backbone.to('cuda:0')
         self.backbone.eval()
 
-        self.novelty_trainer = TuplePredictorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.val_corruption_csv_path, self.retraining_batch_size)
+        self.novelty_trainer = TuplePredictorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.val_corruption_csv_path, self.retraining_image_batch_size, self.retraining_batch_size, self.retraining_buffer_size)
 
     def _retrain_supervised_detectors(self):
         t_star = torch.argmax(self.p_type_dist) + 1

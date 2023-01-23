@@ -44,16 +44,6 @@ class NoveltyTypeClassifier(torch.nn.Module):
         self.device = device
         return self
 
-    def state_dict(self):
-        raw_state_dict = super().state_dict()
-        return {k: v.cpu() for k, v in raw_state_dict.items()}
-
-    def load_state_dict(self, cpu_state_dict):
-        moved_state_dict = {
-            k: v.to(self.device) for k, v in cpu_state_dict.items()
-        }
-        super().load_state_dict(moved_state_dict)
-
 # TODO tensorize
 def compute_probability_novelty(
         scores,
@@ -123,16 +113,16 @@ def compute_probability_novelty(
                 # Some impossible novelty types still have predicted non-zero
                 # probabilities associated with them; zero them out and renormalize
                 # the predictions
-                    cur_p_type[~possible_nov_types] = 0.0
-                    normalizer = cur_p_type.sum()
-                    if normalizer == 0:
-                        # All of the possible types were assigned probabilities of
-                        # zero; set them all to 1 / K, where K is the number of
-                        # possible novelty types
-                        cur_p_type = possible_nov_types.to(torch.float)
-                        cur_p_type = cur_p_type / cur_p_type.sum()
-                    else:
-                        cur_p_type = cur_p_type / normalizer
+                cur_p_type[~possible_nov_types] = 0.0
+                normalizer = cur_p_type.sum()
+                if normalizer == 0:
+                    # All of the possible types were assigned probabilities of
+                    # zero; set them all to 1 / K, where K is the number of
+                    # possible novelty types
+                    cur_p_type = possible_nov_types.to(torch.float)
+                    cur_p_type = cur_p_type / cur_p_type.sum()
+                else:
+                    cur_p_type = cur_p_type / normalizer
 
         # Normalize the NOVEL novelty types; i.e., non-type-0.
         # This normalized partial p-type vector represents the probability

@@ -9,69 +9,30 @@ from models.scg.scg import HOINetworkTransform
 import pocket.models as models
 from data.data_factory import DataFactory
 from torch.utils.data import DataLoader, DistributedSampler
-from utils import custom_collate
 import torchvision
 
-class _ResizePad:
-    def __init__(self, size):
-        self.size = size
-    
-    def __call__(self, x):
-        # Determine which side length (height or width) is smaller and bigger
-        if x.shape[-2] > x.shape[-1]:
-            min_side_length_idx = -1
-            max_side_length_idx = -2
-        else:
-            min_side_length_idx = -2
-            max_side_length_idx = -1
-        
-        min_side_length = x.shape[min_side_length_idx]
-        max_side_length = x.shape[max_side_length_idx]
-
-        # Determine the scale factor such that the maximum side length is equal
-        # to self.size
-        scale_factor = float(self.size) / max_side_length
-
-        # Determine the new minimum side length by applying that same scale
-        # factor
-        new_min_side_length = int(min_side_length * scale_factor)
-        
-        # Construct the new size list
-        if min_side_length_idx == -2:
-            new_size = [new_min_side_length, self.size]
-        else:
-            new_size = [self.size, new_min_side_length]
-        
-        # Resize x to the new size
-        resized_x = torchvision.transforms.functional.resize(x, new_size)
-        
-        # X needs to be padded to square. Determine the amount of padding
-        # necessary, i.e. the difference between the max and min side lengths.
-        padding = self.size - new_min_side_length
-        if padding != 0:
-            if min_side_length_idx == -2:
-                # Height is smaller than width. Vertical padding is necessary.
-                left_padding = 0
-                top_padding = int(padding / 2)
-                right_padding = 0
-                bottom_padding = padding - top_padding
-            else:
-                # Width is smaller than height. Horizontal padding is necessary.
-                left_padding = int(padding / 2)
-                top_padding = 0
-                right_padding = padding - left_padding
-                bottom_padding = 0
-            # Pad resized_x to square
-            padded_x = torchvision.transforms.functional.pad(resized_x, [left_padding, top_padding, right_padding, bottom_padding])
-        else:
-            # The new minimum side length is equal to the new maximum side
-            # length, i.e. resized_x is already a square and doesn't need to
-            # be padded.
-            padded_x = resized_x
-
-        return padded_x
+from torchvision.transforms.functional import to_pil_image, to_tensor
+from PIL import Image
 
 class BoxImageDataset(torch.utils.data.Dataset):
+    class LabelDataset(torch.utils.data.Dataset):
+        def __init__(self, dataset):
+            self._dataset = dataset
+
+        def __len__(self):
+            return len(self._dataset)
+
+        def __getitem__(self, idx):
+            with torch.no_grad():
+                target = self._dataset.label(idx)
+                species_labels = target['species'].detach()
+                activity_labels = target['activity'].detach()
+                novelty_type_labels = target['novelty_type'].detach()
+
+                return species_labels,\
+                    activity_labels,\
+                    novelty_type_labels
+
     """
     Params:
         name: As in data.data_factory.DataFactory()
@@ -92,10 +53,14 @@ class BoxImageDataset(torch.utils.data.Dataset):
             training,
             n_species_cls,
             n_activity_cls,
+            label_mapper,
             min_size = 800,
             max_size = 1333,
             image_mean = None,
-            image_std = None):
+            image_std = None,
+            box_transform=None,
+            cache_dir=None,
+            write_cache=False):
         super().__init__()
 
         filename = os.path.join(f'{os.path.splitext(csv_path)[0]}_novelty_features.pth')
@@ -105,10 +70,10 @@ class BoxImageDataset(torch.utils.data.Dataset):
             data_root=data_root,
             n_species_cls=n_species_cls,
             n_activity_cls=n_activity_cls,
+            label_mapper=label_mapper,
             csv_path=csv_path,
             training=training
         )
-        self._box_transform = torchvision.transforms.Compose([_ResizePad(224), torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
 
         if image_mean is None:
             image_mean = [0.485, 0.456, 0.406]
@@ -122,15 +87,61 @@ class BoxImageDataset(torch.utils.data.Dataset):
             image_std
         )
 
+        self._box_transform = box_transform
+
+        if box_transform is not None and cache_dir is not None:
+            cache_dir =\
+                os.path.join(cache_dir, box_transform.path())
+        self._cache_dir = cache_dir
+        self._write_cache = write_cache
+
     def __len__(self):
-        return len(self.species_labels)
+        return len(self._dataset)
+
+    def _load_cached_data(self, cache_dir):
+        label_cache_file =\
+            os.path.join(cache_dir, f'labels.pth')
+        t = torch.load(label_cache_file)
+        species_labels = t[0]
+        activity_labels = t[1]
+        novelty_type_labels = t[2]
+
+        whole_image_cache_file =\
+            os.path.join(cache_dir, 'whole_image.JPG')
+        pil_whole_image = Image.open(whole_image_cache_file)
+        whole_image = to_tensor(pil_whole_image)
+
+        box_images_cache_dir = os.path.join(cache_dir, 'box_images')
+        _, _, box_image_files = next(os.walk(box_images_cache_dir))
+        box_images = []
+        for box_image_file in box_image_files:
+            box_image_cache_file =\
+                os.path.join(box_images_cache_dir, box_image_file)
+            pil_box_image = Image.open(box_image_cache_file)
+            box_image = to_tensor(pil_box_image)
+            box_images.append(box_image)
+        box_images = torch.stack(box_images, dim=0)
+
+        return species_labels,\
+            activity_labels,\
+            novelty_type_labels,\
+            box_images,\
+            whole_image
 
     def __getitem__(self, idx):
         with torch.no_grad():
+            if self._cache_dir is not None:
+                cur_cache_dir = os.path.join(self._cache_dir, f'{idx}')
+                if os.path.exists(cur_cache_dir):
+                    return self._load_cached_data(cur_cache_dir)
+
+            # If we made it this far, then the data could not be loaded from
+            # the cache. Proceed to load it normally.
             image, detection, target = self._dataset[idx]
             original_image_size = image.shape[-2:]
-            images, targets = i_transform([image], [target])
+            images, targets = self._i_transform([image], [target])
             image_tensor = images.tensors[0]
+            image_size = images.image_sizes[0]
             target = targets[0]
             detection['boxes'] = transform.resize_boxes(
                 detection['boxes'],
@@ -138,27 +149,66 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 image_size
             )
 
-            if targets is None:
-                species_labels = None
-                activity_labels = None
-            else:
-                species_labels = target['species'].detach()
-                activity_labels = target['activity'].detach()
+            species_labels = target['species'].detach()
+            activity_labels = target['activity'].detach()
+            novelty_type_labels = target['novelty_type'].detach()
 
             box_images = []
-            for xmin, ymin, xmax, ymax in detection['boxes']
+            for xmin, ymin, xmax, ymax in detection['boxes']:
                 r_xmin = torch.round(xmin).to(torch.int)
                 r_ymin = torch.round(ymin).to(torch.int)
                 r_xmax = torch.round(xmax).to(torch.int)
                 r_ymax = torch.round(ymax).to(torch.int)
 
                 # Crop out image boxes
-                box_images.append(
-                    self._box_transform(
-                        image_tensor[:, r_ymin : r_ymax, r_xmin : r_xmax]
-                    )
-                )
+                box_image = image_tensor[:, r_ymin : r_ymax, r_xmin : r_xmax]
+                if self._box_transform is not None:
+                    box_image = self._box_transform(box_image)
+                box_images.append(box_image)
             box_images = torch.stack(box_images, dim=0)
             whole_image = self._box_transform(image_tensor)
 
-            return species_labels, activity_labels, box_images, whole_image
+            # Cache data if configured to do so
+            if self._cache_dir is not None and self._write_cache:
+                cur_cache_dir = os.path.join(self._cache_dir, f'{idx}')
+                if not os.path.exists(cur_cache_dir):
+                    os.makedirs(cur_cache_dir, exist_ok=True)
+                    label_cache_file =\
+                        os.path.join(cur_cache_dir, f'labels.pth')
+                    t = (
+                        species_labels,
+                        activity_labels,
+                        novelty_type_labels
+                    )
+                    torch.save(t, label_cache_file)
+
+                    whole_image_cache_file =\
+                        os.path.join(cur_cache_dir, 'whole_image.JPG')
+                    pil_whole_image = to_pil_image(whole_image)
+                    pil_whole_image.save(whole_image_cache_file)
+
+                    box_images_cache_dir = os.path.join(cur_cache_dir, 'box_images')
+                    os.makedirs(box_images_cache_dir, exist_ok=True)
+                    for box_idx, box_image in enumerate(box_images):
+                        box_image_cache_file =\
+                            os.path.join(box_images_cache_dir, f'{box_idx}.JPG')
+                        pil_box_image = to_pil_image(box_image)
+                        pil_box_image.save(box_image_cache_file)
+
+            return species_labels,\
+                activity_labels,\
+                novelty_type_labels,\
+                box_images,\
+                whole_image
+
+    def label_dataset(self):
+        return self.LabelDataset(self._dataset)
+
+    def box_count(self, i):
+        return self._dataset.box_count(i)
+
+    def commit_cache(self):
+        if self._cache_dir is not None and not os.path.exists(self._cache_dir):
+            print('Caching data...')
+            for _ in self:
+                pass

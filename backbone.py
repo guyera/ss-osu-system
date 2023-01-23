@@ -51,15 +51,17 @@ class Backbone(Module):
         def __str__(self):
             return self.value['name']
 
-    def __init__(self, architecture):
+    def __init__(self, architecture, pretrained=True):
         super().__init__()
         self.device = 'cpu'
         self.architecture = architecture
+        self._pretrained = pretrained
         self.reset()
 
     def reset(self):
+        weights = 'IMAGENET1K_V1' if self._pretrained else None
         self.model = self.architecture.value['ctor'](
-            weights='IMAGENET1K_V1',
+            weights=weights,
             num_classes=256
         ).to(self.device)
 
@@ -76,13 +78,3 @@ class Backbone(Module):
             self.model,
             hook
         )
-
-    def state_dict(self):
-        raw_state_dict = super().state_dict()
-        return {k: v.cpu() for k, v in raw_state_dict.items()}
-
-    def load_state_dict(self, cpu_state_dict):
-        moved_state_dict = {
-            k: v.to(self.device) for k, v in cpu_state_dict.items()
-        }
-        super().load_state_dict(moved_state_dict)

@@ -24,14 +24,30 @@ class DataLoaderX(DataLoader):
 
 
 def custom_collate(batch):
-    images = []
-    detections = []
-    targets = []
-    for im, det, tar in batch:
-        images.append(im)
-        detections.append(det)
-        targets.append(tar)
-    return images, detections, targets
+    species_labels = []
+    activity_labels = []
+    novelty_type_labels = []
+    box_images = []
+    whole_images = []
+    for cur_species_labels,\
+            cur_activity_labels,\
+            cur_novelty_type_labels,\
+            cur_box_images,\
+            cur_whole_images in batch:
+        species_labels.append(cur_species_labels)
+        activity_labels.append(cur_activity_labels)
+        novelty_type_labels.append(cur_novelty_type_labels)
+        box_images.append(cur_box_images)
+        whole_images.append(cur_whole_images)
+    species_labels = torch.stack(species_labels, dim=0)
+    activity_labels = torch.stack(activity_labels, dim=0)
+    novelty_type_labels = torch.stack(novelty_type_labels, dim=0)
+    whole_images = torch.stack(whole_images, dim=0)
+    return species_labels,\
+        activity_labels,\
+        novelty_type_labels,\
+        box_images,\
+        whole_images
 
 
 def compute_spatial_encodings(
@@ -385,3 +401,9 @@ def fpn_backbone(backbone):
     out_channels = 256
     return BackboneWithFPN(backbone, return_layers, in_channels_list, out_channels, extra_blocks=extra_blocks)
 
+def gen_tqdm_description(title, **kwargs):
+    desc = title
+    for k, v in kwargs.items():
+        if v is not None:
+            desc = f'{desc} | {k}: {v}'
+    return desc

@@ -1,11 +1,15 @@
 import os
+import math
 import pandas as pd
 from PIL import Image
 import json
+from ast import literal_eval
 
+import torch
 from typing import Any, Optional, List, Callable, Tuple
 from torch.utils.data import Dataset
 
+from labelmapping import LabelMapper
 
 class StandardTransform:
     """https://github.com/pytorch/vision/blob/master/torchvision/datasets/vision.py"""
@@ -52,12 +56,15 @@ class CustomDet(Dataset):
 
     def __init__(self, root: str, csv_path: str, json_path: str,
                 n_species_cls: int, n_activity_cls: int,
+                label_mapper: LabelMapper,
                 transform: Optional[Callable] = None,
                 target_transform: Optional[Callable] = None,
-                transforms: Optional[Callable] = None) -> None:
+                transforms: Optional[Callable] = None,
+                image_filter='nonblank') -> None:
         super(CustomDet, self).__init__()
         self._n_species_cls = n_species_cls
         self._n_activity_cls = n_activity_cls
+        self._image_filter = image_filter
 
         if transforms is None:
             self._transforms = StandardTransform(transform, target_transform)
@@ -70,7 +77,7 @@ class CustomDet(Dataset):
         self.root = root
 
         # Load annotations
-        self._load_annotation_and_metadata(csv_path, json_path)
+        self._load_annotation_and_metadata(csv_path, json_path, label_mapper)
 
     def __len__(self) -> int:
         """Return the number of images"""
@@ -90,12 +97,36 @@ class CustomDet(Dataset):
         intra_idx = self._idx[i]
         target = dict()
         annot = self._anno[intra_idx]
-        target['species'] = annot['species']
-        target['activity'] = annot['activity']
+        target['species'] = annot['species'].clone().detach()
+        target['activity'] = annot['activity'].clone().detach()
+        target['novelty_type'] = annot['novelty_type'].clone().detach()
         return self._transforms(
             self.load_image(os.path.join(self.root, self._filenames[intra_idx])),
             target
         )
+
+    def label(self, i: int) -> tuple:
+        """
+        Arguments:
+            i(int): Index to an image
+
+        Returns:
+            tuple[image, target]: By default, the tuple consists of a PIL image and a
+                dict with the following keys:
+                    "species": None or list[N]
+                    "activity" : None or list[N]
+        """
+        intra_idx = self._idx[i]
+        target = dict()
+        annot = self._anno[intra_idx]
+        target['species'] = annot['species'].clone().detach()
+        target['activity'] = annot['activity'].clone().detach()
+        target['novelty_type'] = annot['novelty_type'].clone().detach()
+        _, transformed_target = self._transforms(
+            None,
+            target
+        )
+        return transformed_target
 
     def get_detections(self, idx: int):
         det = dict()
@@ -125,7 +156,7 @@ class CustomDet(Dataset):
         """Return the image file name given the index"""
         return os.path.join(self.root, self._filenames[self._idx[idx]])
 
-    def _load_annotation_and_metadata(self, df_f: str, json_f: str) -> None:
+    def _load_annotation_and_metadata(self, df_f: str, json_f: str, label_mapper) -> None:
         """
         Arguments:
             df_f(str): path for csv 
@@ -133,54 +164,79 @@ class CustomDet(Dataset):
         """
 
         df = pd.read_csv(df_f)
+        if self._image_filter == 'nonblank':
+            df = df[~(df['agent1_count'].isna())]
+        df = df.astype({'activities_id': object})
+        df['activities_id'] = df['activities_id'].apply(literal_eval)
 
         self._filenames = list(df['image_path'])
 
-        box_dict = json.load(json_f)
+        with open(json_f) as f:
+            box_dict = json.load(f)
 
-        self._anno = self.create_annotation(df, box_dict)
+        self._anno = self.create_annotation(df, box_dict, label_mapper)
 
         idx = list(range(len(df)))
 
         self._idx = idx
 
-    def create_annotation(self, df, box_dict):
+    def create_annotation(self, df, box_dict, label_mapper):
         # TODO : Make This Faster
         annots = list()
         
         for i, row in df.iterrows():
             annot = dict()
 
-            boxes = list()
-            species = list()
-            activities = list()
-            
-            cur_species = torch.zeroes(self._n_species_cls)
+            species = torch.zeros(self._n_species_cls)
             for species_idx in [1, 2, 3]:
                 id_string = f'agent{species_idx}_id'
                 count_string = f'agent{species_idx}_count'
                 species_id = row[id_string]
                 species_count = row[count_string]
-                if species_id is None:
+                if math.isnan(species_id):
                     break
-                cur_species[species_id] = species_count
-            cur_activity = torch.zeros(2, dtype=torch.bool)
-            if row['activity_standing'] == 1:
-                cur_activity[0] = True
-            if row['activity_moving'] == 1:
-                cur_activity[1] = True
+                mapped_label = label_mapper(int(species_id))
+                if mapped_label is not None:
+                    species[mapped_label] = species_count
+            activities = torch.zeros(self._n_activity_cls, dtype=torch.long)
+            activity_ids = row['activities_id']
+            activities[activity_ids] = 1
 
-            species.append(cur_species)
-            activities.append(cur_activity)
             image_path = row['image_path']
             basename = os.path.basename(image_path)
-            img_boxes = box_dict[basename]
-            boxes.append(box_dict[basename])
+            boxes = box_dict[basename]
+
+            novelty_type = torch.tensor(row['novelty_type'], dtype=torch.long)
+            # There is no novelty type 1, but we want novelty type class labels
+            # to be contiguous. Adjust labels appropriately.
+            if novelty_type >= 2:
+                novelty_type = novelty_type - 1
 
             annot["boxes"] = boxes
             annot["species"] = species
             annot["activity"] = activities
+            annot['novelty_type'] = novelty_type
 
             annots.append(annot)
 
         return annots
+
+    def box_count(self, i):
+        boxes = self._anno[i]['boxes']
+        return len(boxes)
+
+def build_species_label_mapping(csv_path):
+    df = pd.read_csv(csv_path)
+    unique_species_list = []
+    unique_species = set()
+    for i, row in df.iterrows():
+        for species_idx in [1, 2, 3]:
+            id_string = f'agent{species_idx}_id'
+            species_id = row[id_string]
+            if math.isnan(species_id):
+                break
+            species_id = int(species_id)
+            if not species_id in unique_species:
+                unique_species.add(species_id)
+                unique_species_list.append(species_id)
+    return {k: v for v, k in enumerate(unique_species_list)}

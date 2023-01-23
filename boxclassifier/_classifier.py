@@ -1,4 +1,5 @@
 import torch
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from boxclassifier._utils import _state_dict, _load_state_dict
 
@@ -7,18 +8,16 @@ class ClassifierV2:
             self,
             bottleneck_dim,
             n_species_cls,
-            n_activity_cls,
-            spatial_encoding_dim):
+            n_activity_cls):
         self.device = 'cpu'
         self.bottleneck_dim = bottleneck_dim
         self.n_species_cls = n_species_cls
         self.n_activity_cls = n_activity_cls
-        self.spatial_encoding_dim = spatial_encoding_dim
         self.reset()
 
     def reset(self):
-        self.species_classifier = torch.nn.Linear(self.bottleneck_dim, self.n_species_cls - 1).to(self.device)
-        self.activity_classifier = torch.nn.Linear(self.bottleneck_dim + self.spatial_encoding_dim, self.n_activity_cls - 1).to(self.device)
+        self.species_classifier = torch.nn.Linear(self.bottleneck_dim, self.n_species_cls).to(self.device)
+        self.activity_classifier = torch.nn.Linear(self.bottleneck_dim, self.n_activity_cls).to(self.device)
     
     def predict(self, box_features):
         self.species_classifier.eval()
@@ -49,18 +48,28 @@ class ClassifierV2:
         self.activity_classifier = self.activity_classifier.to(device)
         return self
     
-    def state_dict(self):
+    def state_dict(self, *args, **kwargs):
         state_dict = {}
-        state_dict['species_classifier'] = _state_dict(self.species_classifier)
-        state_dict['activity_classifier'] = _state_dict(self.activity_classifier)
+        state_dict['species_classifier'] =\
+            self.species_classifier.state_dict(*args, **kwargs)
+        state_dict['activity_classifier'] =\
+            self.activity_classifier.state_dict(*args, **kwargs)
         return state_dict
 
     def load_state_dict(self, state_dict):
-        _load_state_dict(
-            self.species_classifier,
+        self.species_classifier.load_state_dict(
             state_dict['species_classifier']
         )
-        _load_state_dict(
-            self.activity_classifier,
+        self.activity_classifier.load_state_dict(
             state_dict['activity_classifier']
+        )
+
+    def ddp(self, device_ids=None):
+        self.species_classifier = DDP(
+            self.species_classifier,
+            device_ids=device_ids
+        )
+        self.activity_classifier = DDP(
+            self.activity_classifier,
+            device_ids=device_ids
         )
