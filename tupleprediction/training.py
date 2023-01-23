@@ -569,7 +569,7 @@ class TuplePredictorTrainer:
             train_loader = DataLoader(
                 train_dataset,
                 batch_size=self._retraining_batch_size,
-                num_workers=4,
+                num_workers=2,
                 sampler=train_sampler
             )
         else:
@@ -577,7 +577,7 @@ class TuplePredictorTrainer:
                 train_dataset,
                 batch_size=self._retraining_batch_size,
                 shuffle=True,
-                num_workers=4
+                num_workers=2
             )
 
         # Construct validation loaders for early stopping / model selection.
@@ -592,7 +592,7 @@ class TuplePredictorTrainer:
             val_dataset,
             batch_size=self._retraining_batch_size,
             shuffle=False,
-            num_workers=4
+            num_workers=2
         )
 
         # Retrain the backbone and classifiers
@@ -849,7 +849,7 @@ class TuplePredictorTrainer:
             batch_size = 32,
             shuffle = False,
             collate_fn=custom_collate,
-            num_workers=4
+            num_workers=2
         )
         backbone.eval()
 
@@ -879,7 +879,7 @@ class TuplePredictorTrainer:
             batch_size=256,
             shuffle=False,
             collate_fn=custom_collate,
-            num_workers=4
+            num_workers=2
         )
 
         # Set everything to eval mode for calibration, except the calibrators
@@ -986,7 +986,7 @@ class TuplePredictorTrainer:
             batch_size = 32,
             shuffle = False,
             collate_fn=custom_collate,
-            num_workers=4
+            num_workers=2
         )
         
         with torch.no_grad():
