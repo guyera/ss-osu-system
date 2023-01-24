@@ -25,6 +25,7 @@ from transforms import\
     RandomHorizontalFlip,\
     NoOpTransform
 
+
 class Augmentation(Enum):
     rand_augment = {
         'name': 'rand-augment',
@@ -47,11 +48,20 @@ class Augmentation(Enum):
 
 
 class SchedulerType(Enum):
-    cosine = 'cosine'
-    none = 'none'
+    cosine = {
+        'name': 'cosine',
+        'ctor': CosineAnnealingLR
+    }
+    none = {
+        'name': 'none',
+        'ctor': None
+    }
 
     def __str__(self):
         return self.value
+
+    def ctor(self):
+        return self.value['ctor']
 
 
 class BackboneTrainingType(Enum):
@@ -493,11 +503,6 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
 
 
 class EndToEndClassifierTrainer(ClassifierTrainer):
-    scheduler_dict = {
-        SchedulerType.cosine: CosineAnnealingLR,
-        SchedulerType.none: None
-    }
-
     def __init__(
             self,
             backbone,
@@ -756,7 +761,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         # Init scheduler to None. It will be constructed after loading
         # the optimizer state dict, or after failing to do so
         scheduler = None
-        scheduler_ctor = self.scheduler_dict[self._scheduler_type]
+        scheduler_ctor = self._scheduler_type.ctor()
 
         # Define convergence parameters (early stopping + model selection)
         start_epoch = 0
