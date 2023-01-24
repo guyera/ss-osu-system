@@ -78,6 +78,3 @@ class Backbone(Module):
             self.model,
             hook
         )
-
-    def retrainable_parameters(self):
-        return self.parameters()

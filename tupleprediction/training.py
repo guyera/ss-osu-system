@@ -764,7 +764,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         # Retrain the backbone and classifiers
         # Construct the optimizer
         optimizer = torch.optim.SGD(
-            list(self._backbone.retrainable_parameters())\
+            list(self._backbone.parameters())\
                 + list(species_classifier.parameters())\
                 + list(activity_classifier.parameters()),
             self._lr,
