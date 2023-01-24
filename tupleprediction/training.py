@@ -75,7 +75,14 @@ class BackboneTrainingType(Enum):
 
 class ClassifierTrainer(ABC):
     @abstractmethod
-    def train(self):
+    def train(self, species_classifier, activity_classifier, root_log_dir):
+        return NotImplemented
+
+    def prepare_for_retraining(
+            self,
+            backbone,
+            species_classifier,
+            activity_classifier):
         return NotImplemented
 
 
@@ -501,6 +508,13 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             best_accuracy_activity_classifier_state_dict
         )
 
+    def prepare_for_retraining(
+            self,
+            backbone,
+            species_classifier,
+            activity_classifier):
+        species_classifier.reset()
+        activity_classifier.reset()
 
 class EndToEndClassifierTrainer(ClassifierTrainer):
     def __init__(
@@ -750,7 +764,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         # Retrain the backbone and classifiers
         # Construct the optimizer
         optimizer = torch.optim.SGD(
-            list(self._backbone.parameters())\
+            list(self._backbone.retrainable_parameters())\
                 + list(species_classifier.parameters())\
                 + list(activity_classifier.parameters()),
             self._lr,
@@ -991,6 +1005,14 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         activity_classifier.load_state_dict(
             best_accuracy_activity_classifier_state_dict
         )
+
+    def prepare_for_retraining(
+            self,
+            backbone,
+            species_classifier,
+            activity_classifier):
+        species_classifier.reset()
+        activity_classifier.reset()
 
 
 def get_transforms(augmentation):
