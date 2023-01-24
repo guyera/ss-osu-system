@@ -507,7 +507,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         self._backbone = backbone
         self._lr = lr
         self._train_dataset = train_dataset
-        self._val_known_dataset = val_dataset
+        self._val_known_dataset = val_known_dataset
         self._box_transform = box_transform
         self._post_cache_train_transform = post_cache_train_transform
         self._retraining_batch_size = retraining_batch_size
@@ -1004,7 +1004,6 @@ def get_datasets(
         box_transform,
         post_cache_train_transform,
         post_cache_val_transform,
-        augmentation=Augmentation.rand_augment,
         root_cache_dir=None,
         allow_write=False,
         n_known_val=4068):
