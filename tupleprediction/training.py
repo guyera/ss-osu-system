@@ -25,14 +25,25 @@ from transforms import\
     RandomHorizontalFlip,\
     NoOpTransform
 
-
 class Augmentation(Enum):
-    rand_augment = 'rand-augment'
-    horizontal_flip = 'horizontal-flip'
-    none = 'none'
+    rand_augment = {
+        'name': 'rand-augment',
+        'ctor': RandAugment
+    }
+    horizontal_flip = {
+        'name': 'horizontal-flip',
+        'ctor': RandomHorizontalFlip
+    }
+    none = {
+        'name': 'none',
+        'ctor': NoOpTransform
+    }
 
     def __str__(self):
-        return self.value
+        return self.value['name']
+
+    def ctor(self):
+        return self.value['ctor']
 
 
 class SchedulerType(Enum):
@@ -977,17 +988,10 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         )
 
 
-_augmentation_dict = {
-    Augmentation.rand_augment: RandAugment,
-    Augmentation.horizontal_flip: RandomHorizontalFlip,
-    Augmentation.none: NoOpTransform
-}
-
-
 def get_transforms(augmentation):
     box_transform = ResizePad(224)
     normalize = Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    augmentation_ctor = _augmentation_dict[augmentation]
+    augmentation_ctor = augmentation.ctor()
     post_cache_train_transform =\
         Compose((augmentation_ctor(), normalize))
     post_cache_val_transform = normalize
