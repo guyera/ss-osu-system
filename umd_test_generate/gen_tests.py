@@ -35,7 +35,7 @@ def gen_no_novel_api_test(test_name, known_feed, test_dir, test_len, round_size)
             handle.write(f'{item_str},0\n')
     feedback_budget = round(round_size * 0.5)
     metadata = {
-        'domain' : 'ss_species_classification',
+        'domain' : 'image_classification',
         'protocol' : 'OND',
         'known_classes' : 11,
         "max_novel_classes": 16,
@@ -72,7 +72,7 @@ def gen_api_test(test_name, known_feed, novel_feed, test_dir, test_len, red_butt
                 handle.write(f'{item_str},0\n')
     feedback_budget = round(round_size * 0.5)
     metadata = {
-        'domain' : 'ss_species_classification',
+        'domain' : 'image_classification',
         'protocol' : 'OND',
         'known_classes' : 11,
         "max_novel_classes": 16,
@@ -99,7 +99,7 @@ def gen_api_tests(test_source_data, out_dir, test_configs):
     api_dir.mkdir()
     ond_dir = api_dir / 'OND'
     ond_dir.mkdir()
-    test_dir = ond_dir / 'ss_species_classification'
+    test_dir = ond_dir / 'image_classification'
     test_dir.mkdir()
     test_names = []
     known_feed = Feed(test_source_data.known)
@@ -140,7 +140,7 @@ def gen_api_single_novelty_tests(test_source_data, out_dir, test_configs, novelt
     api_dir.mkdir()
     ond_dir = api_dir / 'OND'
     ond_dir.mkdir()
-    test_dir = ond_dir / 'ss_species_classification'
+    test_dir = ond_dir / 'image_classification'
     test_dir.mkdir()
     test_names = []
 
