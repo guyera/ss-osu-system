@@ -12,7 +12,11 @@ import boxclassifier
 import tupleprediction
 from tupleprediction.training import\
     Augmentation,\
-    SchedulerType
+    SchedulerType,\
+    get_transforms,\
+    get_datasets,\
+    TuplePredictorTrainer,\
+    EndToEndClassifierTrainer
 from backbone import Backbone
 from scoring import\
     ActivationStatisticalModel,\
@@ -22,6 +26,30 @@ from data.custom import build_species_label_mapping
 from labelmapping import LabelMapper
 
 parser = argparse.ArgumentParser()
+
+parser.add_argument(
+    '--data-root',
+    type=str,
+    help='Data root directory'
+)
+
+parser.add_argument(
+    '--root-cache-dir',
+    type=str,
+    help='Root cache directory'
+)
+
+parser.add_argument(
+    '--train-csv-path',
+    type=str,
+    help='Path to training CSV'
+)
+
+parser.add_argument(
+    '--cal-csv-path',
+    type=str,
+    help='Path to calibration CSV'
+)
 
 parser.add_argument(
     '--lr',
@@ -111,8 +139,6 @@ n_known_species_cls = 10
 n_species_cls = 30 # TODO Determine
 n_known_activity_cls = 2
 n_activity_cls = 4 # TODO Determine
-train_csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train.csv'
-val_csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/calib.csv'
 
 classifier = boxclassifier.ClassifierV2(256, n_species_cls, n_activity_cls)
 classifier = classifier.to(device)
@@ -133,8 +159,55 @@ novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
     scorer.n_scores()
 ).to(device)
 
-label_mapping = build_species_label_mapping(train_csv_path)
-trainer = tupleprediction.training.TuplePredictorTrainer('/nfs/hpc/share/sail_on3/', train_csv_path, val_csv_path, args.batch_size, n_species_cls, n_activity_cls, n_known_species_cls, n_known_activity_cls, label_mapping, augmentation=args.augmentation, allow_write=(rank == 0), n_known_val=args.n_known_val, root_cache_dir='/nfs/hpc/share/sail_on3/.data-cache')
+label_mapping = build_species_label_mapping(args.train_csv_path)
+box_transform, post_cache_train_transform, post_cache_val_transform =\
+    get_transforms(args.augmentation)
+train_dataset, val_known_dataset, val_dataset, dynamic_label_mapper =\
+    get_datasets(
+        args.data_root,
+        args.train_csv_path,
+        args.cal_csv_path,
+        n_species_cls,
+        n_activity_cls,
+        label_mapping,
+        box_transform,
+        post_cache_train_transform,
+        post_cache_val_transform,
+        root_cache_dir=args.root_cache_dir,
+        allow_write=(rank==0),
+        n_known_val=args.n_known_val
+    )
+
+classifier_trainer = EndToEndClassifierTrainer(
+    backbone,
+    args.lr,
+    train_dataset,
+    val_known_dataset,
+    box_transform,
+    post_cache_train_transform,
+    retraining_batch_size=args.batch_size,
+    train_sampler_fn=train_sampler_fn,
+    root_checkpoint_dir=args.root_checkpoint_dir,
+    patience=None,
+    min_epochs=0,
+    max_epochs=args.max_epochs,
+    label_smoothing=args.label_smoothing,
+    scheduler_type=args.scheduler_type,
+    allow_write=(rank==0)
+)
+
+trainer = TuplePredictorTrainer(
+    train_dataset,
+    val_known_dataset,
+    val_dataset,
+    box_transform,
+    post_cache_train_transform,
+    args.batch_size,
+    n_species_cls,
+    n_activity_cls,
+    dynamic_label_mapper,
+    classifier_trainer
+)
 
 trainer.prepare_for_retraining(backbone, classifier, confidence_calibrator, novelty_type_classifier, activation_statistical_model)
 
@@ -149,19 +222,10 @@ species_calibrator = confidence_calibrator.species_calibrator
 activity_calibrator = confidence_calibrator.activity_calibrator
 
 # Retrain the backbone and classifiers
-trainer.train_backbone_and_classifiers(
-    backbone,
+classifier_trainer.train(
     species_classifier,
     activity_classifier,
-    args.lr,
-    train_sampler_fn=train_sampler_fn,
-    root_checkpoint_dir=args.root_checkpoint_dir,
-    root_log_dir=args.root_log_dir,
-    patience=None,
-    min_epochs=1,
-    max_epochs=args.max_epochs,
-    label_smoothing=args.label_smoothing,
-    scheduler_type=args.scheduler_type
+    args.root_log_dir
 )
 
 if rank == 0:
@@ -203,20 +267,19 @@ if rank == 0:
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    if rank == 0:
-        torch.save(
-            backbone.state_dict(),
-            os.path.join(save_dir, 'backbone.pth')
-        )
-        torch.save(
-            classifier.state_dict(),
-            os.path.join(save_dir, 'classifier.pth')
-        )
-        torch.save(
-            confidence_calibrator.state_dict(),
-            os.path.join(save_dir, 'confidence-calibrator.pth')
-        )
-        torch.save(
-            tuple_prediction_state_dicts,
-            os.path.join(save_dir, 'tuple-prediction.pth')
-        )
+    torch.save(
+        backbone.state_dict(),
+        os.path.join(save_dir, 'backbone.pth')
+    )
+    torch.save(
+        classifier.state_dict(),
+        os.path.join(save_dir, 'classifier.pth')
+    )
+    torch.save(
+        confidence_calibrator.state_dict(),
+        os.path.join(save_dir, 'confidence-calibrator.pth')
+    )
+    torch.save(
+        tuple_prediction_state_dicts,
+        os.path.join(save_dir, 'tuple-prediction.pth')
+    )

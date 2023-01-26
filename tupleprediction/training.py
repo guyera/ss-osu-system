@@ -3,6 +3,7 @@ import numpy as np
 import os
 from enum import Enum
 import pickle as pkl
+from abc import ABC, abstractmethod
 
 from tqdm import tqdm
 from torch.utils.data import\
@@ -26,19 +27,62 @@ from transforms import\
 
 
 class Augmentation(Enum):
-    rand_augment = 'rand-augment'
-    horizontal_flip = 'horizontal-flip'
-    none = 'none'
+    rand_augment = {
+        'name': 'rand-augment',
+        'ctor': RandAugment
+    }
+    horizontal_flip = {
+        'name': 'horizontal-flip',
+        'ctor': RandomHorizontalFlip
+    }
+    none = {
+        'name': 'none',
+        'ctor': NoOpTransform
+    }
 
     def __str__(self):
-        return self.value
+        return self.value['name']
+
+    def ctor(self):
+        return self.value['ctor']
+
 
 class SchedulerType(Enum):
-    cosine = 'cosine'
-    none = 'none'
+    cosine = {
+        'name': 'cosine',
+        'ctor': CosineAnnealingLR
+    }
+    none = {
+        'name': 'none',
+        'ctor': None
+    }
 
     def __str__(self):
         return self.value
+
+    def ctor(self):
+        return self.value['ctor']
+
+
+class BackboneTrainingType(Enum):
+    end_to_end = 'end-to-end'
+    classifiers = 'classifiers'
+    side_tuning = 'side-tuning'
+
+    def __str__(self):
+        return self.value
+
+
+class ClassifierTrainer(ABC):
+    @abstractmethod
+    def train(self, species_classifier, activity_classifier, root_log_dir):
+        return NotImplemented
+
+    def prepare_for_retraining(
+            self,
+            classifier):
+        return NotImplemented
+
 
 '''
 Custom Subset dataset class that works with BoxImageDatasets and derivatives,
@@ -94,6 +138,7 @@ class ConcatDataset(Dataset):
             len_idx += 1
         return self._datasets[len_idx].box_count(idx)
 
+
 class FlattenedBoxImageDataset(Dataset):
     def __init__(self, box_image_dataset):
         self._dataset = box_image_dataset
@@ -128,6 +173,26 @@ class FlattenedBoxImageDataset(Dataset):
         return one_hot_species_label, one_hot_activity_label, box_image
 
 
+'''
+Wraps a dataset around a FlattenedBoxImageDataset and a precomputed feature
+tensor for the whole dataset. Indexing at i returns the underlying data
+from the FlattenedBoxImageDataset as well as sub-tensor of the feature tensor
+indexed at i along dim 0 (most likely the ith datapoint's feature vector).
+'''
+class FeatureConcatFlattenedBoxImageDataset(Dataset):
+    def __init__(self, dataset, box_features):
+        self._dataset = dataset
+        self._box_features = box_features
+
+    def __len__(self):
+        return len(self._dataset)
+
+    def __getitem__(self, idx):
+        species_label, activity_label, box_image = self._dataset[idx]
+        box_features = self._box_features[idx]
+        return species_label, activity_label, box_image, box_features
+
+
 class TransformingBoxImageDataset(Dataset):
     def __init__(self, dataset, transform):
         self._dataset = dataset
@@ -158,15 +223,6 @@ class TransformingBoxImageDataset(Dataset):
 
     def box_count(self, idx):
         return self._dataset.box_count(idx)
-
-
-def separate_known_images(dataset, n_known_species_cls, n_known_activity_cls):
-    known_indices = []
-    for idx, (_, _, novelty_type_label, _, _) in enumerate(dataset):
-        if novelty_type_label == 0:
-            known_indices.append(idx)
-
-    return Subset(dataset, known_indices)
 
 
 def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
@@ -203,186 +259,41 @@ def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
     progress.close()
 
 
-class TuplePredictorTrainer:
-    augmentation_dict = {
-        Augmentation.rand_augment: RandAugment,
-        Augmentation.horizontal_flip: RandomHorizontalFlip,
-        Augmentation.none: NoOpTransform
-    }
-
-    scheduler_dict = {
-        SchedulerType.cosine: CosineAnnealingLR,
-        SchedulerType.none: None
-    }
-
+class LogitLayerClassifierTrainer(ClassifierTrainer):
     def __init__(
             self,
-            data_root,
-            train_csv_path,
-            val_csv_path,
-            retraining_batch_size,
-            n_species_cls,
-            n_activity_cls,
-            n_known_species_cls,
-            n_known_activity_cls,
-            label_mapping,
-            augmentation=Augmentation.rand_augment,
-            allow_write=False,
-            n_known_val=1000,
-            root_cache_dir=None):
-        self._n_species_cls = n_species_cls
-        self._n_activity_cls = n_activity_cls
-        self._static_label_mapper =\
-            LabelMapper(label_mapping=deepcopy(label_mapping), update=False)
-        self._dynamic_label_mapper =\
-            LabelMapper(label_mapping, update=True)
-        self._box_transform = ResizePad(224)
-        normalize = Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        augmentation_ctor = self.augmentation_dict[augmentation]
-        self._post_cache_train_transform =\
-            Compose((augmentation_ctor(), normalize))
-        self._post_cache_val_transform = normalize
+            lr,
+            train_feature_file,
+            val_feature_file,
+            box_transform,
+            post_cache_train_transform,
+            device,
+            patience=3,
+            min_epochs=3,
+            max_epochs=30,
+            label_smoothing=0.0):
+        self._lr = lr
+        self._train_feature_file = train_feature_file
+        self._val_feature_file = val_feature_file
+        self._box_transform = box_transform
+        self._post_cache_train_transform = post_cache_train_transform
+        self._device = device
+        self._patience = patience
+        self._min_epochs = min_epochs
+        self._max_epochs = max_epochs
+        self._label_smoothing = label_smoothing
 
-        if root_cache_dir is not None:
-            train_cache_dir = os.path.join(root_cache_dir, 'train')
-            val_cache_dir = os.path.join(root_cache_dir, 'val')
-        else:
-            train_cache_dir = None
-            val_cache_dir = None
-
-        train_dataset = BoxImageDataset(
-            name = 'Custom',
-            data_root = data_root,
-            csv_path = train_csv_path,
-            training = True,
-            n_species_cls=n_species_cls,
-            n_activity_cls=n_activity_cls,
-            label_mapper=self._dynamic_label_mapper,
-            box_transform=self._box_transform,
-            cache_dir=train_cache_dir,
-            write_cache=allow_write
-        )
-        train_dataset.commit_cache()
-
-        val_known_indices_gen = np.random.Generator(np.random.PCG64(0))
-        val_known_indices = val_known_indices_gen.choice(
-            list(range(len(train_dataset))),
-            size=n_known_val,
-            replace=False
-        ).tolist()
-        val_known_indices_set = set(val_known_indices)
-        training_indices = [x for x in range(len(train_dataset)) if\
-            not x in val_known_indices_set]
-        
-        self._val_known_dataset = TransformingBoxImageDataset(
-            Subset(train_dataset, val_known_indices),
-            self._post_cache_val_transform
-        )
-        self._train_dataset = TransformingBoxImageDataset(
-            Subset(train_dataset, training_indices),
-            self._post_cache_train_transform
-        )
-
-        val_dataset = BoxImageDataset(
-            name = 'Custom',
-            data_root = data_root,
-            csv_path = val_csv_path,
-            training = False,
-            n_species_cls=n_species_cls,
-            n_activity_cls=n_activity_cls,
-            label_mapper=self._static_label_mapper,
-            box_transform=self._box_transform,
-            cache_dir=val_cache_dir,
-            write_cache=allow_write
-        )
-        val_dataset.commit_cache()
-
-        self._val_dataset = ConcatDataset((
-            self._val_known_dataset,
-            TransformingBoxImageDataset(
-                val_dataset,
-                self._post_cache_val_transform
-            )
-        ))
-
-        # TODO class balancing? In the SVO system, we balanced 50/50 known
-        # and novel examples to avoid biasing P(N_i) toward 1. But maybe it
-        # doesn't matter here since we aren't using P(N_i) for merging
-        # SCG / non-SCG predictions. We also previously would sample a batch
-        # from each of 6 data loaders, which naturally balanced them, when
-        # training the classifier: S/V/O x known/novel
-        self._feedback_data = None
-
-        self._retraining_batch_size = retraining_batch_size 
-        self._allow_write = allow_write
-
-    def add_feedback_data(self, data_root, csv_path):
-        new_novel_dataset = BoxImageDataset(
-            name = 'Custom',
-            data_root = data_root,
-            csv_path = csv_path,
-            training = True,
-            n_species_cls=self._n_species_cls,
-            n_activity_cls=self._n_activity_cls,
-            label_mapper=self._dynamic_label_mapper,
-            box_transform=self._box_transform
-        )
-        new_novel_dataset = TransformingBoxImageDataset(
-            new_novel_dataset,
-            self._post_cache_train_transform
-        )
-
-        # Put new feedback data in list
-        if self._feedback_data is None:
-            self._feedback_data = new_novel_dataset
-        else:
-            self._feedback_data = ConcatDataset(
-                [self._feedback_data, new_novel_dataset]
-            )
-    
-    # Should be called before train_novelty_detection_module(), except when
-    # training for the very first time manually. This prepares the
-    # backbone, classifier, and novelty type logistic regressions for
-    # retraining. Most likely this is done by fully randomizing them, but in
-    # the future we might change the process to be e.g. a warm-start,
-    # shrink-and-perturb, or crashing a single layer.
-    def prepare_for_retraining(self,
-            backbone,
-            classifier,
-            confidence_calibrator,
-            novelty_type_classifier,
-            activation_statistical_model):
-        # Reset the backbone
-        backbone.reset()
-        
-        # Reset the classifier and confidence calibrator
-        classifier.reset()
-        confidence_calibrator.reset()
-
-        # Reset logistic regressions and statistical model
-        novelty_type_classifier.reset()
-        activation_statistical_model.reset()
-
-    def _train_batch(
+    def _train_epoch(
             self,
-            backbone,
-            species_classifier,
-            activity_classifier,
-            optimizer,
+            box_features,
             species_labels,
             activity_labels,
-            box_images,
-            label_smoothing):
-        # Determine the device to use based on the backbone's fc weights
-        device = backbone.device
-
-        # Move to device
-        species_labels = species_labels.to(device)
-        activity_labels = activity_labels.to(device)
-        box_images = box_images.to(device)
-
-        # Extract box features
-        box_features = backbone(box_images)
+            species_classifier,
+            activity_classifier,
+            optimizer):
+        # Set everything to train mode
+        species_classifier.train()
+        activity_classifier.train()
 
         # Compute logits by passing the features through the appropriate
         # classifiers
@@ -392,12 +303,315 @@ class TuplePredictorTrainer:
         species_loss = torch.nn.functional.cross_entropy(
             species_preds,
             species_labels,
-            label_smoothing=label_smoothing
+            label_smoothing=self._label_smoothing
         )
         activity_loss = torch.nn.functional.cross_entropy(
             activity_preds,
             activity_labels,
-            label_smoothing=label_smoothing
+            label_smoothing=self._label_smoothing
+        )
+
+        loss = species_loss + activity_loss
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        species_correct = torch.argmax(species_preds, dim=1) == \
+            species_labels
+        n_species_correct = int(
+            species_correct.to(torch.int).sum().detach().cpu().item()
+        )
+
+        activity_correct = torch.argmax(activity_preds, dim=1) == \
+            activity_labels
+        n_activity_correct = int(
+            activity_correct.to(torch.int).sum().detach().cpu().item()
+        )
+
+        n_examples = species_labels.shape[0]
+        mean_species_accuracy = float(n_species_correct) / n_examples
+        mean_activity_accuracy = float(n_activity_correct) / n_examples
+
+        mean_accuracy = (mean_species_accuracy + mean_activity_accuracy) / 2.0
+
+        return loss.detach().cpu().item(), mean_accuracy
+
+    def _val_epoch(
+            self,
+            box_features,
+            species_labels,
+            activity_labels,
+            species_classifier,
+            activity_classifier):
+        with torch.no_grad():
+            species_classifier.eval()
+            activity_classifier.eval()
+
+            species_preds = species_classifier(box_features)
+            activity_preds = activity_classifier(box_features)
+
+            species_correct = torch.argmax(species_preds, dim=1) == \
+                species_labels
+            n_species_correct = int(
+                species_correct.to(torch.int).sum().detach().cpu().item()
+            )
+
+            activity_correct = torch.argmax(activity_preds, dim=1) == \
+                activity_labels
+            n_activity_correct = int(
+                activity_correct.to(torch.int).sum().detach().cpu().item()
+            )
+
+            n_examples = species_labels.shape[0]
+            mean_species_accuracy = float(n_species_correct) / n_examples
+            mean_activity_accuracy = float(n_activity_correct) / n_examples
+
+            mean_accuracy = \
+                (mean_species_accuracy + mean_activity_accuracy) / 2.0
+
+            return mean_accuracy
+
+    '''
+    Params:
+        species_classifier: ClassifierV2
+            Species classifier to train
+        activity_classifier: ClassifierV2
+            Activity classifier to train
+        root_log_dir: str
+            Root directory for logging training. Should include named transform
+            paths, if appropriate.
+    '''
+    def train(
+            self,
+            species_classifier,
+            activity_classifier,
+            root_log_dir):
+        # TODO new feedback setup will require a separate dataloader since
+        # feedback data has several multiple instance issues and thus requires
+        # image-level labels and special loss functions. Pass that dataloader
+        # in as an argument
+
+        # TODO Class balancing
+
+        # Construct the optimizer
+        optimizer = torch.optim.SGD(
+            list(species_classifier.parameters())\
+                + list(activity_classifier.parameters()),
+            self._lr,
+            momentum=0.9,
+            weight_decay=1e-3
+        )
+
+        # Define convergence parameters (early stopping + model selection)
+        epochs_since_improvement = 0
+        best_accuracy = None
+        best_accuracy_species_classifier_state_dict = None
+        best_accuracy_activity_classifier_state_dict = None
+        mean_train_loss = None
+        mean_train_accuracy = None
+        mean_val_accuracy = None
+
+        # If we didn't load an optimizer state dict, and so the scheduler
+        # hasn't been constructed yet, then construct it
+        training_loss_curve = {}
+        training_accuracy_curve = {}
+        validation_accuracy_curve = {}
+
+        def get_log_dir():
+            return os.path.join(
+                root_log_dir,
+                self._box_transform.path(),
+                self._post_cache_train_transform.path(),
+                'logit-layer-classifier-trainer',
+                f'lr={self._lr}',
+                f'label_smoothing={self._label_smoothing:.2f}'
+            )
+
+        train_box_features, train_species_labels, train_activity_labels =\
+            torch.load(
+                self._train_feature_file,
+                map_location=self._device
+            )
+        val_box_features, val_species_labels, val_activity_labels =\
+            torch.load(
+                self._val_feature_file,
+                map_location=self._device
+            )
+
+        # TODO Precompute feedback backbone features
+
+        # TODO Construct custom feedback dataset; separate class from known data
+        # datasets because of the multiple instance problems. Weighted sampling
+        # will come from explicitly drawing batches from each loader (known
+        # and feedback) separately, and then balancing them mid-iteration
+
+        # TODO Construct custom weighted sampling concatenated dataset between
+        # known and feedback data, and use that rather than the full-batch
+        # approach
+
+        # Train
+        progress = tqdm(
+            range(self._max_epochs),
+            desc=gen_tqdm_description(
+                'Training classifiers...',
+                train_loss=mean_train_loss,
+                train_accuracy=mean_train_accuracy,
+                val_accuracy=mean_val_accuracy
+            ),
+            total=self._max_epochs
+        )
+        for epoch in progress:
+            if self._patience is not None and\
+                    epochs_since_improvement >= self._patience:
+                # We haven't improved in several epochs. Time to stop
+                # training.
+                break
+
+            # Train for one full epoch
+            mean_train_loss, mean_train_accuracy = self._train_epoch(
+                train_box_features,
+                train_species_labels,
+                train_activity_labels,
+                species_classifier,
+                activity_classifier,
+                optimizer
+            )
+
+            if root_log_dir is not None:
+                training_loss_curve[epoch] = mean_train_loss
+                training_accuracy_curve[epoch] = mean_train_accuracy
+                log_dir = get_log_dir()
+                os.makedirs(log_dir, exist_ok=True)
+                training_log = os.path.join(log_dir, 'training.pkl')
+                
+                with open(training_log, 'wb') as f:
+                    sd = {}
+                    sd['training_loss_curve'] = training_loss_curve
+                    sd['training_accuracy_curve'] = training_accuracy_curve
+                    pkl.dump(sd, f)
+
+            # Measure validation accuracy for early stopping / model selection.
+            if epoch >= self._min_epochs - 1:
+                mean_val_accuracy = self._val_epoch(
+                    val_box_features,
+                    val_species_labels,
+                    val_activity_labels,
+                    species_classifier,
+                    activity_classifier
+                )
+
+                if best_accuracy is None or mean_val_accuracy > best_accuracy:
+                    epochs_since_improvement = 0
+                    best_accuracy = mean_val_accuracy
+                    best_accuracy_species_classifier_state_dict =\
+                        deepcopy(species_classifier.state_dict())
+                    best_accuracy_activity_classifier_state_dict =\
+                        deepcopy(activity_classifier.state_dict())
+                else:
+                    epochs_since_improvement += 1
+
+                if root_log_dir is not None:
+                    validation_accuracy_curve[epoch] = mean_val_accuracy
+                    log_dir = get_log_dir()
+                    os.makedirs(log_dir, exist_ok=True)
+                    validation_log = os.path.join(log_dir, 'validation.pkl')
+
+                    with open(validation_log, 'wb') as f:
+                        pkl.dump(validation_accuracy_curve, f)
+
+            progress.set_description(
+                gen_tqdm_description(
+                    'Training classifiers...',
+                    train_loss=mean_train_loss,
+                    train_accuracy=mean_train_accuracy,
+                    val_accuracy=mean_val_accuracy
+                )
+            )
+
+        progress.close()
+
+        # Load the best-accuracy state dicts
+        # NOTE To save GPU memory, we could temporarily move the models to the
+        # CPU before copying or loading their state dicts.
+        species_classifier.load_state_dict(
+            best_accuracy_species_classifier_state_dict
+        )
+        activity_classifier.load_state_dict(
+            best_accuracy_activity_classifier_state_dict
+        )
+
+    def prepare_for_retraining(
+            self,
+            classifier):
+        classifier.reset()
+
+class EndToEndClassifierTrainer(ClassifierTrainer):
+    def __init__(
+            self,
+            backbone,
+            lr,
+            train_dataset,
+            val_known_dataset,
+            box_transform,
+            post_cache_train_transform,
+            retraining_batch_size=32,
+            train_sampler_fn=None,
+            root_checkpoint_dir=None,
+            patience=3,
+            min_epochs=3,
+            max_epochs=30,
+            label_smoothing=0.0,
+            scheduler_type=SchedulerType.none,
+            allow_write=False):
+        self._backbone = backbone
+        self._lr = lr
+        self._train_dataset = train_dataset
+        self._val_known_dataset = val_known_dataset
+        self._box_transform = box_transform
+        self._post_cache_train_transform = post_cache_train_transform
+        self._retraining_batch_size = retraining_batch_size
+        self._train_sampler_fn = train_sampler_fn
+        self._root_checkpoint_dir = root_checkpoint_dir
+        self._patience = patience
+        self._min_epochs = min_epochs
+        self._max_epochs = max_epochs
+        self._label_smoothing = label_smoothing
+        self._scheduler_type = scheduler_type
+        self._allow_write = allow_write
+
+    def _train_batch(
+            self,
+            species_classifier,
+            activity_classifier,
+            optimizer,
+            species_labels,
+            activity_labels,
+            box_images):
+        # Determine the device to use based on the backbone's fc weights
+        device = self._backbone.device
+
+        # Move to device
+        species_labels = species_labels.to(device)
+        activity_labels = activity_labels.to(device)
+        box_images = box_images.to(device)
+
+        # Extract box features
+        box_features = self._backbone(box_images)
+
+        # Compute logits by passing the features through the appropriate
+        # classifiers
+        species_preds = species_classifier(box_features)
+        activity_preds = activity_classifier(box_features)
+
+        species_loss = torch.nn.functional.cross_entropy(
+            species_preds,
+            species_labels,
+            label_smoothing=self._label_smoothing
+        )
+        activity_loss = torch.nn.functional.cross_entropy(
+            activity_preds,
+            activity_labels,
+            label_smoothing=self._label_smoothing
         )
 
         loss = species_loss + activity_loss
@@ -421,15 +635,14 @@ class TuplePredictorTrainer:
             n_species_correct,\
             n_activity_correct
 
-    def _train_epoch(self,
+    def _train_epoch(
+            self,
             data_loader,
-            backbone,
             species_classifier,
             activity_classifier,
-            optimizer,
-            label_smoothing):
+            optimizer):
         # Set everything to train mode
-        backbone.train()
+        self._backbone.train()
         species_classifier.train()
         activity_classifier.train()
         
@@ -443,14 +656,12 @@ class TuplePredictorTrainer:
         for species_labels, activity_labels, box_images in data_loader:
             batch_loss, batch_n_species_correct, batch_n_activity_correct =\
                 self._train_batch(
-                    backbone,
                     species_classifier,
                     activity_classifier,
                     optimizer,
                     species_labels,
                     activity_labels,
-                    box_images,
-                    label_smoothing
+                    box_images
                 )
 
             sum_loss += batch_loss
@@ -470,13 +681,12 @@ class TuplePredictorTrainer:
 
     def _val_batch(
             self,
-            backbone,
             species_classifier,
             activity_classifier,
             species_labels,
             activity_labels,
             box_images):
-        device = backbone.device
+        device = self._backbone.device
 
         # Move to device
         species_labels = species_labels.to(device)
@@ -484,7 +694,7 @@ class TuplePredictorTrainer:
         box_images = box_images.to(device)
 
         # Extract box features
-        box_features = backbone(box_images)
+        box_features = self._backbone(box_images)
 
         # Compute logits by passing the features through the appropriate
         # classifiers
@@ -508,11 +718,10 @@ class TuplePredictorTrainer:
     def _val_epoch(
             self,
             data_loader,
-            backbone,
             species_classifier,
             activity_classifier):
         with torch.no_grad():
-            backbone.eval()
+            self._backbone.eval()
             species_classifier.eval()
             activity_classifier.eval()
 
@@ -523,7 +732,6 @@ class TuplePredictorTrainer:
             for species_labels, activity_labels, box_images in data_loader:
                 batch_n_species_correct, batch_n_activity_correct =\
                     self._val_batch(
-                        backbone,
                         species_classifier,
                         activity_classifier,
                         species_labels,
@@ -542,30 +750,19 @@ class TuplePredictorTrainer:
 
             return mean_accuracy
 
-    def train_backbone_and_classifiers(
+    def train(
             self,
-            backbone,
             species_classifier,
             activity_classifier,
-            lr,
-            train_sampler_fn=None,
-            root_checkpoint_dir=None,
-            root_log_dir=None,
-            patience=3,
-            min_epochs=3,
-            max_epochs=30,
-            label_smoothing=0.0,
-            scheduler_type=SchedulerType.none):
-        if self._feedback_data is not None:
-            train_dataset = ConcatDataset((
-                self._train_dataset, self._feedback_data
-            ))
-        else:
-            train_dataset = self._train_dataset
+            root_log_dir):
+        # TODO new feedback setup will require a separate dataloader since
+        # feedback data has several multiple instance issues and thus requires
+        # image-level labels and special loss functions
 
-        train_dataset = FlattenedBoxImageDataset(train_dataset)
-        if train_sampler_fn is not None:
-            train_sampler = train_sampler_fn(train_dataset)
+        # TODO Class balancing
+        train_dataset = FlattenedBoxImageDataset(self._train_dataset)
+        if self._train_sampler_fn is not None:
+            train_sampler = self._train_sampler_fn(train_dataset)
             train_loader = DataLoader(
                 train_dataset,
                 batch_size=self._retraining_batch_size,
@@ -598,10 +795,10 @@ class TuplePredictorTrainer:
         # Retrain the backbone and classifiers
         # Construct the optimizer
         optimizer = torch.optim.SGD(
-            list(backbone.parameters())\
+            list(self._backbone.parameters())\
                 + list(species_classifier.parameters())\
                 + list(activity_classifier.parameters()),
-            lr,
+            self._lr,
             momentum=0.9,
             weight_decay=1e-3
         )
@@ -609,7 +806,7 @@ class TuplePredictorTrainer:
         # Init scheduler to None. It will be constructed after loading
         # the optimizer state dict, or after failing to do so
         scheduler = None
-        scheduler_ctor = self.scheduler_dict[scheduler_type]
+        scheduler_ctor = self._scheduler_type.ctor()
 
         # Define convergence parameters (early stopping + model selection)
         start_epoch = 0
@@ -624,14 +821,15 @@ class TuplePredictorTrainer:
 
         def get_checkpoint_dir():
             return os.path.join(
-                root_checkpoint_dir,
+                self._root_checkpoint_dir,
                 self._box_transform.path(),
                 self._post_cache_train_transform.path(),
-                f'lr={lr}',
-                f'label_smoothing={label_smoothing:.2f}'
+                'end-to-end-trainer',
+                f'lr={self._lr}',
+                f'label_smoothing={self._label_smoothing:.2f}'
             )
 
-        if root_checkpoint_dir is not None:
+        if self._root_checkpoint_dir is not None:
             checkpoint_dir = get_checkpoint_dir()
             training_checkpoint = os.path.join(checkpoint_dir, 'training.pth')
             validation_checkpoint =\
@@ -640,9 +838,9 @@ class TuplePredictorTrainer:
             if os.path.exists(training_checkpoint):
                 sd = torch.load(
                     training_checkpoint,
-                    map_location=backbone.device
+                    map_location=self._backbone.device
                 )
-                backbone.load_state_dict(sd['backbone'])
+                self._backbone.load_state_dict(sd['backbone'])
                 species_classifier.load_state_dict(sd['species_classifier'])
                 activity_classifier.load_state_dict(sd['activity_classifier'])
                 optimizer.load_state_dict(sd['optimizer'])
@@ -653,13 +851,13 @@ class TuplePredictorTrainer:
                 if scheduler_ctor is not None:
                     scheduler = scheduler_ctor(
                         optimizer,
-                        max_epochs
+                        self._max_epochs
                     )
                     scheduler.load_state_dict(sd['scheduler'])
             if os.path.exists(validation_checkpoint):
                 sd = torch.load(
                     validation_checkpoint,
-                    map_location=backbone.device
+                    map_location=self._backbone.device
                 )
                 epochs_since_improvement = sd['epochs_since_improvement']
                 best_accuracy = sd['accuracy']
@@ -675,7 +873,7 @@ class TuplePredictorTrainer:
         if scheduler_ctor is not None and scheduler is None:
             scheduler = scheduler_ctor(
                 optimizer,
-                max_epochs
+                self._max_epochs
             )
         training_loss_curve = {}
         training_accuracy_curve = {}
@@ -686,8 +884,9 @@ class TuplePredictorTrainer:
                 root_log_dir,
                 self._box_transform.path(),
                 self._post_cache_train_transform.path(),
-                f'lr={lr}',
-                f'label_smoothing={label_smoothing:.2f}'
+                'end-to-end-trainer',
+                f'lr={self._lr}',
+                f'label_smoothing={self._label_smoothing:.2f}'
             )
 
         if root_log_dir is not None and self._allow_write:
@@ -708,18 +907,19 @@ class TuplePredictorTrainer:
 
         # Train
         progress = tqdm(
-            range(start_epoch, max_epochs),
+            range(start_epoch, self._max_epochs),
             desc=gen_tqdm_description(
                 'Training backbone and classifiers...',
                 train_loss=mean_train_loss,
                 train_accuracy=mean_train_accuracy,
                 val_accuracy=mean_val_accuracy
             ),
-            total=max_epochs,
+            total=self._max_epochs,
             initial=start_epoch
         )
         for epoch in progress:
-            if patience is not None and epochs_since_improvement >= patience:
+            if self._patience is not None and\
+                    epochs_since_improvement >= self._patience:
                 # We haven't improved in several epochs. Time to stop
                 # training.
                 break
@@ -732,21 +932,19 @@ class TuplePredictorTrainer:
             # Train for one full epoch
             mean_train_loss, mean_train_accuracy = self._train_epoch(
                 train_loader, 
-                backbone,
                 species_classifier,
                 activity_classifier,
-                optimizer,
-                label_smoothing
+                optimizer
             )
 
-            if root_checkpoint_dir is not None and self._allow_write:
+            if self._root_checkpoint_dir is not None and self._allow_write:
                 checkpoint_dir = get_checkpoint_dir()
                 training_checkpoint =\
                     os.path.join(checkpoint_dir, 'training.pth')
                 os.makedirs(checkpoint_dir, exist_ok=True)
 
                 sd = {}
-                sd['backbone'] = backbone.state_dict()
+                sd['backbone'] = self._backbone.state_dict()
                 sd['species_classifier'] = species_classifier.state_dict()
                 sd['activity_classifier'] = activity_classifier.state_dict()
                 sd['optimizer'] = optimizer.state_dict()
@@ -771,10 +969,9 @@ class TuplePredictorTrainer:
                     pkl.dump(sd, f)
 
             # Measure validation accuracy for early stopping / model selection.
-            if epoch >= min_epochs - 1:
+            if epoch >= self._min_epochs - 1:
                 mean_val_accuracy = self._val_epoch(
                     val_loader,
-                    backbone,
                     species_classifier,
                     activity_classifier
                 )
@@ -783,7 +980,7 @@ class TuplePredictorTrainer:
                     epochs_since_improvement = 0
                     best_accuracy = mean_val_accuracy
                     best_accuracy_backbone_state_dict =\
-                        deepcopy(backbone.state_dict())
+                        deepcopy(self._backbone.state_dict())
                     best_accuracy_species_classifier_state_dict =\
                         deepcopy(species_classifier.state_dict())
                     best_accuracy_activity_classifier_state_dict =\
@@ -791,7 +988,7 @@ class TuplePredictorTrainer:
                 else:
                     epochs_since_improvement += 1
 
-                if root_checkpoint_dir is not None and self._allow_write:
+                if self._root_checkpoint_dir is not None and self._allow_write:
                     checkpoint_dir = get_checkpoint_dir()
                     validation_checkpoint =\
                         os.path.join(checkpoint_dir, 'validation.pth')
@@ -832,13 +1029,747 @@ class TuplePredictorTrainer:
         # Load the best-accuracy state dicts
         # NOTE To save GPU memory, we could temporarily move the models to the
         # CPU before copying or loading their state dicts.
-        backbone.load_state_dict(best_accuracy_backbone_state_dict)
+        self._backbone.load_state_dict(best_accuracy_backbone_state_dict)
         species_classifier.load_state_dict(
             best_accuracy_species_classifier_state_dict
         )
         activity_classifier.load_state_dict(
             best_accuracy_activity_classifier_state_dict
         )
+
+    def prepare_for_retraining(
+            self,
+            classifier):
+        classifier.reset()
+
+
+class SideTuningClassifierTrainer(ClassifierTrainer):
+    def __init__(
+            self,
+            side_tuning_backbone,
+            lr,
+            train_dataset,
+            val_known_dataset,
+            train_feature_file,
+            val_feature_file,
+            box_transform,
+            post_cache_train_transform,
+            retraining_batch_size=32,
+            patience=3,
+            min_epochs=3,
+            max_epochs=30,
+            label_smoothing=0.0,
+            scheduler_type=SchedulerType.none,
+            allow_write=False):
+        self._backbone = side_tuning_backbone
+        self._lr = lr
+        self._train_dataset = train_dataset
+        self._val_known_dataset = val_known_dataset
+        self._train_feature_file = train_feature_file
+        self._val_feature_file = val_feature_file
+        self._box_transform = box_transform
+        self._post_cache_train_transform = post_cache_train_transform
+        self._retraining_batch_size = retraining_batch_size
+        self._patience = patience
+        self._min_epochs = min_epochs
+        self._max_epochs = max_epochs
+        self._label_smoothing = label_smoothing
+        self._scheduler_type = scheduler_type
+        self._allow_write = allow_write
+
+    def _train_batch(
+            self,
+            species_classifier,
+            activity_classifier,
+            optimizer,
+            species_labels,
+            activity_labels,
+            box_images,
+            box_backbone_features):
+        # Determine the device to use based on the backbone's fc weights
+        device = self._backbone.device
+
+        # Move to device
+        species_labels = species_labels.to(device)
+        activity_labels = activity_labels.to(device)
+        box_images = box_images.to(device)
+        box_backbone_features = box_backbone_features.to(device)
+
+        # Extract side network box features
+        box_side_features = self._backbone.compute_side_features(box_images)
+
+        # Concatenate backbone and side features
+        box_features = torch.cat(
+            (box_backbone_features, box_side_features),
+            dim=1
+        )
+
+        # Compute logits by passing the features through the appropriate
+        # classifiers
+        species_preds = species_classifier(box_features)
+        activity_preds = activity_classifier(box_features)
+
+        species_loss = torch.nn.functional.cross_entropy(
+            species_preds,
+            species_labels,
+            label_smoothing=self._label_smoothing
+        )
+        activity_loss = torch.nn.functional.cross_entropy(
+            activity_preds,
+            activity_labels,
+            label_smoothing=self._label_smoothing
+        )
+
+        loss = species_loss + activity_loss
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        species_correct = torch.argmax(species_preds, dim=1) == \
+            species_labels
+        n_species_correct = int(
+            species_correct.to(torch.int).sum().detach().cpu().item()
+        )
+
+        activity_correct = torch.argmax(activity_preds, dim=1) == \
+            activity_labels
+        n_activity_correct = int(
+            activity_correct.to(torch.int).sum().detach().cpu().item()
+        )
+        
+        return loss.detach().cpu().item(),\
+            n_species_correct,\
+            n_activity_correct
+
+    def _train_epoch(
+            self,
+            data_loader,
+            species_classifier,
+            activity_classifier,
+            optimizer):
+        # Set everything to train mode
+        self._backbone.train()
+        species_classifier.train()
+        activity_classifier.train()
+        
+        # Keep track of epoch statistics
+        sum_loss = 0.0
+        n_iterations = 0
+        n_examples = 0
+        n_species_correct = 0
+        n_activity_correct = 0
+
+        for species_labels, activity_labels, box_images, box_backbone_features\
+                in data_loader:
+            batch_loss, batch_n_species_correct, batch_n_activity_correct =\
+                self._train_batch(
+                    species_classifier,
+                    activity_classifier,
+                    optimizer,
+                    species_labels,
+                    activity_labels,
+                    box_images,
+                    box_backbone_features
+                )
+
+            sum_loss += batch_loss
+            n_iterations += 1
+            n_examples += box_images.shape[0]
+            n_species_correct += batch_n_species_correct
+            n_activity_correct += batch_n_activity_correct
+
+        mean_loss = sum_loss / n_iterations
+
+        mean_species_accuracy = float(n_species_correct) / n_examples
+        mean_activity_accuracy = float(n_activity_correct) / n_examples
+
+        mean_accuracy = (mean_species_accuracy + mean_activity_accuracy) / 2.0
+
+        return mean_loss, mean_accuracy
+
+    def _val_batch(
+            self,
+            species_classifier,
+            activity_classifier,
+            species_labels,
+            activity_labels,
+            box_images,
+            box_backbone_features):
+        device = self._backbone.device
+
+        # Move to device
+        species_labels = species_labels.to(device)
+        activity_labels = activity_labels.to(device)
+        box_images = box_images.to(device)
+        box_backbone_features = box_backbone_features.to(device)
+
+        # Extract side network box features
+        box_side_features = self._backbone.compute_side_features(box_images)
+
+        # Concatenate backbone and side features
+        box_features = torch.cat(
+            (box_backbone_features, box_side_features),
+            dim=1
+        )
+
+        # Compute logits by passing the features through the appropriate
+        # classifiers
+        species_preds = species_classifier(box_features)
+        activity_preds = activity_classifier(box_features)
+
+        species_correct = torch.argmax(species_preds, dim=1) == \
+            species_labels
+        n_species_correct = int(
+            species_correct.to(torch.int).sum().detach().cpu().item()
+        )
+
+        activity_correct = torch.argmax(activity_preds, dim=1) == \
+            activity_labels
+        n_activity_correct = int(
+            activity_correct.to(torch.int).sum().detach().cpu().item()
+        )
+
+        return n_species_correct, n_activity_correct
+
+    def _val_epoch(
+            self,
+            data_loader,
+            species_classifier,
+            activity_classifier):
+        with torch.no_grad():
+            self._backbone.eval()
+            species_classifier.eval()
+            activity_classifier.eval()
+
+            n_examples = 0
+            n_species_correct = 0
+            n_activity_correct = 0
+
+            for species_labels, activity_labels, box_images,\
+                    box_backbone_features in data_loader:
+                batch_n_species_correct, batch_n_activity_correct =\
+                    self._val_batch(
+                        species_classifier,
+                        activity_classifier,
+                        species_labels,
+                        activity_labels,
+                        box_images,
+                        box_backbone_features
+                    )
+                n_examples += box_images.shape[0]
+                n_species_correct += batch_n_species_correct
+                n_activity_correct += batch_n_activity_correct
+
+            mean_species_accuracy = float(n_species_correct) / n_examples
+            mean_activity_accuracy = float(n_activity_correct) / n_examples
+
+            mean_accuracy = \
+                (mean_species_accuracy + mean_activity_accuracy) / 2.0
+
+            return mean_accuracy
+
+    def train(
+            self,
+            species_classifier,
+            activity_classifier,
+            root_log_dir):
+        # TODO new feedback setup will require a separate dataloader since
+        # feedback data has several multiple instance issues and thus requires
+        # image-level labels and special loss functions.
+
+        # TODO Class balancing
+
+        # Load training and validation backbone features from feature
+        # files
+        train_box_features, train_species_labels, train_activity_labels =\
+            torch.load(
+                self._train_feature_file,
+                map_location=self._device
+            )
+        val_box_features, val_species_labels, val_activity_labels =\
+            torch.load(
+                self._val_feature_file,
+                map_location=self._device
+            )
+
+        # TODO Precompute feedback backbone features
+
+        # Construct training and validation
+        # FeatureConcatFlattenedBoxImageDataset objects from known features
+
+        known_train_dataset = FeatureConcatFlattenedBoxImageDataset(
+            FlattenedBoxImageDataset(self._train_dataset),
+            train_box_features
+        )
+        known_val_dataset = FeatureConcatFlattenedBoxImageDataset(
+            FlattenedBoxImageDataset(self._val_known_dataset),
+            val_box_features
+        )
+
+        # TODO Construct custom feedback dataset; separate class from known data
+        # datasets because of the multiple instance problems. Weighted sampling
+        # will come from explicitly drawing batches from each loader (known
+        # and feedback) separately, and then balancing them mid-iteration
+
+        # For now, we just have a single loader for training and a single loader
+        # for validation (until feedback is implemented)
+        train_dataset = known_train_dataset
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=self._retraining_batch_size,
+            shuffle=True,
+            num_workers=2
+        )
+        val_dataset = known_val_dataset
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=self._retraining_batch_size,
+            shuffle=False,
+            num_workers=2
+        )
+
+        # Construct the optimizer
+        optimizer = torch.optim.SGD(
+            list(self._backbone.retrainable_parameters())\
+                + list(species_classifier.parameters())\
+                + list(activity_classifier.parameters()),
+            self._lr,
+            momentum=0.9,
+            weight_decay=1e-3
+        )
+
+        # Init scheduler to None. It will be constructed after loading
+        # the optimizer state dict, or after failing to do so
+        scheduler = None
+        scheduler_ctor = self._scheduler_type.ctor()
+
+        # Define convergence parameters (early stopping + model selection)
+        start_epoch = 0
+        epochs_since_improvement = 0
+        best_accuracy = None
+        best_accuracy_backbone_state_dict = None
+        best_accuracy_species_classifier_state_dict = None
+        best_accuracy_activity_classifier_state_dict = None
+        mean_train_loss = None
+        mean_train_accuracy = None
+        mean_val_accuracy = None
+
+        # If we didn't load an optimizer state dict, and so the scheduler
+        # hasn't been constructed yet, then construct it
+        if scheduler_ctor is not None and scheduler is None:
+            scheduler = scheduler_ctor(
+                optimizer,
+                self._max_epochs
+            )
+        training_loss_curve = {}
+        training_accuracy_curve = {}
+        validation_accuracy_curve = {}
+
+        def get_log_dir():
+            return os.path.join(
+                root_log_dir,
+                self._box_transform.path(),
+                self._post_cache_train_transform.path(),
+                'end-to-end-trainer',
+                f'lr={self._lr}',
+                f'label_smoothing={self._label_smoothing:.2f}'
+            )
+
+        if root_log_dir is not None and self._allow_write:
+            log_dir = get_log_dir()
+            training_log = os.path.join(log_dir, 'training.pkl')
+            validation_log =\
+                os.path.join(log_dir, 'validation.pkl')
+
+            if os.path.exists(training_log):
+                with open(training_log, 'rb') as f:
+                    sd = pkl.load(f)
+                    training_loss_curve = sd['training_loss_curve']
+                    training_accuracy_curve = sd['training_accuracy_curve']
+
+            if os.path.exists(validation_log):
+                with open(validation_log, 'rb') as f:
+                    validation_accuracy_curve = pkl.load(f)
+
+        # Train
+        progress = tqdm(
+            range(start_epoch, self._max_epochs),
+            desc=gen_tqdm_description(
+                'Training backbone and classifiers...',
+                train_loss=mean_train_loss,
+                train_accuracy=mean_train_accuracy,
+                val_accuracy=mean_val_accuracy
+            ),
+            total=self._max_epochs,
+            initial=start_epoch
+        )
+        for epoch in progress:
+            if self._patience is not None and\
+                    epochs_since_improvement >= self._patience:
+                # We haven't improved in several epochs. Time to stop
+                # training.
+                break
+
+            # Train for one full epoch
+            mean_train_loss, mean_train_accuracy = self._train_epoch(
+                train_loader, 
+                species_classifier,
+                activity_classifier,
+                optimizer
+            )
+
+            if root_log_dir is not None and self._allow_write:
+                training_loss_curve[epoch] = mean_train_loss
+                training_accuracy_curve[epoch] = mean_train_accuracy
+                log_dir = get_log_dir()
+                os.makedirs(log_dir, exist_ok=True)
+                training_log = os.path.join(log_dir, 'training.pkl')
+                
+                with open(training_log, 'wb') as f:
+                    sd = {}
+                    sd['training_loss_curve'] = training_loss_curve
+                    sd['training_accuracy_curve'] = training_accuracy_curve
+                    pkl.dump(sd, f)
+
+            # Measure validation accuracy for early stopping / model selection.
+            if epoch >= self._min_epochs - 1:
+                mean_val_accuracy = self._val_epoch(
+                    val_loader,
+                    species_classifier,
+                    activity_classifier
+                )
+
+                if best_accuracy is None or mean_val_accuracy > best_accuracy:
+                    epochs_since_improvement = 0
+                    best_accuracy = mean_val_accuracy
+                    best_accuracy_backbone_state_dict =\
+                        deepcopy(self._backbone.state_dict())
+                    best_accuracy_species_classifier_state_dict =\
+                        deepcopy(species_classifier.state_dict())
+                    best_accuracy_activity_classifier_state_dict =\
+                        deepcopy(activity_classifier.state_dict())
+                else:
+                    epochs_since_improvement += 1
+
+                if root_log_dir is not None and self._allow_write:
+                    validation_accuracy_curve[epoch] = mean_val_accuracy
+                    log_dir = get_log_dir()
+                    os.makedirs(log_dir, exist_ok=True)
+                    validation_log = os.path.join(log_dir, 'validation.pkl')
+                    
+                    with open(validation_log, 'wb') as f:
+                        pkl.dump(validation_accuracy_curve, f)
+
+            progress.set_description(
+                gen_tqdm_description(
+                    'Training backbone and classifiers...',
+                    train_loss=mean_train_loss,
+                    train_accuracy=mean_train_accuracy,
+                    val_accuracy=mean_val_accuracy
+                )
+            )
+
+        progress.close()
+
+        # Load the best-accuracy state dicts
+        # NOTE To save GPU memory, we could temporarily move the models to the
+        # CPU before copying or loading their state dicts.
+        # NOTE we could also make the state dicts here a little more efficient
+        # by only saving and loading the state dict of the side network, rather
+        # than working with the fixed backbone as well.
+        self._backbone.load_state_dict(best_accuracy_backbone_state_dict)
+        species_classifier.load_state_dict(
+            best_accuracy_species_classifier_state_dict
+        )
+        activity_classifier.load_state_dict(
+            best_accuracy_activity_classifier_state_dict
+        )
+
+    def prepare_for_retraining(
+            self,
+            classifier):
+        # Reset only the side network's weights
+        self._backbone.reset()
+
+        # Update classifier's bottleneck dim to account for side network's
+        # features before resetting
+        classifier.reset(bottleneck_dim=512)
+
+
+def get_transforms(augmentation):
+    box_transform = ResizePad(224)
+    normalize = Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    augmentation_ctor = augmentation.ctor()
+    post_cache_train_transform =\
+        Compose((augmentation_ctor(), normalize))
+    post_cache_val_transform = normalize
+    return box_transform, post_cache_train_transform, post_cache_val_transform
+
+
+def get_datasets(
+        data_root,
+        train_csv_path,
+        val_csv_path,
+        n_species_cls,
+        n_activity_cls,
+        label_mapping,
+        box_transform,
+        post_cache_train_transform,
+        post_cache_val_transform,
+        root_cache_dir=None,
+        allow_write=False,
+        n_known_val=4068):
+    static_label_mapper =\
+        LabelMapper(label_mapping=deepcopy(label_mapping), update=False)
+    dynamic_label_mapper =\
+        LabelMapper(label_mapping, update=True)
+
+    if root_cache_dir is not None:
+        train_cache_dir = os.path.join(root_cache_dir, 'train')
+        val_cache_dir = os.path.join(root_cache_dir, 'val')
+    else:
+        train_cache_dir = None
+        val_cache_dir = None
+
+    raw_train_dataset = BoxImageDataset(
+        name = 'Custom',
+        data_root = data_root,
+        csv_path = train_csv_path,
+        training = True,
+        n_species_cls=n_species_cls,
+        n_activity_cls=n_activity_cls,
+        label_mapper=dynamic_label_mapper,
+        box_transform=box_transform,
+        cache_dir=train_cache_dir,
+        write_cache=allow_write
+    )
+    raw_train_dataset.commit_cache()
+
+    val_known_indices_gen = np.random.Generator(np.random.PCG64(0))
+    val_known_indices = val_known_indices_gen.choice(
+        list(range(len(raw_train_dataset))),
+        size=n_known_val,
+        replace=False
+    ).tolist()
+    val_known_indices_set = set(val_known_indices)
+    training_indices = [x for x in range(len(raw_train_dataset)) if\
+        not x in val_known_indices_set]
+    
+    val_known_dataset = TransformingBoxImageDataset(
+        Subset(raw_train_dataset, val_known_indices),
+        post_cache_val_transform
+    )
+    train_dataset = TransformingBoxImageDataset(
+        Subset(raw_train_dataset, training_indices),
+        post_cache_train_transform
+    )
+
+    raw_val_dataset = BoxImageDataset(
+        name = 'Custom',
+        data_root = data_root,
+        csv_path = val_csv_path,
+        training = False,
+        n_species_cls=n_species_cls,
+        n_activity_cls=n_activity_cls,
+        label_mapper=static_label_mapper,
+        box_transform=box_transform,
+        cache_dir=val_cache_dir,
+        write_cache=allow_write
+    )
+    raw_val_dataset.commit_cache()
+
+    val_dataset = ConcatDataset((
+        val_known_dataset,
+        TransformingBoxImageDataset(
+            raw_val_dataset,
+            post_cache_val_transform
+        )
+    ))
+
+    return train_dataset, val_known_dataset, val_dataset, dynamic_label_mapper
+
+
+def compute_features(
+        backbone,
+        root_save_dir,
+        box_transform,
+        post_cache_train_transform,
+        train_dataset,
+        val_known_dataset,
+        retraining_batch_size):
+    backbone.eval()
+    flattened_train_dataset = FlattenedBoxImageDataset(train_dataset)
+    train_loader = DataLoader(
+        flattened_train_dataset,
+        batch_size=retraining_batch_size,
+        shuffle=False,
+        num_workers=2
+    )
+
+    # Construct validation loaders for early stopping / model selection.
+    # I'm assuming our model selection strategy will be based solely on the
+    # validation classification accuracy and not based on novelty detection
+    # capabilities in any way. Otherwise, we can use the novel validation
+    # data to measure novelty detection performance. These currently aren't
+    # being stored (except in a special form for the logistic regressions),
+    # so we'd have to modify __init__().
+    flattened_val_dataset = FlattenedBoxImageDataset(val_known_dataset)
+    val_loader = DataLoader(
+        flattened_val_dataset,
+        batch_size=retraining_batch_size,
+        shuffle=False,
+        num_workers=2
+    )
+
+    save_dir = os.path.join(
+        root_save_dir,
+        box_transform.path(),
+        post_cache_train_transform.path(),
+    )
+
+    training_features_path = os.path.join(save_dir, 'training.pth')
+    os.makedirs(training_features_path, exist_ok=True)
+    validation_features_path = os.path.join(save_dir, 'validation.pth')
+    os.makedirs(validation_features_path, exist_ok=True)
+
+    # Determine the device to use based on the backbone's fc weights
+    device = backbone.device
+
+    train_box_features = []
+    train_species_labels = []
+    train_activity_labels = []
+
+    with torch.no_grad():
+        for species_labels, activity_labels, box_images in train_loader:
+            # Move to device
+            species_labels = species_labels.to(device)
+            activity_labels = activity_labels.to(device)
+            box_images = box_images.to(device)
+
+            # Extract box features
+            box_features = backbone(box_images)
+
+            # Store
+            train_box_features.append(box_features)
+            train_species_labels.append(species_labels)
+            train_activity_labels.append(activity_labels)
+
+        train_box_features = torch.cat(train_box_features, dim=0)
+        train_species_labels = torch.cat(train_species_labels, dim=0)
+        train_activity_labels = torch.cat(train_activity_labels, dim=0)
+
+    val_box_features = []
+    val_species_labels = []
+    val_activity_labels = []
+
+    with torch.no_grad():
+        for species_labels, activity_labels, box_images in val_loader:
+            # Move to device
+            species_labels = species_labels.to(device)
+            activity_labels = activity_labels.to(device)
+            box_images = box_images.to(device)
+
+            # Extract box features
+            box_features = backbone(box_images)
+
+            # Store
+            val_box_features.append(box_features)
+            val_species_labels.append(species_labels)
+            val_activity_labels.append(activity_labels)
+
+        val_box_features = torch.cat(val_box_features, dim=0)
+        val_species_labels = torch.cat(val_species_labels, dim=0)
+        val_activity_labels = torch.cat(val_activity_labels, dim=0)
+
+    torch.save(
+        (train_box_features, train_species_labels, train_activity_labels),
+        training_features_path
+    )
+    torch.save(
+        (val_box_features, val_species_labels, val_activity_labels),
+        validation_features_path
+    )
+
+
+class TuplePredictorTrainer:
+    def __init__(
+            self,
+            train_dataset,
+            val_known_dataset,
+            val_dataset,
+            box_transform,
+            post_cache_train_transform,
+            retraining_batch_size,
+            n_species_cls,
+            n_activity_cls,
+            dynamic_label_mapper,
+            classifier_trainer):
+        self._train_dataset = train_dataset
+        self._val_known_dataset = val_known_dataset
+        self._val_dataset = val_dataset
+        self._box_transform = box_transform
+        self._post_cache_train_transform = post_cache_train_transform
+        self._retraining_batch_size = retraining_batch_size
+        self._n_species_cls = n_species_cls
+        self._n_activity_cls = n_activity_cls
+        self._dynamic_label_mapper = dynamic_label_mapper
+        self._classifier_trainer = classifier_trainer
+
+        # TODO class balancing? In the SVO system, we balanced 50/50 known
+        # and novel examples to avoid biasing P(N_i) toward 1. But maybe it
+        # doesn't matter here since we aren't using P(N_i) for merging
+        # SCG / non-SCG predictions. We also previously would sample a batch
+        # from each of 6 data loaders, which naturally balanced them, when
+        # training the classifier: S/V/O x known/novel
+        self._feedback_data = None
+
+    def add_feedback_data(self, data_root, csv_path):
+        new_novel_dataset = BoxImageDataset(
+            name = 'Custom',
+            data_root = data_root,
+            csv_path = csv_path,
+            training = True,
+            n_species_cls=self._n_species_cls,
+            n_activity_cls=self._n_activity_cls,
+            label_mapper=self._dynamic_label_mapper,
+            box_transform=self._box_transform
+        )
+        new_novel_dataset = TransformingBoxImageDataset(
+            new_novel_dataset,
+            self._post_cache_train_transform
+        )
+
+        # Put new feedback data in list
+        if self._feedback_data is None:
+            self._feedback_data = new_novel_dataset
+        else:
+            self._feedback_data = ConcatDataset(
+                [self._feedback_data, new_novel_dataset]
+            )
+    
+    # Should be called before train_novelty_detection_module(), except when
+    # training for the very first time manually. This prepares the
+    # backbone, classifier, and novelty type logistic regressions for
+    # retraining. Most likely this is done by fully randomizing them, but in
+    # the future we might change the process to be e.g. a warm-start,
+    # shrink-and-perturb, or crashing a single layer.
+    def prepare_for_retraining(
+            self,
+            backbone,
+            classifier,
+            confidence_calibrator,
+            novelty_type_classifier,
+            activation_statistical_model):
+        # Reset the classifiers (and possibly certain backbone components,
+        # depending on the classifier retraining method) if appropriate
+        self._classifier_trainer.prepare_for_retraining(classifier)
+        
+        # Reset the confidence calibrator
+        confidence_calibrator.reset()
+
+        # Reset logistic regressions and statistical model
+        novelty_type_classifier.reset()
+        activation_statistical_model.reset()
 
     def fit_activation_statistics(
             self,
@@ -1056,26 +1987,18 @@ class TuplePredictorTrainer:
             min_epochs=3,
             max_epochs=30,
             label_smoothing=0.0,
-            scheduler_type=SchedulerType.none):
+            scheduler_type=SchedulerType.none,
+            backbone_training_type=BackboneTrainingType.classifiers):
         species_classifier = classifier.species_classifier
         activity_classifier = classifier.activity_classifier
         species_calibrator = confidence_calibrator.species_calibrator
         activity_calibrator = confidence_calibrator.activity_calibrator
         
         # Retrain the backbone and classifiers
-        self.train_backbone_and_classifiers(
-            backbone,
+        self._classifier_trainer.train(
             species_classifier,
             activity_classifier,
-            lr,
-            train_sampler_fn=train_sampler_fn,
-            root_checkpoint_dir=root_checkpoint_dir,
-            root_log_dir=root_log_dir,
-            patience=patience,
-            min_epochs=min_epochs,
-            max_epochs=max_epochs,
-            label_smoothing=label_smoothing,
-            scheduler_type=scheduler_type
+            root_log_dir
         )
 
         self.fit_activation_statistics(

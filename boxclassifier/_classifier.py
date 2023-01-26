@@ -15,10 +15,12 @@ class ClassifierV2:
         self.n_activity_cls = n_activity_cls
         self.reset()
 
-    def reset(self):
+    def reset(self, bottleneck_dim=None):
+        if bottleneck_dim is not None:
+            self.bottleneck_dim = bottleneck_dim
         self.species_classifier = torch.nn.Linear(self.bottleneck_dim, self.n_species_cls).to(self.device)
         self.activity_classifier = torch.nn.Linear(self.bottleneck_dim, self.n_activity_cls).to(self.device)
-    
+
     def predict(self, box_features):
         self.species_classifier.eval()
         self.activity_classifier.eval()
