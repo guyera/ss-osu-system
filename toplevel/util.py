@@ -125,8 +125,12 @@ class UnsupervisedNoveltyDetectionManager:
             tuple_prediction_state_dict['novelty_type_classifier']
         )
 
-    # TODO def predict(self, species_probs, activity_probs, p_type):
-    #           call self.tupe_predictor.predict()
+    def predict(self, species_probs, activity_probs, p_type):
+        return self.tuple_predictor.predict(
+            species_probs,
+            activity_probs,
+            p_type
+        )
 
     def score(self, backbone, dataset):
         # TODO tensorize / batch with dataloader
