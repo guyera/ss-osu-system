@@ -30,25 +30,29 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
     '--data-root',
     type=str,
-    help='Data root directory'
+    help='Data root directory',
+    required=True
 )
 
 parser.add_argument(
     '--root-cache-dir',
     type=str,
-    help='Root cache directory'
+    help='Root cache directory',
+    required=True
 )
 
 parser.add_argument(
     '--train-csv-path',
     type=str,
-    help='Path to training CSV'
+    help='Path to training CSV',
+    required=True
 )
 
 parser.add_argument(
     '--cal-csv-path',
     type=str,
-    help='Path to calibration CSV'
+    help='Path to calibration CSV',
+    required=True
 )
 
 parser.add_argument(
@@ -67,7 +71,7 @@ parser.add_argument(
 
 parser.add_argument(
     '--augmentation',
-    type=Augmentation,
+    type=lambda augmentation: Augmentation[augmentation],
     choices=list(Augmentation),
     default=Augmentation.rand_augment,
     help='Augmentation strategy'
@@ -89,7 +93,7 @@ parser.add_argument(
 
 parser.add_argument(
     '--scheduler-type',
-    type=SchedulerType,
+    type=lambda scheduler_type: SchedulerType[scheduler_type],
     choices=list(SchedulerType),
     default=SchedulerType.cosine,
     help='Type of learning rate scheduler to use'
@@ -207,14 +211,11 @@ trainer = TuplePredictorTrainer(
     val_dataset,
     box_transform,
     post_cache_train_transform,
-    args.batch_size,
     n_species_cls,
     n_activity_cls,
     dynamic_label_mapper,
     classifier_trainer
 )
-
-trainer.prepare_for_retraining(backbone, classifier, confidence_calibrator, novelty_type_classifier, activation_statistical_model)
 
 start_time = time.time()
 

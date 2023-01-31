@@ -28,20 +28,17 @@ from transforms import\
 
 class Augmentation(Enum):
     rand_augment = {
-        'name': 'rand-augment',
         'ctor': RandAugment
     }
     horizontal_flip = {
-        'name': 'horizontal-flip',
         'ctor': RandomHorizontalFlip
     }
     none = {
-        'name': 'none',
         'ctor': NoOpTransform
     }
 
     def __str__(self):
-        return self.value['name']
+        return self.name
 
     def ctor(self):
         return self.value['ctor']
@@ -49,16 +46,14 @@ class Augmentation(Enum):
 
 class SchedulerType(Enum):
     cosine = {
-        'name': 'cosine',
         'ctor': CosineAnnealingLR
     }
     none = {
-        'name': 'none',
         'ctor': None
     }
 
     def __str__(self):
-        return self.value['name']
+        return self.name
 
     def ctor(self):
         return self.value['ctor']
@@ -1809,7 +1804,7 @@ class TuplePredictorTrainer:
             activity_calibrator):
         cal_loader = DataLoader(
             self._val_known_dataset,
-            batch_size=256,
+            batch_size=64,
             shuffle=False,
             collate_fn=custom_collate,
             num_workers=2
