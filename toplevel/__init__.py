@@ -1,3 +1,4 @@
+import re
 import itertools
 from pathlib import Path
 import numpy as np
@@ -5,7 +6,6 @@ import torch
 from torch.utils.data import DataLoader
 from data.data_factory import DataFactory
 from utils import custom_collate
-from ensemble import Ensemble
 from toplevel.util import *
 from boximagedataset import BoxImageDataset
 import pandas as pd
@@ -13,24 +13,32 @@ from tupleprediction import compute_probability_novelty
 from adaptation.query_formulation import select_queries
 import pickle
 from scipy.stats import ks_2samp
-from tupleprediction.training import TuplePredictorTrainer
 
 import os
 
 from backbone import Backbone
+from data.custom import build_species_label_mapping
+from labelmapping import LabelMapper
+from tupleprediction.training import\
+    Augmentation,\
+    SchedulerType,\
+    get_transforms,\
+    get_datasets,\
+    TuplePredictorTrainer,\
+    LogitLayerClassifierTrainer
 
 class TopLevelApp:
-    def __init__(self, ensemble_path, data_root, pretrained_models_dir, backbone_architecture,
-        feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path, val_incident_csv_path,
-        val_corruption_csv_path, trial_size, trial_batch_size, retraining_image_batch_size, retraining_batch_size, retraining_buffer_size, disable_retraining):
+    def __init__(self, data_root, pretrained_models_dir, backbone_architecture,
+            feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
+            trial_size, trial_batch_size, disable_retraining,
+            root_cache_dir, n_known_val, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_patience, retraining_min_epochs, retraining_max_epochs,
+            retraining_label_smoothing, retraining_scheduler_type):
 
         pretrained_backbone_path = os.path.join(
             pretrained_models_dir,
             backbone_architecture.value['name'],
             'backbone.pth'
         )
-        if not Path(ensemble_path).exists():
-            raise Exception(f'pretrained SCG model was not found in path {ensemble_path}')
         if not Path(pretrained_backbone_path).exists():
             raise Exception(f'pretrained backbone was not found in path {pretrained_backbone_path}')
         # if not Path(train_csv_path).exists():
@@ -43,16 +51,13 @@ class TopLevelApp:
         self.backbone_architecture = backbone_architecture
         self.train_csv_path = train_csv_path
         self.val_csv_path = val_csv_path
-        self.val_incident_csv_path = val_incident_csv_path
-        self.val_corruption_csv_path = val_corruption_csv_path
         self.pretrained_backbone_path = pretrained_backbone_path
-        self.NUM_SUBJECT_CLASSES = 5
-        self.NUM_OBJECT_CLASSES = 12
-        self.NUM_VERB_CLASSES = 8
-        self.NUM_SPATIAL_FEATURES = 2 * 36
+        self.n_species_cls = 30
+        self.n_activity_cls = 4
+        self.n_known_species_cls = 10
+        self.n_known_activity_cls = 2
         self.post_red = False
-        self.p_type_dist =torch.tensor([0.20, 0.20, 0.20, 0.20, 0.20]) if not ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
-        self.p_type_dist_separated6_7 =torch.tensor([0.16, 0.16, 0.16, 0.16, 0.16, 0.16]) if not ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
+        self.p_type_dist =torch.tensor([0.20, 0.20, 0.20, 0.20, 0.20])
         self.all_query_masks = torch.tensor([])
         self.all_feedback = torch.tensor([])
         self.all_p_ni = torch.tensor([])
@@ -62,9 +67,6 @@ class TopLevelApp:
         self.all_top_3_svo = []
         self.all_p_type = torch.tensor([])
         self.all_red_light_scores = np.array([])
-
-        self.scg_ensemble = Ensemble(ensemble_path, self.NUM_OBJECT_CLASSES, self.NUM_SUBJECT_CLASSES, 
-            self.NUM_VERB_CLASSES, data_root=None, cal_csv_path=None, val_csv_path=None)
 
         self.p_type_th = 0.75
         self.post_red_base = None
@@ -89,9 +91,7 @@ class TopLevelApp:
         self.log = log
         self.log_dir = log_dir
         self.p_type_hist = [self.p_type_dist.numpy()]
-        self.p_type_hist_separated6_7 = [self.p_type_dist_separated6_7.numpy()]
         self.per_image_p_type = torch.tensor([])
-        self.per_image_p_type_separated6_7 = torch.tensor([])
         self.ignore_verb_novelty = ignore_verb_novelty
         self.given_detection = given_detection
         self.red_light_img = None
@@ -108,36 +108,105 @@ class TopLevelApp:
             'verb_id', 'original_verb_id', 'image_width', 'image_height',
             'subject_ymin', 'subject_xmin', 'subject_ymax', 'subject_xmax',
             'object_ymin', 'object_xmin', 'object_ymax', 'object_xmax'])
-        self.retraining_image_batch_size = retraining_image_batch_size
-        self.retraining_batch_size = retraining_batch_size
-        self.retraining_buffer_size = retraining_buffer_size
         self.disable_retraining = disable_retraining
-        # self.disable_retraining = True
 
+        self.root_cache_dir = root_cache_dir
+        self.n_known_val = n_known_val
+        self.retraining_augmentation = retraining_augmentation
+        self.retraining_lr = retraining_lr
+        self.retraining_batch_size = retraining_batch_size
+        self.retraining_patience = retraining_patience
+        self.retraining_min_epochs = retraining_min_epochs
+        self.retraining_max_epochs = retraining_max_epochs
+        self.retraining_label_smoothing = retraining_label_smoothing
+        self.retraining_scheduler_type = retraining_scheduler_type
 
         self.mergedSVO = []
         self.mergedprobs = []
-        
-                
-        self.backbone = Backbone(backbone_architecture)
-        backbone_state_dict = torch.load(self.pretrained_backbone_path)
+
+        self.backbone = Backbone(
+            backbone_architecture,
+            pretrained=False
+        ).to('cuda:0')
+        backbone_state_dict = torch.load(
+            self.pretrained_backbone_path,
+            map_location='cuda:0'
+        )
+        backbone_state_dict = {
+            re.sub('^module\.', '', k): v for\
+                k, v in backbone_state_dict.items()
+        }
         self.backbone.load_state_dict(backbone_state_dict)
-        self.backbone = self.backbone.to('cuda:0')
         self.backbone.eval()
+
         self.und_manager = UnsupervisedNoveltyDetectionManager(
             self.pretrained_models_dir,
             self.backbone_architecture,
-            self.NUM_SUBJECT_CLASSES,
-            self.NUM_VERB_CLASSES,
-            self.NUM_OBJECT_CLASSES,
-            self.NUM_SPATIAL_FEATURES,
-            0.98)
-        self.novelty_trainer = TuplePredictorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.val_corruption_csv_path, self.retraining_image_batch_size, self.retraining_batch_size, self.retraining_buffer_size)
+            self.n_species_cls,
+            self.n_activity_cls,
+            self.n_known_species_cls,
+            self.n_known_activity_cls
+        )
+
+        label_mapping = build_species_label_mapping(self.train_csv_path)
+        self.box_transform,\
+            post_cache_train_transform,\
+            post_cache_val_transform =\
+                get_transforms(self.retraining_augmentation)
+
+        train_dataset,\
+            val_known_dataset,\
+            val_dataset,\
+            dynamic_label_mapper,\
+            self.static_label_mapper =\
+                get_datasets(
+                    self.data_root,
+                    self.train_csv_path,
+                    self.val_csv_path,
+                    self.n_species_cls,
+                    self.n_activity_cls,
+                    label_mapping,
+                    self.box_transform,
+                    post_cache_train_transform,
+                    post_cache_val_transform,
+                    root_cache_dir=self.root_cache_dir,
+                    allow_write=True,
+                    n_known_val=self.n_known_val
+                )
+
+        classifier_trainer = EndToEndClassifierTrainer(
+            self.backbone,
+            self.retraining_lr,
+            train_dataset,
+            val_known_dataset,
+            box_transform,
+            post_cache_train_transform,
+            retraining_batch_size=self.retraining_batch_size,
+            train_sampler_fn=None,
+            root_checkpoint_dir=None,
+            patience=self.retraining_patience,
+            min_epochs=self.retraining_min_epochs,
+            max_epochs=self.retraining_max_epochs,
+            label_smoothing=self.retraining_label_smoothing,
+            scheduler_type=self.retraining_scheduler_type,
+            allow_write=True
+        )
+
+        self.novelty_trainer = TuplePredictorTrainer(
+            train_dataset,
+            val_known_dataset,
+            val_dataset,
+            box_transform,
+            post_cache_train_transform,
+            self.n_species_cls,
+            self.n_activity_cls,
+            dynamic_label_mapper,
+            classifier_trainer
+        )
         
     def reset(self):
         self.post_red = False
         self.p_type_dist = torch.tensor([0.20, 0.20, 0.20, 0.20, 0.20]) if not self.ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])        
-        self.p_type_dist_separated6_7 =torch.tensor([0.16, 0.16, 0.16, 0.16, 0.16, 0.16]) if not self.ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])
         self.unsupervised_aucs = [None, None, None]
         self.supervised_aucs = [None, None, None]
         self.all_query_masks = torch.tensor([])
@@ -153,9 +222,7 @@ class TopLevelApp:
         self.verb_novelty_scores_un = []
         self.obj_novelty_scores_un = []
         self.p_type_hist = [self.p_type_dist.numpy()]
-        self.p_type_hist_separated6_7 = [self.p_type_dist_separated6_7.numpy()]
         self.per_image_p_type = torch.tensor([])
-        self.per_image_p_type_separated6_7 = torch.tensor([])
         self.all_red_light_scores = np.array([])
         self.red_light_img = None
         self.red_light_this_batch = False
@@ -175,63 +242,76 @@ class TopLevelApp:
         self.batch_num += 1
         self.batch_context.reset()
         # initialize data loaders
-        scg_data_loader, novelty_dataset, N, image_paths, df = self._load_data(csv_path)
+        novelty_dataset, N, image_paths, df = self._load_data(csv_path)
         self.batch_context.df = df
 
-        # top-3 SVOs from SCG ensemble
-        scg_preds = self.scg_ensemble.get_all_SVO_preds(scg_data_loader, False)
-        
-
         # unsupervised novelty scores
-        unsupervised_results, incident_activation_statistical_scores = self.und_manager.score(self.backbone, novelty_dataset)
+        unsupervised_results = self.und_manager.score(self.backbone, novelty_dataset)
 
-        subject_novelty_scores_u = unsupervised_results['subject_novelty_score']
-        verb_novelty_scores_u = unsupervised_results['verb_novelty_score']
-        object_novelty_scores_u = unsupervised_results['object_novelty_score']
-        subject_probs = unsupervised_results['subject_probs']
-        verb_probs = unsupervised_results['verb_probs']
-        object_probs = unsupervised_results['object_probs']
-        assert len(subject_novelty_scores_u) == len(verb_novelty_scores_u) == len(object_novelty_scores_u)
+        scores_u = unsupervised_results['scores']
+        species_probs = unsupervised_results['species_probs']
+        activity_probs = unsupervised_results['activity_probs']
+        assert len(scores_u) == len(species_probs_u) == len(activity_probs_u)
 
-        self.subj_novelty_scores_un += subject_novelty_scores_u
-        self.verb_novelty_scores_un += verb_novelty_scores_u
-        self.obj_novelty_scores_un += object_novelty_scores_u
+        self.scores_un += scores_u
 
-
-        # compute P_n                        
+        # compute P_n
         with torch.no_grad():
-            case_1_lr, case_2_lr, case_3_lr = self.und_manager.get_calibrators()
-            batch_p_type, p_ni, separated_p_type = compute_probability_novelty(subject_novelty_scores_u, verb_novelty_scores_u, object_novelty_scores_u, 
-                incident_activation_statistical_scores, case_1_lr, case_2_lr, case_3_lr, ignore_t2_in_pni=self.ignore_verb_novelty, p_t4=unsupervised_results['p_t4'],
-                hint_a = hint_typeA_data,  hint_b = hint_typeB_data)
+            batch_p_type, p_ni = compute_probability_novelty(
+                scores_u,
+                self.und_manager.novelty_type_classifier,
+                hint_a=hint_typeA_data,
+                hint_b=hint_typeB_data
+            )
         
-        p_ni = p_ni.cpu().float()            
+        p_ni = p_ni.cpu().float()
         batch_p_type = batch_p_type.cpu()
         self.per_image_p_type = torch.cat([self.per_image_p_type, batch_p_type])
-        self.per_image_p_type_separated6_7 = torch.cat([self.per_image_p_type_separated6_7, separated_p_type.cpu()])
         top3 = None
         top3_probs = None
 
-        if not self.given_detection:
-            top3, top3_probs = self._top3(subject_probs, verb_probs, object_probs, scg_preds, p_ni, batch_p_type)
+        # Update batch p type based on given detection hints
+        if self.given_detection and not self.post_red:
+            if self.red_light_this_batch:
+                # Given detection, red light hint occurs during this batch.
+                # Use type 0 predictions for everything prior to the red
+                # button
+                idx = -1
+                try:
+                   idx = img_paths.index(self.red_light_img)
+                except ValueError:
+                    print(('specified red-light image was not found in the '
+                           'given image paths.'))
+                    raise Exception()
+                updated_batch_p_type = batch_p_type[:]
+                updated_batch_p_type[:idx, 0] = 1.0
+                updated_batch_p_type[:idx, 1:] = 0.0
+            else:
+                # Given detection, no red button yet. Use type = predictions
+                # everything this batch
+                updated_batch_p_type = torch.zeros_like(batch_p_type)
+                updated_batch_p_type[:, 0] = 1.0
         else:
-            top3, top3_probs = self._top3_given_detection(subject_probs, verb_probs, object_probs, scg_preds, p_ni, batch_p_type, img_paths)
-        
+            updated_batch_p_type = batch_p_type
 
-        self.mergedSVO.append(top3)
-        self.mergedprobs.append(top3_probs)
-        
+        # Make predictions with updated batch p type
+        if not self.given_detection:
+            predictions = self._predict(
+                species_probs,
+                activity_probs,
+                updated_batch_p_type
+            )
+
+        self.predictions.append(predictions)
+
         self.batch_context.p_ni = p_ni
-        self.batch_context.subject_novelty_scores_u = subject_novelty_scores_u
-        self.batch_context.verb_novelty_scores_u = verb_novelty_scores_u
-        self.batch_context.object_novelty_scores_u = object_novelty_scores_u
+        self.batch_context.scores_u = scores_u
         self.batch_context.image_paths = image_paths
         self.batch_context.novelty_dataset = novelty_dataset
-        self.batch_context.top_3 = top3
+        self.batch_context.predictions = predictions
         self.batch_context.p_type = batch_p_type
         self.batch_context.round_id = round_id
 
-        
         red_light_scores = self._compute_red_light_scores(p_ni, N, img_paths)
 
         if not self.post_red or not self.feedback_enabled:
@@ -244,11 +324,7 @@ class TopLevelApp:
         ret = {}
         ret['p_ni'] = p_ni.tolist()
         ret['red_light_score'] = red_light_scores
-        ret['svo'] = top3
-        # ret['svo_probs'] = [[p.detach().cpu().numpy().tolist() for p in lst] for lst in top3_probs] #top3_probs
-        ret['svo_probs'] = [[p.tolist() for p in lst] for lst in top3_probs] #top3_probs
-        
-        # print(ret)
+        ret['predictions'] = predictions
                                                                   
         return ret
         
@@ -270,14 +346,11 @@ class TopLevelApp:
             logs['p_ni'] = self.all_p_ni.numpy()
             logs['p_ni_raw'] = self.all_p_ni_raw        
             logs['per_img_p_type'] = self.per_image_p_type.numpy()
-            logs['per_image_p_type_separated6_7'] = self.per_image_p_type_separated6_7.numpy()
             logs['mergedSVO'] = self.mergedSVO
             logs['mergedprobs'] = self.mergedprobs
             logs['post_red_base'] = self.post_red_base
             logs['p_type'] = self.p_type_hist
             logs['red_light_scores'] = self.all_red_light_scores
-
-            logs['p_type_6_7'] = self.p_type_hist_separated6_7
 
             pickle.dump(logs, handle)
         return self.all_p_ni.numpy()
@@ -348,53 +421,9 @@ class TopLevelApp:
         if not self.disable_retraining:
             self._retrain_supervised_detectors()                
 
-    def _top3(self, subject_probs, verb_probs, object_probs, scg_preds, p_ni, batch_p_type):
-        top3 = None
-        top3_probs = None
-        # merged function is called inside top3
-        top3_merged = self.und_manager.top3(subject_probs, verb_probs, object_probs, batch_p_type, scg_preds, p_ni)
-        top3 = [[e[0] for e in m] for m in top3_merged]
-        top3_probs = [[e[1] for e in m] for m in top3_merged]     
-      
-                       
-        return top3, top3_probs
-                       
-    def _top3_given_detection(self, subject_probs, verb_probs, object_probs, scg_preds, p_ni, batch_p_type, img_paths):
-        top3 = None
-        top3_probs = None
-        
-        if not self.post_red:
-            # if the red-light image happens to be in this batch
-            if self.red_light_this_batch:
-                idx = -1
-            
-                try:
-                   idx = img_paths.index(self.red_light_img)
-                except ValueError:
-                    print(f'specified red-light image was not found in the given image paths.')
-                    raise Exception()
-            
-                # use scg predictions up until the red-light image, merge with the unsupervised top3 from that point on
-                
-                p_ni_for_top3 = np.copy(p_ni)
-                p_ni_for_top3[:idx] = 0                
-                
-                top3_merged = self.und_manager.top3(subject_probs, verb_probs, object_probs, batch_p_type, scg_preds, p_ni_for_top3)
-                
-                top3 = [[e[0] for e in m] for m in top3_merged]
-                top3_probs = [[e[1] for e in m] for m in top3_merged] 
-            else:
-                top3_merged = self.und_manager.top3(subject_probs, verb_probs, object_probs, batch_p_type, scg_preds, p_ni)
-                top3 = [[e[0] for e in m] for m in top3_merged]
-                top3_probs = [[e[1] for e in m] for m in top3_merged]     
-        # just merge as usual 
-        else:
-            top3_merged = self.und_manager.top3(subject_probs, verb_probs, object_probs, batch_p_type, scg_preds, p_ni)
-            top3 = [[e[0] for e in m] for m in top3_merged]
-            top3_probs = [[e[1] for e in m] for m in top3_merged]          
-            
-        return top3, top3_probs
-        
+    def _predict(self, species_probs, activity_probs, batch_p_type):
+        return self.und_manager.predict(species_probs, activity_probs, batch_p_type)
+
     def _compute_red_light_scores(self, p_ni, N, img_paths):
         red_light_scores = np.ones(N)
         all_p_ni = np.concatenate([self.all_p_ni.numpy(), p_ni.numpy()])
@@ -491,37 +520,6 @@ class TopLevelApp:
         assert not torch.any(torch.isnan(self.p_type_dist)), "NaNs in p_type."
         assert not torch.any(torch.isinf(self.p_type_dist)), "Infs in p_type."
 
-        
-    def _type_inferenceType0(self):  
-        filtered6_7 = np.zeros(7) 
-        filtered6_7[0] = 1.0
-        
-        self.p_type_hist_separated6_7.append(filtered6_7)
-
-    
-    def _type_inferenceType67(self): 
-
-        filtered6_7 = self.per_image_p_type_separated6_7[len(self.per_image_p_type_separated6_7) - self.trial_batch_size:]  
-    
-        prior = 0.20 if not self.ignore_verb_novelty else 1/3
-    
-        log_p_type_1 = self._infer_log_p_type(prior, filtered6_7[:, 0])
-        log_p_type_2 = self._infer_log_p_type(prior if not self.ignore_verb_novelty else 0, 
-                                              filtered6_7[:, 1] if not self.ignore_verb_novelty else torch.zeros(filtered6_7.shape[0]))
-        log_p_type_3 = self._infer_log_p_type(prior, filtered6_7[:, 2])
-        log_p_type_4 = self._infer_log_p_type(prior, filtered6_7[:, 3])
-        log_p_type_5 = self._infer_log_p_type(prior, filtered6_7[:, 4])
-        log_p_type_6 = self._infer_log_p_type(prior, filtered6_7[:, 5])
-    
-        self.p_type_dist_separated6_7 = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4, log_p_type_5, log_p_type_6])
-        self.p_type_dist_separated6_7 = torch.nn.functional.softmax(self.p_type_dist_separated6_7, dim=0).float()
-        tmp_arr = np.zeros(7)   
-        tmp_arr[1:] =  self.p_type_dist_separated6_7.numpy()
-        self.p_type_hist_separated6_7.append(tmp_arr)
-                
-        assert not torch.any(torch.isnan(self.p_type_dist_separated6_7)), "NaNs in p_type."
-        assert not torch.any(torch.isinf(self.p_type_dist_separated6_7)), "Infs in p_type."
-                
 
     def _infer_log_p_type(self, prior, evidence):
         LARGE_NEG_CONSTANT = -50.0
@@ -535,27 +533,20 @@ class TopLevelApp:
         return log_p_type
 
     def _load_data(self, csv_path):
-        valset = DataFactory(name="Custom", 
-            data_root=self.data_root,
-            csv_path=csv_path,
-            training=False)
-
-        scg_data_loader = DataLoader(dataset=valset,
-            collate_fn=custom_collate, 
-            batch_size=1,
-            num_workers=1, 
-            pin_memory=False,
-            sampler=None)
-            
-        novelty_dataset = BoxImageDataset(name = 'Custom',
+        novelty_dataset = BoxImageDataset(
+            name = 'Custom',
             data_root = self.data_root,
             csv_path = csv_path,
             training = False,
-            image_batch_size = 16,
-            feature_extraction_device = 'cuda:0',
-            cache_to_disk = False)
+            n_species_cls=self.n_species_cls,
+            n_activity_cls=self.n_activity_cls,
+            label_mapper=self.static_label_mapper,
+            box_transform=self.box_transform,
+            cache_dir=None,
+            write_cache=False
+        )
 
-        N = len(valset)
+        N = len(novelty_dataset)
         
         df = pd.read_csv(csv_path, index_col=0)
         image_paths = df['new_image_path'].to_list()
@@ -565,7 +556,7 @@ class TopLevelApp:
             row['object_ymin'], row['object_xmin'], row['object_ymax'], row['object_xmax']), axis = 1)
         df['case'] = cases.to_numpy()
 
-        return scg_data_loader, novelty_dataset, N, image_paths, df
+        return novelty_dataset, N, image_paths, df
 
     def _compute_case(self, sbox_ymin, sbox_xmin, sbox_ymax, sbox_xmax, obox_ymin, obox_xmin, obox_ymax, obox_xmax):
         has_subject = sbox_ymin >= 0 and sbox_ymax >= 0 and sbox_xmin >= 0 and sbox_xmax >= 0
@@ -594,21 +585,81 @@ class TopLevelApp:
         assert self.all_feedback.shape == self.all_query_masks.shape == self.all_p_ni.shape
 
     def _reset_backbone_and_detectors(self):
+        backbone_state_dict = torch.load(
+            self.pretrained_backbone_path,
+            map_location='cuda:0'
+        )
+        backbone_state_dict = {
+            re.sub('^module\.', '', k): v for\
+                k, v in backbone_state_dict.items()
+        }
+        self.backbone.load_state_dict(backbone_state_dict)
+        self.backbone.eval()
+
         self.und_manager = UnsupervisedNoveltyDetectionManager(
             self.pretrained_models_dir,
             self.backbone_architecture,
-            self.NUM_SUBJECT_CLASSES,
-            self.NUM_VERB_CLASSES,
-            self.NUM_OBJECT_CLASSES,
-            self.NUM_SPATIAL_FEATURES,
-            0.98)
-        self.backbone.reset()
-        backbone_state_dict = torch.load(self.pretrained_backbone_path)
-        self.backbone.load_state_dict(backbone_state_dict)
-        self.backbone = self.backbone.to('cuda:0')
-        self.backbone.eval()
+            self.n_species_cls,
+            self.n_activity_cls,
+            self.n_known_species_cls,
+            self.n_known_activity_cls
+        )
 
-        self.novelty_trainer = TuplePredictorTrainer(self.data_root, self.train_csv_path, self.val_csv_path, self.val_incident_csv_path, self.val_corruption_csv_path, self.retraining_image_batch_size, self.retraining_batch_size, self.retraining_buffer_size)
+        label_mapping = build_species_label_mapping(self.train_csv_path)
+        self.box_transform,\
+            post_cache_train_transform,\
+            post_cache_val_transform =\
+                get_transforms(self.retraining_augmentation)
+
+        train_dataset,\
+            val_known_dataset,\
+            val_dataset,\
+            dynamic_label_mapper,\
+            self.static_label_mapper =\
+                get_datasets(
+                    self.data_root,
+                    self.train_csv_path,
+                    self.val_csv_path,
+                    self.n_species_cls,
+                    self.n_activity_cls,
+                    label_mapping,
+                    self.box_transform,
+                    post_cache_train_transform,
+                    post_cache_val_transform,
+                    root_cache_dir=self.root_cache_dir,
+                    allow_write=True,
+                    n_known_val=self.n_known_val
+                )
+
+        classifier_trainer = EndToEndClassifierTrainer(
+            self.backbone,
+            self.retraining_lr,
+            train_dataset,
+            val_known_dataset,
+            self.box_transform,
+            post_cache_train_transform,
+            retraining_batch_size=self.retraining_batch_size,
+            train_sampler_fn=None,
+            root_checkpoint_dir=None,
+            patience=self.retraining_patience,
+            min_epochs=self.retraining_min_epochs,
+            max_epochs=self.retraining_max_epochs,
+            label_smoothing=self.retraining_label_smoothing,
+            scheduler_type=self.retraining_scheduler_type,
+            allow_write=True
+        )
+
+        self.novelty_trainer = TuplePredictorTrainer(
+            train_dataset,
+            val_known_dataset,
+            val_dataset,
+            self.box_transform,
+            post_cache_train_transform,
+            self.n_species_cls,
+            self.n_activity_cls,
+            dynamic_label_mapper,
+            classifier_trainer
+        )
 
     def _retrain_supervised_detectors(self):
         t_star = torch.argmax(self.p_type_dist) + 1

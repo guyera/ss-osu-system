@@ -58,15 +58,12 @@ class UnsupervisedNoveltyDetectionManager:
         n_species_cls,
         n_activity_cls,
         n_known_species_cls,
-        n_known_activity_cls,
-        p_type_alpha):
+        n_known_activity_cls):
        
-        self.p_type_alpha = p_type_alpha
-
         self.tuple_predictor = TuplePredictor(
             n_known_species_cls,
             n_known_activity_cls
-        ).to('cuda:0')
+        )
 
         pretrained_path = os.path.join(
             model_dir,

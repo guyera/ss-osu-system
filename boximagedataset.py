@@ -60,7 +60,8 @@ class BoxImageDataset(torch.utils.data.Dataset):
             image_std = None,
             box_transform=None,
             cache_dir=None,
-            write_cache=False):
+            write_cache=False,
+            image_filter='nonblank'):
         super().__init__()
 
         filename = os.path.join(f'{os.path.splitext(csv_path)[0]}_novelty_features.pth')
@@ -72,7 +73,8 @@ class BoxImageDataset(torch.utils.data.Dataset):
             n_activity_cls=n_activity_cls,
             label_mapper=label_mapper,
             csv_path=csv_path,
-            training=training
+            training=training,
+            image_filter=image_filter
         )
 
         if image_mean is None:

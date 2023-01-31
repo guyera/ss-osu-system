@@ -162,7 +162,7 @@ novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
 label_mapping = build_species_label_mapping(args.train_csv_path)
 box_transform, post_cache_train_transform, post_cache_val_transform =\
     get_transforms(args.augmentation)
-train_dataset, val_known_dataset, val_dataset, dynamic_label_mapper =\
+train_dataset, val_known_dataset, val_dataset, dynamic_label_mapper, _ =\
     get_datasets(
         args.data_root,
         args.train_csv_path,
