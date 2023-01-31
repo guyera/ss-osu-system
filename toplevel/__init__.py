@@ -174,7 +174,9 @@ class TopLevelApp:
                     n_known_val=self.n_known_val
                 )
 
-        classifier_trainer = EndToEndClassifierTrainer(
+        # TODO patch construction; this is from the EndToEndClassifierTrainer.
+        # We need feature files (and a script to generate them)
+        classifier_trainer = LogitLayerClassifierTrainer(
             self.backbone,
             self.retraining_lr,
             train_dataset,
