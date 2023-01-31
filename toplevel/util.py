@@ -58,15 +58,12 @@ class UnsupervisedNoveltyDetectionManager:
         n_species_cls,
         n_activity_cls,
         n_known_species_cls,
-        n_known_activity_cls,
-        p_type_alpha):
+        n_known_activity_cls):
        
-        self.p_type_alpha = p_type_alpha
-
         self.tuple_predictor = TuplePredictor(
             n_known_species_cls,
             n_known_activity_cls
-        ).to('cuda:0')
+        )
 
         pretrained_path = os.path.join(
             model_dir,
@@ -125,8 +122,12 @@ class UnsupervisedNoveltyDetectionManager:
             tuple_prediction_state_dict['novelty_type_classifier']
         )
 
-    # TODO def predict(self, species_probs, activity_probs, p_type):
-    #           call self.tupe_predictor.predict()
+    def predict(self, species_probs, activity_probs, p_type):
+        return self.tuple_predictor.predict(
+            species_probs,
+            activity_probs,
+            p_type
+        )
 
     def score(self, backbone, dataset):
         # TODO tensorize / batch with dataloader

@@ -20,12 +20,64 @@ class TuplePredictor:
         self._n_known_activity_cls = n_known_activity_cls
 
     def _species(self, species_probs, p_type):
-        # NOTE: Every probability here is implicitly conditioned on the box
-        # image. And we're able to multiply probabilities across boxes to
-        # compute intersection probabilities because we're making a conditional
-        # independence assumption: box class probabilities are conditionally
-        # independent given the box images themselves because a box should
-        # generally be a sufficient statistic for the label.
+        # TODO I'm not sure that these computations are rigorously correct.
+        # I think we make some conditional independence assumptions where
+        # inappropriate. For instance, even if S_j is conditionally
+        # independent of S_k given the box images, when we also condition
+        # on type=4, then that's not necessarily the case anymore. And yet,
+        # I don't think a rigorous solution can be computed without solving
+        # a potentially massive, combinatoric problem. We need to think more
+        # carefully about how to construct these predictions. The exhaustive
+        # solution would be to compute joint probabilities for every possible
+        # tuple prediction, and then use those probabilities to compute a
+        # weighted average of appropriate count and presence vectors. Then
+        # we'd merge those weighted-average vectors across novelty types.
+
+        # NOTE However, the count solutions are technically correct. Here's
+        # a proof:
+        # To compute a count, we want a weighted average of counts across
+        # possible valid predictions, with the weights being the conditional
+        # probabilities of those predictions and the counts being the counts
+        # of the species per-prediction. That is, for some species k, we
+        # want to compute the count n_k as
+        # \sum_{valid p}(# boxes containing k in p * P(Tuple=p|valid)).
+        # Suppose p is a matrix with each row representing a box and each
+        # column representing a species. Each row is a one-hot vector.
+        # Then n_k = \sum_{valid p}(\sum_j(p_jk) * P(Tuple=p|valid))
+        # = \sum_j(\sum_{valid p}(p_jk * P(Tuple=p|valid)))
+        # = \sum_j(\sum_{valid p s.t. p_jk = 1}(p_jk * P(Tuple=p|valid)))
+        # = \sum_j(\sum_{valid p s.t. p_jk = 1}(P(Tuple=p|valid)))
+        # = \sum_j(P(S_j=k | valid)).
+        # And this is exactly what they compute. So, as it turns out, we only
+        # need to fix the presence solutions.
+
+        # NOTE The rigorous presence solution would be as follows. We want
+        # to compute the probability that the predicted tuple contains the
+        # species and is a valid prediction for the given type, and then divide
+        # (normalize) by the probability that the prediction is valid for the
+        # given type.
+
+        # NOTE Type 4 presence solution: 
+        # First, compute P(k present, valid t4 | no novel boxes)
+        # = P(at least one k | no novel boxes) - P(all k | no novel boxes)
+        # Next, compute P(valid t4 | no novel boxes)
+        # = 1 - P(one unique species | no novel boxes)
+        # = 1 - \sum_k(P(all k | no novel boxes)).
+        # Lastly, compute P(k present | valid t4)
+        # = P(k present | valid t4, no novel boxes)
+        # = P(k present, valid t4 | no novel boxes) / P(t4 | no novel boxes).
+        # NOTE that we can condition all of our box-label probabilites on
+        # no-novel-boxes by just dropping the novel box probabilities and
+        # renormalizing.
+        
+        # NOTE Type 2 presence solution:
+        # First, compute each P(k present, valid t2) = P(all boxes k or novel)
+        # - P(all boxes k) - P(all boxes novel).
+        # Next, compute P(all novel).
+        # Next, P(valid t2) = P(all novel) + \sum_k(P(k present, valid t2)).
+        # Finally, P(k present | valid t2)
+        # = P(k present, valid t2) / P(valid t2)
+
         n = species_probs.shape[0]
         known_species_probs = species_probs[:self._n_known_species_cls]
 
@@ -59,7 +111,7 @@ class TuplePredictor:
         # directly due to a combinatoric problem. So instead, we just subtract
         # off the former value from the sum of the two disjoint event
         # probabilities.
-        
+
         # Stage 1: Compute label predictions conditioned on the absence of any
         # novel labels
         known_species_cond_probs = \
@@ -67,6 +119,7 @@ class TuplePredictor:
 
         # known_species_cond_probs represents P(S_j=s | c), where c is the
         # condition: there are no novel species.
+
         # Stage 2:
         # P(S_j=s, >=2 unique species | c) = P(S_j=s, NOT ALL S_j=s | c)
         # = P(S_j=s | c) - P(all S_j=s | c)
@@ -171,6 +224,19 @@ class TuplePredictor:
         return species_count, species_presence
 
     def _activity(self, activity_probs, p_type):
+        # TODO I'm not sure that these computations are rigorously correct.
+        # I think we make some conditional independence assumptions where
+        # inappropriate. For instance, even if S_j is conditionally
+        # independent of S_k given the box images, when we also condition
+        # on type=4, then that's not necessarily the case anymore. And yet,
+        # I don't think a rigorous solution can be computed without solving
+        # a potentially massive, combinatoric problem. We need to think more
+        # carefully about how to construct these predictions. The exhaustive
+        # solution would be to compute joint probabilities for every possible
+        # tuple prediction, and then use those probabilities to compute a
+        # weighted average of appropriate count and presence vectors. Then
+        # we'd merge those weighted-average vectors across novelty types.
+
         # NOTE: Every probability here is implicitly conditioned on the box
         # image. And we're able to multiply probabilities across boxes to
         # compute intersection probabilities because we're making a conditional

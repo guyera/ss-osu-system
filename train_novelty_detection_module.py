@@ -132,16 +132,21 @@ def train_sampler_fn(train_dataset):
     )
 
 architecture = Backbone.Architecture.swin_t
-backbone = Backbone(architecture, pretrained=False)
-backbone = backbone.to(device)
+backbone = Backbone(architecture, pretrained=False).to(device)
+backbone = DDP(backbone, device_ids=[device_id])
 
 n_known_species_cls = 10
 n_species_cls = 30 # TODO Determine
 n_known_activity_cls = 2
 n_activity_cls = 4 # TODO Determine
 
-classifier = boxclassifier.ClassifierV2(256, n_species_cls, n_activity_cls)
-classifier = classifier.to(device)
+classifier = boxclassifier.ClassifierV2(
+    256,
+    n_species_cls,
+    n_activity_cls
+).to(device)
+classifier.ddp(device_ids=[device_id])
+
 confidence_calibrator = boxclassifier.ConfidenceCalibrator()
 confidence_calibrator = confidence_calibrator.to(device)
 tuple_predictor = tupleprediction.TuplePredictor(
@@ -162,7 +167,7 @@ novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
 label_mapping = build_species_label_mapping(args.train_csv_path)
 box_transform, post_cache_train_transform, post_cache_val_transform =\
     get_transforms(args.augmentation)
-train_dataset, val_known_dataset, val_dataset, dynamic_label_mapper =\
+train_dataset, val_known_dataset, val_dataset, dynamic_label_mapper, _ =\
     get_datasets(
         args.data_root,
         args.train_csv_path,
@@ -210,9 +215,6 @@ trainer = TuplePredictorTrainer(
 )
 
 trainer.prepare_for_retraining(backbone, classifier, confidence_calibrator, novelty_type_classifier, activation_statistical_model)
-
-backbone = DDP(backbone, device_ids=[device_id])
-classifier.ddp(device_ids=[device_id])
 
 start_time = time.time()
 

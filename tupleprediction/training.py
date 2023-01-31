@@ -58,7 +58,7 @@ class SchedulerType(Enum):
     }
 
     def __str__(self):
-        return self.value
+        return self.value['name']
 
     def ctor(self):
         return self.value['ctor']
@@ -1586,7 +1586,11 @@ def get_datasets(
         )
     ))
 
-    return train_dataset, val_known_dataset, val_dataset, dynamic_label_mapper
+    return train_dataset,\
+        val_known_dataset,\
+        val_dataset,\
+        dynamic_label_mapper,\
+        static_label_mapper
 
 
 def compute_features(
@@ -1699,7 +1703,6 @@ class TuplePredictorTrainer:
             val_dataset,
             box_transform,
             post_cache_train_transform,
-            retraining_batch_size,
             n_species_cls,
             n_activity_cls,
             dynamic_label_mapper,
@@ -1709,7 +1712,6 @@ class TuplePredictorTrainer:
         self._val_dataset = val_dataset
         self._box_transform = box_transform
         self._post_cache_train_transform = post_cache_train_transform
-        self._retraining_batch_size = retraining_batch_size
         self._n_species_cls = n_species_cls
         self._n_activity_cls = n_activity_cls
         self._dynamic_label_mapper = dynamic_label_mapper
