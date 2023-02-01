@@ -175,7 +175,6 @@ class TopLevelApp:
                     n_known_val=self.n_known_val
                 )
 
-        # TODO patch construction; this is from the EndToEndClassifierTrainer.
         train_feature_file = os.path.join(
             self.precomputed_feature_dir,
             'training.pth'
@@ -185,21 +184,16 @@ class TopLevelApp:
             'validation.pth'
         )
         classifier_trainer = LogitLayerClassifierTrainer(
-            self.backbone,
             self.retraining_lr,
-            train_dataset,
-            val_known_dataset,
+            train_feature_file,
+            val_feature_file,
             self.box_transform,
             post_cache_train_transform,
-            retraining_batch_size=self.retraining_batch_size,
-            train_sampler_fn=None,
-            root_checkpoint_dir=None,
+            device=self.backbone.device,
             patience=self.retraining_patience,
             min_epochs=self.retraining_min_epochs,
             max_epochs=self.retraining_max_epochs,
-            label_smoothing=self.retraining_label_smoothing,
-            scheduler_type=self.retraining_scheduler_type,
-            allow_write=True
+            label_smoothing=self.retraining_label_smoothing
         )
 
         self.novelty_trainer = TuplePredictorTrainer(
@@ -641,23 +635,25 @@ class TopLevelApp:
                     n_known_val=self.n_known_val
                 )
 
-        # TODO patch construction; this is from the EndToEndClassifierTrainer.
+        train_feature_file = os.path.join(
+            self.precomputed_feature_dir,
+            'training.pth'
+        )
+        val_feature_file = os.path.join(
+            self.precomputed_feature_dir,
+            'validation.pth'
+        )
         classifier_trainer = LogitLayerClassifierTrainer(
-            self.backbone,
             self.retraining_lr,
-            train_dataset,
-            val_known_dataset,
+            train_feature_file,
+            val_feature_file,
             self.box_transform,
             post_cache_train_transform,
-            retraining_batch_size=self.retraining_batch_size,
-            train_sampler_fn=None,
-            root_checkpoint_dir=None,
+            device=self.backbone.device,
             patience=self.retraining_patience,
             min_epochs=self.retraining_min_epochs,
             max_epochs=self.retraining_max_epochs,
-            label_smoothing=self.retraining_label_smoothing,
-            scheduler_type=self.retraining_scheduler_type,
-            allow_write=True
+            label_smoothing=self.retraining_label_smoothing
         )
 
         self.novelty_trainer = TuplePredictorTrainer(

@@ -22,8 +22,6 @@ if __name__ == "__main__":
     p.add_argument('--given-detection', default=False, action='store_true')
     p.add_argument('--train-csv-path', default='./dataset_v4/dataset_v4_2_train.csv')
     p.add_argument('--val-csv-path', default='./dataset_v4/dataset_v4_2_val.csv')
-    p.add_argument('--val-incident-csv-path', default='./dataset_v4/dataset_v4_2_cal_incident.csv')
-    p.add_argument('--val-corruption-csv-path', default='./dataset_v4/dataset_v4_2_cal_corruption.csv')
     p.add_argument('--trial-size', type=int, default=200)
     p.add_argument('--trial-batch-size', type=int, default=10)
     p.add_argument('--disable-retraining', default=False, action='store_true')
@@ -63,9 +61,9 @@ if __name__ == "__main__":
         if not p.exists():
             p.mkdir()
 
-    
+
     # import ipdb; ipdb.set_trace()
-        
+
     osu_int = OSUInterface(scg_ensemble=args.scg_ensemble, 
         data_root=args.data_root, 
         pretrained_models_dir=args.pretrained_models_dir,
