@@ -42,6 +42,7 @@ if __name__ == "__main__":
     p.add_argument('--hintB', default= False)
     p.add_argument('--root-cache-dir', type=str, default='./.data-cache')
     p.add_argument('--n-known-val', type=int, default=4068)
+    p.add_argument('--precomputed-feature-dir', type=str, default='./.features/resizepad=224/none/normalized')
     p.add_argument('--retraining-augmentation', type=Augmentation, choices=list(Augmentation), default=Augmentation.rand_augment)
     p.add_argument('--retraining-lr', type=float, default=0.005)
     p.add_argument('--retraining-batch-size', type=int, default=32)
@@ -81,6 +82,7 @@ if __name__ == "__main__":
         disable_retraining=args.disable_retraining,
         root_cache_dir=args.root_cache_dir,
         n_known_val=args.n_known_val,
+        precomputed_feature_dir=args.precomputed_feature_dir,
         retraining_augmentation=args.retraining_augmentation,
         retraining_lr=args.retraining_lr,
         retraining_batch_size=args.retraining_batch_size,

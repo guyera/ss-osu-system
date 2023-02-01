@@ -31,7 +31,7 @@ class TopLevelApp:
     def __init__(self, data_root, pretrained_models_dir, backbone_architecture,
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_size, trial_batch_size, disable_retraining,
-            root_cache_dir, n_known_val, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_patience, retraining_min_epochs, retraining_max_epochs,
+            root_cache_dir, n_known_val, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_patience, retraining_min_epochs, retraining_max_epochs,
             retraining_label_smoothing, retraining_scheduler_type):
 
         pretrained_backbone_path = os.path.join(
@@ -112,6 +112,7 @@ class TopLevelApp:
 
         self.root_cache_dir = root_cache_dir
         self.n_known_val = n_known_val
+        self.precomputed_feature_dir = precomputed_feature_dir
         self.retraining_augmentation = retraining_augmentation
         self.retraining_lr = retraining_lr
         self.retraining_batch_size = retraining_batch_size
@@ -175,13 +176,20 @@ class TopLevelApp:
                 )
 
         # TODO patch construction; this is from the EndToEndClassifierTrainer.
-        # We need feature files (and a script to generate them)
+        train_feature_file = os.path.join(
+            self.precomputed_feature_dir,
+            'training.pth'
+        )
+        val_feature_file = os.path.join(
+            self.precomputed_feature_dir,
+            'validation.pth'
+        )
         classifier_trainer = LogitLayerClassifierTrainer(
             self.backbone,
             self.retraining_lr,
             train_dataset,
             val_known_dataset,
-            box_transform,
+            self.box_transform,
             post_cache_train_transform,
             retraining_batch_size=self.retraining_batch_size,
             train_sampler_fn=None,
@@ -198,7 +206,7 @@ class TopLevelApp:
             train_dataset,
             val_known_dataset,
             val_dataset,
-            box_transform,
+            self.box_transform,
             post_cache_train_transform,
             self.n_species_cls,
             self.n_activity_cls,
@@ -633,7 +641,8 @@ class TopLevelApp:
                     n_known_val=self.n_known_val
                 )
 
-        classifier_trainer = EndToEndClassifierTrainer(
+        # TODO patch construction; this is from the EndToEndClassifierTrainer.
+        classifier_trainer = LogitLayerClassifierTrainer(
             self.backbone,
             self.retraining_lr,
             train_dataset,
