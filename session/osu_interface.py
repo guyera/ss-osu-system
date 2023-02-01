@@ -8,7 +8,7 @@ class OSUInterface:
     def __init__(self, scg_ensemble, data_root, pretrained_models_dir, backbone_architecture,
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_batch_size, trial_size, disable_retraining,
-            root_cache_dir, n_known_val, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_patience,
+            root_cache_dir, n_known_val, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_patience,
             retraining_min_epochs, retraining_max_epochs, retraining_label_smoothing, retraining_scheduler_type):
 
         self.app = TopLevelApp( 
@@ -27,6 +27,7 @@ class OSUInterface:
             disable_retraining=disable_retraining,
             root_cache_dir=root_cache_dir,
             n_known_val=n_known_val,
+            precomputed_feature_dir=precomputed_feature_dir,
             retraining_augmentation=retraining_augmentation,
             retraining_lr=retraining_lr,
             retraining_batch_size=retraining_batch_size,
@@ -78,20 +79,13 @@ class OSUInterface:
         svo_preds: string of csv lines with image_path, and top 3 (S_id, V_id, O_id, prob) values
         """
 
-        df = pd.DataFrame(columns=['new_image_path', 'subject_name', 'subject_id', 'original_subject_id',
-            'object_name', 'object_id', 'original_object_id', 'verb_name',
-            'verb_id', 'original_verb_id', 'image_width', 'image_height',
-            'subject_ymin', 'subject_xmin', 'subject_ymax', 'subject_xmax',
-            'object_ymin', 'object_xmin', 'object_ymax', 'object_xmax'])
+        df = pd.DataFrame(columns=['image_path', 'filename', 'capture_id', 'width', 'height', 'agent1_name', 'agent1_id', 'agent1_count', 'agent2_name', 'agent2_id', 'agent2_count', 'agent3_name', 'agent3_id', 'agent3_count', 'activities', 'activities_id', 'environment', 'novelty_type', 'master_id'])
 
         lines = [line.split(',') for line in contents.splitlines()]
         assert len(lines) > 0, "content was empty"
-        
-        create_row = lambda idx, line: [line[0], None, None, None, None, None, None, None, None, None,
-            line[1], line[2], 
-            line[3], line[4], line[5], line[6], 
-            line[7], line[8], line[9], line[10]]
-        
+
+        create_row = lambda idx, line: [line[0], None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None]
+
         idx = 0
         for l in lines:
             row = create_row(idx, l)

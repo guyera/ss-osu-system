@@ -1,3 +1,4 @@
+import re
 import pickle
 import time
 import os
@@ -30,25 +31,29 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
     '--data-root',
     type=str,
-    help='Data root directory'
+    help='Data root directory',
+    required=True
 )
 
 parser.add_argument(
     '--root-cache-dir',
     type=str,
-    help='Root cache directory'
+    help='Root cache directory',
+    required=True
 )
 
 parser.add_argument(
     '--train-csv-path',
     type=str,
-    help='Path to training CSV'
+    help='Path to training CSV',
+    required=True
 )
 
 parser.add_argument(
     '--cal-csv-path',
     type=str,
-    help='Path to calibration CSV'
+    help='Path to calibration CSV',
+    required=True
 )
 
 parser.add_argument(
@@ -66,7 +71,7 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    '--backbone-file',
+    '--pretrained-backbone-path',
     type=str,
     default='./pretrained-models/swin_t/backbone.pth',
     help='Location of file containing pretrained backbone weights'
@@ -85,6 +90,16 @@ device = 'cuda:0'
 
 architecture = Backbone.Architecture.swin_t
 backbone = Backbone(architecture, pretrained=False).to(device)
+backbone_state_dict = torch.load(
+    args.pretrained_backbone_path,
+    map_location=device
+)
+backbone_state_dict = {
+    re.sub('^module\.', '', k): v for\
+        k, v in backbone_state_dict.items()
+}
+backbone.load_state_dict(backbone_state_dict)
+backbone.eval()
 
 n_known_species_cls = 10
 n_species_cls = 30 # TODO Determine
@@ -111,7 +126,6 @@ train_dataset, val_known_dataset, _, _, _ = get_datasets(
 
 start_time = time.time()
 
-backbone.eval()
 flattened_train_dataset = FlattenedBoxImageDataset(train_dataset)
 train_loader = DataLoader(
     flattened_train_dataset,

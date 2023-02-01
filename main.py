@@ -22,8 +22,6 @@ if __name__ == "__main__":
     p.add_argument('--given-detection', default=False, action='store_true')
     p.add_argument('--train-csv-path', default='./dataset_v4/dataset_v4_2_train.csv')
     p.add_argument('--val-csv-path', default='./dataset_v4/dataset_v4_2_val.csv')
-    p.add_argument('--val-incident-csv-path', default='./dataset_v4/dataset_v4_2_cal_incident.csv')
-    p.add_argument('--val-corruption-csv-path', default='./dataset_v4/dataset_v4_2_cal_corruption.csv')
     p.add_argument('--trial-size', type=int, default=200)
     p.add_argument('--trial-batch-size', type=int, default=10)
     p.add_argument('--disable-retraining', default=False, action='store_true')
@@ -42,6 +40,7 @@ if __name__ == "__main__":
     p.add_argument('--hintB', default= False)
     p.add_argument('--root-cache-dir', type=str, default='./.data-cache')
     p.add_argument('--n-known-val', type=int, default=4068)
+    p.add_argument('--precomputed-feature-dir', type=str, default='./.features/resizepad=224/none/normalized')
     p.add_argument('--retraining-augmentation', type=Augmentation, choices=list(Augmentation), default=Augmentation.rand_augment)
     p.add_argument('--retraining-lr', type=float, default=0.005)
     p.add_argument('--retraining-batch-size', type=int, default=32)
@@ -62,9 +61,9 @@ if __name__ == "__main__":
         if not p.exists():
             p.mkdir()
 
-    
+
     # import ipdb; ipdb.set_trace()
-        
+
     osu_int = OSUInterface(scg_ensemble=args.scg_ensemble, 
         data_root=args.data_root, 
         pretrained_models_dir=args.pretrained_models_dir,
@@ -81,6 +80,7 @@ if __name__ == "__main__":
         disable_retraining=args.disable_retraining,
         root_cache_dir=args.root_cache_dir,
         n_known_val=args.n_known_val,
+        precomputed_feature_dir=args.precomputed_feature_dir,
         retraining_augmentation=args.retraining_augmentation,
         retraining_lr=args.retraining_lr,
         retraining_batch_size=args.retraining_batch_size,
