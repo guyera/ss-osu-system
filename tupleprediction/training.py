@@ -1,3 +1,4 @@
+import itertools
 from copy import deepcopy
 import numpy as np
 import os
@@ -12,6 +13,7 @@ from torch.utils.data import\
     Subset as TorchSubset,\
     ConcatDataset as TorchConcatDataset
 import torch
+from torch.nn import Module
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from boximagedataset import BoxImageDataset
@@ -24,6 +26,155 @@ from transforms import\
     RandAugment,\
     RandomHorizontalFlip,\
     NoOpTransform
+
+
+'''
+Notation:
+    N: Number of images in the batch
+    M_i: Number of box images in the ith image
+    K: Number of classes
+Parameters:
+    predictions: List of N tensors. predictions[i] is a tensor of shape [M_i, K]
+        predictions[i][j, k] is the predicted probability that the jth box of
+        the ith image belongs to class k.
+    targets: Tensor of shape [N, K]
+        targets[i, k] is the ground truth number of boxes in image i that
+        belong to class k.
+'''
+def multiple_instance_count_cross_entropy(predictions, targets):
+    # For each image
+    for img_predictions, img_targets in zip(predictions, targets):
+        # We're working with img_predictions of shape [M_i, K] and img_targets
+        # of shape [K]. Index the predictions whose classes are present in
+        # the ground truth labels
+        present_classes = torch.nonzero(img_targets)[0]
+        remaining_predictions = img_predictions[:, present_classes]
+        remaining_targets = img_targets[present_classes]
+        combination_pred_running_product = None
+
+        # The general strategy is as follows: remaining_predictions will be
+        # iteratively updated, and in general its shape will be
+        # [B, K, *c], where *c = (C_{N-1}, C_{N-2}, ..., C_1). C_i denotes
+        # the number of combinations selected when considering present class
+        # i (i.e., torch.nonzero(image_targets)[0][i]). The combination
+        # dimensions are prepended rather than appended to simplify broadcasting
+        # to keep track of the running cross product predictions.
+
+        # At each iteration, we'll consider combinations for the class whose
+        # predictions are at remaining_predictions[:, 0] and whose counts are
+        # at target[0]. Those index-0 dimensions are sliced off at each
+        # iteration until all present classes have been considered.
+
+        # Note that the last class is trivial since there's only one
+        # possible combination: all remaining boxes must be assigned the one
+        # remaining label.
+
+        # For each present class
+        for _ in range(len(present_classes)):
+            ## Consider all of the ways in which we can assign this class label
+            ## to the correct number of the remaining boxes
+            cur_combinations = torch.combinations(
+                torch.arange(
+                    len(remaining_predictions),
+                    device=targets.device
+                ),
+                r=remaining_targets[0]
+            )
+
+            ## Get the predictions for the current present class associated with
+            ## each combination (which is definitionally the index-0 remaining
+            ## class).
+            combination_predictions = remaining_predictions[
+                cur_combinations,
+                0
+            ]
+
+            ## Final softmax probabilities for a given combination are computed
+            ## by multiplying across selected boxes.
+            combination_pred_product = torch.prod(
+                combination_predictions,
+                dim=1
+            )
+
+            ## The running product is stored as a Tensor whose dimensions, in
+            ## reverse order (right-to-left), correspond to cross products of 
+            ## combinations from past iterations of this for loop. If
+            ## the running product is of shape [*shape], then
+            ## combination_prediction_product is of shape [C, *shape], where
+            ## C is len(cur_combinations). Broadcasting rules allow direct
+            ## multiplication to continue expanding this in a cross-product
+            ## fashion.
+            if combination_pred_running_product is None:
+                combination_pred_running_product = combination_pred_product
+            else:
+                combination_pred_running_product = \
+                    combination_pred_running_product * combination_pred_product
+
+            ## Update the remaining predictions by, for each combination,
+            ## removing the selected boxes and filtering out the current present
+            ## class
+
+            # First, construct a compliment index for cur_combinations.
+            # (Computing the complement of a multidimensional index is messy)
+            all_boxes = torch.ones(
+                *(len(cur_combinations), remaining_predictions.shape[1]),
+                dtype=torch.bool,
+                device=targets.device
+            )
+            offset = torch.arange(len(all_boxes), device=targets.device) *\
+                all_boxes.shape[1]
+            flattened_compliment = all_boxes.flatten()
+            flattened_index = (cur_combinations + offset[:, None]).flatten()
+            flattened_compliment[flattened_index] = False # Compliment step
+            compliment_mask = flattened_compliment.reshape(*(all_boxes.shape))
+            index_pool = torch.arange(
+                remaining_predictions.shape[1],
+                device=targets.device
+            )
+            cur_combinations_compliment = torch.stack(
+                [index_pool[mask_row] for mask_row in compliment_mask],
+                dim=0
+            )
+
+            # For each combination compliment, get the predictions for the
+            # remaining present classes other than the current one. This
+            # filters out the boxes selected for each combination as well
+            # as the current present class.
+            combination_compliment_predictions = remaining_predictions[
+                cur_combinations_compliment,
+                1:
+            ]
+
+            # remaining_predictions is shaped [B, K, *c], B is the number
+            # of remaining boxes after selecting combinations denoted by
+            # the dimensions contained in *c --- that is, *c contains
+            # all of the numbers of combinations selected at each iteration
+            # in reverse order, and B contains the number of boxes remaining
+            # after all stages of combination selection.
+            # combination_compliment_predictions, however, is shaped
+            # [C, B, K, *prev_c], where *(C, *prev_c) = *c. To update
+            # remaining_predictions, permute combination_compliment_predictions
+            # to match the desired shape
+            remaining_predictions = combination_compliment_predictions.permute((
+                1,
+                2,
+                0,
+                *(list(range(3, len(combination_compliment_predictions.shape))))
+            ))
+
+            ## Update remaining targets
+            remaining_targets = remaining_targets[1:]
+
+        ## Sum over combination_pred_running_products to compute the
+        ## probability for the exhaustive logical OR satisfying the targets
+        sum_prob = combination_pred_running_products.sum()
+
+        ## Compute per-image loss
+        losses.append(-torch.log(sum_prob))
+
+    ## Aggregate per-image losses and return
+    losses = torch.stack(losses, dim=0)
+    return losses.mean()
 
 
 class Augmentation(Enum):
@@ -1984,8 +2135,7 @@ class TuplePredictorTrainer:
             min_epochs=3,
             max_epochs=30,
             label_smoothing=0.0,
-            scheduler_type=SchedulerType.none,
-            backbone_training_type=BackboneTrainingType.classifiers):
+            scheduler_type=SchedulerType.none):
         species_classifier = classifier.species_classifier
         activity_classifier = classifier.activity_classifier
         species_calibrator = confidence_calibrator.species_calibrator
