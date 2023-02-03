@@ -230,14 +230,14 @@ def multiple_instance_count_cross_entropy(predictions, targets):
         #           + P(A, B, C absent)
         # We can compute each conjunction easily. For instance:
         # P(A, B, C absent) = \prod_j(1 - P(y_j \in {A, B, C})).
-        # In total, we have to compute \sum_{i=1}^{N-1}(N choose i)
+        # In total, we have to compute \sum_{i=1}^{N}(N choose i)
         # conjunctions, where N is the number of present classes, each of which
         # involves summing over i columns and then computing a product across
         # the rows (and there's a row per box).
 
         # Step 1: Compute P(others absent)
         absent_predictions = img_predictions[:, ~img_targets]
-        p_others_absent = torch.prod(1 - absent_predictions.sum(dim=1))
+        prob_others_absent = torch.prod(1 - absent_predictions.sum(dim=1))
 
         # Step 2: Filter out present-class predictions and condition on
         # the event <others absent>
@@ -247,14 +247,57 @@ def multiple_instance_count_cross_entropy(predictions, targets):
         cond_present_predictions = present_predictions / \
             present_predictions.sum(dim=1, keepdim=True)
 
-        # Step 3: For each i in 1, ..., N - 1, alternate adding and subtracting
+        # Step 3: For each i in 1, ..., N, alternate adding and subtracting
         # the relevant N choose i conjunction probabilities to compute
         # P(A, B, or C absent)
-        # TODO
-        
+        prob_any_absent = 0
+        add_iteration = True
+        for i in range(1, cond_present_predictions.shape[1] + 1):
+            # Compute the class indices for the N choose i conjunctions
+            cur_combinations = torch.combinations(
+                torch.arange(
+                    cond_present_predictions.shape[1],
+                    device=targets.device
+                ),
+                r=i
+            )
+
+            # Index the classes using cur_combinations
+            combination_preds = cond_present_predictions[:, cur_combinations]
+            # combination_preds is of shape [B, C, i], where C is N choose i
+            # and represents a conjunction.
+
+            # Compute absence conjunction probabilities for each combination:
+            # P(conjunction of absences) = 1 - P(disjunction present)
+            combination_box_absence = 1 - combination_preds.sum(dim=2)
+            combination_absence = torch.prod(combination_box_absence, dim=0)
+
+            # If add_iteration is True, add these absence conjunction
+            # probabilities. Else, subtract them. i.e.,
+            # P(A, B, or C)
+            #   = P(A) + P(B) + P(C)
+            #   - P(A, B) - P(A, C) - P(B, C)
+            #   + P(A, B, C)
+            absence_conjunction_sum = combination_absence.sum()
+            if add_iteration:
+                prob_any_absent =\
+                    prob_any_absent + absence_conjunction_sum
+            else:
+                prob_any_absent =\
+                    prob_any_absent - absence_conjunction_sum
+
+        # Step 4: We have
+        # P(any of the ground-truth present classes are absent | others absent).
+        # Compute the compliment to get
+        # P(present classes are predicted present | others absent).
+        prob_all_present = 1 - prob_any_absent
+
+        # Step 5: Compute P(A, B, ... C present, others Absent)
+        #       = P(A, B, ..., C present | others absent) * P(others absent)
+        prob_conform = prob_all_present * prob_others_absent
 
         ## Compute per-image loss
-        losses.append(-torch.log(sum_prob))
+        losses.append(-torch.log(prob_conform))
 
     ## Aggregate per-image losses and return
     losses = torch.stack(losses, dim=0)
