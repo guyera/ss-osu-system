@@ -42,6 +42,7 @@ Parameters:
         belong to class k.
 '''
 def multiple_instance_count_cross_entropy(predictions, targets):
+    losses = []
     # For each image
     for img_predictions, img_targets in zip(predictions, targets):
         # We're working with img_predictions of shape [M_i, K] and img_targets
@@ -168,6 +169,89 @@ def multiple_instance_count_cross_entropy(predictions, targets):
         ## Sum over combination_pred_running_products to compute the
         ## probability for the exhaustive logical OR satisfying the targets
         sum_prob = combination_pred_running_products.sum()
+
+        ## Compute per-image loss
+        losses.append(-torch.log(sum_prob))
+
+    ## Aggregate per-image losses and return
+    losses = torch.stack(losses, dim=0)
+    return losses.mean()
+
+
+'''
+Notation:
+    N: Number of images in the batch
+    M_i: Number of box images in the ith image
+    K: Number of classes
+Parameters:
+    predictions: List of N tensors. predictions[i] is a tensor of shape [M_i, K]
+        predictions[i][j, k] is the predicted probability that the jth box of
+        the ith image belongs to class k.
+    targets: Boolean tensor of shape [N, K]
+        targets[i, k] is the ground truth presence boolean for class k in image
+        i.
+'''
+def multiple_instance_count_cross_entropy(predictions, targets):
+    losses = []
+    # For each image
+    for img_predictions, img_targets in zip(predictions, targets):
+        # We're working with img_predictions of shape [M_i, K] and img_targets
+        # of shape [K].
+
+        # The general strategy is as follows:
+        # P(A, B, C present, others absent) = P(A, B, C present | others absent)
+        #       * P(others absent).
+        #
+        # The second term, P(others absent), can be computed as
+        # P(each box belongs to either A, B, or C)
+        #       = \prod_{j}(P(y_j = A, B, or C))
+        #
+        # To compute the first term, we first compute P(y_j = K | others absent)
+        # for K \in {A, B, C} by filtering out the absent classes and
+        # renormalizing the remaining probabilities.
+        # 
+        # From here on out, everything is conditioned on <others absent>,
+        # but it's left out the notation for brevity.
+        # 
+        # Next, we can compute:
+        # P(A, B, C present) = 1 - P(A, B, or C is absent)
+        # 
+        # We can actually compute this complement directly. For two events,
+        # P(A or B) = P(A) + P(B) - P(A and B). But to generalize the formula
+        # to N events, we start with the single-event conjunctions, then
+        # subtract the two-event conjunctions, then add the three-event
+        # conjunctions, then subtract the four-event conjunctions, and so on.
+        # e.g., for three classes:
+        # P (A or B or C) = P(A) + P(B) + P(C) - P(A and B) - P(A and C)
+        #       - P(B and C) + P(A and B and C).
+        # In our case, P(A, B, or C absent)
+        #       = P(A absent) + P(B absent) + P(C absent)
+        #           - P(A, B absent) - P(A, C absent) - P(B, C absent)
+        #           + P(A, B, C absent)
+        # We can compute each conjunction easily. For instance:
+        # P(A, B, C absent) = \prod_j(1 - P(y_j \in {A, B, C})).
+        # In total, we have to compute \sum_{i=1}^{N-1}(N choose i)
+        # conjunctions, where N is the number of present classes, each of which
+        # involves summing over i columns and then computing a product across
+        # the rows (and there's a row per box).
+
+        # Step 1: Compute P(others absent)
+        absent_predictions = img_predictions[:, ~img_targets]
+        p_others_absent = torch.prod(1 - absent_predictions.sum(dim=1))
+
+        # Step 2: Filter out present-class predictions and condition on
+        # the event <others absent>
+        # TODO handle case where denominator == 0. This might require moving
+        # computations to the log space
+        present_predictions = img_predictions[:, img_targets]
+        cond_present_predictions = present_predictions / \
+            present_predictions.sum(dim=1, keepdim=True)
+
+        # Step 3: For each i in 1, ..., N - 1, alternate adding and subtracting
+        # the relevant N choose i conjunction probabilities to compute
+        # P(A, B, or C absent)
+        # TODO
+        
 
         ## Compute per-image loss
         losses.append(-torch.log(sum_prob))
