@@ -55,12 +55,16 @@ def multiple_instance_count_cross_entropy_dyn(predictions, targets):
         # number of present classes, and C_k is the number of boxes belonging
         # to present class k. Note that the absent classes are implied to
         # have counts of 0, hence there are invisible [1, 1, ..., 1] dimensions
-        # as well, but we can ignore those.
-        dyn_prog = torch.ones(
+        # as well, but we can ignore those. Initialize the values to zero
+        # since we compute them by summing over directions. However, set the
+        # very first corner to 1, since we'll be using it as a starting
+        # multiplier for the remaining cells.
+        dyn_prog = torch.zeros(
             len(img_predictions) + 1,
             *((present_counts + 1).tolist()),
             device=targets.device
         )
+        dyn_prog[tuple([0] * len(dyn_prog.shape))] = 1
         dyn_prog_shape_tensor = torch.tensor(
             list(dyn_prog.shape),
             dtype=torch.long,
@@ -122,11 +126,15 @@ def multiple_instance_count_cross_entropy_dyn(predictions, targets):
                 # cur_dyn_indices, so (with a conditional independence
                 # assumption across boxes) we multiply the dynamic program
                 # buffer values indexed at cur_dyn_indices by the probability
-                # that this box belongs to this class to perform the expansion.
-                # All indexing is done by converting the indexing tensors to
+                # that this box belongs to this class to perform the expansion
+                # update. The update itself is done by adding this joint
+                # probability to the existing shifted indices' probabilities,
+                # since these joint probabilities are mutually exclusive and
+                # we're trying to compute the logical OR across them. All
+                # indexing is done by converting the indexing tensors to
                 # indexing tuples, each component of which is an indexing tensor
                 # for the corresponding dimension of the dynamic program buffer
-                dyn_prog[tuple(shifted_dyn_indices)] =\
+                dyn_prog[tuple(shifted_dyn_indices)] +=\
                     dyn_prog[tuple(cur_dyn_indices)] *\
                         present_predictions[box_idx, cls_idx]
 
@@ -136,6 +144,11 @@ def multiple_instance_count_cross_entropy_dyn(predictions, targets):
             # Concatenate next_indices along dim 1 and assign it to
             # cur_dyn_indices
             cur_dyn_indices = torch.cat(next_indices, dim=1)
+
+            # There will be some duplicates since we've expanded into the same
+            # cells from multiple directions. Remove these duplicates, leaving
+            # only a single copy of each unique index.
+            cur_dyn_indices = torch.unique(cur_dyn_indices, dim=1)
         
         # Get P(predictions match count targets) = <the highest-index vertex
         # of the dynamic program>
@@ -168,14 +181,21 @@ Parameters:
 def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
     losses = []
     for img_predictions, img_targets in zip(predictions, targets):
+        present_classes = torch.nonzero(img_targets)[0]
+        present_predictions = img_predictions[:, present_classes]
+
         # Construct the dynamic program buffer. Its size is
         # [N+1, 2, 2, ... 2], where N is the number of boxes, and there are
-        # K 2's, with K being the number of classes.
-        dyn_prog = torch.ones(
-            len(img_predictions) + 1,
-            *([2] * len(img_targets)),
+        # K 2's, with K being the number of present classes. Initialize the
+        # values to zero since we compute them by summing over directions.
+        # However, set the very first corner to 1, since we'll be using it as a
+        # starting multiplier for the remaining cells.
+        dyn_prog = torch.zeros(
+            len(present_predictions) + 1,
+            *([2] * len(present_classes)),
             device=targets.device
         )
+        dyn_prog[tuple([0] * len(dyn_prog.shape))] = 1
         dyn_prog_shape_tensor = torch.tensor(
             list(dyn_prog.shape),
             dtype=torch.long,
@@ -191,7 +211,7 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
         # observed for every class), and ONLY that location (so we have 1
         # index, equal to [0, 0, ..., 0])
         cur_dyn_indices = torch.zeros(
-            len(img_targets) + 1,
+            len(present_classes) + 1,
             1,
             dtype=torch.long,
             device=targets.device
@@ -207,16 +227,16 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
         # tensorize this by instead adding the kth row of a carefully
         # constructed matrix where the first column is all 1's, and the
         # remaining columns are drawn from the K+1 identity matrix.
-        aug_eye = torch.eye(len(img_targets) + 1)
+        aug_eye = torch.eye(len(present_classes) + 1)
         aug_eye[:, 0] = 1
 
         # For each iteration in our dynamic program
-        for box_idx in range(len(img_predictions)):
+        for box_idx in range(len(present_predictions)):
             # Keep a running list of indices for the next iteration
             next_indices = []
 
             # For each direction of expansion within the dynamic program buffer
-            for col_idx in range(len(img_targets) + 1):
+            for col_idx in range(len(present_classes) + 1):
                 # Perform the tensorized index shift to expand +1 in the
                 # box dimension and, if relevant, +1 in the current class
                 # dimension within the dynamic program buffer
@@ -251,7 +271,7 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
                     # box
                     observed_masks = cur_cls_indices == 1
                     masked_cls_preds =\
-                        img_predictions[box_idx, :, None] * observed_masks
+                        present_predictions[box_idx, :, None] * observed_masks
                     observed_preds_sums = masked_cls_preds.sum(dim=0)
 
                     # These sums represent P(counted new box, observed a class
@@ -276,8 +296,8 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
                     # The probability associated with this direction is
                     # simply P(this box == this class). Compute this probability
                     # and multiply it by the current dyn prog values to get
-                    # the next ones.
-                    dyn_prog[tuple(shifted_dyn_indices)] =\
+                    # the contribution to the next dyn prog values.
+                    dyn_prog[tuple(shifted_dyn_indices)] +=\
                         dyn_prog[tuple(cur_dyn_indices)] *\
                             present_predictions[box_idx, cls_idx]
 
@@ -287,6 +307,11 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
             # Concatenate next_indices along dim 1 and assign it to
             # cur_dyn_indices
             cur_dyn_indices = torch.cat(next_indices, dim=1)
+
+            # There will be some duplicates since we've expanded into the same
+            # cells from multiple directions. Remove these duplicates, leaving
+            # only a single copy of each unique index.
+            cur_dyn_indices = torch.unique(cur_dyn_indices, dim=1)
         
         # Get P(predictions match count targets) = <the highest-index vertex
         # of the dynamic program>
