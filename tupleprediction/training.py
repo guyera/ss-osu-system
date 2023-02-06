@@ -463,7 +463,7 @@ Parameters:
         targets[i, k] is the ground truth presence boolean for class k in image
         i.
 '''
-def multiple_instance_count_cross_entropy(predictions, targets):
+def multiple_instance_presence_cross_entropy(predictions, targets):
     losses = []
     # For each image
     for img_predictions, img_targets in zip(predictions, targets):
