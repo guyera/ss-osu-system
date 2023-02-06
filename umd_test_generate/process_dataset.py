@@ -52,5 +52,4 @@ def main():
 if __name__ == '__main__':
     main()
 
-    # python process_dataset.py --train_csv '../../../data/sailon_svo/umd/dataset_v4_2_train.csv' --val_csv '../../../data/sailon_svo/umd/dataset_v4_1_1_val_incident.csv' --pickle_out_file '../../../data/sailon_svo/umd_test_sandbox/test_source_data_v4_2_all_valid_val.pkl' --log_file '../../../data/sailon_svo/umd_test_sandbox/dataset_analysis_v4_2_all_valid.log'
     # python process_dataset.py --train_csv '../../../../sail_on3/svo/umd/dataset_v4_2_train.csv' --val_csv '../../../../sail_on3/svo/dataset_v4_2_val_final.csv' --pickle_out_file '../../../../sail_on3/svo/umd_test_sandbox/test_source_data_v4_2_all_valid_val.pkl' --log_file '../../../../sail_on3/svo/umd_test_sandbox/dataset_analysis_v4_2_all_valid.log'

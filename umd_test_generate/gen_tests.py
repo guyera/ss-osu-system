@@ -19,7 +19,8 @@ from feed import Feed
 random.seed(42)
 
 
-test_header = 'image_path,filename,width,height,master_id,novel'
+# test_header = 'image_path,filename,width,height,master_id,novel'
+test_header = 'image_path,filename,width,height,agent1_name,agent1_id,agent1_count,agent2_name,agent2_id,agent2_count,agent3_name,agent3_id,agent3_count,activities,activities_id,environment,novelty_type,master_id,novel'
 
 # keys_to_take = ('image_path', 'capture_id', 'height', 'width', 'master_id')
 # env_subnovelties = ('dawn-dusk', 'night', 'day-fog', 'day-snow')
@@ -85,11 +86,6 @@ def gen_api_test(test_name, known_feed, novel_feed, test_dir, test_len, red_butt
     with open(metadata_file, 'w') as handle:
         handle.write(json.dumps(metadata))
 
-def add_topk_files(test_dir):
-    source_dir = Path("./topk_files")
-    for f in ["subject_topk.csv", "verb_topk.csv", "object_topk.csv"]:
-        shutil.copy(source_dir/f, test_dir/f)
-
 def gen_api_tests(test_source_data, out_dir, test_configs):
     if not out_dir.exists():
         out_dir.mkdir()
@@ -129,7 +125,6 @@ def gen_api_tests(test_source_data, out_dir, test_configs):
     with open(test_dir / 'test_ids.csv', 'w') as handle:
         for test_name in test_names:
             handle.write(f'{test_name}\n')
-    add_topk_files(test_dir)
 
 def gen_api_single_novelty_tests(test_source_data, out_dir, test_configs, novelty_type=None, subnovelty=None):
     if not out_dir.exists():
@@ -224,7 +219,6 @@ def gen_api_single_novelty_tests(test_source_data, out_dir, test_configs, novelt
     with open(test_dir / 'test_ids.csv', 'w') as handle:
         for test_name in test_names:
             handle.write(f'{test_name}\n')
-    # add_topk_files(test_dir)
 
 
 def main():

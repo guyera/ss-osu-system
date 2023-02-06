@@ -8,6 +8,7 @@ and output it in either api or stubs versions.
 
 import ast
 import math
+import pandas as pd
 from enums import NoveltyType, get_subnovelty_varname, Id2noveltyType
 
 
@@ -93,6 +94,7 @@ class Item:
         # If the input validation data does not have master_id columns
         # print('type of _tuple:', type(_tuple), '\n', _tuple, '\n')
 
+        '''
         return ','.join([str(val) for val in [
             _tuple.image_path,
             _tuple.filename,
@@ -100,6 +102,28 @@ class Item:
             _tuple.height,
             _tuple.master_id if val else None
         ]])
+        '''
+
+        return ','.join([str(value) for value in [
+            _tuple.image_path,
+            _tuple.filename,
+            _tuple.width,
+            _tuple.height,
+            _tuple.agent1_name,
+            _tuple.agent1_id if pd.isnull(_tuple.agent1_id) else int(_tuple.agent1_id),
+            _tuple.agent1_count if pd.isnull(_tuple.agent1_count) else int(_tuple.agent1_count),
+            _tuple.agent2_name,
+            _tuple.agent2_id if pd.isnull(_tuple.agent2_id) else int(_tuple.agent2_id),
+            _tuple.agent2_count if pd.isnull(_tuple.agent2_count) else int(_tuple.agent2_count),
+            _tuple.agent3_name,
+            _tuple.agent3_id if pd.isnull(_tuple.agent3_id) else int(_tuple.agent3_id),
+            _tuple.agent3_count if pd.isnull(_tuple.agent3_count) else int(_tuple.agent3_count),
+            _tuple.activities,
+            _tuple.activities_id,
+            _tuple.environment_id,
+            _tuple.novelty_type if pd.isnull(_tuple.novelty_type) else int(_tuple.novelty_type),
+            _tuple.master_id if pd.isnull(_tuple.master_id) else int(_tuple.master_id),
+        ]]) if val else None
 
     
     def debug_print(self, log):
