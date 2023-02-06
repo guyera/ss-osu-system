@@ -29,6 +29,127 @@ from transforms import\
 
 
 '''
+Dynamic program solution to the multiple instance count problem
+
+Notation:
+    N: Number of images in the batch
+    M_i: Number of box images in the ith image
+    K: Number of classes
+Parameters:
+    predictions: List of N tensors. predictions[i] is a tensor of shape [M_i, K]
+        predictions[i][j, k] is the predicted probability that the jth box of
+        the ith image belongs to class k.
+    targets: Tensor of shape [N, K]
+        targets[i, k] is the ground truth number of boxes in image i that
+        belong to class k.
+'''
+def multiple_instance_count_cross_entropy_dyn(predictions, targets):
+    losses = []
+    for img_predictions, img_targets in zip(predictions, targets):
+        present_classes = torch.nonzero(img_targets)[0]
+        present_counts = img_targets[present_classes]
+        present_predictions = img_predictions[:, present_classes]
+        
+        # Construct the dynamic program buffer. Its size is
+        # [N+1, C_1+1, ... C_K+1], where N is the number of boxes, K is the
+        # number of present classes, and C_k is the number of boxes belonging
+        # to present class k. Note that the absent classes are implied to
+        # have counts of 0, hence there are invisible [1, 1, ..., 1] dimensions
+        # as well, but we can ignore those.
+        dyn_prog = torch.ones(
+            len(img_predictions) + 1,
+            *((present_counts + 1).tolist()),
+            device=targets.device
+        )
+        dyn_prog_shape_tensor = torch.tensor(
+            list(dyn_prog.shape),
+            dtype=torch.long,
+            device=targets.device
+        )
+
+        # At any given point in our dynamic program, we will be maintaining
+        # a tuple of per-dimension index tensors that we will use to index
+        # the most-recently-computed diagonal plane of the dynamic program
+        # buffer. For ease of tensorization, we'll store it as a 2D tensor
+        # and convert it to a tuple for indexing on the fly. Initially,
+        # we start on the [0, 0, ..., 0] location of our buffer (0 instances
+        # observed for every class), and ONLY that location (so we have 1
+        # index, equal to [0, 0, ..., 0])
+        cur_dyn_indices = torch.zeros(
+            len(present_counts) + 1,
+            1,
+            dtype=torch.long,
+            device=targets.device
+        )
+
+        # At each iteration of our dynamic program, we can expand outward
+        # from our current indices in K different directions, where each
+        # direction k represents "count one more box, observing an instance of
+        # class k". To compute these shifted indices, we'll add 1 to the
+        # corresponding class dimension of cur_dyn_indices, and 1 to the
+        # box index. We can tensorize this by instead adding the kth row of the
+        # identity matrix augmented with a prepended "1's" column
+        eye = torch.eye(len(present_counts))
+        aug_eye = torch.cat(
+            (torch.ones(len(present_counts)), eye),
+            dim=1
+        )
+
+        # For each iteration in our dynamic program
+        for box_idx in range(len(present_predictions)):
+            # Keep a running list of indices for the next iteration
+            next_indices = []
+
+            # For each direction of expansion within the dynamic program buffer
+            for cls_idx in range(len(present_counts)):
+                # Perform the tensorized index shift to expand +1 in the
+                # box dimension and +1 in the current class dimension within
+                # the dynamic program buffer
+                shift = aug_eye[cls_idx]
+                shifted_dyn_indices = cur_dyn_indices + shift[:, None]
+
+                # Mask to remove indices which overflow past the bounds
+                # of the dynamic program buffer
+                overflow_mask = shifted_dyn_indices >=\
+                    dyn_prog_shape_tensor[:, None]
+                shifted_dyn_indices = shifted_dyn_indices * ~overflow_mask +\
+                    dyn_prog_shape_tensor * overflow_mask
+
+                # Use the shifted dyn indices to index the expansion locations
+                # of the dynamic buffer. Update those locations in the buffer;
+                # the expansion represents observing one more instance of this
+                # class relative to the buffer values indexed at
+                # cur_dyn_indices, so (with a conditional independence
+                # assumption across boxes) we multiply the dynamic program
+                # buffer values indexed at cur_dyn_indices by the probability
+                # that this box belongs to this class to perform the expansion.
+                # All indexing is done by converting the indexing tensors to
+                # indexing tuples, each component of which is an indexing tensor
+                # for the corresponding dimension of the dynamic program buffer
+                dyn_prog[tuple(shifted_dyn_indices)] =\
+                    dyn_prog[tuple(cur_dyn_indices)] *\
+                        present_predictions[box_idx, cls_idx]
+
+                # Append shifted_dyn_indices to next_indices
+                next_indices.append(shifted_dyn_indices)
+
+            # Concatenate next_indices along dim 1 and assign it to
+            # cur_dyn_indices
+            cur_dyn_indices = torch.cat(next_indices, dim=1)
+        
+        # Get P(predictions match count targets) = <the highest-index vertex
+        # of the dynamic program>
+        prob_match = dyn_prog[tuple(dyn_prog_shape_tensor - 1)]
+
+        # NLL is loss
+        losses.append(-torch.log(prob_match))
+
+    # Compute aggregate loss across images
+    losses = torch.cat(losses, dim=0)
+    loss = losses.mean()
+    return loss
+
+'''
 Notation:
     N: Number of images in the batch
     M_i: Number of box images in the ith image
