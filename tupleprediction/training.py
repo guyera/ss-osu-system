@@ -110,10 +110,10 @@ def multiple_instance_count_cross_entropy_dyn(predictions, targets):
 
                 # Mask to remove indices which overflow past the bounds
                 # of the dynamic program buffer
-                overflow_mask = shifted_dyn_indices >=\
+                overflow_mask = shifted_dyn_indices <\
                     dyn_prog_shape_tensor[:, None]
-                shifted_dyn_indices = shifted_dyn_indices * ~overflow_mask +\
-                    dyn_prog_shape_tensor * overflow_mask
+                overflow_mask = torch.all(overflow_mask, dim=0)
+                shifted_dyn_indices = shifted_dyn_indices[:, overflow_mask]
 
                 # Use the shifted dyn indices to index the expansion locations
                 # of the dynamic buffer. Update those locations in the buffer;
@@ -129,6 +129,157 @@ def multiple_instance_count_cross_entropy_dyn(predictions, targets):
                 dyn_prog[tuple(shifted_dyn_indices)] =\
                     dyn_prog[tuple(cur_dyn_indices)] *\
                         present_predictions[box_idx, cls_idx]
+
+                # Append shifted_dyn_indices to next_indices
+                next_indices.append(shifted_dyn_indices)
+
+            # Concatenate next_indices along dim 1 and assign it to
+            # cur_dyn_indices
+            cur_dyn_indices = torch.cat(next_indices, dim=1)
+        
+        # Get P(predictions match count targets) = <the highest-index vertex
+        # of the dynamic program>
+        prob_match = dyn_prog[tuple(dyn_prog_shape_tensor - 1)]
+
+        # NLL is loss
+        losses.append(-torch.log(prob_match))
+
+    # Compute aggregate loss across images
+    losses = torch.cat(losses, dim=0)
+    loss = losses.mean()
+    return loss
+
+
+'''
+Dynamic program solution to the multiple instance presence problem
+
+Notation:
+    N: Number of images in the batch
+    M_i: Number of box images in the ith image
+    K: Number of classes
+Parameters:
+    predictions: List of N tensors. predictions[i] is a tensor of shape [M_i, K]
+        predictions[i][j, k] is the predicted probability that the jth box of
+        the ith image belongs to class k.
+    targets: Tensor of shape [N, K]
+        targets[i, k] is the ground truth number of boxes in image i that
+        belong to class k.
+'''
+def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
+    losses = []
+    for img_predictions, img_targets in zip(predictions, targets):
+        # Construct the dynamic program buffer. Its size is
+        # [N+1, 2, 2, ... 2], where N is the number of boxes, and there are
+        # K 2's, with K being the number of classes.
+        dyn_prog = torch.ones(
+            len(img_predictions) + 1,
+            *([2] * len(img_targets)),
+            device=targets.device
+        )
+        dyn_prog_shape_tensor = torch.tensor(
+            list(dyn_prog.shape),
+            dtype=torch.long,
+            device=targets.device
+        )
+
+        # At any given point in our dynamic program, we will be maintaining
+        # a tuple of per-dimension index tensors that we will use to index
+        # the most-recently-computed diagonal plane of the dynamic program
+        # buffer. For ease of tensorization, we'll store it as a 2D tensor
+        # and convert it to a tuple for indexing on the fly. Initially,
+        # we start on the [0, 0, ..., 0] location of our buffer (0 instances
+        # observed for every class), and ONLY that location (so we have 1
+        # index, equal to [0, 0, ..., 0])
+        cur_dyn_indices = torch.zeros(
+            len(img_targets) + 1,
+            1,
+            dtype=torch.long,
+            device=targets.device
+        )
+
+        # At each iteration of our dynamic program, we can expand outward
+        # from our current indices in K+1 different directions, where the
+        # first direction represents "count one more box, observing no new
+        # classes", and each remaining direction k represents "count one more
+        # box, observing an instance of class k for the first time". To compute
+        # these shifted indices, we'll add 1 to the corresponding class
+        # dimension of cur_dyn_indices, and 1 to the box index. We can
+        # tensorize this by instead adding the kth row of a carefully
+        # constructed matrix where the first column is all 1's, and the
+        # remaining columns are drawn from the K+1 identity matrix.
+        aug_eye = torch.eye(len(img_targets) + 1)
+        aug_eye[:, 0] = 1
+
+        # For each iteration in our dynamic program
+        for box_idx in range(len(img_predictions)):
+            # Keep a running list of indices for the next iteration
+            next_indices = []
+
+            # For each direction of expansion within the dynamic program buffer
+            for col_idx in range(len(img_targets) + 1):
+                # Perform the tensorized index shift to expand +1 in the
+                # box dimension and, if relevant, +1 in the current class
+                # dimension within the dynamic program buffer
+                shift = aug_eye[col_idx]
+                shifted_dyn_indices = cur_dyn_indices + shift[:, None]
+
+                # Mask to remove indices which overflow past the bounds
+                # of the dynamic program buffer
+                overflow_mask = shifted_dyn_indices <\
+                    dyn_prog_shape_tensor[:, None]
+                overflow_mask = torch.all(overflow_mask, dim=0)
+                shifted_dyn_indices = shifted_dyn_indices[:, overflow_mask]
+
+                if col_idx == 0:
+                    # If col_idx is zero, then this iteration represents the
+                    # expansion direction wherein a new box is counted, but
+                    # no new classes are observed (all of the 0/1 indices in
+                    # the dyn prog indices remain as-is, meaning we only
+                    # observed a class which was already marked by a 1 index).
+                    # To compute the probability associated with such a
+                    # direction in our dynamic program, we need to sum over
+                    # the probabilities corresponding to the previously
+                    # observed classes for each relevant dyn prog index.
+
+                    # Get current (== shifted) class indices w.r.t. the dynamic
+                    # program
+                    cur_cls_indices = cur_dyn_indices[1:]
+                    # equivalent to shifted_dyn_indices[1:]
+                    
+                    # Determine which ones have already been observed
+                    # and sum over their prediction probabilities for this
+                    # box
+                    observed_masks = cur_cls_indices == 1
+                    masked_cls_preds =\
+                        img_predictions[box_idx, :, None] * observed_masks
+                    observed_preds_sums = masked_cls_preds.sum(dim=0)
+
+                    # These sums represent P(counted new box, observed a class
+                    # that has already been observed before) for each current
+                    # dynamic program value. Multiply these probabilities by
+                    # the corresponding current dynamic program values to get
+                    # the next ones
+                    dyn_prog[tuple(shifted_dyn_indices)] =\
+                        dyn_prog[tuple(cur_dyn_indices)] *\
+                            observed_preds_sums
+                else:
+                    # if col_idx is NOT zero, then col_idx - 1 represents
+                    # the class which is now being observed, having previously
+                    # not been observed. If it HAS previously been observed,
+                    # then the shifted class index for it would be 2, which
+                    # lies outside the dyn prog bounds and would have already
+                    # been masked out as a valid shifted index.
+
+                    # Compute class index
+                    cls_idx = col_idx - 1
+
+                    # The probability associated with this direction is
+                    # simply P(this box == this class). Compute this probability
+                    # and multiply it by the current dyn prog values to get
+                    # the next ones.
+                    dyn_prog[tuple(shifted_dyn_indices)] =\
+                        dyn_prog[tuple(cur_dyn_indices)] *\
+                            present_predictions[box_idx, cls_idx]
 
                 # Append shifted_dyn_indices to next_indices
                 next_indices.append(shifted_dyn_indices)
