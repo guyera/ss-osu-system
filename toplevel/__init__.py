@@ -509,18 +509,17 @@ class TopLevelApp:
     
         prior = 0.20 if not self.ignore_verb_novelty else 1/3
     
-        log_p_type_1 = self._infer_log_p_type(prior, filtered[:, 0])
-        log_p_type_2 = self._infer_log_p_type(prior if not self.ignore_verb_novelty else 0, 
-                                              filtered[:, 1] if not self.ignore_verb_novelty else torch.zeros(filtered.shape[0]))
-        log_p_type_3 = self._infer_log_p_type(prior, filtered[:, 2])
-        log_p_type_4 = self._infer_log_p_type(prior, filtered[:, 3])
-        log_p_type_5 = self._infer_log_p_type(prior, filtered[:, 4])
+        log_p_type_1 = self._infer_log_p_type(prior, filtered[:, 1])
+        log_p_type_2 = self._infer_log_p_type(prior, filtered[:, 2])
+        log_p_type_3 = self._infer_log_p_type(prior, filtered[:, 3])
+        log_p_type_4 = self._infer_log_p_type(prior, filtered[:, 4])
+        log_p_type_5 = self._infer_log_p_type(prior, filtered[:, 5])
 
         self.p_type_dist = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4, log_p_type_5])
         self.p_type_dist = torch.nn.functional.softmax(self.p_type_dist, dim=0).float()
-                
+
         self.p_type_hist.append(self.p_type_dist.numpy())
-                
+
         assert not torch.any(torch.isnan(self.p_type_dist)), "NaNs in p_type."
         assert not torch.any(torch.isinf(self.p_type_dist)), "Infs in p_type."
 

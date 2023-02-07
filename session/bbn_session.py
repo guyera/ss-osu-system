@@ -425,54 +425,20 @@ class BBNSession:
             hintsBList.append(hint_typeB_data)
             
             if self.api_stubs:
-                image_data = self.api_stubs.image_data(test_id, round_id)
-                
-                if image_data == None:
-                    print("==> No more rounds")
-                    break
-
-                ## image_lines is used below to get the missing_s and missing_o values
-                ## that are needed for hacking around the bad SCG values we were getting
-                ## It's just a list of the image_data lines.
-                
-                image_lines = image_data.split('\n')
-
+                raise NotImplementedError
             else:
-                filenames_response = requests.get(
+                dataset_response = requests.get(
                     f"{self.url}/session/dataset?session_id={session_id}&test_id={test_id}&round_id={round_id}")
 
-                if filenames_response.status_code == 204:
+                if dataset_response.status_code == 204:
                     print("==> No more rounds")
                     break
 
                 print(f"===> Round {round_id}")
 
-                ## GD These lines should go away! 
-                # filenames = filenames_response.content.decode('utf-8').split('\n')
-                # filenames = [x for x in filenames if x.strip("\n\t\"',.") != ""]
-
-                ## Lance
-                # This code takes the image and bounding box info as UMD
-                # is now supplying it, as a Bytes string of Python objects,
-                # and maps it back to the older CSV lines format.
-                ## GD added lines to trace image_paths
-                response_list = ast.literal_eval(filenames_response.content.decode('utf-8'))
-                image_lines = []
-                image_paths = []
-                for image_data in response_list:
-                    image_path = image_data[0]
-                    image_paths.append(image_path)
-                    bbox_info = ','.join(image_data[1])
-
-                    # The image width and height used to be supplied, and so are expected,
-                    # but not used. They are supplied here as zeros. 
-                    image_line = ','.join([image_path,'0', '0', bbox_info])
-                    # image_line = ','.join([image_path, bbox_info])
-
-                    image_lines.append(image_line)
-                image_data = '\n'.join(image_lines)
-                ## Lance
-
+                response_dict = dataset_response.json()
+                image_paths = response_dict['images']
+                bbox_dict = response_dict['bboxes']
 
                 ## GD
                 if self.given_detect_red_light_round is None and self.given_detection and (red_light_image in image_paths):
@@ -481,7 +447,7 @@ class BBNSession:
                 ## GDD
                 # if self.given_detect_red_light_round == round_id:
                 #     print(f' **** Turned on given_detect_red_light_round on round {round_id}')
-            
+
 
             detection_filename = os.path.join(
                 self.results_directory, "%s_%s_%s_detection.csv" % (session_id, test_id, round_id))
@@ -492,6 +458,7 @@ class BBNSession:
                 self.results_directory, "%s_%s_%s_classification.csv" % (session_id, test_id, round_id))
             classification_file = open(classification_filename, "w")
             if round_id == 0:
+                # TODO update classification_file for SS task
                 triple_labels = [f'{s}_{v}_{o}' for (s, v, o) in self.triple_list]
                 classification_file.write(f'image_path,{",".join(triple_labels)}\n')
 
@@ -503,7 +470,7 @@ class BBNSession:
                     self.osu_stubs.given_detect_red_light(red_light_image)
                     # GDD
                     # print(f' **** Called osu_stubs.given_detect_red_light during round {round_id}')
-                novelty_preds, svo_preds = self.osu_stubs.process_round(test_id, round_id, image_data, hint_typeA_data, hint_typeB_data)
+                novelty_preds, svo_preds = self.osu_stubs.process_round(test_id, round_id, image_paths, bbox_dict, hint_typeA_data, hint_typeB_data)
                 novelty_lines = novelty_preds.splitlines()
                 svo_lines = svo_preds.splitlines()
 
