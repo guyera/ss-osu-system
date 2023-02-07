@@ -1,3 +1,4 @@
+import itertools
 from copy import deepcopy
 import numpy as np
 import os
@@ -12,6 +13,7 @@ from torch.utils.data import\
     Subset as TorchSubset,\
     ConcatDataset as TorchConcatDataset
 import torch
+from torch.nn import Module
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from boximagedataset import BoxImageDataset
@@ -24,6 +26,579 @@ from transforms import\
     RandAugment,\
     RandomHorizontalFlip,\
     NoOpTransform
+
+
+'''
+Dynamic program solution to the multiple instance count problem
+
+Notation:
+    N: Number of images in the batch
+    M_i: Number of box images in the ith image
+    K: Number of classes
+Parameters:
+    predictions: List of N tensors. predictions[i] is a tensor of shape [M_i, K]
+        predictions[i][j, k] is the predicted probability that the jth box of
+        the ith image belongs to class k.
+    targets: Tensor of shape [N, K]
+        targets[i, k] is the ground truth number of boxes in image i that
+        belong to class k.
+'''
+def multiple_instance_count_cross_entropy_dyn(predictions, targets):
+    losses = []
+    for img_predictions, img_targets in zip(predictions, targets):
+        present_classes = torch.nonzero(img_targets)[0]
+        present_counts = img_targets[present_classes]
+        present_predictions = img_predictions[:, present_classes]
+        
+        # Construct the dynamic program buffer. Its size is
+        # [N+1, C_1+1, ... C_K+1], where N is the number of boxes, K is the
+        # number of present classes, and C_k is the number of boxes belonging
+        # to present class k. Note that the absent classes are implied to
+        # have counts of 0, hence there are invisible [1, 1, ..., 1] dimensions
+        # as well, but we can ignore those. Initialize the values to zero
+        # since we compute them by summing over directions. However, set the
+        # very first corner to 1, since we'll be using it as a starting
+        # multiplier for the remaining cells.
+        dyn_prog = torch.zeros(
+            len(img_predictions) + 1,
+            *((present_counts + 1).tolist()),
+            device=targets.device
+        )
+        dyn_prog[tuple([0] * len(dyn_prog.shape))] = 1
+        dyn_prog_shape_tensor = torch.tensor(
+            list(dyn_prog.shape),
+            dtype=torch.long,
+            device=targets.device
+        )
+
+        # At any given point in our dynamic program, we will be maintaining
+        # a tuple of per-dimension index tensors that we will use to index
+        # the most-recently-computed diagonal plane of the dynamic program
+        # buffer. For ease of tensorization, we'll store it as a 2D tensor
+        # and convert it to a tuple for indexing on the fly. Initially,
+        # we start on the [0, 0, ..., 0] location of our buffer (0 instances
+        # observed for every class), and ONLY that location (so we have 1
+        # index, equal to [0, 0, ..., 0])
+        cur_dyn_indices = torch.zeros(
+            len(present_counts) + 1,
+            1,
+            dtype=torch.long,
+            device=targets.device
+        )
+
+        # At each iteration of our dynamic program, we can expand outward
+        # from our current indices in K different directions, where each
+        # direction k represents "count one more box, observing an instance of
+        # class k". To compute these shifted indices, we'll add 1 to the
+        # corresponding class dimension of cur_dyn_indices, and 1 to the
+        # box index. We can tensorize this by instead adding the kth row of the
+        # identity matrix augmented with a prepended "1's" column
+        eye = torch.eye(len(present_counts))
+        aug_eye = torch.cat(
+            (torch.ones(len(present_counts)), eye),
+            dim=1
+        )
+
+        # For each iteration in our dynamic program
+        for box_idx in range(len(present_predictions)):
+            # Keep a running list of indices for the next iteration
+            next_indices = []
+
+            # For each direction of expansion within the dynamic program buffer
+            for cls_idx in range(len(present_counts)):
+                # Perform the tensorized index shift to expand +1 in the
+                # box dimension and +1 in the current class dimension within
+                # the dynamic program buffer
+                shift = aug_eye[cls_idx]
+                shifted_dyn_indices = cur_dyn_indices + shift[:, None]
+
+                # Mask to remove indices which overflow past the bounds
+                # of the dynamic program buffer
+                overflow_mask = shifted_dyn_indices <\
+                    dyn_prog_shape_tensor[:, None]
+                overflow_mask = torch.all(overflow_mask, dim=0)
+                shifted_dyn_indices = shifted_dyn_indices[:, overflow_mask]
+
+                # Use the shifted dyn indices to index the expansion locations
+                # of the dynamic buffer. Update those locations in the buffer;
+                # the expansion represents observing one more instance of this
+                # class relative to the buffer values indexed at
+                # cur_dyn_indices, so (with a conditional independence
+                # assumption across boxes) we multiply the dynamic program
+                # buffer values indexed at cur_dyn_indices by the probability
+                # that this box belongs to this class to perform the expansion
+                # update. The update itself is done by adding this joint
+                # probability to the existing shifted indices' probabilities,
+                # since these joint probabilities are mutually exclusive and
+                # we're trying to compute the logical OR across them. All
+                # indexing is done by converting the indexing tensors to
+                # indexing tuples, each component of which is an indexing tensor
+                # for the corresponding dimension of the dynamic program buffer
+                dyn_prog[tuple(shifted_dyn_indices)] +=\
+                    dyn_prog[tuple(cur_dyn_indices)] *\
+                        present_predictions[box_idx, cls_idx]
+
+                # Append shifted_dyn_indices to next_indices
+                next_indices.append(shifted_dyn_indices)
+
+            # Concatenate next_indices along dim 1 and assign it to
+            # cur_dyn_indices
+            cur_dyn_indices = torch.cat(next_indices, dim=1)
+
+            # There will be some duplicates since we've expanded into the same
+            # cells from multiple directions. Remove these duplicates, leaving
+            # only a single copy of each unique index.
+            cur_dyn_indices = torch.unique(cur_dyn_indices, dim=1)
+        
+        # Get P(predictions match count targets) = <the highest-index vertex
+        # of the dynamic program>
+        prob_match = dyn_prog[tuple(dyn_prog_shape_tensor - 1)]
+
+        # NLL is loss
+        losses.append(-torch.log(prob_match))
+
+    # Compute aggregate loss across images
+    losses = torch.cat(losses, dim=0)
+    loss = losses.mean()
+    return loss
+
+
+'''
+Dynamic program solution to the multiple instance presence problem
+
+Notation:
+    N: Number of images in the batch
+    M_i: Number of box images in the ith image
+    K: Number of classes
+Parameters:
+    predictions: List of N tensors. predictions[i] is a tensor of shape [M_i, K]
+        predictions[i][j, k] is the predicted probability that the jth box of
+        the ith image belongs to class k.
+    targets: Tensor of shape [N, K]
+        targets[i, k] is the ground truth number of boxes in image i that
+        belong to class k.
+'''
+def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
+    losses = []
+    for img_predictions, img_targets in zip(predictions, targets):
+        present_classes = torch.nonzero(img_targets)[0]
+        present_predictions = img_predictions[:, present_classes]
+
+        # Construct the dynamic program buffer. Its size is
+        # [N+1, 2, 2, ... 2], where N is the number of boxes, and there are
+        # K 2's, with K being the number of present classes. Initialize the
+        # values to zero since we compute them by summing over directions.
+        # However, set the very first corner to 1, since we'll be using it as a
+        # starting multiplier for the remaining cells.
+        dyn_prog = torch.zeros(
+            len(present_predictions) + 1,
+            *([2] * len(present_classes)),
+            device=targets.device
+        )
+        dyn_prog[tuple([0] * len(dyn_prog.shape))] = 1
+        dyn_prog_shape_tensor = torch.tensor(
+            list(dyn_prog.shape),
+            dtype=torch.long,
+            device=targets.device
+        )
+
+        # At any given point in our dynamic program, we will be maintaining
+        # a tuple of per-dimension index tensors that we will use to index
+        # the most-recently-computed diagonal plane of the dynamic program
+        # buffer. For ease of tensorization, we'll store it as a 2D tensor
+        # and convert it to a tuple for indexing on the fly. Initially,
+        # we start on the [0, 0, ..., 0] location of our buffer (0 instances
+        # observed for every class), and ONLY that location (so we have 1
+        # index, equal to [0, 0, ..., 0])
+        cur_dyn_indices = torch.zeros(
+            len(present_classes) + 1,
+            1,
+            dtype=torch.long,
+            device=targets.device
+        )
+
+        # At each iteration of our dynamic program, we can expand outward
+        # from our current indices in K+1 different directions, where the
+        # first direction represents "count one more box, observing no new
+        # classes", and each remaining direction k represents "count one more
+        # box, observing an instance of class k for the first time". To compute
+        # these shifted indices, we'll add 1 to the corresponding class
+        # dimension of cur_dyn_indices, and 1 to the box index. We can
+        # tensorize this by instead adding the kth row of a carefully
+        # constructed matrix where the first column is all 1's, and the
+        # remaining columns are drawn from the K+1 identity matrix.
+        aug_eye = torch.eye(len(present_classes) + 1)
+        aug_eye[:, 0] = 1
+
+        # For each iteration in our dynamic program
+        for box_idx in range(len(present_predictions)):
+            # Keep a running list of indices for the next iteration
+            next_indices = []
+
+            # For each direction of expansion within the dynamic program buffer
+            for col_idx in range(len(present_classes) + 1):
+                # Perform the tensorized index shift to expand +1 in the
+                # box dimension and, if relevant, +1 in the current class
+                # dimension within the dynamic program buffer
+                shift = aug_eye[col_idx]
+                shifted_dyn_indices = cur_dyn_indices + shift[:, None]
+
+                # Mask to remove indices which overflow past the bounds
+                # of the dynamic program buffer
+                overflow_mask = shifted_dyn_indices <\
+                    dyn_prog_shape_tensor[:, None]
+                overflow_mask = torch.all(overflow_mask, dim=0)
+                shifted_dyn_indices = shifted_dyn_indices[:, overflow_mask]
+
+                if col_idx == 0:
+                    # If col_idx is zero, then this iteration represents the
+                    # expansion direction wherein a new box is counted, but
+                    # no new classes are observed (all of the 0/1 indices in
+                    # the dyn prog indices remain as-is, meaning we only
+                    # observed a class which was already marked by a 1 index).
+                    # To compute the probability associated with such a
+                    # direction in our dynamic program, we need to sum over
+                    # the probabilities corresponding to the previously
+                    # observed classes for each relevant dyn prog index.
+
+                    # Get current (== shifted) class indices w.r.t. the dynamic
+                    # program
+                    cur_cls_indices = cur_dyn_indices[1:]
+                    # equivalent to shifted_dyn_indices[1:]
+                    
+                    # Determine which ones have already been observed
+                    # and sum over their prediction probabilities for this
+                    # box
+                    observed_masks = cur_cls_indices == 1
+                    masked_cls_preds =\
+                        present_predictions[box_idx, :, None] * observed_masks
+                    observed_preds_sums = masked_cls_preds.sum(dim=0)
+
+                    # These sums represent P(counted new box, observed a class
+                    # that has already been observed before) for each current
+                    # dynamic program value. Multiply these probabilities by
+                    # the corresponding current dynamic program values to get
+                    # the next ones
+                    dyn_prog[tuple(shifted_dyn_indices)] =\
+                        dyn_prog[tuple(cur_dyn_indices)] *\
+                            observed_preds_sums
+                else:
+                    # if col_idx is NOT zero, then col_idx - 1 represents
+                    # the class which is now being observed, having previously
+                    # not been observed. If it HAS previously been observed,
+                    # then the shifted class index for it would be 2, which
+                    # lies outside the dyn prog bounds and would have already
+                    # been masked out as a valid shifted index.
+
+                    # Compute class index
+                    cls_idx = col_idx - 1
+
+                    # The probability associated with this direction is
+                    # simply P(this box == this class). Compute this probability
+                    # and multiply it by the current dyn prog values to get
+                    # the contribution to the next dyn prog values.
+                    dyn_prog[tuple(shifted_dyn_indices)] +=\
+                        dyn_prog[tuple(cur_dyn_indices)] *\
+                            present_predictions[box_idx, cls_idx]
+
+                # Append shifted_dyn_indices to next_indices
+                next_indices.append(shifted_dyn_indices)
+
+            # Concatenate next_indices along dim 1 and assign it to
+            # cur_dyn_indices
+            cur_dyn_indices = torch.cat(next_indices, dim=1)
+
+            # There will be some duplicates since we've expanded into the same
+            # cells from multiple directions. Remove these duplicates, leaving
+            # only a single copy of each unique index.
+            cur_dyn_indices = torch.unique(cur_dyn_indices, dim=1)
+        
+        # Get P(predictions match count targets) = <the highest-index vertex
+        # of the dynamic program>
+        prob_match = dyn_prog[tuple(dyn_prog_shape_tensor - 1)]
+
+        # NLL is loss
+        losses.append(-torch.log(prob_match))
+
+    # Compute aggregate loss across images
+    losses = torch.cat(losses, dim=0)
+    loss = losses.mean()
+    return loss
+
+'''
+Notation:
+    N: Number of images in the batch
+    M_i: Number of box images in the ith image
+    K: Number of classes
+Parameters:
+    predictions: List of N tensors. predictions[i] is a tensor of shape [M_i, K]
+        predictions[i][j, k] is the predicted probability that the jth box of
+        the ith image belongs to class k.
+    targets: Tensor of shape [N, K]
+        targets[i, k] is the ground truth number of boxes in image i that
+        belong to class k.
+'''
+def multiple_instance_count_cross_entropy(predictions, targets):
+    losses = []
+    # For each image
+    for img_predictions, img_targets in zip(predictions, targets):
+        # We're working with img_predictions of shape [M_i, K] and img_targets
+        # of shape [K]. Index the predictions whose classes are present in
+        # the ground truth labels
+        present_classes = torch.nonzero(img_targets)[0]
+        remaining_predictions = img_predictions[:, present_classes]
+        remaining_targets = img_targets[present_classes]
+        combination_pred_running_product = None
+
+        # The general strategy is as follows: remaining_predictions will be
+        # iteratively updated, and in general its shape will be
+        # [B, K, *c], where *c = (C_{N-1}, C_{N-2}, ..., C_1). C_i denotes
+        # the number of combinations selected when considering present class
+        # i (i.e., torch.nonzero(image_targets)[0][i]). The combination
+        # dimensions are prepended rather than appended to simplify broadcasting
+        # to keep track of the running cross product predictions.
+
+        # At each iteration, we'll consider combinations for the class whose
+        # predictions are at remaining_predictions[:, 0] and whose counts are
+        # at target[0]. Those index-0 dimensions are sliced off at each
+        # iteration until all present classes have been considered.
+
+        # Note that the last class is trivial since there's only one
+        # possible combination: all remaining boxes must be assigned the one
+        # remaining label.
+
+        # For each present class
+        for _ in range(len(present_classes)):
+            ## Consider all of the ways in which we can assign this class label
+            ## to the correct number of the remaining boxes
+            cur_combinations = torch.combinations(
+                torch.arange(
+                    len(remaining_predictions),
+                    device=targets.device
+                ),
+                r=remaining_targets[0]
+            )
+
+            ## Get the predictions for the current present class associated with
+            ## each combination (which is definitionally the index-0 remaining
+            ## class).
+            combination_predictions = remaining_predictions[
+                cur_combinations,
+                0
+            ]
+
+            ## Final softmax probabilities for a given combination are computed
+            ## by multiplying across selected boxes.
+            combination_pred_product = torch.prod(
+                combination_predictions,
+                dim=1
+            )
+
+            ## The running product is stored as a Tensor whose dimensions, in
+            ## reverse order (right-to-left), correspond to cross products of 
+            ## combinations from past iterations of this for loop. If
+            ## the running product is of shape [*shape], then
+            ## combination_prediction_product is of shape [C, *shape], where
+            ## C is len(cur_combinations). Broadcasting rules allow direct
+            ## multiplication to continue expanding this in a cross-product
+            ## fashion.
+            if combination_pred_running_product is None:
+                combination_pred_running_product = combination_pred_product
+            else:
+                combination_pred_running_product = \
+                    combination_pred_running_product * combination_pred_product
+
+            ## Update the remaining predictions by, for each combination,
+            ## removing the selected boxes and filtering out the current present
+            ## class
+
+            # First, construct a compliment index for cur_combinations.
+            # (Computing the complement of a multidimensional index is messy)
+            all_boxes = torch.ones(
+                *(len(cur_combinations), remaining_predictions.shape[1]),
+                dtype=torch.bool,
+                device=targets.device
+            )
+            offset = torch.arange(len(all_boxes), device=targets.device) *\
+                all_boxes.shape[1]
+            flattened_compliment = all_boxes.flatten()
+            flattened_index = (cur_combinations + offset[:, None]).flatten()
+            flattened_compliment[flattened_index] = False # Compliment step
+            compliment_mask = flattened_compliment.reshape(*(all_boxes.shape))
+            index_pool = torch.arange(
+                remaining_predictions.shape[1],
+                device=targets.device
+            )
+            cur_combinations_compliment = torch.stack(
+                [index_pool[mask_row] for mask_row in compliment_mask],
+                dim=0
+            )
+
+            # For each combination compliment, get the predictions for the
+            # remaining present classes other than the current one. This
+            # filters out the boxes selected for each combination as well
+            # as the current present class.
+            combination_compliment_predictions = remaining_predictions[
+                cur_combinations_compliment,
+                1:
+            ]
+
+            # remaining_predictions is shaped [B, K, *c], B is the number
+            # of remaining boxes after selecting combinations denoted by
+            # the dimensions contained in *c --- that is, *c contains
+            # all of the numbers of combinations selected at each iteration
+            # in reverse order, and B contains the number of boxes remaining
+            # after all stages of combination selection.
+            # combination_compliment_predictions, however, is shaped
+            # [C, B, K, *prev_c], where *(C, *prev_c) = *c. To update
+            # remaining_predictions, permute combination_compliment_predictions
+            # to match the desired shape
+            remaining_predictions = combination_compliment_predictions.permute((
+                1,
+                2,
+                0,
+                *(list(range(3, len(combination_compliment_predictions.shape))))
+            ))
+
+            ## Update remaining targets
+            remaining_targets = remaining_targets[1:]
+
+        ## Sum over combination_pred_running_products to compute the
+        ## probability for the exhaustive logical OR satisfying the targets
+        sum_prob = combination_pred_running_products.sum()
+
+        ## Compute per-image loss
+        losses.append(-torch.log(sum_prob))
+
+    ## Aggregate per-image losses and return
+    losses = torch.stack(losses, dim=0)
+    return losses.mean()
+
+
+'''
+Notation:
+    N: Number of images in the batch
+    M_i: Number of box images in the ith image
+    K: Number of classes
+Parameters:
+    predictions: List of N tensors. predictions[i] is a tensor of shape [M_i, K]
+        predictions[i][j, k] is the predicted probability that the jth box of
+        the ith image belongs to class k.
+    targets: Boolean tensor of shape [N, K]
+        targets[i, k] is the ground truth presence boolean for class k in image
+        i.
+'''
+def multiple_instance_presence_cross_entropy(predictions, targets):
+    losses = []
+    # For each image
+    for img_predictions, img_targets in zip(predictions, targets):
+        # We're working with img_predictions of shape [M_i, K] and img_targets
+        # of shape [K].
+
+        # The general strategy is as follows:
+        # P(A, B, C present, others absent) = P(A, B, C present | others absent)
+        #       * P(others absent).
+        #
+        # The second term, P(others absent), can be computed as
+        # P(each box belongs to either A, B, or C)
+        #       = \prod_{j}(P(y_j = A, B, or C))
+        #
+        # To compute the first term, we first compute P(y_j = K | others absent)
+        # for K \in {A, B, C} by filtering out the absent classes and
+        # renormalizing the remaining probabilities.
+        # 
+        # From here on out, everything is conditioned on <others absent>,
+        # but it's left out the notation for brevity.
+        # 
+        # Next, we can compute:
+        # P(A, B, C present) = 1 - P(A, B, or C is absent)
+        # 
+        # We can actually compute this complement directly. For two events,
+        # P(A or B) = P(A) + P(B) - P(A and B). But to generalize the formula
+        # to N events, we start with the single-event conjunctions, then
+        # subtract the two-event conjunctions, then add the three-event
+        # conjunctions, then subtract the four-event conjunctions, and so on.
+        # e.g., for three classes:
+        # P (A or B or C) = P(A) + P(B) + P(C) - P(A and B) - P(A and C)
+        #       - P(B and C) + P(A and B and C).
+        # In our case, P(A, B, or C absent)
+        #       = P(A absent) + P(B absent) + P(C absent)
+        #           - P(A, B absent) - P(A, C absent) - P(B, C absent)
+        #           + P(A, B, C absent)
+        # We can compute each conjunction easily. For instance:
+        # P(A, B, C absent) = \prod_j(1 - P(y_j \in {A, B, C})).
+        # In total, we have to compute \sum_{i=1}^{N}(N choose i)
+        # conjunctions, where N is the number of present classes, each of which
+        # involves summing over i columns and then computing a product across
+        # the rows (and there's a row per box).
+
+        # Step 1: Compute P(others absent)
+        absent_predictions = img_predictions[:, ~img_targets]
+        prob_others_absent = torch.prod(1 - absent_predictions.sum(dim=1))
+
+        # Step 2: Filter out present-class predictions and condition on
+        # the event <others absent>
+        # TODO handle case where denominator == 0. This might require moving
+        # computations to the log space
+        present_predictions = img_predictions[:, img_targets]
+        cond_present_predictions = present_predictions / \
+            present_predictions.sum(dim=1, keepdim=True)
+
+        # Step 3: For each i in 1, ..., N, alternate adding and subtracting
+        # the relevant N choose i conjunction probabilities to compute
+        # P(A, B, or C absent)
+        prob_any_absent = 0
+        add_iteration = True
+        for i in range(1, cond_present_predictions.shape[1] + 1):
+            # Compute the class indices for the N choose i conjunctions
+            cur_combinations = torch.combinations(
+                torch.arange(
+                    cond_present_predictions.shape[1],
+                    device=targets.device
+                ),
+                r=i
+            )
+
+            # Index the classes using cur_combinations
+            combination_preds = cond_present_predictions[:, cur_combinations]
+            # combination_preds is of shape [B, C, i], where C is N choose i
+            # and represents a conjunction.
+
+            # Compute absence conjunction probabilities for each combination:
+            # P(conjunction of absences) = 1 - P(disjunction present)
+            combination_box_absence = 1 - combination_preds.sum(dim=2)
+            combination_absence = torch.prod(combination_box_absence, dim=0)
+
+            # If add_iteration is True, add these absence conjunction
+            # probabilities. Else, subtract them. i.e.,
+            # P(A, B, or C)
+            #   = P(A) + P(B) + P(C)
+            #   - P(A, B) - P(A, C) - P(B, C)
+            #   + P(A, B, C)
+            absence_conjunction_sum = combination_absence.sum()
+            if add_iteration:
+                prob_any_absent =\
+                    prob_any_absent + absence_conjunction_sum
+            else:
+                prob_any_absent =\
+                    prob_any_absent - absence_conjunction_sum
+
+        # Step 4: We have
+        # P(any of the ground-truth present classes are absent | others absent).
+        # Compute the compliment to get
+        # P(present classes are predicted present | others absent).
+        prob_all_present = 1 - prob_any_absent
+
+        # Step 5: Compute P(A, B, ... C present, others Absent)
+        #       = P(A, B, ..., C present | others absent) * P(others absent)
+        prob_conform = prob_all_present * prob_others_absent
+
+        ## Compute per-image loss
+        losses.append(-torch.log(prob_conform))
+
+    ## Aggregate per-image losses and return
+    losses = torch.stack(losses, dim=0)
+    return losses.mean()
 
 
 class Augmentation(Enum):
@@ -1984,8 +2559,7 @@ class TuplePredictorTrainer:
             min_epochs=3,
             max_epochs=30,
             label_smoothing=0.0,
-            scheduler_type=SchedulerType.none,
-            backbone_training_type=BackboneTrainingType.classifiers):
+            scheduler_type=SchedulerType.none):
         species_classifier = classifier.species_classifier
         activity_classifier = classifier.activity_classifier
         species_calibrator = confidence_calibrator.species_calibrator
