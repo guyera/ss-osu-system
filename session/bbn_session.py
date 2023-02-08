@@ -44,23 +44,14 @@ class BBNSession:
         self.api_stubs = api_stubs
         self.osu_stubs = osu_interface
         # These are also defined in toplevel
-        self.num_subject_classes = 5
-        self.num_object_classes = 12
-        self.num_verb_classes = 8
+        self.n_species_cls = 30
+        self.n_activity_cls = 4
         self.hintA = hintA
         self.hintB = hintB
 
         # Turn this to True to get readable (S,O,V) triples for our top-3 in classification output.
         # Default is to get the 945 floats that UMD is requesting. 
         self.probs_debug_format = False
-        self.triple_list = list(itertools.product(
-            np.arange(-1, self.num_subject_classes),
-            np.arange(0, self.num_verb_classes),
-            np.arange(-1, self.num_object_classes)))
-        self.triple_list_count = len(self.triple_list)
-        self.triple_dict = {}
-        for i, triple in enumerate(self.triple_list):
-            self.triple_dict[triple] = i
 
         if not os.path.exists(self.results_directory):
             os.makedirs(self.results_directory)
@@ -210,11 +201,11 @@ class BBNSession:
     #     return s, v, o, free_s, free_v, free_o
         
 
-    def write_file_entries(self, filename, detection_file, classification_file, predicted_probs,
+    def write_file_entries(self, filename, detection_file, classification_file,
+                           species_counts, species_presence, activity_presence,
                            # red_light,
                            red_light_score, image_novelty_score,
-                           round_id, red_light_declared,
-                           missing_s, missing_o):  ##, top_layer):
+                           round_id, red_light_declared):  ##, top_layer):
         # UMD lists the K+1 probability in position 0, ahead of the K known classes.
         # classification_probs = np.insert(
         #     predicted_probs, 0, 0.0)
@@ -231,14 +222,12 @@ class BBNSession:
         if self.probs_debug_format:
             output_probs = predicted_probs
         else:
-            output_vals = np.zeros(self.triple_list_count)
-            answers = ast.literal_eval(f'({predicted_probs})')
-            assert len(answers) == 3
-            for answer in answers:
-                s, v, o, prob = answer
-                triple = (s, v, o)
-                output_vals[self.triple_dict[triple]] = prob
-            output_probs = ','.join([f'{val:e}' for val in output_vals])
+            species_counts_str =\
+                ','.join([str(x) for x in species_counts.tolist()])
+            species_presence_str =\
+                ','.join([str(x) for x in species_presence.tolist()])
+            activity_presence_str =\
+                ','.join([str(x) for x in activity_presence.tolist()])
             # ## LAR
             # try:
             #     predicted_probs = predicted_probs.replace('inf', '"inf"')
@@ -296,14 +285,8 @@ class BBNSession:
                 red_light_score = 0.0
         detection_file.write("%s,%e,%e\n" %
                              (filename, red_light_score, image_novelty_score))
-        classification_file.write("%s,%s\n" %
-                                  (filename, output_probs))
-
-    def check_for_missing(self, image_line):
-        fields = image_line.split(',')
-        missing_s = fields[4] == '-1'
-        missing_o = fields[8] == '-1'
-        return missing_s, missing_o
+        classification_file.write("%s,%s,%s,%s\n" %
+                                  (filename, species_counts_str, species_presence_str, activity_presence_str))
 
     def run(self, detector_seed, test_ids=None):
         if not test_ids:
@@ -458,9 +441,13 @@ class BBNSession:
                 self.results_directory, "%s_%s_%s_classification.csv" % (session_id, test_id, round_id))
             classification_file = open(classification_filename, "w")
             if round_id == 0:
-                # TODO update classification_file for SS task
-                triple_labels = [f'{s}_{v}_{o}' for (s, v, o) in self.triple_list]
-                classification_file.write(f'image_path,{",".join(triple_labels)}\n')
+                species_count_cols = [f'species_{x}_count' for x in range(self.n_species_cls)]
+                species_presence_cols = [f'species_{x}_presence' for x in range(self.n_species_cls)]
+                activity_presence_cols = [f'activity_{x}_presence' for x in range(self.n_activity_cls)]
+                species_count_str = ','.join(species_count_cols)
+                species_presence_str = ','.join(species_presence_cols)
+                activity_presence_str = ','.join(activity_presence_cols)
+                classification_file.write(f'image_path,{species_count_str},{species_presence_str},{activity_presence_str}\n')
 
             if self.osu_stubs:
                 ## GD
@@ -470,17 +457,17 @@ class BBNSession:
                     self.osu_stubs.given_detect_red_light(red_light_image)
                     # GDD
                     # print(f' **** Called osu_stubs.given_detect_red_light during round {round_id}')
-                novelty_preds, svo_preds = self.osu_stubs.process_round(test_id, round_id, image_paths, bbox_dict, hint_typeA_data, hint_typeB_data)
+                novelty_preds, predictions = self.osu_stubs.process_round(test_id, round_id, image_paths, bbox_dict, hint_typeA_data, hint_typeB_data)
                 novelty_lines = novelty_preds.splitlines()
-                svo_lines = svo_preds.splitlines()
 
-                
                 filenames = []
-                for (novelty_line, svo_line, image_line) in zip(novelty_lines, svo_lines, image_lines):
+                for novelty_line, cur_preds in zip(novelty_lines, predictions):
                     (novelty_image_path, red_light_str, per_image_nov_str) = novelty_line.split(',')
-                    (svo_image_path, svo_preds) = svo_line.split(',', 1)
-                    assert novelty_image_path == svo_image_path
                     filenames.append(novelty_image_path)
+                    species_counts,\
+                        species_presence,\
+                        _,\
+                        activity_presence = cur_preds
 
                     if self.given_detection:
                         if self.given_detect_red_light_round == round_id:
@@ -494,11 +481,9 @@ class BBNSession:
                     
                     
                         
-                    missing_s, missing_o = self.check_for_missing(image_line)
                     self.write_file_entries(novelty_image_path, detection_file, classification_file,
-                                            svo_preds, float(red_light_str), float(per_image_nov_str),
-                                            round_id, red_light_declared,
-                                            missing_s, missing_o)
+                                            species_counts, species_presence, activity_presence, float(red_light_str), float(per_image_nov_str),
+                                            round_id, red_light_declared)
                 if red_light_declared:
                     self.osu_stubs.record_type67()
                 else:                        

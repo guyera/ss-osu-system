@@ -77,7 +77,7 @@ class OSUInterface:
         :param bbox_dict: dictionary mapping image filenames to bounding boxes
         :return: tuple of (novelty_preds, svo_preds)
         novelty_preds: string of csv lines with image_path, red_light_score, and per_image novelty score
-        svo_preds: string of csv lines with image_path, and top 3 (S_id, V_id, O_id, prob) values
+        predictions: predictions as returned by TuplePredictor
         """
 
         df = pd.DataFrame(columns=['image_path', 'filename', 'capture_id', 'width', 'height', 'agent1_name', 'agent1_id', 'agent1_count', 'agent2_name', 'agent2_id', 'agent2_count', 'agent3_name', 'agent3_id', 'agent3_count', 'activities', 'activities_id', 'environment', 'novelty_type', 'master_id'])
@@ -105,9 +105,6 @@ class OSUInterface:
         novelty_lines = [f'{img}, {rs:e}, {p:e}' for img, rs, p in zip(df['image_path'].to_list(), red_light_scores, p_ni)]
         novelty_preds = '\n'.join(novelty_lines)
 
-        top_3_str = [','.join([f'{(svo[0], svo[1], svo[2], p)}' for svo, p in zip(svos, ps)]) for svos, ps in zip(top_3, top_3_probs)]
-        svo_preds = '\n'.join([f'{img}, {svo_s}' for img, svo_s in zip(df['image_path'].to_list(), top_3_str)])
-
         if csv_path.exists():
             os.remove(csv_path)
         if json_path.exists():
@@ -116,7 +113,7 @@ class OSUInterface:
         print(f'  ==> OSU processed round {round_id}')
         # import ipdb; ipdb.set_trace()
 
-        return (novelty_preds, svo_preds)
+        return (novelty_preds, predictions)
 
     def choose_detection_feedback_ids(self, test_id, round_id, image_paths, feedback_max_ids):
         """
