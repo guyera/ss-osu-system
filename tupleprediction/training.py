@@ -645,7 +645,12 @@ class BackboneTrainingType(Enum):
 
 class ClassifierTrainer(ABC):
     @abstractmethod
-    def train(self, species_classifier, activity_classifier, root_log_dir):
+    def train(
+            self,
+            species_classifier,
+            activity_classifier,
+            root_log_dir,
+            feedback_loader):
         return NotImplemented
 
     def prepare_for_retraining(
@@ -793,6 +798,111 @@ class TransformingBoxImageDataset(Dataset):
 
     def box_count(self, idx):
         return self._dataset.box_count(idx)
+
+
+class BufferedFeedbackDataLoader:
+    class _Iter:
+        def __init__(self, box_image_iter, batch_size):
+            self._box_image_iter = box_image_iter
+            self._batch_size = batch_size
+            self._buffer = None
+            self._buffer_box_counts = []
+
+        def __next__(self, idx):
+            total_buffer_box_count = sum(self._buffer_box_counts)
+            while total_buffer_box_count < self._batch_size:
+                # Buffer is underfull. Grab another batch.
+                try:
+                    species_labels,\
+                        activity_labels,\
+                        novelty_type_labels,\
+                        box_images,\
+                        whole_images = next(self._box_image_iter)
+                except StopIteration:
+                    break
+
+                # Append the batch to the buffer
+                if self._buffer is None:
+                    self._buffer = (
+                        species_labels,
+                        activity_labels,
+                        novelty_type_labels,
+                        box_images,
+                        whole_images
+                    )
+                else:
+                    self._buffer[0] = torch.cat(
+                        (self._buffer[0], species_labels),
+                        dim=0
+                    )
+                    self._buffer[1] = torch.cat(
+                        (self._buffer[1], activity_labels),
+                        dim=0
+                    )
+                    self._buffer[2] = torch.cat(
+                        (self._buffer[2], novelty_type_labels),
+                        dim=0
+                    )
+                    self._buffer[3] = self._buffer[3] + box_images
+                    self._buffer[4] = torch.cat(
+                        (self._buffer[4], whole_images),
+                        dim=0
+                    )
+
+                # Update the buffer box counts and total_buffer_box_count
+                batch_box_counts = [len(t) for t in box_images]
+                self._buffer_box_counts =\
+                    self._buffer_box_counts + batch_box_counts
+                total_buffer_box_count += sum(batch_box_counts)
+            
+            # Either the buffer has enough data to retrieve a batch, or we've
+            # hit the end of the underlying iterator.
+            if len(self._buffer_box_counts) == 0:
+                # Empty buffer. Stop.
+                raise StopIteration
+
+            # There is at least a partial batch to retrieve. Determine the
+            # number of items that should be grabbed in order to get as
+            # close to the batch size as possible without exceeding it.
+            # We must grab at least one image.
+            n_images = 1
+            n_boxes = self._buffer_box_counts[0]
+            for buffer_box_count in self._buffer_box_counts[1:]:
+                next_n_boxes = n_boxes + buffer_box_count
+                if next_n_boxes > self._batch_size:
+                    break
+                n_boxes = next_n_boxes
+                n_images += 1
+
+            # n_images denotes the number of images that should be pulled from
+            # the buffer. Grab the data
+            species_labels = self._buffer[0][:n_images]
+            activity_labels = self._buffer[1][:n_images]
+            novelty_type_labels = self._buffer[2][:n_images]
+            box_images = self._buffer[3][:n_images]
+            whole_images = self._buffer[4][:n_images]
+
+            # Remove the data from the buffer
+            self._buffer[0] = self._buffer[0][n_images:]
+            self._buffer[1] = self._buffer[1][n_images:]
+            self._buffer[2] = self._buffer[2][n_images:]
+            self._buffer[3] = self._buffer[3][n_images:]
+            self._buffer[4] = self._buffer[4][n_images:]
+
+            return species_labels,\
+                activity_labels,\
+                novelty_type_labels,\
+                box_images,\
+                whole_images
+                
+
+    def __init__(self, box_image_loader, batch_size):
+        self._box_image_loader = box_image_loader
+        self.batch_size = batch_size
+
+    def __iter__(self):
+        box_image_iter = iter(self._box_image_loader)
+        return self._Iter(box_image_iter, self._batch_size)
 
 
 def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
@@ -955,7 +1065,8 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             self,
             species_classifier,
             activity_classifier,
-            root_log_dir):
+            root_log_dir,
+            feedback_loader):
         # TODO new feedback setup will require a separate dataloader since
         # feedback data has several multiple instance issues and thus requires
         # image-level labels and special loss functions. Pass that dataloader
@@ -1324,7 +1435,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             self,
             species_classifier,
             activity_classifier,
-            root_log_dir):
+            root_log_dir,
+            feedback_loader):
         # TODO new feedback setup will require a separate dataloader since
         # feedback data has several multiple instance issues and thus requires
         # image-level labels and special loss functions
@@ -1842,7 +1954,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             self,
             species_classifier,
             activity_classifier,
-            root_log_dir):
+            root_log_dir,
+            feedback_loader):
         # TODO new feedback setup will require a separate dataloader since
         # feedback data has several multiple instance issues and thus requires
         # image-level labels and special loss functions.
@@ -2276,7 +2389,8 @@ class TuplePredictorTrainer:
             n_species_cls,
             n_activity_cls,
             dynamic_label_mapper,
-            classifier_trainer):
+            classifier_trainer,
+            feedback_batch_size=None):
         self._train_dataset = train_dataset
         self._val_known_dataset = val_known_dataset
         self._val_dataset = val_dataset
@@ -2286,14 +2400,8 @@ class TuplePredictorTrainer:
         self._n_activity_cls = n_activity_cls
         self._dynamic_label_mapper = dynamic_label_mapper
         self._classifier_trainer = classifier_trainer
-
-        # TODO class balancing? In the SVO system, we balanced 50/50 known
-        # and novel examples to avoid biasing P(N_i) toward 1. But maybe it
-        # doesn't matter here since we aren't using P(N_i) for merging
-        # SCG / non-SCG predictions. We also previously would sample a batch
-        # from each of 6 data loaders, which naturally balanced them, when
-        # training the classifier: S/V/O x known/novel
-        self._feedback_data = None
+        self._feedback_batch_size = feedback_batch_size
+        self._feedback_data = []
 
     def add_feedback_data(self, data_root, csv_path):
         new_novel_dataset = BoxImageDataset(
@@ -2312,19 +2420,12 @@ class TuplePredictorTrainer:
         )
 
         # Put new feedback data in list
-        if self._feedback_data is None:
-            self._feedback_data = new_novel_dataset
-        else:
-            self._feedback_data = ConcatDataset(
-                [self._feedback_data, new_novel_dataset]
-            )
-    
+        self._feedback_data.append(new_novel_dataset)
+
     # Should be called before train_novelty_detection_module(), except when
     # training for the very first time manually. This prepares the
     # backbone, classifier, and novelty type logistic regressions for
-    # retraining. Most likely this is done by fully randomizing them, but in
-    # the future we might change the process to be e.g. a warm-start,
-    # shrink-and-perturb, or crashing a single layer.
+    # retraining.
     def prepare_for_retraining(
             self,
             backbone,
@@ -2566,10 +2667,26 @@ class TuplePredictorTrainer:
         activity_calibrator = confidence_calibrator.activity_calibrator
         
         # Retrain the backbone and classifiers
+        feedback_loader = None
+        if len(self._feedback_data) > 0:
+            assert self._feedback_batch_size is not None
+            feedback_dataset = ConcatDataset(self._feedback_data)
+            unbuffered_feedback_loader = DataLoader(
+                feedback_dataset,
+                batch_size=32,
+                num_workers=2,
+                shuffle=True
+            )
+            feedback_loader = BufferedFeedbackDataLoader(
+                unbuffered_feedback_loader,
+                self._feedback_batch_size
+            )
+        
         self._classifier_trainer.train(
             species_classifier,
             activity_classifier,
-            root_log_dir
+            root_log_dir,
+            feedback_loader
         )
 
         self.fit_activation_statistics(
