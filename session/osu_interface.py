@@ -100,9 +100,7 @@ class OSUInterface:
         ret = self.app.process_batch(csv_path, test_id, round_id, df['image_path'].to_list(), hint_typeA_data, hint_typeB_data)
         p_ni = ret['p_ni']
         red_light_scores = ret['red_light_score']
-        # TODO TODO change results from svo / top 3 to counts and presences
-        top_3 = ret['svo']
-        top_3_probs = ret['svo_probs']
+        predictions = ret['predictions']
 
         novelty_lines = [f'{img}, {rs:e}, {p:e}' for img, rs, p in zip(df['image_path'].to_list(), red_light_scores, p_ni)]
         novelty_preds = '\n'.join(novelty_lines)
