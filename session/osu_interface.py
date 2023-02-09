@@ -41,11 +41,10 @@ class OSUInterface:
 
         self.temp_path = pathlib.Path('./session/temp/')
 
-    def start_session(self, session_id, detection_feedback, classification_feedback, given_detection):
+    def start_session(self, session_id, detection_feedback, given_detection):
         """
         :param session_id:
         :param detection_feedback:  We assume this weill be True
-        :param classification_feedback:  We assume this weill be False
         :param given_detection: I haven't figure out yet how this will work
         :return: None
         """
@@ -148,12 +147,6 @@ class OSUInterface:
             d[e[0]] = e[1]
 
         self.app.feedback_callback(d)
-
-    def choose_classification_feedback_ids(self, filenames, feedback_max_ids):
-        raise NotImplementedError
-
-    def record_classification_feedback(self, feedback_results):
-        raise NotImplementedError
 
     def end_test(self, test_id):
         print(f'==> OSU got end test {test_id}')
