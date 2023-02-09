@@ -9,7 +9,7 @@ class OSUInterface:
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_batch_size, trial_size, disable_retraining,
             root_cache_dir, n_known_val, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_patience,
-            retraining_min_epochs, retraining_max_epochs, retraining_label_smoothing, retraining_scheduler_type):
+            retraining_min_epochs, retraining_max_epochs, retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight):
 
         self.app = TopLevelApp( 
             data_root=data_root,
@@ -35,7 +35,8 @@ class OSUInterface:
             retraining_min_epochs=retraining_min_epochs,
             retraining_max_epochs=retraining_max_epochs,
             retraining_label_smoothing=retraining_label_smoothing,
-            retraining_scheduler_type=retraining_scheduler_type
+            retraining_scheduler_type=retraining_scheduler_type,
+            feedback_loss_weight=feedback_loss_weight
         )
 
         self.temp_path = pathlib.Path('./session/temp/')

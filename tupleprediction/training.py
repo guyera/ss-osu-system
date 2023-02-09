@@ -952,7 +952,8 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             patience=3,
             min_epochs=3,
             max_epochs=30,
-            label_smoothing=0.0):
+            label_smoothing=0.0,
+            feedback_loss_weight=0.5):
         self._backbone = backbone
         self._lr = lr
         self._train_feature_file = train_feature_file
@@ -964,6 +965,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         self._min_epochs = min_epochs
         self._max_epochs = max_epochs
         self._label_smoothing = label_smoothing
+        self._feedback_loss_weight = feedback_loss_weight
 
     def _train_epoch(
             self,
@@ -976,7 +978,6 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             species_classifier,
             activity_classifier,
             optimizer):
-        # TODO Make use of feedback data
         # Set everything to train mode
         species_classifier.train()
         activity_classifier.train()
@@ -986,6 +987,31 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         species_preds = species_classifier(box_features)
         activity_preds = activity_classifier(box_features)
 
+        # Flatten feedback box features, compute predictions, and re-split
+        # per-image
+        flattened_feedback_box_features = torch.cat(
+            feedback_box_features,
+            dim=0
+        )
+        flattened_feedback_species_preds = species_classifier(
+            flattened_feedback_box_features
+        )
+        flattened_feedback_activity_preds = activity_classifier(
+            flattened_feedback_box_features
+        )
+        feedback_box_counts = [len(x) for x in feedback_box_features]
+        feedback_species_preds = torch.split(
+            flattened_feedback_species_preds,
+            feedback_box_counts,
+            dim=0
+        )
+        feedback_activity_preds = torch.split(
+            flattened_feedback_activity_preds,
+            feedback_box_counts,
+            dim=0
+        )
+
+        # Compute losses
         species_loss = torch.nn.functional.cross_entropy(
             species_preds,
             species_labels,
@@ -996,8 +1022,25 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             activity_labels,
             label_smoothing=self._label_smoothing
         )
+        # We have image-level count feedback labels for species
+        feedback_species_loss = multiple_instance_count_cross_entropy_dyn(
+            feedback_species_preds,
+            feedback_species_labels
+        )
+        # We have image-level presence feedback labels for activities
+        feedback_activity_loss = multiple_instance_presence_cross_entropy_dyn(
+            feedback_activity_preds,
+            feedback_activity_labels
+        )
 
-        loss = species_loss + activity_loss
+        # Compute non-feedback and feedback loss sums
+        non_feedback_loss = species_loss + activity_loss
+        feedback_loss = feedback_species_loss + feedback_activity_loss
+
+        # Compute loss as weighted average between feedback and non-feedback
+        # losses
+        loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
+            self._feedback_loss_weight * feedback_loss
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()

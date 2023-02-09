@@ -32,7 +32,7 @@ class TopLevelApp:
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_size, trial_batch_size, disable_retraining,
             root_cache_dir, n_known_val, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_patience, retraining_min_epochs, retraining_max_epochs,
-            retraining_label_smoothing, retraining_scheduler_type):
+            retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight):
 
         pretrained_backbone_path = os.path.join(
             pretrained_models_dir,
@@ -121,6 +121,7 @@ class TopLevelApp:
         self.retraining_max_epochs = retraining_max_epochs
         self.retraining_label_smoothing = retraining_label_smoothing
         self.retraining_scheduler_type = retraining_scheduler_type
+        self.feedback_loss_weight = feedback_loss_weight
 
         self.mergedSVO = []
         self.mergedprobs = []
@@ -184,6 +185,7 @@ class TopLevelApp:
             'validation.pth'
         )
         classifier_trainer = LogitLayerClassifierTrainer(
+            self.backbone,
             self.retraining_lr,
             train_feature_file,
             val_feature_file,
@@ -193,7 +195,8 @@ class TopLevelApp:
             patience=self.retraining_patience,
             min_epochs=self.retraining_min_epochs,
             max_epochs=self.retraining_max_epochs,
-            label_smoothing=self.retraining_label_smoothing
+            label_smoothing=self.retraining_label_smoothing,
+            feedback_loss_weight=self.feedback_loss_weight
         )
 
         self.novelty_trainer = TuplePredictorTrainer(
@@ -643,6 +646,7 @@ class TopLevelApp:
             'validation.pth'
         )
         classifier_trainer = LogitLayerClassifierTrainer(
+            self.backbone,
             self.retraining_lr,
             train_feature_file,
             val_feature_file,
@@ -652,7 +656,8 @@ class TopLevelApp:
             patience=self.retraining_patience,
             min_epochs=self.retraining_min_epochs,
             max_epochs=self.retraining_max_epochs,
-            label_smoothing=self.retraining_label_smoothing
+            label_smoothing=self.retraining_label_smoothing,
+            feedback_loss_weight=self.feedback_loss_weight
         )
 
         self.novelty_trainer = TuplePredictorTrainer(
