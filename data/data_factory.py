@@ -86,14 +86,15 @@ class DataFactory(Dataset):
             box_score_thresh_h=0.2,
             box_score_thresh_o=0.2,
             training=True,
-            partition=None):
+            partition=None,
+            image_filter='nonblank'):
         self.training = training
         # Ensuring explicit awareness of user about this fact
         if name != 'Custom':
             raise ValueError("Unknown dataset ", name)
 
         json_path = f'{os.path.splitext(csv_path)[0]}.json'
-        self.dataset = CustomDet(root=data_root, csv_path=csv_path, json_path=json_path, n_species_cls=n_species_cls, n_activity_cls=n_activity_cls, label_mapper=label_mapper, target_transform=pocket.ops.ToTensor(input_format='dict'))
+        self.dataset = CustomDet(root=data_root, csv_path=csv_path, json_path=json_path, n_species_cls=n_species_cls, n_activity_cls=n_activity_cls, label_mapper=label_mapper, target_transform=pocket.ops.ToTensor(input_format='dict'), image_filter=image_filter)
 
         self.name = name
 

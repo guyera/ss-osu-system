@@ -6,10 +6,12 @@ from toplevel import TopLevelApp
 
 class OSUInterface:
     def __init__(self, scg_ensemble, data_root, pretrained_models_dir, backbone_architecture,
-        feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path, val_incident_csv_path,
-        val_corruption_csv_path, trial_batch_size, trial_size, retraining_image_batch_size, retraining_batch_size, retraining_buffer_size, disable_retraining):
+            feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
+            trial_batch_size, trial_size, disable_retraining,
+            root_cache_dir, n_known_val, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_patience,
+            retraining_min_epochs, retraining_max_epochs, retraining_label_smoothing, retraining_scheduler_type):
 
-        self.app = TopLevelApp(ensemble_path=scg_ensemble, 
+        self.app = TopLevelApp( 
             data_root=data_root,
             pretrained_models_dir=pretrained_models_dir,
             backbone_architecture=backbone_architecture,
@@ -20,14 +22,21 @@ class OSUInterface:
             ignore_verb_novelty=ignore_verb_novelty,
             train_csv_path=train_csv_path,
             val_csv_path=val_csv_path,
-            val_incident_csv_path = val_incident_csv_path,
-            val_corruption_csv_path= val_corruption_csv_path,
             trial_size=trial_size,
             trial_batch_size=trial_batch_size,
-            retraining_image_batch_size=retraining_image_batch_size,
+            disable_retraining=disable_retraining,
+            root_cache_dir=root_cache_dir,
+            n_known_val=n_known_val,
+            precomputed_feature_dir=precomputed_feature_dir,
+            retraining_augmentation=retraining_augmentation,
+            retraining_lr=retraining_lr,
             retraining_batch_size=retraining_batch_size,
-            retraining_buffer_size=retraining_buffer_size,
-            disable_retraining=disable_retraining)
+            retraining_patience=retraining_patience,
+            retraining_min_epochs=retraining_min_epochs,
+            retraining_max_epochs=retraining_max_epochs,
+            retraining_label_smoothing=retraining_label_smoothing,
+            retraining_scheduler_type=retraining_scheduler_type
+        )
 
         self.temp_path = pathlib.Path('./session/temp/')
 
@@ -60,60 +69,51 @@ class OSUInterface:
         """
         self.app.red_light_hint_callback(red_light_image_path)
 
-    def process_round(self, test_id, round_id, contents, hint_typeA_data, hint_typeB_data):
+    def process_round(self, test_id, round_id, image_paths, bbox_dict, hint_typeA_data, hint_typeB_data):
         """
         :param test_id:
         :param round_id:
-        :param contents: string of csv lines with image_path and bounding box data
+        :param image_paths: list of strings of representing image paths
+        :param bbox_dict: dictionary mapping image filenames to bounding boxes
         :return: tuple of (novelty_preds, svo_preds)
         novelty_preds: string of csv lines with image_path, red_light_score, and per_image novelty score
-        svo_preds: string of csv lines with image_path, and top 3 (S_id, V_id, O_id, prob) values
+        predictions: predictions as returned by TuplePredictor
         """
 
-        df = pd.DataFrame(columns=['new_image_path', 'subject_name', 'subject_id', 'original_subject_id',
-            'object_name', 'object_id', 'original_object_id', 'verb_name',
-            'verb_id', 'original_verb_id', 'image_width', 'image_height',
-            'subject_ymin', 'subject_xmin', 'subject_ymax', 'subject_xmax',
-            'object_ymin', 'object_xmin', 'object_ymax', 'object_xmax'])
+        df = pd.DataFrame(columns=['image_path', 'filename', 'capture_id', 'width', 'height', 'agent1_name', 'agent1_id', 'agent1_count', 'agent2_name', 'agent2_id', 'agent2_count', 'agent3_name', 'agent3_id', 'agent3_count', 'activities', 'activities_id', 'environment', 'novelty_type', 'master_id'])
 
-        lines = [line.split(',') for line in contents.splitlines()]
-        assert len(lines) > 0, "content was empty"
-        
-        create_row = lambda idx, line: [line[0], None, None, None, None, None, None, None, None, None,
-            line[1], line[2], 
-            line[3], line[4], line[5], line[6], 
-            line[7], line[8], line[9], line[10]]
-        
-        idx = 0
-        for l in lines:
-            row = create_row(idx, l)
+        assert len(image_paths) > 0, "content was empty"
+
+        create_row = lambda path, name: [path, name, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None]
+
+        for idx, image_path in enumerate(image_paths):
+            image_name = os.path.basename(image_path)
+            row = create_row(image_path, image_name)
             df.loc[idx] = row
-            idx += 1
 
         csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}.csv')
+        json_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}.json')
         df.to_csv(csv_path, index=True)
-        
-        
-        ret = self.app.process_batch(csv_path, test_id, round_id, df['new_image_path'].to_list(), hint_typeA_data, hint_typeB_data)
+        with open(json_path, 'w') as f:
+            json.dump(bbox_dict, f)
+
+        ret = self.app.process_batch(csv_path, test_id, round_id, df['image_path'].to_list(), hint_typeA_data, hint_typeB_data)
         p_ni = ret['p_ni']
         red_light_scores = ret['red_light_score']
-        top_3 = ret['svo']
-        top_3_probs = ret['svo_probs']
-        
+        predictions = ret['predictions']
 
-        novelty_lines = [f'{img}, {rs:e}, {p:e}' for img, rs, p in zip(df['new_image_path'].to_list(), red_light_scores, p_ni)]
+        novelty_lines = [f'{img}, {rs:e}, {p:e}' for img, rs, p in zip(df['image_path'].to_list(), red_light_scores, p_ni)]
         novelty_preds = '\n'.join(novelty_lines)
 
-        top_3_str = [','.join([f'{(svo[0], svo[1], svo[2], p)}' for svo, p in zip(svos, ps)]) for svos, ps in zip(top_3, top_3_probs)]
-        svo_preds = '\n'.join([f'{img}, {svo_s}' for img, svo_s in zip(df['new_image_path'].to_list(), top_3_str)])
-                           
         if csv_path.exists():
             os.remove(csv_path)
-        
+        if json_path.exists():
+            os.remove(json_path)
+
         print(f'  ==> OSU processed round {round_id}')
         # import ipdb; ipdb.set_trace()
-        
-        return (novelty_preds, svo_preds)
+
+        return (novelty_preds, predictions)
 
     def choose_detection_feedback_ids(self, test_id, round_id, image_paths, feedback_max_ids):
         """

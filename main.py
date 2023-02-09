@@ -6,6 +6,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 from backbone import Backbone
+from tupleprediction.training import Augmentation, SchedulerType
 
 if __name__ == "__main__":
     p = ArgumentParser()
@@ -21,13 +22,8 @@ if __name__ == "__main__":
     p.add_argument('--given-detection', default=False, action='store_true')
     p.add_argument('--train-csv-path', default='./dataset_v4/dataset_v4_2_train.csv')
     p.add_argument('--val-csv-path', default='./dataset_v4/dataset_v4_2_val.csv')
-    p.add_argument('--val-incident-csv-path', default='./dataset_v4/dataset_v4_2_cal_incident.csv')
-    p.add_argument('--val-corruption-csv-path', default='./dataset_v4/dataset_v4_2_cal_corruption.csv')
     p.add_argument('--trial-size', type=int, default=200)
     p.add_argument('--trial-batch-size', type=int, default=10)
-    p.add_argument('--retraining-image-batch-size', type=int, default=64)
-    p.add_argument('--retraining-batch-size', type=int, default=64)
-    p.add_argument('--retraining-buffer-size', type=int, default=256)
     p.add_argument('--disable-retraining', default=False, action='store_true')
     p.add_argument('--api-dir', default='./session/api')
     p.add_argument('--tests-dir', default='./session/tests')
@@ -42,7 +38,18 @@ if __name__ == "__main__":
     p.add_argument('--test_ids', nargs="+", default=None)
     p.add_argument('--hintA', default= False)
     p.add_argument('--hintB', default= False)
-    
+    p.add_argument('--root-cache-dir', type=str, default='./.data-cache')
+    p.add_argument('--n-known-val', type=int, default=4068)
+    p.add_argument('--precomputed-feature-dir', type=str, default='./.features/resizepad=224/none/normalized')
+    p.add_argument('--retraining-augmentation', type=Augmentation, choices=list(Augmentation), default=Augmentation.rand_augment)
+    p.add_argument('--retraining-lr', type=float, default=0.005)
+    p.add_argument('--retraining-batch-size', type=int, default=32)
+    p.add_argument('--retraining-patience', type=int, default=5)
+    p.add_argument('--retraining-min-epochs', type=int, default=5)
+    p.add_argument('--retraining-max-epochs', type=int, default=600)
+    p.add_argument('--retraining-label-smoothing', type=float, default=0.05)
+    p.add_argument('--retraining-scheduler-type', type=SchedulerType, choices=list(SchedulerType), default=SchedulerType.none)
+
     args = p.parse_args()
 
     torch.backends.cudnn.benchmark = False
@@ -54,9 +61,9 @@ if __name__ == "__main__":
         if not p.exists():
             p.mkdir()
 
-    
+
     # import ipdb; ipdb.set_trace()
-        
+
     osu_int = OSUInterface(scg_ensemble=args.scg_ensemble, 
         data_root=args.data_root, 
         pretrained_models_dir=args.pretrained_models_dir,
@@ -68,14 +75,21 @@ if __name__ == "__main__":
         ignore_verb_novelty=args.ignore_verb_novelty, 
         train_csv_path=args.train_csv_path,
         val_csv_path=args.val_csv_path,
-        val_incident_csv_path=args.val_incident_csv_path,
-        val_corruption_csv_path=args.val_corruption_csv_path,
         trial_size=args.trial_size,
         trial_batch_size=args.trial_batch_size,
-        retraining_image_batch_size=args.retraining_image_batch_size,
+        disable_retraining=args.disable_retraining,
+        root_cache_dir=args.root_cache_dir,
+        n_known_val=args.n_known_val,
+        precomputed_feature_dir=args.precomputed_feature_dir,
+        retraining_augmentation=args.retraining_augmentation,
+        retraining_lr=args.retraining_lr,
         retraining_batch_size=args.retraining_batch_size,
-        retraining_buffer_size=args.retraining_buffer_size,
-        disable_retraining=args.disable_retraining)
+        retraining_patience=args.retraining_patience,
+        retraining_min_epochs=args.retraining_min_epochs,
+        retraining_max_epochs=args.retraining_max_epochs,
+        retraining_label_smoothing=args.retraining_label_smoothing,
+        retraining_scheduler_type=args.retraining_scheduler_type
+    )
     
     api = APIStubs(args.api_dir, args.tests_dir) if args.api_stubs else None
     

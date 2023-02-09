@@ -1,3 +1,5 @@
+import re
+
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 
@@ -15,10 +17,12 @@ class ClassifierV2:
         self.n_activity_cls = n_activity_cls
         self.reset()
 
-    def reset(self):
+    def reset(self, bottleneck_dim=None):
+        if bottleneck_dim is not None:
+            self.bottleneck_dim = bottleneck_dim
         self.species_classifier = torch.nn.Linear(self.bottleneck_dim, self.n_species_cls).to(self.device)
         self.activity_classifier = torch.nn.Linear(self.bottleneck_dim, self.n_activity_cls).to(self.device)
-    
+
     def predict(self, box_features):
         self.species_classifier.eval()
         self.activity_classifier.eval()
@@ -57,12 +61,31 @@ class ClassifierV2:
         return state_dict
 
     def load_state_dict(self, state_dict):
-        self.species_classifier.load_state_dict(
-            state_dict['species_classifier']
-        )
-        self.activity_classifier.load_state_dict(
-            state_dict['activity_classifier']
-        )
+        if isinstance(self.species_classifier, DDP):
+            self.species_classifier.load_state_dict(
+                state_dict['species_classifier']
+            )
+        else:
+            species_classifier_state_dict = {
+                re.sub('^module\.', '', k): v for\
+                    k, v in state_dict['species_classifier'].items()
+            }
+            self.species_classifier.load_state_dict(
+                species_classifier_state_dict
+            )
+
+        if isinstance(self.activity_classifier, DDP):
+            self.activity_classifier.load_state_dict(
+                state_dict['activity_classifier']
+            )
+        else:
+            activity_classifier_state_dict = {
+                re.sub('^module\.', '', k): v for\
+                    k, v in state_dict['activity_classifier'].items()
+            }
+            self.activity_classifier.load_state_dict(
+                activity_classifier_state_dict
+            )
 
     def ddp(self, device_ids=None):
         self.species_classifier = DDP(
