@@ -39,7 +39,7 @@ def gen_no_novel_api_test(test_name, known_feed, test_dir, test_len, round_size)
         'domain' : 'image_classification',
         'protocol' : 'OND',
         'known_classes' : 11,
-        "max_novel_classes": 16,
+        "max_novel_classes": 20,
         'round_size' : round_size,
         'threshold' : 0.1,
         'red_light' : 'none',
