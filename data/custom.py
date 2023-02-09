@@ -171,7 +171,7 @@ class CustomDet(Dataset):
 
         self._filenames = list(df['image_path'])
 
-        with open(json_f) as f:
+        with open(json_f, 'r') as f:
             box_dict = json.load(f)
 
         self._anno = self.create_annotation(df, box_dict, label_mapper)

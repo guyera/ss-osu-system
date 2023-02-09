@@ -1,3 +1,5 @@
+import json
+import uuid
 import pathlib
 import os
 import pandas as pd
@@ -123,30 +125,30 @@ class OSUInterface:
         :param feedback_max_ids: number of image_paths to pick
         :return: list of selected image_paths
         """
-        queries = self.app.select_queries(feedback_max_ids)
-        return queries
+        queries, bboxes = self.app.select_queries(feedback_max_ids)
+        return queries, bboxes
     
-    def record_type0(self):       
-        self.app._type_inferenceType0()
+    def characterize_round(self, red_light_dec):
+        self.app.characterize_round(red_light_dec)
 
-    def record_type67(self):       
-        self.app._type_inferenceType67()
-
-    def record_detection_feedback(self, test_id, round_id, feedback_results):
+    def record_detection_feedback(self, test_id, round_id, feedback_csv_content, bboxes):
         """
         :param test_id:
         :param round_id:
         :param feedback_results: dict with boolean value for each image_path
         :return: Null
         """
-        print(f'  ==> OSU got detection feedback results for '
-            f'{len(feedback_results)} images for round {round_id}')
+        print(f'  ==> OSU got detection feedback results for round {round_id}')
 
-        d = {}
-        for e in feedback_results:
-            d[e[0]] = e[1]
-
-        self.app.feedback_callback(d)
+        feedback_uuid = uuid.uuid4()
+        csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}_feedback_{feedback_uuid}.csv')
+        with open(csv_path, 'w') as f:
+            f.write(feedback_csv_content)
+        json_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}_feedback_{feedback_uuid}.json')
+        with open(json_path, 'w') as f:
+            json.dump(bboxes, f)
+        
+        self.app.feedback_callback(csv_path)
 
     def end_test(self, test_id):
         print(f'==> OSU got end test {test_id}')

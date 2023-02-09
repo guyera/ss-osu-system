@@ -76,20 +76,9 @@ class BBNSession:
             if response.status_code == 500:
                 raise Exception(f'Got error response from feedback request: {response}')
             
-            feedback_vals = response.content.decode('utf-8').split('\n')
-            feedback_vals = [x for x in feedback_vals if x.strip("\n\t\"',.") != ""]
-            # feedback_answers = [int(val.split(',')[1]) for val in feedback_vals]
-            returned_ids = []
-            returned_answers = []
-            for val in feedback_vals:
-                segments = val.split(',')
-                returned_ids.append(segments[0])
-                returned_answers.append(segments[1] == '1')
+            feedback_csv_content = response.content.decode('utf-8')
 
-            if set(returned_ids) != set(feedback_ids):
-                raise Exception('feedback returned ids not matching requested')
-                       
-            return [(id, val) for (id, val) in zip(returned_ids, returned_answers)]
+            return feedback_csv_content
 
     def request_hint_typeA(self, session_id, test_id):
         print(f'====> Asking for hint on test_id {test_id}')
@@ -450,10 +439,7 @@ class BBNSession:
                     self.write_file_entries(novelty_image_path, detection_file, classification_file,
                                             species_counts, species_presence, activity_presence, float(red_light_str), float(per_image_nov_str),
                                             round_id, red_light_declared)
-                if red_light_declared:
-                    self.osu_stubs.record_type67()
-                else:                        
-                    self.osu_stubs.record_type0()
+                self.osu_stubs.characterize_round(red_light_declared)
             else:
                 pass
 
@@ -495,12 +481,12 @@ class BBNSession:
                     #     print(f' **** About to call choose_detection_feedback_ids, round {round_id}')
                     
                     num_ids_to_request = len(filenames) if self.given_detection else feedback_max_ids
-                    feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
+                    feedback_ids, feedback_bboxes = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
                                                                                 filenames, num_ids_to_request)
-                    detection_feedback_results = self.request_detection_feedback(session_id, test_id, round_id,
+                    feedback_csv_content = self.request_detection_feedback(session_id, test_id, round_id,
                                                                                 feedback_ids)
 
-                    self.osu_stubs.record_detection_feedback(test_id, round_id, detection_feedback_results)
+                    self.osu_stubs.record_detection_feedback(test_id, round_id, feedback_csv_content, feedback_bboxes)
 
                 ## LAR
                 ## Write characterization files after every round for experimental testing.

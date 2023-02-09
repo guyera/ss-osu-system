@@ -57,9 +57,6 @@ class TopLevelApp:
         self.n_known_species_cls = 10
         self.n_known_activity_cls = 2
         self.post_red = False
-        self.p_type_dist =torch.tensor([0.20, 0.20, 0.20, 0.20, 0.20])
-        self.all_query_masks = torch.tensor([])
-        self.all_feedback = torch.tensor([])
         self.all_p_ni = torch.tensor([])
         self.all_p_ni_raw = np.array([])
         self.all_nc = torch.tensor([])
@@ -90,7 +87,7 @@ class TopLevelApp:
         self.obj_novelty_scores_un = []
         self.log = log
         self.log_dir = log_dir
-        self.p_type_hist = [self.p_type_dist.numpy()]
+        self.characterization_preds = []
         self.per_image_p_type = torch.tensor([])
         self.ignore_verb_novelty = ignore_verb_novelty
         self.given_detection = given_detection
@@ -103,11 +100,6 @@ class TopLevelApp:
         self.trial_size = trial_size
         self.trial_batch_size = trial_batch_size
         self.second_retrain_batch_num = (self.trial_size - 30) // self.trial_batch_size
-        self.retraining_buffer = pd.DataFrame(columns=['new_image_path', 'subject_name', 'subject_id', 'original_subject_id',
-            'object_name', 'object_id', 'original_object_id', 'verb_name',
-            'verb_id', 'original_verb_id', 'image_width', 'image_height',
-            'subject_ymin', 'subject_xmin', 'subject_ymax', 'subject_xmax',
-            'object_ymin', 'object_xmin', 'object_ymax', 'object_xmax'])
         self.disable_retraining = disable_retraining
 
         self.root_cache_dir = root_cache_dir
@@ -213,11 +205,8 @@ class TopLevelApp:
         
     def reset(self):
         self.post_red = False
-        self.p_type_dist = torch.tensor([0.20, 0.20, 0.20, 0.20, 0.20]) if not self.ignore_verb_novelty else torch.tensor([1/3, 0, 1/3, 1/3])        
         self.unsupervised_aucs = [None, None, None]
         self.supervised_aucs = [None, None, None]
-        self.all_query_masks = torch.tensor([])
-        self.all_feedback = torch.tensor([])
         self.all_p_ni = torch.tensor([])
         self.all_p_ni_raw = np.array([])
         self.all_nc = torch.tensor([], dtype=torch.long)
@@ -228,7 +217,7 @@ class TopLevelApp:
         self.subj_novelty_scores_un = []
         self.verb_novelty_scores_un = []
         self.obj_novelty_scores_un = []
-        self.p_type_hist = [self.p_type_dist.numpy()]
+        self.characterization_preds = []
         self.per_image_p_type = torch.tensor([])
         self.all_red_light_scores = np.array([])
         self.red_light_img = None
@@ -236,7 +225,6 @@ class TopLevelApp:
         self.t_tn = None
         self.batch_num = 0 
         self.num_retrains_so_far = 0
-        self.retraining_buffer = self.retraining_buffer.iloc[0:0]  
         self.mergedSVO = []
         self.mergedprobs = []
               
@@ -249,8 +237,7 @@ class TopLevelApp:
         self.batch_num += 1
         self.batch_context.reset()
         # initialize data loaders
-        novelty_dataset, N, image_paths, df = self._load_data(csv_path)
-        self.batch_context.df = df
+        novelty_dataset, N, image_paths, bboxes, df = self._load_data(csv_path)
 
         # unsupervised novelty scores
         unsupervised_results = self.und_manager.score(self.backbone, novelty_dataset)
@@ -314,6 +301,7 @@ class TopLevelApp:
         self.batch_context.p_ni = p_ni
         self.batch_context.scores_u = scores_u
         self.batch_context.image_paths = image_paths
+        self.batch_context.bboxes = bboxes
         self.batch_context.novelty_dataset = novelty_dataset
         self.batch_context.predictions = predictions
         self.batch_context.p_type = batch_p_type
@@ -322,9 +310,7 @@ class TopLevelApp:
         red_light_scores = self._compute_red_light_scores(p_ni, N, img_paths)
 
         if not self.post_red or not self.feedback_enabled:
-            batch_query_mask = torch.zeros(N, dtype=torch.long)
-            batch_feedback_mask = torch.zeros(N, dtype=torch.long)
-            self._accumulate(top3, p_ni, p_ni.numpy(), batch_feedback_mask, batch_query_mask, batch_p_type)
+            self._accumulate(top3, p_ni, p_ni.numpy(), batch_p_type)
 
         self.all_red_light_scores = np.concatenate([self.all_red_light_scores, red_light_scores])
         
@@ -356,7 +342,7 @@ class TopLevelApp:
             logs['mergedSVO'] = self.mergedSVO
             logs['mergedprobs'] = self.mergedprobs
             logs['post_red_base'] = self.post_red_base
-            logs['p_type'] = self.p_type_hist
+            logs['characterization'] = self.characterization_preds
             logs['red_light_scores'] = self.all_red_light_scores
 
             pickle.dump(logs, handle)
@@ -370,60 +356,42 @@ class TopLevelApp:
         query_indices = select_queries(feedback_max_ids, torch.tensor([1/3, 1/3, 1/3, 0]), self.batch_context.p_ni, 
             self.batch_context.subject_novelty_scores_u, self.batch_context.verb_novelty_scores_u, 
             self.batch_context.object_novelty_scores_u)
-      
-        if len(query_indices) > feedback_max_ids:
-            raise Exception('number of queries exceeded feedback budget.')
+
+        img_paths = self.batch_context.image_paths[query_indices]
+        bboxes = {}
+        for img_path in img_paths:
+            img_name = os.path.basename(img_path)
+            bboxes[img_name] = self.batch_context.bboxes[img_name]
 
         N = len(self.batch_context.image_paths)
         self.batch_context.query_mask = torch.zeros(N, dtype=torch.long)
         self.batch_context.query_mask[query_indices] = 1
         self.batch_context.query_indices = query_indices
 
-        return [self.batch_context.image_paths[i] for i in query_indices]
+        return [self.batch_context.image_paths[i] for i in query_indices], bboxes
 
-    def feedback_callback(self, feedback_results):
+    def feedback_callback(self, feedback_csv_path):
         assert self.post_red, "query selection shoudn't happen pre-red button"
         assert self.batch_context.is_set(), "no batch context."
         assert self.feedback_enabled, "feedback is disabled"
-        assert all([f in self.batch_context.image_paths for f in feedback_results.keys()]), "query/feedback mismatch."
 
-        if len(feedback_results) != len(self.batch_context.query_indices):
-            print(f"\nWARNING: query/feedback mismatch, requested feedback for {len(self.batch_context.query_indices)} images but got feedback for {len(feedback_results)} images. Recalculating query mask...\n")
-            N = len(self.batch_context.image_paths)
-            self.batch_context.query_mask = torch.zeros(N, dtype=torch.long)
-            query_indices = [self.batch_context.image_paths.index(k) for k in feedback_results.keys()]
-            self.batch_context.query_mask[query_indices] = 1
-            self.batch_context.query_indices = query_indices
-            
-        if self.t_tn is None:
-            for i, img in enumerate(self.batch_context.image_paths):
-                if img in feedback_results and feedback_results[img] == 1:
-                    self.t_tn = i + self.all_p_ni.shape[0]
-                    break
-            
         N = len(self.batch_context.image_paths)
-        self.batch_context.feedback_mask = torch.zeros(N, dtype=torch.long)
-
-        feedback = []
-        for q in self.batch_context.query_indices:
-            img_path = self.batch_context.image_paths[q]
-            feedback.append(feedback_results[img_path])
-
         feedback_t = torch.tensor(feedback, dtype=torch.long)
-        self.batch_context.feedback_mask[self.batch_context.query_indices] = feedback_t
 
-        # adjust p_ni based on feedback
         p_ni_raw = np.copy(self.batch_context.p_ni)
-        self.batch_context.p_ni[self.batch_context.query_indices] = feedback_t.float()
-        
-        self._accumulate(self.batch_context.top_3, self.batch_context.p_ni, p_ni_raw,
-            self.batch_context.feedback_mask, self.batch_context.query_mask, self.batch_context.p_type)
+        # TODO adjust batch_context.p_ni and batch_context.all_p_type
+        # based on feedback (the characterization becomes trivial once we've
+        # observed a positive feedback instance, so we want to make some
+        # override characterization prediction tensor that's None until we've
+        # gotten such an instance, at which point it's the proper
+        # characterization tensor. Then, we should adjust how
+        # characterize_round works to check for that override and use it
+        # when available)
 
-        self._type_inference()
-                
-        f = self.batch_context.df.apply(lambda row : feedback_results[row['new_image_path']] if row['new_image_path'] in feedback_results else -1, 
-            axis = 1)      
-        self.batch_context.df['feedback'] = f
+        self._accumulate(self.batch_context.top_3, self.batch_context.p_ni, p_ni_raw,
+            self.batch_context.p_type)
+
+        self.novelty_trainer.add_feedback_data(self.data_root, feedback_csv_path)
 
         if not self.disable_retraining:
             self._retrain_supervised_detectors()                
@@ -499,13 +467,24 @@ class TopLevelApp:
 
         return top_3_svo
 
-    def _type_inference(self):
+
+    def characterize_round_zeros(self):
+        round_characterization_preds = np.zeros(6)
+        round_characterization_preds[0] = 1.0
+        self.characterization_preds.append(round_characterization_preds)
+
+    def characterize_round(self, red_light_dec):
+        if self.red_light_dec:
+            self.characterize_round_zeros()
+            return
+
         assert self.post_red, "type-inference shouldn't be called pre-red button"
         assert torch.numel(self.all_p_type) > 0, "no per-image p_type"
         assert self.all_p_ni.shape[0] == self.all_p_type.shape[0], "p_type/p_ni shape mismatch"
     
         filter_v = self.all_p_ni[self.post_red_base:] >= self.p_type_th
         if not torch.any(filter_v):
+            self.characterize_round_zeros()
             return
         
         filtered = self.all_p_type[self.post_red_base:][filter_v]
@@ -518,14 +497,14 @@ class TopLevelApp:
         log_p_type_4 = self._infer_log_p_type(prior, filtered[:, 4])
         log_p_type_5 = self._infer_log_p_type(prior, filtered[:, 5])
 
-        self.p_type_dist = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4, log_p_type_5])
-        self.p_type_dist = torch.nn.functional.softmax(self.p_type_dist, dim=0).float()
+        round_characterization_logits = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4, log_p_type_5])
+        round_characterization_preds = torch.nn.functional.softmax(round_characterization_logits, dim=0).float()
 
-        self.p_type_hist.append(self.p_type_dist.numpy())
+        self.characterization_preds.append(round_characterization_preds.numpy())
 
-        assert not torch.any(torch.isnan(self.p_type_dist)), "NaNs in p_type."
-        assert not torch.any(torch.isinf(self.p_type_dist)), "Infs in p_type."
-
+        assert not torch.any(torch.isnan(round_characterization_preds)), "NaNs in p_type."
+        assert not torch.any(torch.isinf(round_characterization_preds)), "Infs in p_type."
+            
 
     def _infer_log_p_type(self, prior, evidence):
         LARGE_NEG_CONSTANT = -50.0
@@ -556,13 +535,16 @@ class TopLevelApp:
         
         df = pd.read_csv(csv_path, index_col=0)
         image_paths = df['new_image_path'].to_list()
+        json_path = f'{os.path.splitext(csv_path)[0]}.json'
+        with open(json_path, 'r') as f:
+            bboxes = json.load(f)
 
         cases = df.apply(lambda row : self._compute_case(row['subject_ymin'], row['subject_xmin'], 
             row['subject_ymax'], row['subject_xmax'], 
             row['object_ymin'], row['object_xmin'], row['object_ymax'], row['object_xmax']), axis = 1)
         df['case'] = cases.to_numpy()
 
-        return novelty_dataset, N, image_paths, df
+        return novelty_dataset, N, image_paths, bboxes, df
 
     def _compute_case(self, sbox_ymin, sbox_xmin, sbox_ymax, sbox_xmax, obox_ymin, obox_xmin, obox_ymax, obox_xmax):
         has_subject = sbox_ymin >= 0 and sbox_ymax >= 0 and sbox_xmin >= 0 and sbox_xmax >= 0
@@ -579,16 +561,13 @@ class TopLevelApp:
 
         raise Exception(f'Invalid subject/object box coords, {has_subject}, {has_object}')
 
-    def _accumulate(self, top_3, p_ni, p_ni_raw, feedback_mask, query_mask, p_type):
+    def _accumulate(self, top_3, p_ni, p_ni_raw, p_type):
         self.all_top_3_svo += top_3
         self.all_p_ni = torch.cat([self.all_p_ni, p_ni])
         self.all_p_ni_raw = np.concatenate([self.all_p_ni_raw, p_ni_raw])
-        self.all_feedback = torch.cat([self.all_feedback, feedback_mask])
-        self.all_query_masks = torch.cat([self.all_query_masks, query_mask])
         self.all_p_type = torch.cat([self.all_p_type, p_type])
         
         assert self.all_p_ni.shape[0] == self.all_p_type.shape[0] == len(self.all_top_3_svo)
-        assert self.all_feedback.shape == self.all_query_masks.shape == self.all_p_ni.shape
 
     def _reset_backbone_and_detectors(self):
         backbone_state_dict = torch.load(
@@ -673,75 +652,11 @@ class TopLevelApp:
         )
 
     def _retrain_supervised_detectors(self):
-        t_star = torch.argmax(self.p_type_dist) + 1
-        df_temp = self.batch_context.df.copy()
-        
-        # subject
-        df_subj_neg_1 = df_temp[(df_temp['case'] == 1) & (df_temp['feedback'] == 0)]
-        df_subj_neg_2 = df_temp[(df_temp['case'] == 2) & (df_temp['feedback'] == 0)]
-        df_subj = pd.concat([df_subj_neg_1, df_subj_neg_2])
-        
-        # verb
-        df_verb_neg_1 = df_temp[(df_temp['case'] == 1) & (df_temp['feedback'] == 0)]
-        df_verb_neg_2 = df_temp[(df_temp['case'] == 2) & (df_temp['feedback'] == 0)]
-        df_verb = pd.concat([df_verb_neg_1, df_verb_neg_2])
-        
-        # object
-        df_obj_neg_1 = df_temp[(df_temp['case'] == 1) & (df_temp['feedback'] == 0)]
-        df_obj_neg_3 = df_temp[(df_temp['case'] == 3) & (df_temp['feedback'] == 0)]
-        df_obj = pd.concat([df_obj_neg_1, df_obj_neg_3])
-                
-        if t_star == 1:
-            df_subj_pos_1 = df_temp[(df_temp['case'] == 1) & (df_temp['feedback'] == 1)]
-            df_subj_pos_2 = df_temp[(df_temp['case'] == 2) & (df_temp['feedback'] == 1)]
-            df_subj_pos = pd.concat([df_subj_pos_1, df_subj_pos_2])
-            df_subj = pd.concat([df_subj, df_subj_pos])
-                                   
-        if t_star == 2:
-            df_verb_pos_1 = df_temp[(df_temp['case'] == 1) & (df_temp['feedback'] == 1)]
-            df_verb_pos_2 = df_temp[(df_temp['case'] == 2) & (df_temp['feedback'] == 1)]
-            df_verb_pos = pd.concat([df_verb_pos_1, df_verb_pos_2])
-            df_verb = pd.concat([df_verb, df_verb_pos])
-                        
-        if t_star == 3:
-            df_obj_pos_1 = df_temp[(df_temp['case'] == 1) & (df_temp['feedback'] == 1)]
-            df_obj_pos_3 = df_temp[(df_temp['case'] == 3) & (df_temp['feedback'] == 1)]
-            df_obj_pos = pd.concat([df_obj_pos_1, df_obj_pos_3])
-            df_obj = pd.concat([df_obj, df_obj_pos])
-                
-        p_type = self.p_type_dist.numpy()
-        use_hard_labels = np.isclose(p_type[t_star - 1], 1.0)
-        
-        if df_subj.shape[0] > 0:
-            df_subj['is_novel'] = df_subj.apply(lambda row: row['feedback'] * use_hard_labels + 
-                row['feedback'] * (1 - use_hard_labels) * p_type[0], axis=1)        
-            df_subj = df_subj[df_subj['is_novel'] >= 0.9]
-      
-        if df_verb.shape[0] > 0:
-            df_verb['is_novel'] = df_verb.apply(lambda row: row['feedback'] * use_hard_labels 
-                + row['feedback'] * (1 - use_hard_labels) * p_type[1], axis=1)
-            df_verb = df_verb[df_verb['is_novel'] >= 0.9]
-
-        if df_obj.shape[0] > 0:
-            df_obj['is_novel'] = df_obj.apply(lambda row: row['feedback'] * use_hard_labels * (row['case'] == 3) + 
-                row['feedback'] * (1 - use_hard_labels) * p_type[2], axis=1)
-            df_obj = df_obj[df_obj['is_novel'] >= 0.9]
-
-        df_final = pd.concat([df_subj, df_verb, df_obj]) 
-        
-        if df_final.shape[0] > 0:
-            df_final.drop(columns=['case', 'feedback', 'is_novel'], inplace=True)
-            df_final.drop_duplicates(inplace=True)        
-            self.retraining_buffer = pd.concat([self.retraining_buffer, df_final])
-
-        retrain_cond_1 = self.num_retrains_so_far == 0 and self.retraining_buffer.shape[0] >= 15
-        retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.retraining_buffer.shape[0] > 0)
+        retrain_cond_1 = self.num_retrains_so_far == 0 and self.novelty_trainer.n_feedback_examples() >= 15
+        retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.novelty_trainer.n_feedback_examples() > 0)
         
         if retrain_cond_1 or retrain_cond_2:
             self.num_retrains_so_far += 1
-            csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
-            self.retraining_buffer.to_csv(csv_path, index=True)                
-            self.novelty_trainer.add_feedback_data(self.data_root, csv_path)
             self.novelty_trainer.prepare_for_retraining(self.backbone, self.und_manager.classifier, 
                 self.und_manager.case_1_logistic_regression,
                 self.und_manager.case_2_logistic_regression,
@@ -752,9 +667,3 @@ class TopLevelApp:
                 self.und_manager.case_2_logistic_regression,
                 self.und_manager.case_3_logistic_regression,
                 self.und_manager.activation_statistical_model)
-            
-            self.retraining_buffer = self.retraining_buffer.iloc[0:0]
-            assert self.retraining_buffer.shape[0] == 0
-                
-            if csv_path.exists():
-                os.remove(csv_path)
