@@ -650,7 +650,7 @@ class ClassifierTrainer(ABC):
             species_classifier,
             activity_classifier,
             root_log_dir,
-            feedback_loader):
+            feedback_dataset):
         return NotImplemented
 
     def prepare_for_retraining(
@@ -942,6 +942,7 @@ def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
 class LogitLayerClassifierTrainer(ClassifierTrainer):
     def __init__(
             self,
+            backbone,
             lr,
             train_feature_file,
             val_feature_file,
@@ -952,6 +953,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             min_epochs=3,
             max_epochs=30,
             label_smoothing=0.0):
+        self._backbone = backbone
         self._lr = lr
         self._train_feature_file = train_feature_file
         self._val_feature_file = val_feature_file
@@ -968,9 +970,13 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             box_features,
             species_labels,
             activity_labels,
+            feedback_box_features,
+            feedback_species_labels,
+            feedback_activity_labels,
             species_classifier,
             activity_classifier,
             optimizer):
+        # TODO Make use of feedback data
         # Set everything to train mode
         species_classifier.train()
         activity_classifier.train()
@@ -1066,12 +1072,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             species_classifier,
             activity_classifier,
             root_log_dir,
-            feedback_loader):
-        # TODO new feedback setup will require a separate dataloader since
-        # feedback data has several multiple instance issues and thus requires
-        # image-level labels and special loss functions. Pass that dataloader
-        # in as an argument
-
+            feedback_dataset):
         # TODO Class balancing
 
         # Construct the optimizer
@@ -1119,16 +1120,69 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 map_location=self._device
             )
 
-        # TODO Precompute feedback backbone features
+        if feedback_dataset is not None:
+            unbuffered_feedback_loader = DataLoader(
+                feedback_dataset,
+                batch_size=32,
+                num_workers=2,
+                shuffle=True
+            )
+            feedback_loader = BufferedFeedbackDataLoader(
+                unbuffered_feedback_loader,
+                self._feedback_batch_size
+            )
+            # Precompute feedback backbone features
+            self._backbone.eval()
+            feedback_box_features = []
+            feedback_species_labels = []
+            feedback_activity_labels = []
+            with torch.no_grad():
+                for batch_species_labels,\
+                        batch_activity_labels,\
+                        _,\
+                        batch_box_images,\
+                        _ in feedback_loader:
+                    # Move batch to device
+                    batch_species_labels =\
+                        batch_species_labels.to(self._device)
+                    batch_activity_labels =\
+                        batch_activity_labels.to(self._device)
+                    batch_box_images =\
+                        batch_box_images.to(self._device)
 
-        # TODO Construct custom feedback dataset; separate class from known data
-        # datasets because of the multiple instance problems. Weighted sampling
-        # will come from explicitly drawing batches from each loader (known
-        # and feedback) separately, and then balancing them mid-iteration
+                    # Get list of per-image box counts
+                    batch_box_counts = [len(x) for x in batch_box_images]
 
-        # TODO Construct custom weighted sampling concatenated dataset between
-        # known and feedback data, and use that rather than the full-batch
-        # approach
+                    # Flatten box images and compute features
+                    flattened_box_images = torch.cat(batch_box_images, dim=0)
+                    batch_box_features = self._backbone(flattened_box_images)
+
+                    # Use batch_box_counts to split the computed features back
+                    # to per-image feature tensors and concatenate to
+                    # feedback_box_features
+                    feedback_box_features += torch.split(
+                        batch_box_features,
+                        batch_box_counts,
+                        dim=0
+                    )
+
+                    # Record labels
+                    feedback_species_labels.append(batch_species_labels)
+                    feedback_activity_labels.append(batch_activity_labels)
+
+                # Concatenate labels
+                feedback_species_labels = torch.cat(
+                    feedback_species_labels,
+                    dim=0
+                )
+                feedback_activity_labels = torch.cat(
+                    feedback_activity_labels,
+                    dim=0
+                )
+        else:
+            feedback_box_features = None
+            feedback_species_labels = None
+            feedback_activity_labels = None
 
         # Train
         progress = tqdm(
@@ -1153,6 +1207,9 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 train_box_features,
                 train_species_labels,
                 train_activity_labels,
+                feedback_box_features,
+                feedback_species_labels,
+                feedback_activity_labels,
                 species_classifier,
                 activity_classifier,
                 optimizer
@@ -1436,11 +1493,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             species_classifier,
             activity_classifier,
             root_log_dir,
-            feedback_loader):
-        # TODO new feedback setup will require a separate dataloader since
-        # feedback data has several multiple instance issues and thus requires
-        # image-level labels and special loss functions
-
+            feedback_dataset):
         # TODO Class balancing
         train_dataset = FlattenedBoxImageDataset(self._train_dataset)
         if self._train_sampler_fn is not None:
@@ -1458,6 +1511,22 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 shuffle=True,
                 num_workers=2
             )
+
+        if feedback_dataset is not None:
+            unbuffered_feedback_loader = DataLoader(
+                feedback_dataset,
+                batch_size=32,
+                num_workers=2,
+                shuffle=True
+            )
+            feedback_loader = BufferedFeedbackDataLoader(
+                unbuffered_feedback_loader,
+                self._feedback_batch_size
+            )
+        else:
+            feedback_loader = None
+        
+        # TODO Make use of feedback data
 
         # Construct validation loaders for early stopping / model selection.
         # I'm assuming our model selection strategy will be based solely on the
@@ -1955,11 +2024,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             species_classifier,
             activity_classifier,
             root_log_dir,
-            feedback_loader):
-        # TODO new feedback setup will require a separate dataloader since
-        # feedback data has several multiple instance issues and thus requires
-        # image-level labels and special loss functions.
-
+            feedback_dataset):
         # TODO Class balancing
 
         # Load training and validation backbone features from feature
@@ -1975,7 +2040,26 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                 map_location=self._device
             )
 
-        # TODO Precompute feedback backbone features
+        if feedback_dataset is not None:
+            unbuffered_feedback_loader = DataLoader(
+                feedback_dataset,
+                batch_size=32,
+                num_workers=2,
+                shuffle=True
+            )
+            feedback_loader = BufferedFeedbackDataLoader(
+                unbuffered_feedback_loader,
+                self._feedback_batch_size
+            )
+            # TODO Precompute feedback backbone
+
+            # TODO Construct custom FeatureConcatBoxImageDataset for the feedback
+            # dataset
+            raise NotImplementedError
+        else:
+            feedback_feature_loader = None
+
+        # TODO Make use of feedback data
 
         # Construct training and validation
         # FeatureConcatFlattenedBoxImageDataset objects from known features
@@ -1988,11 +2072,6 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             FlattenedBoxImageDataset(self._val_known_dataset),
             val_box_features
         )
-
-        # TODO Construct custom feedback dataset; separate class from known data
-        # datasets because of the multiple instance problems. Weighted sampling
-        # will come from explicitly drawing batches from each loader (known
-        # and feedback) separately, and then balancing them mid-iteration
 
         # For now, we just have a single loader for training and a single loader
         # for validation (until feedback is implemented)
@@ -2667,26 +2746,15 @@ class TuplePredictorTrainer:
         activity_calibrator = confidence_calibrator.activity_calibrator
         
         # Retrain the backbone and classifiers
-        feedback_loader = None
+        feedback_dataset = None
         if len(self._feedback_data) > 0:
-            assert self._feedback_batch_size is not None
             feedback_dataset = ConcatDataset(self._feedback_data)
-            unbuffered_feedback_loader = DataLoader(
-                feedback_dataset,
-                batch_size=32,
-                num_workers=2,
-                shuffle=True
-            )
-            feedback_loader = BufferedFeedbackDataLoader(
-                unbuffered_feedback_loader,
-                self._feedback_batch_size
-            )
         
         self._classifier_trainer.train(
             species_classifier,
             activity_classifier,
             root_log_dir,
-            feedback_loader
+            feedback_dataset
         )
 
         self.fit_activation_statistics(
