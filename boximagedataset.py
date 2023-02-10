@@ -151,9 +151,15 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 image_size
             )
 
-            species_labels = target['species'].detach()
-            activity_labels = target['activity'].detach()
-            novelty_type_labels = target['novelty_type'].detach()
+            species_labels = target['species']
+            species_labels = species_labels.detach()\
+                if species_labels is not None else None
+            activity_labels = target['activity']
+            activity_labels = activity_labels.detach()\
+                if activity_labels is not None else None
+            novelty_type_labels = target['novelty_type']
+            novelty_type_labels = novelty_type_labels.detach()\
+                if novelty_type_labels is not None else None
 
             box_images = []
             for xmin, ymin, xmax, ymax in detection['boxes']:

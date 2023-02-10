@@ -81,7 +81,7 @@ class CustomDet(Dataset):
 
     def __len__(self) -> int:
         """Return the number of images"""
-        return len(self._idx)
+        return len(self._filenames)
 
     def __getitem__(self, i: int) -> tuple:
         """
@@ -94,14 +94,19 @@ class CustomDet(Dataset):
                     "species": None or list[N]
                     "activity" : None or list[N]
         """
-        intra_idx = self._idx[i]
         target = dict()
-        annot = self._anno[intra_idx]
-        target['species'] = annot['species'].clone().detach()
-        target['activity'] = annot['activity'].clone().detach()
-        target['novelty_type'] = annot['novelty_type'].clone().detach()
+        annot = self._anno[i]
+        species = annot['species']
+        target['species'] =\
+            species.clone().detach if species is not None else None
+        activity = annot['activity']
+        target['activity'] =\
+            activity.clone().detach() if activity is not None else None
+        novelty_type = annot['novelty_type']
+        target['novelty_type'] =\
+            novelty_type.clone().detach() if novelty_type is not None else None
         return self._transforms(
-            self.load_image(os.path.join(self.root, self._filenames[intra_idx])),
+            self.load_image(os.path.join(self.root, self._filenames[i])),
             target
         )
 
@@ -116,9 +121,8 @@ class CustomDet(Dataset):
                     "species": None or list[N]
                     "activity" : None or list[N]
         """
-        intra_idx = self._idx[i]
         target = dict()
-        annot = self._anno[intra_idx]
+        annot = self._anno[i]
         target['species'] = annot['species'].clone().detach()
         target['activity'] = annot['activity'].clone().detach()
         target['novelty_type'] = annot['novelty_type'].clone().detach()
@@ -154,7 +158,7 @@ class CustomDet(Dataset):
 
     def filename(self, idx: int) -> str:
         """Return the image file name given the index"""
-        return os.path.join(self.root, self._filenames[self._idx[idx]])
+        return os.path.join(self.root, self._filenames[idx])
 
     def _load_annotation_and_metadata(self, df_f: str, json_f: str, label_mapper) -> None:
         """
@@ -167,7 +171,9 @@ class CustomDet(Dataset):
         if self._image_filter == 'nonblank':
             df = df[~(df['agent1_count'].isna())]
         df = df.astype({'activities_id': object})
-        df['activities_id'] = df['activities_id'].apply(literal_eval)
+        activities_apply = lambda activity: literal_eval(activity)\
+            if not pd.isna(activity) else activity
+        df['activities_id'] = df['activities_id'].apply(activities_apply)
 
         self._filenames = list(df['image_path'])
 
@@ -177,8 +183,6 @@ class CustomDet(Dataset):
         self._anno = self.create_annotation(df, box_dict, label_mapper)
 
         idx = list(range(len(df)))
-
-        self._idx = idx
 
     def create_annotation(self, df, box_dict, label_mapper):
         # TODO : Make This Faster
@@ -193,24 +197,36 @@ class CustomDet(Dataset):
                 count_string = f'agent{species_idx}_count'
                 species_id = row[id_string]
                 species_count = row[count_string]
-                if math.isnan(species_id):
+                if pd.isna(species_id) or pd.isna(species_count):
+                    if species_idx == 1:
+                        species = None
                     break
                 mapped_label = label_mapper(int(species_id))
                 if mapped_label is not None:
                     species[mapped_label] = species_count
-            activities = torch.zeros(self._n_activity_cls, dtype=torch.long)
+
             activity_ids = row['activities_id']
-            activities[activity_ids] = 1
+            activities_na = pd.isna(activity_ids)
+            if (isinstance(activities_na, bool) and activities_na) or\
+                    activities_na.any():
+                activities = None
+            else:
+                activities = torch.zeros(self._n_activity_cls, dtype=torch.long)
+                activities[activity_ids] = 1
 
             image_path = row['image_path']
             basename = os.path.basename(image_path)
             boxes = box_dict[basename]
 
-            novelty_type = torch.tensor(row['novelty_type'], dtype=torch.long)
-            # There is no novelty type 1, but we want novelty type class labels
-            # to be contiguous. Adjust labels appropriately.
-            if novelty_type >= 2:
-                novelty_type = novelty_type - 1
+            novelty_type_val = row['novelty_type']
+            if pd.isna(novelty_type_val):
+                novelty_type = None
+            else:
+                novelty_type = torch.tensor(row['novelty_type'], dtype=torch.long)
+                # There is no novelty type 1, but we want novelty type class
+                # labels to be contiguous. Adjust labels appropriately.
+                if novelty_type >= 2:
+                    novelty_type = novelty_type - 1
 
             annot["boxes"] = boxes
             annot["species"] = species

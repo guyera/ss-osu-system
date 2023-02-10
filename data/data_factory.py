@@ -94,7 +94,7 @@ class DataFactory(Dataset):
             raise ValueError("Unknown dataset ", name)
 
         json_path = f'{os.path.splitext(csv_path)[0]}.json'
-        self.dataset = CustomDet(root=data_root, csv_path=csv_path, json_path=json_path, n_species_cls=n_species_cls, n_activity_cls=n_activity_cls, label_mapper=label_mapper, target_transform=pocket.ops.ToTensor(input_format='dict'), image_filter=image_filter)
+        self.dataset = CustomDet(root=data_root, csv_path=csv_path, json_path=json_path, n_species_cls=n_species_cls, n_activity_cls=n_activity_cls, label_mapper=label_mapper, image_filter=image_filter)
 
         self.name = name
 

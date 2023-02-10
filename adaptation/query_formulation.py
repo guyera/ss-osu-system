@@ -18,7 +18,7 @@ def smallest_non_none(A):
     return smallest
 
 
-def select_queries(budget, P_type, P_N, A_S, A_V, A_O):
+def select_queries(budget, P_N):
     ''' 
     Formulates a set of images for which we'll be asking
     for oracle feedback.
