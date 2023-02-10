@@ -534,7 +534,7 @@ class TopLevelApp:
         N = len(novelty_dataset)
         
         df = pd.read_csv(csv_path, index_col=0)
-        image_paths = df['new_image_path'].to_list()
+        image_paths = df['image_path'].to_list()
         json_path = f'{os.path.splitext(csv_path)[0]}.json'
         with open(json_path, 'r') as f:
             bboxes = json.load(f)
