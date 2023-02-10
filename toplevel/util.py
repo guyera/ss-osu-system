@@ -136,6 +136,8 @@ class UnsupervisedNoveltyDetectionManager:
         activity_probs = []
         with torch.no_grad():
             for _, _, _, box_images, whole_images in dataset:
+                box_images = box_images.to(backbone.device)
+                whole_images = whole_images.to(backbone.device)
                 box_features = backbone(box_images)
                 whole_image_features =\
                     self.activation_statistical_model.compute_features(
