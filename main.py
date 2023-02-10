@@ -26,7 +26,7 @@ if __name__ == "__main__":
     p.add_argument('--url', default='http://127.0.0.1:8002')
     p.add_argument('--class_count', type=int, default=29)
     p.add_argument('--batch_size', type=int, default=4)
-    p.add_argument('--domain', default='svo_classification')
+    p.add_argument('--domain', default='image_classification')
     p.add_argument('--detector_seed', type=int, default=1234)
     p.add_argument('--version', default='101')
     p.add_argument('--sys_results_dir', default='./session/temp/SVO_10_test_trials_csv60_with_detection_feedback')
