@@ -244,6 +244,7 @@ class BBNSession:
                                   (filename, species_counts_str, species_presence_str, activity_presence_str))
 
     def run(self, detector_seed, test_ids=None):
+        print('Running')
         if not test_ids:
             # test_ids = requests.get(
             #     f"{self.url}/test/ids?protocol={self.protocol}&detector_seed={detector_seed}").content.decode('utf-8').split('\n')
@@ -253,10 +254,13 @@ class BBNSession:
             if self.api_stubs:
                 test_ids = self.api_stubs.test_ids()
             else:
+                print(self.url)
                 result = requests.get(
                     f"{self.url}/test/ids?protocol={self.protocol}&detector_seed={detector_seed}&domain={self.domain}")
 
                 test_ids = result.content.decode('utf-8').split('\n')
+                print('Got test IDs:')
+                print(test_ids)
 
                 # Need to remove possible final empty strings
                 test_ids = [test_id for test_id in test_ids if test_id.strip("\n\t\"',.") != ""]
@@ -281,6 +285,7 @@ class BBNSession:
                     'hints': ['red_light' if self.given_detection else '']
                 }
             })
+            # print(response.content.decode('utf-8'))
             session_id = ast.literal_eval(response.content.decode('utf-8'))['session_id']
         if self.osu_stubs:
             self.osu_stubs.start_session(session_id, detection_feedback=True, given_detection=self.given_detection)
