@@ -1,3 +1,4 @@
+import json
 import re
 import itertools
 from pathlib import Path
@@ -82,9 +83,6 @@ class TopLevelApp:
         x = np.linalg.solve(a, b)
         self.post_red_transform = np.array([x[0], x[1]])        
         
-        self.subj_novelty_scores_un = []
-        self.verb_novelty_scores_un = []
-        self.obj_novelty_scores_un = []
         self.log = log
         self.log_dir = log_dir
         self.characterization_preds = []
@@ -214,9 +212,6 @@ class TopLevelApp:
         self.all_top_3_svo = []
         self.all_p_type = torch.tensor([])
         self.post_red_base = None
-        self.subj_novelty_scores_un = []
-        self.verb_novelty_scores_un = []
-        self.obj_novelty_scores_un = []
         self.characterization_preds = []
         self.per_image_p_type = torch.tensor([])
         self.all_red_light_scores = np.array([])
@@ -240,19 +235,18 @@ class TopLevelApp:
         novelty_dataset, N, image_paths, bboxes, df = self._load_data(csv_path)
 
         # unsupervised novelty scores
+        print(N)
         unsupervised_results = self.und_manager.score(self.backbone, novelty_dataset)
 
-        scores_u = unsupervised_results['scores']
+        scores = unsupervised_results['scores']
         species_probs = unsupervised_results['species_probs']
         activity_probs = unsupervised_results['activity_probs']
-        assert len(scores_u) == len(species_probs_u) == len(activity_probs_u)
-
-        self.scores_un += scores_u
+        assert len(scores) == len(species_probs) == len(activity_probs)
 
         # compute P_n
         with torch.no_grad():
             batch_p_type, p_ni = compute_probability_novelty(
-                scores_u,
+                scores,
                 self.und_manager.novelty_type_classifier,
                 hint_a=hint_typeA_data,
                 hint_b=hint_typeB_data
@@ -299,7 +293,6 @@ class TopLevelApp:
         self.predictions.append(predictions)
 
         self.batch_context.p_ni = p_ni
-        self.batch_context.scores_u = scores_u
         self.batch_context.image_paths = image_paths
         self.batch_context.bboxes = bboxes
         self.batch_context.novelty_dataset = novelty_dataset
@@ -333,9 +326,6 @@ class TopLevelApp:
         test_dir.mkdir(exist_ok=True) 
         with open(test_dir.joinpath(f'{test_id}.pkl'), 'wb') as handle:
             logs = {}
-            logs['subj_novelty_scores_un'] = [s.cpu() if s is not None else None for s in self.subj_novelty_scores_un]
-            logs['verb_novelty_scores_un'] = [s.cpu() if s is not None else None for s in self.verb_novelty_scores_un]
-            logs['obj_novelty_scores_un'] = [s.cpu() if s is not None else None for s in self.obj_novelty_scores_un]
             logs['p_ni'] = self.all_p_ni.numpy()
             logs['p_ni_raw'] = self.all_p_ni_raw        
             logs['per_img_p_type'] = self.per_image_p_type.numpy()
@@ -353,9 +343,7 @@ class TopLevelApp:
         assert self.batch_context.is_set(), "no batch context."
         assert self.feedback_enabled, "feedback is disabled"
 
-        query_indices = select_queries(feedback_max_ids, torch.tensor([1/3, 1/3, 1/3, 0]), self.batch_context.p_ni, 
-            self.batch_context.subject_novelty_scores_u, self.batch_context.verb_novelty_scores_u, 
-            self.batch_context.object_novelty_scores_u)
+        query_indices = select_queries(feedback_max_ids, self.batch_context.p_ni)
 
         img_paths = self.batch_context.image_paths[query_indices]
         bboxes = {}
@@ -528,7 +516,8 @@ class TopLevelApp:
             label_mapper=self.static_label_mapper,
             box_transform=self.box_transform,
             cache_dir=None,
-            write_cache=False
+            write_cache=False,
+            image_filter=None
         )
 
         N = len(novelty_dataset)
@@ -539,27 +528,7 @@ class TopLevelApp:
         with open(json_path, 'r') as f:
             bboxes = json.load(f)
 
-        cases = df.apply(lambda row : self._compute_case(row['subject_ymin'], row['subject_xmin'], 
-            row['subject_ymax'], row['subject_xmax'], 
-            row['object_ymin'], row['object_xmin'], row['object_ymax'], row['object_xmax']), axis = 1)
-        df['case'] = cases.to_numpy()
-
         return novelty_dataset, N, image_paths, bboxes, df
-
-    def _compute_case(self, sbox_ymin, sbox_xmin, sbox_ymax, sbox_xmax, obox_ymin, obox_xmin, obox_ymax, obox_xmax):
-        has_subject = sbox_ymin >= 0 and sbox_ymax >= 0 and sbox_xmin >= 0 and sbox_xmax >= 0
-        has_object = obox_ymin >= 0 and obox_ymax >= 0 and obox_xmin >= 0 and obox_xmax >= 0
-
-        if has_subject and has_object:
-            return 1
-        
-        if has_subject and not has_object:
-            return 2
-
-        if not has_subject and has_object:
-            return 3
-
-        raise Exception(f'Invalid subject/object box coords, {has_subject}, {has_object}')
 
     def _accumulate(self, top_3, p_ni, p_ni_raw, p_type):
         self.all_top_3_svo += top_3
@@ -667,3 +636,5 @@ class TopLevelApp:
                 self.und_manager.case_2_logistic_regression,
                 self.und_manager.case_3_logistic_regression,
                 self.und_manager.activation_statistical_model)
+            self.backbone.eval()
+            # TODO set everything else to eval as well
