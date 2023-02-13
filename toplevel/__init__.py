@@ -285,10 +285,8 @@ class TopLevelApp:
         self.batch_context.p_ni = p_ni
         self.batch_context.image_paths = image_paths
         self.batch_context.bboxes = bboxes
-        self.batch_context.novelty_dataset = novelty_dataset
         self.batch_context.predictions = predictions
         self.batch_context.p_type = batch_p_type
-        self.batch_context.round_id = round_id
 
         red_light_scores = self._compute_red_light_scores(p_ni, N, img_paths)
 
@@ -332,7 +330,7 @@ class TopLevelApp:
         assert self.feedback_enabled, "feedback is disabled"
 
         bbox_counts = [
-            len(self.batch_context.bboxes[img_path])\
+            len(self.batch_context.bboxes[os.path.basename(img_path)])\
                 for img_path in self.batch_context.image_paths
         ]
         bbox_counts = torch.tensor(
@@ -346,9 +344,10 @@ class TopLevelApp:
             bbox_counts
         )
 
-        img_paths = self.batch_context.image_paths[query_indices]
+        selected_img_paths =\
+            [self.batch_context.image_paths[i] for i in query_indices]
         bboxes = {}
-        for img_path in img_paths:
+        for img_path in selected_img_paths:
             img_name = os.path.basename(img_path)
             bboxes[img_name] = self.batch_context.bboxes[img_name]
 
@@ -357,15 +356,12 @@ class TopLevelApp:
         self.batch_context.query_mask[query_indices] = 1
         self.batch_context.query_indices = query_indices
 
-        return [self.batch_context.image_paths[i] for i in query_indices], bboxes
+        return selected_img_paths, bboxes
 
     def feedback_callback(self, feedback_csv_path):
         assert self.post_red, "query selection shoudn't happen pre-red button"
         assert self.batch_context.is_set(), "no batch context."
         assert self.feedback_enabled, "feedback is disabled"
-
-        N = len(self.batch_context.image_paths)
-        feedback_t = torch.tensor(feedback, dtype=torch.long)
 
         p_ni_raw = np.copy(self.batch_context.p_ni)
         # TODO adjust batch_context.p_ni and batch_context.all_p_type
@@ -380,6 +376,7 @@ class TopLevelApp:
         self._accumulate(self.batch_context.predictions, self.batch_context.p_ni, p_ni_raw,
             self.batch_context.p_type)
 
+        df = pd.read_csv(feedback_csv_path)
         self.novelty_trainer.add_feedback_data(self.data_root, feedback_csv_path)
 
         if not self.disable_retraining:
@@ -513,6 +510,10 @@ class TopLevelApp:
         json_path = f'{os.path.splitext(csv_path)[0]}.json'
         with open(json_path, 'r') as f:
             bboxes = json.load(f)
+        for img_path in image_paths:
+            bn = os.path.basename(img_path)
+            if bn not in bboxes:
+                bboxes[bn] = []
 
         return novelty_dataset, N, image_paths, bboxes, df
 

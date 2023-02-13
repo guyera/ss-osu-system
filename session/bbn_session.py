@@ -58,7 +58,7 @@ class BBNSession:
         if self.api_stubs:
             self.api_stubs.clear_results_dirs()
 
-    def request_detection_feedback(self, session_id, test_id, round_id, feedback_ids):
+    def request_feedback(self, session_id, test_id, round_id, feedback_ids):
         # print(f'====> Requesting detection feedback on round {round_id} for {len(feedback_ids)} images.')
         if self.api_stubs:
             return self.api_stubs.detection_feedback(test_id, round_id, feedback_ids)
@@ -68,7 +68,7 @@ class BBNSession:
                 {'session_id': session_id,
                  'test_id': test_id,
                  'round_id': round_id,
-                 'feedback_type': 'detection',
+                 'feedback_type': 'classification',
                  'feedback_ids': '|'.join(feedback_ids),
                  }
             )
@@ -254,13 +254,10 @@ class BBNSession:
             if self.api_stubs:
                 test_ids = self.api_stubs.test_ids()
             else:
-                print(self.url)
                 result = requests.get(
                     f"{self.url}/test/ids?protocol={self.protocol}&detector_seed={detector_seed}&domain={self.domain}")
 
                 test_ids = result.content.decode('utf-8').split('\n')
-                print('Got test IDs:')
-                print(test_ids)
 
                 # Need to remove possible final empty strings
                 test_ids = [test_id for test_id in test_ids if test_id.strip("\n\t\"',.") != ""]
@@ -488,7 +485,7 @@ class BBNSession:
                     num_ids_to_request = len(filenames) if self.given_detection else feedback_max_ids
                     feedback_ids, feedback_bboxes = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
                                                                                 filenames, num_ids_to_request)
-                    feedback_csv_content = self.request_detection_feedback(session_id, test_id, round_id,
+                    feedback_csv_content = self.request_feedback(session_id, test_id, round_id,
                                                                                 feedback_ids)
 
                     self.osu_stubs.record_detection_feedback(test_id, round_id, feedback_csv_content, feedback_bboxes)

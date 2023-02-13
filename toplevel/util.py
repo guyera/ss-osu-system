@@ -16,26 +16,20 @@ class BatchContext:
         self.query_mask = None
         self.p_ni = None
         self.image_paths = None
-        self.novelty_dataset = None
         self.bboxes = None
         self.query_indices = None
         self.predictions = None
         self.p_type = None
-        self.round_id = None
 
     def is_set(self):
-        attrs = [
-            self.query_mask,
+        set_attrs = [
             self.p_ni,
             self.image_paths,
-            self.novelty_dataset,
             self.bboxes,
-            self.query_indices,
             self.predictions,
-            self.p_type,
-            self.round_id
+            self.p_type
         ]
-        return all([x is not None for x in attrs])
+        return all([x is not None for x in set_attrs])
 
 
 class UnsupervisedNoveltyDetectionManager:

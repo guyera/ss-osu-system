@@ -2524,6 +2524,7 @@ class TuplePredictorTrainer:
         self._classifier_trainer = classifier_trainer
         self._feedback_batch_size = feedback_batch_size
         self._feedback_data = []
+        self._n_feedback_examples = 0
 
     def add_feedback_data(self, data_root, csv_path):
         new_novel_dataset = BoxImageDataset(
@@ -2543,6 +2544,10 @@ class TuplePredictorTrainer:
 
         # Put new feedback data in list
         self._feedback_data.append(new_novel_dataset)
+        self._n_feedback_examples += len(new_novel_dataset)
+
+    def n_feedback_examples(self):
+        return self._n_feedback_examples
 
     # Should be called before train_novelty_detection_module(), except when
     # training for the very first time manually. This prepares the
