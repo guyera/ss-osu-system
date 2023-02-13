@@ -122,7 +122,8 @@ class BoxImageDataset(torch.utils.data.Dataset):
             pil_box_image = Image.open(box_image_cache_file)
             box_image = to_tensor(pil_box_image)
             box_images.append(box_image)
-        box_images = torch.stack(box_images, dim=0)
+        if len(box_images) > 0:
+            box_images = torch.stack(box_images, dim=0)
 
         return species_labels,\
             activity_labels,\
@@ -145,11 +146,12 @@ class BoxImageDataset(torch.utils.data.Dataset):
             image_tensor = images.tensors[0]
             image_size = images.image_sizes[0]
             target = targets[0]
-            detection['boxes'] = transform.resize_boxes(
-                detection['boxes'],
-                original_image_size,
-                image_size
-            )
+            if len(detection['boxes']) > 0:
+                detection['boxes'] = transform.resize_boxes(
+                    detection['boxes'],
+                    original_image_size,
+                    image_size
+                )
 
             species_labels = target['species']
             species_labels = species_labels.detach()\
@@ -173,7 +175,8 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 if self._box_transform is not None:
                     box_image = self._box_transform(box_image)
                 box_images.append(box_image)
-            box_images = torch.stack(box_images, dim=0)
+            if len(box_images) > 0:
+                box_images = torch.stack(box_images, dim=0)
             whole_image = self._box_transform(image_tensor)
 
             # Cache data if configured to do so

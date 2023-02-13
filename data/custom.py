@@ -216,7 +216,10 @@ class CustomDet(Dataset):
 
             image_path = row['image_path']
             basename = os.path.basename(image_path)
-            boxes = box_dict[basename]
+            if basename in box_dict:
+                boxes = box_dict[basename]
+            else:
+                boxes = []
 
             novelty_type_val = row['novelty_type']
             if pd.isna(novelty_type_val):
