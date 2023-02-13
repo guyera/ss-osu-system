@@ -26,6 +26,19 @@ class TuplePredictor:
             unique_types,
             novel_box_type,
             combination_type):
+        # If there are no box images, then return a bunch of zeros for
+        # both presence and counts
+        if len(class_probs) == 0:
+            zero_count = torch.zeros(
+                class_probs.shape[1],
+                device=class_probs.device
+            )
+            zero_presence = torch.zeros(
+                class_probs.shape[1],
+                device=class_probs.device
+            )
+            return zero_count, zero_presence
+
         # NOTE: Comments draw out math from the perspective of species.
         # Translating to activities, type 2 <-> type 3, and type 4 <-> type 5.
         # In the comments, type 2 means "novel box", type 4 means "combination",

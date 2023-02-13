@@ -330,7 +330,20 @@ class TopLevelApp:
         assert self.batch_context.is_set(), "no batch context."
         assert self.feedback_enabled, "feedback is disabled"
 
-        query_indices = select_queries(feedback_max_ids, self.batch_context.p_ni)
+        bbox_counts = [
+            len(self.batch_context.bboxes[img_path])\
+                for img_path in self.batch_context.image_paths
+        ]
+        bbox_counts = torch.tensor(
+            bbox_counts,
+            dtype=torch.long,
+            device=self.batch_context.p_ni.device
+        )
+        query_indices = select_queries(
+            feedback_max_ids,
+            self.batch_context.p_ni,
+            bbox_counts
+        )
 
         img_paths = self.batch_context.image_paths[query_indices]
         bboxes = {}
