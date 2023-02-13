@@ -15,27 +15,35 @@ class TuplePredictor:
         n_known_activity_cls: int
             The number of known activity classes
     '''
-    def __init__(self, n_known_species_cls, n_known_activity_cls):
+    def __init__(
+            self,
+            n_species_cls,
+            n_activity_cls,
+            n_known_species_cls,
+            n_known_activity_cls):
+        self._n_species_cls = n_species_cls
+        self._n_activity_cls = n_activity_cls
         self._n_known_species_cls = n_known_species_cls
         self._n_known_activity_cls = n_known_activity_cls
 
     def _counts_presence(self,
             class_probs,
             p_type,
+            n_cls,
             n_known_cls,
             unique_types,
             novel_box_type,
             combination_type):
         # If there are no box images, then return a bunch of zeros for
         # both presence and counts
-        if len(class_probs) == 0:
+        if class_probs is None:
             zero_count = torch.zeros(
-                class_probs.shape[1],
-                device=class_probs.device
+                n_cls,
+                device=p_type.device
             )
             zero_presence = torch.zeros(
-                class_probs.shape[1],
-                device=class_probs.device
+                n_cls,
+                device=p_type.device
             )
             return zero_count, zero_presence
 
@@ -440,6 +448,7 @@ class TuplePredictor:
             species_count, species_presence = self._counts_presence(
                 cur_species_probs,
                 cur_p_type,
+                self._n_species_cls,
                 self._n_known_species_cls,
                 [0, 2, 4, 5],
                 1,
@@ -448,6 +457,7 @@ class TuplePredictor:
             activity_count, activity_presence = self._counts_presence(
                 cur_activity_probs,
                 cur_p_type,
+                self._n_activity_cls,
                 self._n_known_activity_cls,
                 [0, 1, 3, 5],
                 2,

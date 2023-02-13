@@ -10,45 +10,32 @@ import os
 
 class BatchContext:
     def __init__(self):
-        self.query_mask = None
-        self.feedback_mask = None
-        self.p_ni = None
-        self.subject_novelty_scores_u = None
-        self.verb_novelty_scores_u = None
-        self.object_novelty_scores_u = None
-        self.image_paths = None
-        self.novelty_dataset = None
-        self.query_indices = None
-        self.top_3 = None
-        self.s_unknown = None
-        self.v_unknown = None
-        self.o_unknown = None
-        self.p_type = None
-        self.df = None
-        self.round_id = None
+        self.reset()
 
     def reset(self):
         self.query_mask = None
-        self.feedback_mask = None
         self.p_ni = None
-        self.subject_novelty_scores_u = None
-        self.verb_novelty_scores_u = None
-        self.object_novelty_scores_u = None
         self.image_paths = None
         self.novelty_dataset = None
+        self.bboxes = None
         self.query_indices = None
-        self.top_3 = None
-        self.s_unknown = None
-        self.v_unknown = None
-        self.o_unknown = None
+        self.predictions = None
         self.p_type = None
-        self.df = None
         self.round_id = None
 
     def is_set(self):
-        return self.p_ni is not None and self.subject_novelty_scores_u is not None and \
-            self.verb_novelty_scores_u is not None and self.object_novelty_scores_u is not None and \
-            self.image_paths is not None and self.novelty_dataset is not None and self.df is not None
+        attrs = [
+            self.query_mask,
+            self.p_ni,
+            self.image_paths,
+            self.novelty_dataset,
+            self.bboxes,
+            self.query_indices,
+            self.predictions,
+            self.p_type,
+            self.round_id
+        ]
+        return all([x is not None for x in attrs])
 
 
 class UnsupervisedNoveltyDetectionManager:
@@ -61,6 +48,8 @@ class UnsupervisedNoveltyDetectionManager:
         n_known_activity_cls):
        
         self.tuple_predictor = TuplePredictor(
+            n_species_cls,
+            n_activity_cls,
             n_known_species_cls,
             n_known_activity_cls
         )
@@ -136,6 +125,12 @@ class UnsupervisedNoveltyDetectionManager:
         activity_probs = []
         with torch.no_grad():
             for _, _, _, box_images, whole_images in dataset:
+                if len(box_images) == 0:
+                    scores.append(None)
+                    species_probs.append(None)
+                    activity_probs.append(None)
+                    continue
+
                 box_images = box_images.to(backbone.device)
                 whole_images = whole_images.to(backbone.device)
                 box_features = backbone(box_images)
@@ -160,9 +155,8 @@ class UnsupervisedNoveltyDetectionManager:
                     cur_activity_logits,
                     whole_image_features,
                     [cur_species_logits.shape[0]]
-                )
+                ).squeeze(0)
                 scores.append(cur_scores)
-            scores = torch.cat(scores, dim=0)
 
             results = {}
             results['scores'] = scores

@@ -124,6 +124,8 @@ class BoxImageDataset(torch.utils.data.Dataset):
             box_images.append(box_image)
         if len(box_images) > 0:
             box_images = torch.stack(box_images, dim=0)
+        else:
+            box_images = torch.empty(0, 0, 0, 0)
 
         return species_labels,\
             activity_labels,\
@@ -177,6 +179,8 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 box_images.append(box_image)
             if len(box_images) > 0:
                 box_images = torch.stack(box_images, dim=0)
+            else:
+                box_images = torch.empty(0, 0, 0, 0)
             whole_image = self._box_transform(image_tensor)
 
             # Cache data if configured to do so

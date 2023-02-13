@@ -48,6 +48,7 @@ class NoveltyTypeClassifier(torch.nn.Module):
 def compute_probability_novelty(
         scores,
         novelty_type_classifier,
+        device,
         hint_a = None,
         hint_b = None):
     '''
@@ -66,11 +67,23 @@ def compute_probability_novelty(
     '''
     p_type = []
     p_n = []
-    separated_p_type = []
-    device = scores.device
 
     for idx in range(len(scores)):
         img_scores = scores[idx]
+        if img_scores is None:
+            # Image was empty. Assume non-novel.
+            # TODO Maybe we should allow novel empty images. But in that case
+            # we have to train a separate logistic regression for empty images
+            # since there are still activation statistical scores but no
+            # box logit scores
+            cur_p_type = torch.zeros(6, device=device)
+            cur_p_type[0] = 1.0
+            p_type.append(
+                cur_p_type
+            )
+            cur_p_n = 1.0 - cur_p_type[0]
+            p_n.append(cur_p_n)
+            continue
         
         if hint_b is not None:
             cur_hint_b = hint_b[idx]

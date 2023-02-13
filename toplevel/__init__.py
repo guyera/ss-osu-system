@@ -241,6 +241,7 @@ class TopLevelApp:
             batch_p_type, p_ni = compute_probability_novelty(
                 scores,
                 self.und_manager.novelty_type_classifier,
+                self.backbone.device,
                 hint_a=hint_typeA_data,
                 hint_b=hint_typeB_data
             )
@@ -611,6 +612,7 @@ class TopLevelApp:
         
         if retrain_cond_1 or retrain_cond_2:
             self.num_retrains_so_far += 1
+            # TODO TODO update everything below
             self.novelty_trainer.prepare_for_retraining(self.backbone, self.und_manager.classifier, 
                 self.und_manager.case_1_logistic_regression,
                 self.und_manager.case_2_logistic_regression,
