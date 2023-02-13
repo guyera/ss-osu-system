@@ -61,8 +61,7 @@ class TopLevelApp:
         self.all_p_ni = torch.tensor([])
         self.all_p_ni_raw = np.array([])
         self.all_nc = torch.tensor([])
-        self.all_top_1_svo = []
-        self.all_top_3_svo = []
+        self.all_predictions = []
         self.all_p_type = torch.tensor([])
         self.all_red_light_scores = np.array([])
 
@@ -112,9 +111,6 @@ class TopLevelApp:
         self.retraining_label_smoothing = retraining_label_smoothing
         self.retraining_scheduler_type = retraining_scheduler_type
         self.feedback_loss_weight = feedback_loss_weight
-
-        self.mergedSVO = []
-        self.mergedprobs = []
 
         self.backbone = Backbone(
             backbone_architecture,
@@ -208,8 +204,7 @@ class TopLevelApp:
         self.all_p_ni = torch.tensor([])
         self.all_p_ni_raw = np.array([])
         self.all_nc = torch.tensor([], dtype=torch.long)
-        self.all_top_1_svo = []
-        self.all_top_3_svo = []
+        self.all_predictions = []
         self.all_p_type = torch.tensor([])
         self.post_red_base = None
         self.characterization_preds = []
@@ -220,8 +215,6 @@ class TopLevelApp:
         self.t_tn = None
         self.batch_num = 0 
         self.num_retrains_so_far = 0
-        self.mergedSVO = []
-        self.mergedprobs = []
               
         self._reset_backbone_and_detectors()
 
@@ -255,8 +248,6 @@ class TopLevelApp:
         p_ni = p_ni.cpu().float()
         batch_p_type = batch_p_type.cpu()
         self.per_image_p_type = torch.cat([self.per_image_p_type, batch_p_type])
-        top3 = None
-        top3_probs = None
 
         # Update batch p type based on given detection hints
         if self.given_detection and not self.post_red:
@@ -283,14 +274,12 @@ class TopLevelApp:
             updated_batch_p_type = batch_p_type
 
         # Make predictions with updated batch p type
-        if not self.given_detection:
+        with torch.no_grad():
             predictions = self._predict(
                 species_probs,
                 activity_probs,
                 updated_batch_p_type
             )
-
-        self.predictions.append(predictions)
 
         self.batch_context.p_ni = p_ni
         self.batch_context.image_paths = image_paths
@@ -303,7 +292,7 @@ class TopLevelApp:
         red_light_scores = self._compute_red_light_scores(p_ni, N, img_paths)
 
         if not self.post_red or not self.feedback_enabled:
-            self._accumulate(top3, p_ni, p_ni.numpy(), batch_p_type)
+            self._accumulate(predictions, p_ni, p_ni.numpy(), batch_p_type)
 
         self.all_red_light_scores = np.concatenate([self.all_red_light_scores, red_light_scores])
         
@@ -329,8 +318,6 @@ class TopLevelApp:
             logs['p_ni'] = self.all_p_ni.numpy()
             logs['p_ni_raw'] = self.all_p_ni_raw        
             logs['per_img_p_type'] = self.per_image_p_type.numpy()
-            logs['mergedSVO'] = self.mergedSVO
-            logs['mergedprobs'] = self.mergedprobs
             logs['post_red_base'] = self.post_red_base
             logs['characterization'] = self.characterization_preds
             logs['red_light_scores'] = self.all_red_light_scores
@@ -376,7 +363,7 @@ class TopLevelApp:
         # characterize_round works to check for that override and use it
         # when available)
 
-        self._accumulate(self.batch_context.top_3, self.batch_context.p_ni, p_ni_raw,
+        self._accumulate(self.batch_context.predictions, self.batch_context.p_ni, p_ni_raw,
             self.batch_context.p_type)
 
         self.novelty_trainer.add_feedback_data(self.data_root, feedback_csv_path)
@@ -441,20 +428,6 @@ class TopLevelApp:
             
         return red_light_scores
             
-    def _merge_top3_SVOs(self, top3_non_novel, top3_novel, batch_p_ni):
-        batch_p_ni = batch_p_ni.reshape(-1)
-        N = len(batch_p_ni)
-        top3_non_novel = [[(x[i][0], x[i][1], x[i][1] * (1 - y)) for i in range(3)] for x, y in zip(top3_non_novel, batch_p_ni)]
-        top3_novel = [[(x[i][0], x[i][1], x[i][1] * y) for i in range(3)] for x, y in zip(top3_novel, batch_p_ni)]
-        all_tuples = [x + y for x, y in zip(top3_non_novel, top3_novel)]
-        comb_iter = [itertools.combinations(all_tuples[i], 3) for i in range(N)]
-        scores = [list(map(lambda x: (x, x[0][2] + x[1][2] + x[2][2]), comb_iter[i])) for i in range(N)]
-        top_3_svo = [sorted(i, key=lambda x: x[1], reverse=True)[0][0] for i in scores]
-        top_3_svo = [sorted(i, key=lambda x: x[2], reverse=True) for i in top_3_svo]
-        top_3_svo = [((a[0][0], a[0][2].item()), (a[1][0], a[1][2].item()), (a[2][0], a[2][2].item())) for a in top_3_svo]
-
-        return top_3_svo
-
 
     def characterize_round_zeros(self):
         round_characterization_preds = np.zeros(6)
@@ -462,11 +435,10 @@ class TopLevelApp:
         self.characterization_preds.append(round_characterization_preds)
 
     def characterize_round(self, red_light_dec):
-        if self.red_light_dec:
+        if red_light_dec:
             self.characterize_round_zeros()
             return
 
-        assert self.post_red, "type-inference shouldn't be called pre-red button"
         assert torch.numel(self.all_p_type) > 0, "no per-image p_type"
         assert self.all_p_ni.shape[0] == self.all_p_type.shape[0], "p_type/p_ni shape mismatch"
     
@@ -530,13 +502,13 @@ class TopLevelApp:
 
         return novelty_dataset, N, image_paths, bboxes, df
 
-    def _accumulate(self, top_3, p_ni, p_ni_raw, p_type):
-        self.all_top_3_svo += top_3
+    def _accumulate(self, predictions, p_ni, p_ni_raw, p_type):
+        self.all_predictions += predictions
         self.all_p_ni = torch.cat([self.all_p_ni, p_ni])
         self.all_p_ni_raw = np.concatenate([self.all_p_ni_raw, p_ni_raw])
         self.all_p_type = torch.cat([self.all_p_type, p_type])
         
-        assert self.all_p_ni.shape[0] == self.all_p_type.shape[0] == len(self.all_top_3_svo)
+        assert self.all_p_ni.shape[0] == self.all_p_type.shape[0] == len(self.all_predictions)
 
     def _reset_backbone_and_detectors(self):
         backbone_state_dict = torch.load(
