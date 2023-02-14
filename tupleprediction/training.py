@@ -2718,7 +2718,7 @@ class TuplePredictorTrainer:
             collate_fn=custom_collate,
             num_workers=2
         )
-        
+
         with torch.no_grad():
             # Extract novelty scores and labels
             scores = []

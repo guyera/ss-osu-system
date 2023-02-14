@@ -35,7 +35,7 @@ if __name__ == "__main__":
     p.add_argument('--hintB', default=False)
     p.add_argument('--root-cache-dir', type=str, default='./.data-cache')
     p.add_argument('--n-known-val', type=int, default=4068)
-    p.add_argument('--precomputed-feature-dir', type=str, default='/nfs/hpc/share/guyera/projects/ss-osu-system/features/resizepad=224/none/normalized')
+    p.add_argument('--precomputed-feature-dir', type=str, default='/nfs/hpc/share/guyera/projects/ss-osu-system/.features/resizepad=224/none/normalized')
     p.add_argument('--retraining-augmentation', type=Augmentation, choices=list(Augmentation), default=Augmentation.none)
     p.add_argument('--retraining-lr', type=float, default=0.005)
     p.add_argument('--retraining-batch-size', type=int, default=32)
