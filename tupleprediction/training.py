@@ -2555,7 +2555,6 @@ class TuplePredictorTrainer:
     # retraining.
     def prepare_for_retraining(
             self,
-            backbone,
             classifier,
             confidence_calibrator,
             novelty_type_classifier,
@@ -2779,15 +2778,7 @@ class TuplePredictorTrainer:
             novelty_type_classifier,
             activation_statistical_model,
             scorer,
-            lr=0.0005,
-            root_checkpoint_dir=None,
-            root_log_dir=None,
-            train_sampler_fn=None,
-            patience=3,
-            min_epochs=3,
-            max_epochs=30,
-            label_smoothing=0.0,
-            scheduler_type=SchedulerType.none):
+            root_log_dir=None):
         species_classifier = classifier.species_classifier
         activity_classifier = classifier.activity_classifier
         species_calibrator = confidence_calibrator.species_calibrator

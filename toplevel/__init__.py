@@ -610,19 +610,21 @@ class TopLevelApp:
     def _retrain_supervised_detectors(self):
         retrain_cond_1 = self.num_retrains_so_far == 0 and self.novelty_trainer.n_feedback_examples() >= 15
         retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.novelty_trainer.n_feedback_examples() > 0)
-        
+
         if retrain_cond_1 or retrain_cond_2:
             self.num_retrains_so_far += 1
-            # TODO TODO update everything below
-            self.novelty_trainer.prepare_for_retraining(self.backbone, self.und_manager.classifier, 
-                self.und_manager.case_1_logistic_regression,
-                self.und_manager.case_2_logistic_regression,
-                self.und_manager.case_3_logistic_regression,
-                self.und_manager.activation_statistical_model)
-            self.novelty_trainer.train_novelty_detection_module(self.backbone, self.und_manager.classifier, 
-                self.und_manager.case_1_logistic_regression,
-                self.und_manager.case_2_logistic_regression,
-                self.und_manager.case_3_logistic_regression,
-                self.und_manager.activation_statistical_model)
+            self.novelty_trainer.prepare_for_retraining(
+                self.und_manager.classifier, 
+                self.und_manager.confidence_calibrator,
+                self.und_manager.novelty_type_classifier,
+                self.und_manager.activation_statistical_model
+            )
+            self.novelty_trainer.train_novelty_detection_module(
+                self.backbone,
+                self.und_manager.classifier, 
+                self.und_manager.confidence_calibrator,
+                self.und_manager.novelty_type_classifier,
+                self.und_manager.activation_statistical_model,
+                self.und_manager.scorer
+            )
             self.backbone.eval()
-            # TODO set everything else to eval as well
