@@ -98,7 +98,7 @@ class CustomDet(Dataset):
         annot = self._anno[i]
         species = annot['species']
         target['species'] =\
-            species.clone().detach if species is not None else None
+            species.clone().detach() if species is not None else None
         activity = annot['activity']
         target['activity'] =\
             activity.clone().detach() if activity is not None else None
