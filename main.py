@@ -33,7 +33,7 @@ if __name__ == "__main__":
     p.add_argument('--test_ids', nargs="+", default=None)
     p.add_argument('--hintA', default=False)
     p.add_argument('--hintB', default=False)
-    p.add_argument('--root-cache-dir', type=str, default='./.data-cache')
+    p.add_argument('--root-cache-dir', type=str, default='/nfs/hpc/share/sail_on3/.data-cache')
     p.add_argument('--n-known-val', type=int, default=4068)
     p.add_argument('--precomputed-feature-dir', type=str, default='/nfs/hpc/share/guyera/projects/ss-osu-system/.features/resizepad=224/none/normalized')
     p.add_argument('--retraining-augmentation', type=Augmentation, choices=list(Augmentation), default=Augmentation.none)

@@ -191,7 +191,7 @@ class CustomDet(Dataset):
         for i, row in df.iterrows():
             annot = dict()
 
-            species = torch.zeros(self._n_species_cls)
+            species = torch.zeros(self._n_species_cls, dtype=torch.long)
             for species_idx in [1, 2, 3]:
                 id_string = f'agent{species_idx}_id'
                 count_string = f'agent{species_idx}_count'
