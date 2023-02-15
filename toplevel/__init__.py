@@ -228,7 +228,6 @@ class TopLevelApp:
         novelty_dataset, N, image_paths, bboxes, df = self._load_data(csv_path)
 
         # unsupervised novelty scores
-        print(N)
         unsupervised_results = self.und_manager.score(self.backbone, novelty_dataset)
 
         scores = unsupervised_results['scores']
