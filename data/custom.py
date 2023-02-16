@@ -211,7 +211,7 @@ class CustomDet(Dataset):
                     activities_na.any():
                 activities = None
             else:
-                activities = torch.zeros(self._n_activity_cls, dtype=torch.long)
+                activities = torch.zeros(self._n_activity_cls, dtype=torch.bool)
                 activities[activity_ids] = 1
 
             image_path = row['image_path']
