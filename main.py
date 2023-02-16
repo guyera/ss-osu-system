@@ -39,7 +39,7 @@ if __name__ == "__main__":
     p.add_argument('--retraining-augmentation', type=Augmentation, choices=list(Augmentation), default=Augmentation.none)
     p.add_argument('--retraining-lr', type=float, default=0.005)
     p.add_argument('--retraining-batch-size', type=int, default=32)
-    p.add_argument('--retraining-patience', type=int, default=15)
+    p.add_argument('--retraining-patience', type=int, default=50)
     p.add_argument('--retraining-min-epochs', type=int, default=1)
     p.add_argument('--retraining-max-epochs', type=int, default=1000)
     p.add_argument('--retraining-label-smoothing', type=float, default=0.0)

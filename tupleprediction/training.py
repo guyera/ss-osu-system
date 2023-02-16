@@ -379,12 +379,14 @@ def multiple_instance_count_cross_entropy(predictions, targets):
         for _ in range(len(present_classes)):
             ## Consider all of the ways in which we can assign this class label
             ## to the correct number of the remaining boxes
-            cur_combinations = torch.combinations(
-                torch.arange(
-                    len(remaining_predictions),
-                    device=targets.device
+            cur_combinations = torch.tensor(
+                list(
+                    itertools.combinations(
+                        list(range(len(remaining_predictions))),
+                        remaining_targets[0]
+                    )
                 ),
-                r=remaining_targets[0]
+                device=targets.device
             )
 
             ## Get the predictions for the current present class associated with
@@ -423,7 +425,7 @@ def multiple_instance_count_cross_entropy(predictions, targets):
             # First, construct a compliment index for cur_combinations.
             # (Computing the complement of a multidimensional index is messy)
             all_boxes = torch.ones(
-                *(len(cur_combinations), remaining_predictions.shape[1]),
+                *(cur_combinations.shape),
                 dtype=torch.bool,
                 device=targets.device
             )
@@ -434,7 +436,7 @@ def multiple_instance_count_cross_entropy(predictions, targets):
             flattened_compliment[flattened_index] = False # Compliment step
             compliment_mask = flattened_compliment.reshape(*(all_boxes.shape))
             index_pool = torch.arange(
-                remaining_predictions.shape[1],
+                all_boxes.shape[1],
                 device=targets.device
             )
             cur_combinations_compliment = torch.stack(
@@ -473,7 +475,7 @@ def multiple_instance_count_cross_entropy(predictions, targets):
 
         ## Sum over combination_pred_running_products to compute the
         ## probability for the exhaustive logical OR satisfying the targets
-        sum_prob = combination_pred_running_products.sum()
+        sum_prob = combination_pred_running_product.sum()
 
         ## Compute per-image loss
         losses.append(-torch.log(sum_prob))
@@ -516,7 +518,7 @@ def multiple_instance_presence_cross_entropy(predictions, targets):
         # renormalizing the remaining probabilities.
         # 
         # From here on out, everything is conditioned on <others absent>,
-        # but it's left out the notation for brevity.
+        # but it's left out of the notation for brevity.
         # 
         # Next, we can compute:
         # P(A, B, C present) = 1 - P(A, B, or C is absent)
@@ -541,14 +543,13 @@ def multiple_instance_presence_cross_entropy(predictions, targets):
         # the rows (and there's a row per box).
 
         # Step 1: Compute P(others absent)
-        absent_predictions = img_predictions[:, ~img_targets]
-        prob_others_absent = torch.prod(1 - absent_predictions.sum(dim=1))
+        present_predictions = img_predictions[:, img_targets]
+        prob_others_absent = torch.prod(present_predictions.sum(dim=1))
 
         # Step 2: Filter out present-class predictions and condition on
         # the event <others absent>
         # TODO handle case where denominator == 0. This might require moving
         # computations to the log space
-        present_predictions = img_predictions[:, img_targets]
         cond_present_predictions = present_predictions / \
             present_predictions.sum(dim=1, keepdim=True)
 
@@ -559,12 +560,14 @@ def multiple_instance_presence_cross_entropy(predictions, targets):
         add_iteration = True
         for i in range(1, cond_present_predictions.shape[1] + 1):
             # Compute the class indices for the N choose i conjunctions
-            cur_combinations = torch.combinations(
-                torch.arange(
-                    cond_present_predictions.shape[1],
-                    device=targets.device
+            cur_combinations = torch.tensor(
+                list(
+                    itertools.combinations(
+                        list(range(cond_present_predictions.shape[1])),
+                        i
+                    )
                 ),
-                r=i
+                device=targets.device
             )
 
             # Index the classes using cur_combinations
@@ -590,6 +593,9 @@ def multiple_instance_presence_cross_entropy(predictions, targets):
             else:
                 prob_any_absent =\
                     prob_any_absent - absence_conjunction_sum
+
+            # Toggle add_iteration
+            add_iteration = not add_iteration
 
         # Step 4: We have
         # P(any of the ground-truth present classes are absent | others absent).
