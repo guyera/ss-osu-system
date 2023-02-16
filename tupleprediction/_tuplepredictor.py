@@ -65,6 +65,18 @@ class TuplePredictor:
         # P(all S_j=k | all S_j are the same and known)
         same_class_probs = torch.prod(known_class_probs, dim=0)
         unique_types_class_probs = same_class_probs / same_class_probs.sum()
+        unique_types_class_probs[
+            same_class_probs.isclose(torch.tensor(0.0, device=p_type.device))
+        ] = 0.0
+
+        # If all unique types class probs are zero, then we'll end up with
+        # a prediction of zero agents. In that case, we should renormalize
+        # to a uniform distribution
+        normalizer = unique_types_class_probs.sum()
+        if normalizer != 0:
+            unique_types_class_probs /= normalizer
+        else:
+            unique_types_class_probs[:] = 1.0 / len(unique_types_class_probs)
 
         # Compute the class count vector given that all the class are the
         # same and known (this can be done by just multiplying
@@ -134,6 +146,8 @@ class TuplePredictor:
         # novel labels
         known_class_cond_probs = \
             known_class_probs / known_class_probs.sum(dim=1, keepdim=True)
+        # TODO Set NANs to zero
+        # TODO If they're all zero, set them to the uniform distribution
 
         # known_class_cond_probs represents P(S_j=k | c), where c is the
         # condition: there are no novel class.
@@ -149,6 +163,8 @@ class TuplePredictor:
         # P(S_j=k | type=4)
         combination_type_class_probs = diff_class_cond_probs / \
             diff_class_cond_probs.sum(dim=1, keepdim=True)
+        # TODO Set NANs to zero
+        # TODO If they're all zero, set them to the uniform distribution
 
         # Compute class count vector for type 4
         combination_type_class_count = combination_type_class_probs.sum(dim=0)
@@ -186,6 +202,20 @@ class TuplePredictor:
         # = P(k present | valid t4, no novel boxes)
         # = P(k present, valid t4 | no novel boxes) / P(t4 | no novel boxes).
         combination_type_class_presence = p_cond_present_combination_type / p_cond_combination_type
+        combination_type_class_presence[
+            p_cond_present_combination_type.isclose(torch.tensor(0.0, device=p_type.device))
+        ] = 0.0
+        # TODO This may result in predicting zero presence for everything.
+        # But at least two of them MUST be present, given that the correct
+        # tuple is a combination novelty. We can probably determine a lower
+        # bound on the sums of the presences. e.g., if we know that at least
+        # one class must be present, then the OR of all of them should be
+        # 1, and the OR of all of them is less than or equal to the sum
+        # of each of them. That is, the sums of the presences of each class
+        # must be at least 1. In this case, we know that at least TWO known
+        # classes must be present, so maybe we can get a tighter lower bound.
+        # In either case, predicting that lower bound rather than a bunch
+        # of zeros will get us closer to the ground truth, at least.
 
         # Append zeros for the novel classes
         combination_type_class_presence = torch.cat(
@@ -211,13 +241,17 @@ class TuplePredictor:
         combined_novel_class_probs = novel_class_probs.sum(dim=1)
         known_or_novel_class_probs = \
             known_class_probs + combined_novel_class_probs[:, None]
+        # TODO Maybe we can't compute it this way. If one of the probabilities
+        # is zero but the rest aren't, that'll give us an NaN where there
+        # shouldn't be neither an NaN nor zero. We might have to do some
+        # fancy indexing instead
         unique_known_class_probs = \
             torch.prod(known_or_novel_class_probs, dim=0) / \
                 known_or_novel_class_probs
         known_unique_class_probs = \
             known_class_probs * unique_known_class_probs
 
-        # For novel s:
+        # For novel k:
         # P(S_j=k, <2 known class)
         # = P(S_j=k, \union_{known k}(remaining S_j in {k, novel}))
         # = P(S_j=k, \union_{known k}(A_k)),
@@ -253,6 +287,8 @@ class TuplePredictor:
  
         # P(N) = \prod_{remaining j'}(P(S_j' in novel))
         # = \prod_j'(P(S_j' in novel)) / P(S_j in novel)
+        # TODO again, we might have to do some fancy indexing instead. Otherwise
+        # we'll get NaNs or zeros where we shouldn't.
         prob_remaining_novel =\
             torch.prod(combined_novel_class_probs, dim=0) /\
                 combined_novel_class_probs
@@ -274,6 +310,9 @@ class TuplePredictor:
         # P(S_j=k | <2 known class)
         unique_class_cond_probs = \
             unique_class_probs / unique_class_probs.sum(dim=1, keepdim=True)
+        # TODO Set NANs to zero
+        # TODO If they're all zero for a given box, set them to the uniform
+        # distribution
 
         # Extract known and novel parts of conditional probabilities
         known_unique_class_cond_probs = \
@@ -308,6 +347,8 @@ class TuplePredictor:
         # P(S_j=k | >=1 novel label, c) = P(S_j=k | valid type 2)
         novel_box_type_class_probs = novel_box_type_class_joint_probs /\
             novel_box_type_class_joint_probs.sum(dim=1, keepdim=True)
+        # TODO Set NANs to zero
+        # TODO If they're all zero, set them to the uniform distribution
 
         # Compute class count vector for type 2
         novel_box_type_class_count = novel_box_type_class_probs.sum(dim=0)
@@ -406,6 +447,18 @@ class TuplePredictor:
         # Finally, P(k present | valid t2)
         # = P(k present, valid t2) / P(valid t2)
         novel_box_type_class_presence = prob_present_novel_box_type / prob_novel_box_type
+        novel_box_type_class_presence[
+            prob_present_novel_box_type.isclose(torch.tensor(0.0, device=p_type.device))
+        ] = 0.0
+        # TODO This may result in predicting zero presence for everything.
+        # But at least one novel class MUST be present, given that the correct
+        # tuple is a box class novelty. Since we know that at least
+        # one class must be present, then the OR of all of them should be
+        # 1, and the OR of all of them is less than or equal to the sum
+        # of each of them. That is, the sums of the presences of each class
+        # must be at least 1. So rather than predicting zeros for everything,
+        # Our presence predictions will likely be a bit closer to the ground
+        # truth if we at least predict the lower bound.
 
         # Compute expectation of class counts and presence / absence 
         # probabilities by mixing the per-type predictions weighted by the
