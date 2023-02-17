@@ -45,12 +45,13 @@ if __name__ == "__main__":
     p.add_argument('--retraining-label-smoothing', type=float, default=0.0)
     p.add_argument('--retraining-scheduler-type', type=SchedulerType, choices=list(SchedulerType), default=SchedulerType.none)
     p.add_argument('--feedback-loss-weight', type=float, default=0.5)
+    p.add_argument('--detection-threshold', type=float, default=0.5)
 
     args = p.parse_args()
 
     torch.backends.cudnn.benchmark = False
 
-    detection_threshold = 0.5
+    detection_threshold = args.detection_threshold
 
     if args.log:
         p = Path(args.log_dir)

@@ -246,8 +246,7 @@ class TopLevelApp:
             )
         
         p_ni = p_ni.cpu().float()
-        batch_p_type = batch_p_type.cpu()
-        self.per_image_p_type = torch.cat([self.per_image_p_type, batch_p_type])
+        self.per_image_p_type = torch.cat([self.per_image_p_type, batch_p_type.cpu()])
 
         # Update batch p type based on given detection hints
         if self.given_detection and not self.post_red:
@@ -285,12 +284,12 @@ class TopLevelApp:
         self.batch_context.image_paths = image_paths
         self.batch_context.bboxes = bboxes
         self.batch_context.predictions = predictions
-        self.batch_context.p_type = batch_p_type
+        self.batch_context.p_type = batch_p_type.cpu()
 
         red_light_scores = self._compute_red_light_scores(p_ni, N, img_paths)
 
         if not self.post_red or not self.feedback_enabled:
-            self._accumulate(predictions, p_ni, p_ni.numpy(), batch_p_type)
+            self._accumulate(predictions, p_ni, p_ni.numpy(), batch_p_type.cpu())
 
         self.all_red_light_scores = np.concatenate([self.all_red_light_scores, red_light_scores])
         
@@ -389,10 +388,10 @@ class TopLevelApp:
         all_p_ni = np.concatenate([self.all_p_ni.numpy(), p_ni.numpy()])
         
         if not self.post_red:
-            if all_p_ni.shape[0] >= 60:    
-                start = all_p_ni.shape[0] - N                
-                for i in range(max(start, 60 + self.windows_size), start + N):
-                    p_val = ks_2samp(all_p_ni[:60], all_p_ni[i - self.windows_size: i], alternative='greater', method='exact')[1]
+            if all_p_ni.shape[0] >= 300:
+                start = all_p_ni.shape[0] - N
+                for i in range(max(start, 300 + self.windows_size), start + N):
+                    p_val = ks_2samp(all_p_ni[:300], all_p_ni[i - self.windows_size: i], alternative='greater', method='exact')[1]
                     red_light_scores[i - start] = p_val
 
                 if not self.given_detection:
@@ -406,8 +405,8 @@ class TopLevelApp:
         else:
             start = all_p_ni.shape[0] - N
             
-            for i in range(max(start, 60 + self.windows_size), start + N):
-                p_val = ks_2samp(all_p_ni[:60], all_p_ni[i - self.windows_size: i], alternative='greater')[1]
+            for i in range(max(start, 300 + self.windows_size), start + N):
+                p_val = ks_2samp(all_p_ni[:300], all_p_ni[i - self.windows_size: i], alternative='greater')[1]
                 red_light_scores[i - start] = p_val
             
         for i in range(len(red_light_scores)):
