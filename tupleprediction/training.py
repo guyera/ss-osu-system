@@ -47,7 +47,7 @@ Parameters:
 def multiple_instance_count_cross_entropy_dyn(predictions, targets):
     losses = []
     for img_predictions, img_targets in zip(predictions, targets):
-        present_classes = torch.nonzero(img_targets)[0]
+        present_classes = img_targets != 0
         present_counts = img_targets[present_classes]
         present_predictions = img_predictions[:, present_classes]
 
@@ -184,7 +184,7 @@ Parameters:
 def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
     losses = []
     for img_predictions, img_targets in zip(predictions, targets):
-        present_classes = torch.nonzero(img_targets)[0]
+        present_classes = img_targets != 0
         present_predictions = img_predictions[:, present_classes]
 
         # Construct the dynamic program buffer. Its size is
@@ -195,7 +195,7 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
         # starting multiplier for the remaining cells.
         dyn_prog = torch.zeros(
             len(present_predictions) + 1,
-            *([2] * len(present_classes)),
+            *([2] * present_predictions.shape[1]),
             device=targets.device
         )
         dyn_prog[tuple([0] * len(dyn_prog.shape))] = 1
@@ -214,7 +214,7 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
         # observed for every class), and ONLY that location (so we have 1
         # index, equal to [0, 0, ..., 0])
         cur_dyn_indices = torch.zeros(
-            len(present_classes) + 1,
+            present_predictions.shape[1] + 1,
             1,
             dtype=torch.long,
             device=targets.device
@@ -231,7 +231,7 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
         # constructed matrix where the first column is all 1's, and the
         # remaining columns are drawn from the K+1 identity matrix.
         aug_eye = torch.eye(
-            len(present_classes) + 1,
+            present_predictions.shape[1] + 1,
             dtype=torch.long,
             device=targets.device
         )
@@ -243,7 +243,7 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
             next_indices = []
 
             # For each direction of expansion within the dynamic program buffer
-            for col_idx in range(len(present_classes) + 1):
+            for col_idx in range(present_predictions.shape[1] + 1):
                 # Perform the tensorized index shift to expand +1 in the
                 # box dimension and, if relevant, +1 in the current class
                 # dimension within the dynamic program buffer
@@ -353,7 +353,7 @@ def multiple_instance_count_cross_entropy(predictions, targets):
         # We're working with img_predictions of shape [M_i, K] and img_targets
         # of shape [K]. Index the predictions whose classes are present in
         # the ground truth labels
-        present_classes = torch.nonzero(img_targets)[0]
+        present_classes = img_targets != 0
         remaining_predictions = img_predictions[:, present_classes]
         remaining_targets = img_targets[present_classes]
         combination_pred_running_product = None
@@ -362,9 +362,9 @@ def multiple_instance_count_cross_entropy(predictions, targets):
         # iteratively updated, and in general its shape will be
         # [B, K, *c], where *c = (C_{N-1}, C_{N-2}, ..., C_1). C_i denotes
         # the number of combinations selected when considering present class
-        # i (i.e., torch.nonzero(image_targets)[0][i]). The combination
-        # dimensions are prepended rather than appended to simplify broadcasting
-        # to keep track of the running cross product predictions.
+        # i. The combination dimensions are prepended rather than appended to
+        # simplify broadcasting to keep track of the running cross product
+        # predictions.
 
         # At each iteration, we'll consider combinations for the class whose
         # predictions are at remaining_predictions[:, 0] and whose counts are
@@ -376,7 +376,7 @@ def multiple_instance_count_cross_entropy(predictions, targets):
         # remaining label.
 
         # For each present class
-        for _ in range(len(present_classes)):
+        for _ in range(present_predictions.shape[1]):
             ## Consider all of the ways in which we can assign this class label
             ## to the correct number of the remaining boxes
             cur_combinations = torch.tensor(
