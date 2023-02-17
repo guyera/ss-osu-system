@@ -47,6 +47,8 @@ class TuplePredictor:
             )
             return zero_count, zero_presence
 
+        t0 = torch.tensor(0.0, device=p_type.device)
+
         # NOTE: Comments draw out math from the perspective of species.
         # Translating to activities, type 2 <-> type 3, and type 4 <-> type 5.
         # In the comments, type 2 means "novel box", type 4 means "combination",
@@ -66,7 +68,7 @@ class TuplePredictor:
         same_class_probs = torch.prod(known_class_probs, dim=0)
         unique_types_class_probs = same_class_probs / same_class_probs.sum()
         unique_types_class_probs[
-            same_class_probs.isclose(torch.tensor(0.0, device=p_type.device))
+            same_class_probs.isclose(t0)
         ] = 0.0
 
         # If all unique types class probs are zero, then we'll end up with
@@ -146,8 +148,15 @@ class TuplePredictor:
         # novel labels
         known_class_cond_probs = \
             known_class_probs / known_class_probs.sum(dim=1, keepdim=True)
-        # TODO Set NANs to zero
-        # TODO If they're all zero, set them to the uniform distribution
+        # Set values to zero wherever numerator was extremely close to zero
+        known_class_cond_probs[
+            known_class_probs.isclose(t0)
+        ] = 0.0
+        # If all values are zero for a given box, set the probabilities to the
+        # uniform distribution
+        known_class_cond_probs[
+            torch.all(known_class_cond_probs.isclose(t0), dim=1)
+        ] = 1.0 / known_class_cond_probs.shape[1]
 
         # known_class_cond_probs represents P(S_j=k | c), where c is the
         # condition: there are no novel class.
@@ -163,8 +172,15 @@ class TuplePredictor:
         # P(S_j=k | type=4)
         combination_type_class_probs = diff_class_cond_probs / \
             diff_class_cond_probs.sum(dim=1, keepdim=True)
-        # TODO Set NANs to zero
-        # TODO If they're all zero, set them to the uniform distribution
+        # Set values to zero wherever numerator was extremely close to zero
+        combination_type_class_probs[
+            diff_class_cond_probs.isclose(t0)
+        ] = 0.0
+        # If all values are zero for a given box, set the probabilities to the
+        # uniform distribution
+        combination_type_class_probs[
+            torch.all(combination_type_class_probs.isclose(t0), dim=1)
+        ] = 1.0 / combination_type_class_probs.shape[1]
 
         # Compute class count vector for type 4
         combination_type_class_count = combination_type_class_probs.sum(dim=0)
@@ -203,19 +219,35 @@ class TuplePredictor:
         # = P(k present, valid t4 | no novel boxes) / P(t4 | no novel boxes).
         combination_type_class_presence = p_cond_present_combination_type / p_cond_combination_type
         combination_type_class_presence[
-            p_cond_present_combination_type.isclose(torch.tensor(0.0, device=p_type.device))
+            p_cond_present_combination_type.isclose(t0)
         ] = 0.0
-        # TODO This may result in predicting zero presence for everything.
-        # But at least two of them MUST be present, given that the correct
-        # tuple is a combination novelty. We can probably determine a lower
-        # bound on the sums of the presences. e.g., if we know that at least
-        # one class must be present, then the OR of all of them should be
-        # 1, and the OR of all of them is less than or equal to the sum
-        # of each of them. That is, the sums of the presences of each class
-        # must be at least 1. In this case, we know that at least TWO known
-        # classes must be present, so maybe we can get a tighter lower bound.
-        # In either case, predicting that lower bound rather than a bunch
-        # of zeros will get us closer to the ground truth, at least.
+
+        # This may result in predicting zero presence for everything in certain
+        # edge cases or due to numerical inprecision, but
+        # at least two classes MUST be present. This means that for any class
+        # k, the logical OR of the remaining classes should have presence
+        # probability 1, which means that their sum should be at LEAST 1.
+        # Similarly, the sums of their complements should be at MOST K - 2.
+        # Determine the scalar constant by which we must scale down each non-k
+        # group's compliments in order to achieve a complement sum of K - 2.
+        non_k_mask = 1 - torch.eye(len(combination_type_class_presence), device=p_type.device)
+        non_k_compliment_sums = (non_k_mask * (1 - combination_type_class_presence)).sum(dim=1)
+        scalers = (len(combination_type_class_presence) - 2) / non_k_compliment_sums
+
+        # We need ALL of these compliment sums to be at most K - 1, but we want
+        # to scale down each compliment sum, and therefore each compliment,
+        # equally. So we use the minimum of these compliment sums and scale
+        # them ALL down by that amount---unless, of course, the minimum of these
+        # compliment sums is greater than 1, in which case no scaling is
+        # necessary.
+        selected_scaler = scalers.min()
+        if not selected_scaler.isnan() and selected_scaler < 1.0:
+            # Scale down all the compliments
+            scaled_compliments = selected_scaler * (1 - combination_type_class_presence)
+
+            # And recompute the presence probabilities from these scaled
+            # compliments
+            combination_type_class_presence = 1 - scaled_compliments
 
         # Append zeros for the novel classes
         combination_type_class_presence = torch.cat(
@@ -448,7 +480,7 @@ class TuplePredictor:
         # = P(k present, valid t2) / P(valid t2)
         novel_box_type_class_presence = prob_present_novel_box_type / prob_novel_box_type
         novel_box_type_class_presence[
-            prob_present_novel_box_type.isclose(torch.tensor(0.0, device=p_type.device))
+            prob_present_novel_box_type.isclose(t0)
         ] = 0.0
         # TODO This may result in predicting zero presence for everything.
         # But at least one novel class MUST be present, given that the correct

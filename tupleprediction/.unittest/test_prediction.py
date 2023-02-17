@@ -39,8 +39,8 @@ class TestPrediction(unittest.TestCase):
             self.assertTrue(activity_presence[k].isclose(self.t(ap_dict[k])))
 
     def _generic_tests(self, answer_dict, p_type):
-        n_species_cls = 3
-        n_activity_cls = 3
+        n_species_cls = 4
+        n_activity_cls = 4
         n_known_species_cls = 2
         n_known_activity_cls = 2
         tuple_predictor = TuplePredictor(
@@ -215,7 +215,28 @@ class TestPrediction(unittest.TestCase):
         sub_dict = answer_dict['novel-unconfident']
         self._generic_sub_tests(tuple_predictor, probs, p_type, sub_dict)
 
-    def test_t0(self):
+        # Case: Two boxes, uniform prediction
+        probs = torch.tensor(
+            [
+                [
+                    0.25,
+                    0.25,
+                    0.25,
+                    0.25
+                ],
+                [
+                    0.25,
+                    0.25,
+                    0.25,
+                    0.25
+                ]
+            ],
+            device=self.device
+        )
+        sub_dict = answer_dict['uniform']
+        self._generic_sub_tests(tuple_predictor, probs, p_type, sub_dict)
+
+    def test_t06(self):
         answer_dict = {
             'known-confident-1': {
                 'species': {
@@ -276,6 +297,16 @@ class TestPrediction(unittest.TestCase):
                     'count': [0.5, 0.5, 0.0, 0.0],
                     'presence': [0.5, 0.5, 0.0, 0.0]
                 }
+            },
+            'uniform': {
+                'species': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [0.5, 0.5, 0.0, 0.0]
+                },
+                'activity': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [0.5, 0.5, 0.0, 0.0]
+                }
             }
         }
 
@@ -304,7 +335,132 @@ class TestPrediction(unittest.TestCase):
             device=self.device
         )
         self._generic_tests(answer_dict, p_type)
-        
+
+        p_type = torch.tensor(
+            [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0
+            ],
+            device=self.device
+        )
+        self._generic_tests(answer_dict, p_type)
+
+        p_type = torch.tensor(
+            [
+                self.epsilon,
+                self.epsilon,
+                self.epsilon,
+                self.epsilon,
+                self.epsilon,
+                1.0 - 5 * self.epsilon
+            ],
+            device=self.device
+        )
+        self._generic_tests(answer_dict, p_type)
+
+    def test_t4(self):
+        answer_dict = {
+            'known-confident-1': {
+                'species': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [1.0, 1.0, 0.0, 0.0]
+                },
+                'activity': {
+                    'count': [1.0, 0.0, 0.0, 0.0],
+                    'presence': [1.0, 0.0, 0.0, 0.0]
+                }
+            },
+            'known-confident-2': {
+                'species': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [1.0, 1.0, 0.0, 0.0]
+                },
+                'activity': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [0.5, 0.5, 0.0, 0.0]
+                }
+            },
+            'known-unconfident': {
+                'species': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [1.0, 1.0, 0.0, 0.0]
+                },
+                'activity': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [0.5, 0.5, 0.0, 0.0]
+                }
+            },
+            'novel-confident-1': {
+                'species': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [1.0, 1.0, 0.0, 0.0]
+                },
+                'activity': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [0.5, 0.5, 0.0, 0.0]
+                }
+            },
+            'novel-confident-2': {
+                'species': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [1.0, 1.0, 0.0, 0.0]
+                },
+                'activity': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [0.5, 0.5, 0.0, 0.0]
+                }
+            },
+            'novel-unconfident': {
+                'species': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [1.0, 1.0, 0.0, 0.0]
+                },
+                'activity': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [0.5, 0.5, 0.0, 0.0]
+                }
+            },
+            'uniform': {
+                'species': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [1.0, 1.0, 0.0, 0.0]
+                },
+                'activity': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [0.5, 0.5, 0.0, 0.0]
+                }
+            }
+        }
+
+        p_type = torch.tensor(
+            [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0
+            ],
+            device=self.device
+        )
+        self._generic_tests(answer_dict, p_type)
+
+        p_type = torch.tensor(
+            [
+                self.epsilon,
+                self.epsilon,
+                self.epsilon,
+                1.0 - 5 * self.epsilon,
+                self.epsilon,
+                self.epsilon
+            ],
+            device=self.device
+        )
+        self._generic_tests(answer_dict, p_type)
 
 if __name__ == '__main__':
     unittest.main()
