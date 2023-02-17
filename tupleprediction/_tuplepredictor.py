@@ -342,9 +342,15 @@ class TuplePredictor:
         # P(S_j=k | <2 known class)
         unique_class_cond_probs = \
             unique_class_probs / unique_class_probs.sum(dim=1, keepdim=True)
-        # TODO Set NANs to zero
-        # TODO If they're all zero for a given box, set them to the uniform
+        # Set NANs to zero
+        unique_class_cond_probs[
+            unique_class_probs.isclose(t0)
+        ] = 0.0
+        # If they're all zero for a given box, set them to the uniform
         # distribution
+        unique_class_cond_probs[
+            (unique_class_cond_probs == 0.0).all(dim=1)
+        ] = 1.0 / unique_class_cond_probs.shape[1]
 
         # Extract known and novel parts of conditional probabilities
         known_unique_class_cond_probs = \
@@ -379,8 +385,15 @@ class TuplePredictor:
         # P(S_j=k | >=1 novel label, c) = P(S_j=k | valid type 2)
         novel_box_type_class_probs = novel_box_type_class_joint_probs /\
             novel_box_type_class_joint_probs.sum(dim=1, keepdim=True)
-        # TODO Set NANs to zero
-        # TODO If they're all zero, set them to the uniform distribution
+        # Set NANs to zero
+        novel_box_type_class_probs[
+            novel_box_type_class_joint_probs.isclose(t0)
+        ] = 0.0
+        # If they're all zero for a given box, set them to the uniform
+        # distribution
+        novel_box_type_class_probs[
+            (novel_box_type_class_probs == 0.0).all(dim=1)
+        ] = 1.0 / novel_box_type_class_probs.shape[1]
 
         # Compute class count vector for type 2
         novel_box_type_class_count = novel_box_type_class_probs.sum(dim=0)
