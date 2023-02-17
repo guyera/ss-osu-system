@@ -145,7 +145,7 @@ class TopLevelApp:
         train_dataset,\
             val_known_dataset,\
             val_dataset,\
-            dynamic_label_mapper,\
+            self.dynamic_label_mapper,\
             self.static_label_mapper =\
                 get_datasets(
                     self.data_root,
@@ -193,7 +193,7 @@ class TopLevelApp:
             post_cache_train_transform,
             self.n_species_cls,
             self.n_activity_cls,
-            dynamic_label_mapper,
+            self.dynamic_label_mapper,
             classifier_trainer
         )
         
@@ -279,6 +279,20 @@ class TopLevelApp:
                 activity_probs,
                 updated_batch_p_type
             )
+            
+            # Update / reorder species predictions using inverse dynamic label
+            # mapping
+            mapped_permutation =\
+                self.dynamic_label_mapper.map_range(self.n_species_cls)
+            mapped_predictions = []
+            for s_c, s_p, a_c, a_p in predictions:
+                mapped_predictions.append((
+                    s_c[mapped_permutation],
+                    s_p[mapped_permutation],
+                    a_c,
+                    a_p
+                ))
+            predictions = mapped_predictions
 
         self.batch_context.p_ni = p_ni
         self.batch_context.image_paths = image_paths
@@ -553,7 +567,7 @@ class TopLevelApp:
         train_dataset,\
             val_known_dataset,\
             val_dataset,\
-            dynamic_label_mapper,\
+            self.dynamic_label_mapper,\
             self.static_label_mapper =\
                 get_datasets(
                     self.data_root,
@@ -601,7 +615,7 @@ class TopLevelApp:
             post_cache_train_transform,
             self.n_species_cls,
             self.n_activity_cls,
-            dynamic_label_mapper,
+            self.dynamic_label_mapper,
             classifier_trainer
         )
 
