@@ -1,3 +1,4 @@
+import time
 import itertools
 from copy import deepcopy
 import numpy as np
@@ -46,10 +47,10 @@ Parameters:
 def multiple_instance_count_cross_entropy_dyn(predictions, targets):
     losses = []
     for img_predictions, img_targets in zip(predictions, targets):
-        present_classes = torch.nonzero(img_targets)[0]
+        present_classes = img_targets != 0
         present_counts = img_targets[present_classes]
         present_predictions = img_predictions[:, present_classes]
-        
+
         # Construct the dynamic program buffer. Its size is
         # [N+1, C_1+1, ... C_K+1], where N is the number of boxes, K is the
         # number of present classes, and C_k is the number of boxes belonging
@@ -93,11 +94,12 @@ def multiple_instance_count_cross_entropy_dyn(predictions, targets):
         # corresponding class dimension of cur_dyn_indices, and 1 to the
         # box index. We can tensorize this by instead adding the kth row of the
         # identity matrix augmented with a prepended "1's" column
-        eye = torch.eye(len(present_counts))
+        eye = torch.eye(len(present_counts), dtype=torch.long)
         aug_eye = torch.cat(
-            (torch.ones(len(present_counts)), eye),
+            (torch.ones(len(present_counts), 1, dtype=torch.long), eye),
             dim=1
         )
+        aug_eye = aug_eye.to(targets.device)
 
         # For each iteration in our dynamic program
         for box_idx in range(len(present_predictions)):
@@ -118,6 +120,7 @@ def multiple_instance_count_cross_entropy_dyn(predictions, targets):
                     dyn_prog_shape_tensor[:, None]
                 overflow_mask = torch.all(overflow_mask, dim=0)
                 shifted_dyn_indices = shifted_dyn_indices[:, overflow_mask]
+                masked_cur_dyn_indices = cur_dyn_indices[:, overflow_mask]
 
                 # Use the shifted dyn indices to index the expansion locations
                 # of the dynamic buffer. Update those locations in the buffer;
@@ -135,7 +138,7 @@ def multiple_instance_count_cross_entropy_dyn(predictions, targets):
                 # indexing tuples, each component of which is an indexing tensor
                 # for the corresponding dimension of the dynamic program buffer
                 dyn_prog[tuple(shifted_dyn_indices)] +=\
-                    dyn_prog[tuple(cur_dyn_indices)] *\
+                    dyn_prog[tuple(masked_cur_dyn_indices)] *\
                         present_predictions[box_idx, cls_idx]
 
                 # Append shifted_dyn_indices to next_indices
@@ -158,7 +161,7 @@ def multiple_instance_count_cross_entropy_dyn(predictions, targets):
         losses.append(-torch.log(prob_match))
 
     # Compute aggregate loss across images
-    losses = torch.cat(losses, dim=0)
+    losses = torch.stack(losses, dim=0)
     loss = losses.mean()
     return loss
 
@@ -181,7 +184,7 @@ Parameters:
 def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
     losses = []
     for img_predictions, img_targets in zip(predictions, targets):
-        present_classes = torch.nonzero(img_targets)[0]
+        present_classes = img_targets != 0
         present_predictions = img_predictions[:, present_classes]
 
         # Construct the dynamic program buffer. Its size is
@@ -192,7 +195,7 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
         # starting multiplier for the remaining cells.
         dyn_prog = torch.zeros(
             len(present_predictions) + 1,
-            *([2] * len(present_classes)),
+            *([2] * present_predictions.shape[1]),
             device=targets.device
         )
         dyn_prog[tuple([0] * len(dyn_prog.shape))] = 1
@@ -211,7 +214,7 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
         # observed for every class), and ONLY that location (so we have 1
         # index, equal to [0, 0, ..., 0])
         cur_dyn_indices = torch.zeros(
-            len(present_classes) + 1,
+            present_predictions.shape[1] + 1,
             1,
             dtype=torch.long,
             device=targets.device
@@ -227,7 +230,11 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
         # tensorize this by instead adding the kth row of a carefully
         # constructed matrix where the first column is all 1's, and the
         # remaining columns are drawn from the K+1 identity matrix.
-        aug_eye = torch.eye(len(present_classes) + 1)
+        aug_eye = torch.eye(
+            present_predictions.shape[1] + 1,
+            dtype=torch.long,
+            device=targets.device
+        )
         aug_eye[:, 0] = 1
 
         # For each iteration in our dynamic program
@@ -236,7 +243,7 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
             next_indices = []
 
             # For each direction of expansion within the dynamic program buffer
-            for col_idx in range(len(present_classes) + 1):
+            for col_idx in range(present_predictions.shape[1] + 1):
                 # Perform the tensorized index shift to expand +1 in the
                 # box dimension and, if relevant, +1 in the current class
                 # dimension within the dynamic program buffer
@@ -249,6 +256,7 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
                     dyn_prog_shape_tensor[:, None]
                 overflow_mask = torch.all(overflow_mask, dim=0)
                 shifted_dyn_indices = shifted_dyn_indices[:, overflow_mask]
+                masked_cur_dyn_indices = cur_dyn_indices[:, overflow_mask]
 
                 if col_idx == 0:
                     # If col_idx is zero, then this iteration represents the
@@ -263,7 +271,7 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
 
                     # Get current (== shifted) class indices w.r.t. the dynamic
                     # program
-                    cur_cls_indices = cur_dyn_indices[1:]
+                    cur_cls_indices = masked_cur_dyn_indices[1:]
                     # equivalent to shifted_dyn_indices[1:]
                     
                     # Determine which ones have already been observed
@@ -279,8 +287,8 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
                     # dynamic program value. Multiply these probabilities by
                     # the corresponding current dynamic program values to get
                     # the next ones
-                    dyn_prog[tuple(shifted_dyn_indices)] =\
-                        dyn_prog[tuple(cur_dyn_indices)] *\
+                    dyn_prog[tuple(shifted_dyn_indices)] +=\
+                        dyn_prog[tuple(masked_cur_dyn_indices)] *\
                             observed_preds_sums
                 else:
                     # if col_idx is NOT zero, then col_idx - 1 represents
@@ -298,7 +306,7 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
                     # and multiply it by the current dyn prog values to get
                     # the contribution to the next dyn prog values.
                     dyn_prog[tuple(shifted_dyn_indices)] +=\
-                        dyn_prog[tuple(cur_dyn_indices)] *\
+                        dyn_prog[tuple(masked_cur_dyn_indices)] *\
                             present_predictions[box_idx, cls_idx]
 
                 # Append shifted_dyn_indices to next_indices
@@ -321,7 +329,7 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
         losses.append(-torch.log(prob_match))
 
     # Compute aggregate loss across images
-    losses = torch.cat(losses, dim=0)
+    losses = torch.stack(losses, dim=0)
     loss = losses.mean()
     return loss
 
@@ -345,7 +353,7 @@ def multiple_instance_count_cross_entropy(predictions, targets):
         # We're working with img_predictions of shape [M_i, K] and img_targets
         # of shape [K]. Index the predictions whose classes are present in
         # the ground truth labels
-        present_classes = torch.nonzero(img_targets)[0]
+        present_classes = img_targets != 0
         remaining_predictions = img_predictions[:, present_classes]
         remaining_targets = img_targets[present_classes]
         combination_pred_running_product = None
@@ -354,9 +362,9 @@ def multiple_instance_count_cross_entropy(predictions, targets):
         # iteratively updated, and in general its shape will be
         # [B, K, *c], where *c = (C_{N-1}, C_{N-2}, ..., C_1). C_i denotes
         # the number of combinations selected when considering present class
-        # i (i.e., torch.nonzero(image_targets)[0][i]). The combination
-        # dimensions are prepended rather than appended to simplify broadcasting
-        # to keep track of the running cross product predictions.
+        # i. The combination dimensions are prepended rather than appended to
+        # simplify broadcasting to keep track of the running cross product
+        # predictions.
 
         # At each iteration, we'll consider combinations for the class whose
         # predictions are at remaining_predictions[:, 0] and whose counts are
@@ -368,15 +376,17 @@ def multiple_instance_count_cross_entropy(predictions, targets):
         # remaining label.
 
         # For each present class
-        for _ in range(len(present_classes)):
+        for _ in range(present_predictions.shape[1]):
             ## Consider all of the ways in which we can assign this class label
             ## to the correct number of the remaining boxes
-            cur_combinations = torch.combinations(
-                torch.arange(
-                    len(remaining_predictions),
-                    device=targets.device
+            cur_combinations = torch.tensor(
+                list(
+                    itertools.combinations(
+                        list(range(len(remaining_predictions))),
+                        remaining_targets[0]
+                    )
                 ),
-                r=remaining_targets[0]
+                device=targets.device
             )
 
             ## Get the predictions for the current present class associated with
@@ -415,7 +425,7 @@ def multiple_instance_count_cross_entropy(predictions, targets):
             # First, construct a compliment index for cur_combinations.
             # (Computing the complement of a multidimensional index is messy)
             all_boxes = torch.ones(
-                *(len(cur_combinations), remaining_predictions.shape[1]),
+                *(cur_combinations.shape),
                 dtype=torch.bool,
                 device=targets.device
             )
@@ -426,7 +436,7 @@ def multiple_instance_count_cross_entropy(predictions, targets):
             flattened_compliment[flattened_index] = False # Compliment step
             compliment_mask = flattened_compliment.reshape(*(all_boxes.shape))
             index_pool = torch.arange(
-                remaining_predictions.shape[1],
+                all_boxes.shape[1],
                 device=targets.device
             )
             cur_combinations_compliment = torch.stack(
@@ -465,7 +475,7 @@ def multiple_instance_count_cross_entropy(predictions, targets):
 
         ## Sum over combination_pred_running_products to compute the
         ## probability for the exhaustive logical OR satisfying the targets
-        sum_prob = combination_pred_running_products.sum()
+        sum_prob = combination_pred_running_product.sum()
 
         ## Compute per-image loss
         losses.append(-torch.log(sum_prob))
@@ -508,7 +518,7 @@ def multiple_instance_presence_cross_entropy(predictions, targets):
         # renormalizing the remaining probabilities.
         # 
         # From here on out, everything is conditioned on <others absent>,
-        # but it's left out the notation for brevity.
+        # but it's left out of the notation for brevity.
         # 
         # Next, we can compute:
         # P(A, B, C present) = 1 - P(A, B, or C is absent)
@@ -533,14 +543,13 @@ def multiple_instance_presence_cross_entropy(predictions, targets):
         # the rows (and there's a row per box).
 
         # Step 1: Compute P(others absent)
-        absent_predictions = img_predictions[:, ~img_targets]
-        prob_others_absent = torch.prod(1 - absent_predictions.sum(dim=1))
+        present_predictions = img_predictions[:, img_targets]
+        prob_others_absent = torch.prod(present_predictions.sum(dim=1))
 
         # Step 2: Filter out present-class predictions and condition on
         # the event <others absent>
         # TODO handle case where denominator == 0. This might require moving
         # computations to the log space
-        present_predictions = img_predictions[:, img_targets]
         cond_present_predictions = present_predictions / \
             present_predictions.sum(dim=1, keepdim=True)
 
@@ -551,12 +560,14 @@ def multiple_instance_presence_cross_entropy(predictions, targets):
         add_iteration = True
         for i in range(1, cond_present_predictions.shape[1] + 1):
             # Compute the class indices for the N choose i conjunctions
-            cur_combinations = torch.combinations(
-                torch.arange(
-                    cond_present_predictions.shape[1],
-                    device=targets.device
+            cur_combinations = torch.tensor(
+                list(
+                    itertools.combinations(
+                        list(range(cond_present_predictions.shape[1])),
+                        i
+                    )
                 ),
-                r=i
+                device=targets.device
             )
 
             # Index the classes using cur_combinations
@@ -582,6 +593,9 @@ def multiple_instance_presence_cross_entropy(predictions, targets):
             else:
                 prob_any_absent =\
                     prob_any_absent - absence_conjunction_sum
+
+            # Toggle add_iteration
+            add_iteration = not add_iteration
 
         # Step 4: We have
         # P(any of the ground-truth present classes are absent | others absent).
@@ -645,12 +659,27 @@ class BackboneTrainingType(Enum):
 
 class ClassifierTrainer(ABC):
     @abstractmethod
-    def train(self, species_classifier, activity_classifier, root_log_dir):
+    def train(
+            self,
+            species_classifier,
+            activity_classifier,
+            root_log_dir,
+            feedback_dataset):
         return NotImplemented
 
+    @abstractmethod
     def prepare_for_retraining(
             self,
-            classifier):
+            classifier,
+            activation_statistical_model):
+        return NotImplemented
+
+    @abstractmethod
+    def fit_activation_statistics(
+            self,
+            backbone,
+            activation_statistical_model,
+            val_known_dataset):
         return NotImplemented
 
 
@@ -795,6 +824,112 @@ class TransformingBoxImageDataset(Dataset):
         return self._dataset.box_count(idx)
 
 
+class BufferedFeedbackDataLoader:
+    class _Iter:
+        def __init__(self, box_image_iter, batch_size):
+            self._box_image_iter = box_image_iter
+            self._batch_size = batch_size
+            self._buffer = None
+            self._buffer_box_counts = []
+
+        def __next__(self):
+            total_buffer_box_count = sum(self._buffer_box_counts)
+            while total_buffer_box_count < self._batch_size:
+                # Buffer is underfull. Grab another batch.
+                try:
+                    species_labels,\
+                        activity_labels,\
+                        novelty_type_labels,\
+                        box_images,\
+                        whole_images = next(self._box_image_iter)
+                except StopIteration:
+                    break
+
+                # Append the batch to the buffer
+                if self._buffer is None:
+                    self._buffer = [
+                        species_labels,
+                        activity_labels,
+                        novelty_type_labels,
+                        box_images,
+                        whole_images
+                    ]
+                else:
+                    self._buffer[0] = torch.cat(
+                        (self._buffer[0], species_labels),
+                        dim=0
+                    )
+                    self._buffer[1] = torch.cat(
+                        (self._buffer[1], activity_labels),
+                        dim=0
+                    )
+                    self._buffer[2] = torch.cat(
+                        (self._buffer[2], novelty_type_labels),
+                        dim=0
+                    )
+                    self._buffer[3] = self._buffer[3] + box_images
+                    self._buffer[4] = torch.cat(
+                        (self._buffer[4], whole_images),
+                        dim=0
+                    )
+
+                # Update the buffer box counts and total_buffer_box_count
+                batch_box_counts = [len(t) for t in box_images]
+                self._buffer_box_counts =\
+                    self._buffer_box_counts + batch_box_counts
+                total_buffer_box_count += sum(batch_box_counts)
+            
+            # Either the buffer has enough data to retrieve a batch, or we've
+            # hit the end of the underlying iterator.
+            if len(self._buffer_box_counts) == 0:
+                # Empty buffer. Stop.
+                raise StopIteration
+
+            # There is at least a partial batch to retrieve. Determine the
+            # number of items that should be grabbed in order to get as
+            # close to the batch size as possible without exceeding it.
+            # We must grab at least one image.
+            n_images = 1
+            n_boxes = self._buffer_box_counts[0]
+            for buffer_box_count in self._buffer_box_counts[1:]:
+                next_n_boxes = n_boxes + buffer_box_count
+                if next_n_boxes > self._batch_size:
+                    break
+                n_boxes = next_n_boxes
+                n_images += 1
+
+            # n_images denotes the number of images that should be pulled from
+            # the buffer. Grab the data
+            species_labels = self._buffer[0][:n_images]
+            activity_labels = self._buffer[1][:n_images]
+            novelty_type_labels = self._buffer[2][:n_images]
+            box_images = self._buffer[3][:n_images]
+            whole_images = self._buffer[4][:n_images]
+
+            # Remove the data from the buffer
+            self._buffer[0] = self._buffer[0][n_images:]
+            self._buffer[1] = self._buffer[1][n_images:]
+            self._buffer[2] = self._buffer[2][n_images:]
+            self._buffer[3] = self._buffer[3][n_images:]
+            self._buffer[4] = self._buffer[4][n_images:]
+            self._buffer_box_counts = self._buffer_box_counts[n_images:]
+
+            return species_labels,\
+                activity_labels,\
+                novelty_type_labels,\
+                box_images,\
+                whole_images
+                
+
+    def __init__(self, box_image_loader, batch_size):
+        self._box_image_loader = box_image_loader
+        self._batch_size = batch_size
+
+    def __iter__(self):
+        box_image_iter = iter(self._box_image_loader)
+        return self._Iter(box_image_iter, self._batch_size)
+
+
 def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(
@@ -832,32 +967,41 @@ def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
 class LogitLayerClassifierTrainer(ClassifierTrainer):
     def __init__(
             self,
+            backbone,
             lr,
             train_feature_file,
             val_feature_file,
             box_transform,
             post_cache_train_transform,
             device,
+            feedback_batch_size=32,
             patience=3,
             min_epochs=3,
             max_epochs=30,
-            label_smoothing=0.0):
+            label_smoothing=0.0,
+            feedback_loss_weight=0.5):
+        self._backbone = backbone
         self._lr = lr
         self._train_feature_file = train_feature_file
         self._val_feature_file = val_feature_file
         self._box_transform = box_transform
         self._post_cache_train_transform = post_cache_train_transform
         self._device = device
+        self._feedback_batch_size = feedback_batch_size
         self._patience = patience
         self._min_epochs = min_epochs
         self._max_epochs = max_epochs
         self._label_smoothing = label_smoothing
+        self._feedback_loss_weight = feedback_loss_weight
 
     def _train_epoch(
             self,
             box_features,
             species_labels,
             activity_labels,
+            feedback_box_features,
+            feedback_species_labels,
+            feedback_activity_labels,
             species_classifier,
             activity_classifier,
             optimizer):
@@ -870,6 +1014,39 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         species_preds = species_classifier(box_features)
         activity_preds = activity_classifier(box_features)
 
+        # Flatten feedback box features, compute predictions, and re-split
+        # per-image
+        flattened_feedback_box_features = torch.cat(
+            feedback_box_features,
+            dim=0
+        )
+        flattened_feedback_species_logits = species_classifier(
+            flattened_feedback_box_features
+        )
+        flattened_feedback_activity_logits = activity_classifier(
+            flattened_feedback_box_features
+        )
+        flattened_feedback_species_preds = torch.nn.functional.softmax(
+            flattened_feedback_species_logits,
+            dim=1
+        )
+        flattened_feedback_activity_preds = torch.nn.functional.softmax(
+            flattened_feedback_activity_logits,
+            dim=1
+        )
+        feedback_box_counts = [len(x) for x in feedback_box_features]
+        feedback_species_preds = torch.split(
+            flattened_feedback_species_preds,
+            feedback_box_counts,
+            dim=0
+        )
+        feedback_activity_preds = torch.split(
+            flattened_feedback_activity_preds,
+            feedback_box_counts,
+            dim=0
+        )
+
+        # Compute losses
         species_loss = torch.nn.functional.cross_entropy(
             species_preds,
             species_labels,
@@ -880,8 +1057,25 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             activity_labels,
             label_smoothing=self._label_smoothing
         )
+        # We have image-level count feedback labels for species
+        feedback_species_loss = multiple_instance_count_cross_entropy_dyn(
+            feedback_species_preds,
+            feedback_species_labels
+        )
+        # We have image-level presence feedback labels for activities
+        feedback_activity_loss = multiple_instance_presence_cross_entropy_dyn(
+            feedback_activity_preds,
+            feedback_activity_labels
+        )
 
-        loss = species_loss + activity_loss
+        # Compute non-feedback and feedback loss sums
+        non_feedback_loss = species_loss + activity_loss
+        feedback_loss = feedback_species_loss + feedback_activity_loss
+
+        # Compute loss as weighted average between feedback and non-feedback
+        # losses
+        loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
+            self._feedback_loss_weight * feedback_loss
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -955,12 +1149,8 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             self,
             species_classifier,
             activity_classifier,
-            root_log_dir):
-        # TODO new feedback setup will require a separate dataloader since
-        # feedback data has several multiple instance issues and thus requires
-        # image-level labels and special loss functions. Pass that dataloader
-        # in as an argument
-
+            root_log_dir,
+            feedback_dataset):
         # TODO Class balancing
 
         # Construct the optimizer
@@ -1008,16 +1198,70 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 map_location=self._device
             )
 
-        # TODO Precompute feedback backbone features
+        if feedback_dataset is not None:
+            unbuffered_feedback_loader = DataLoader(
+                feedback_dataset,
+                batch_size=32,
+                num_workers=2,
+                shuffle=True,
+                collate_fn=custom_collate
+            )
+            feedback_loader = BufferedFeedbackDataLoader(
+                unbuffered_feedback_loader,
+                self._feedback_batch_size
+            )
+            # Precompute feedback backbone features
+            self._backbone.eval()
+            feedback_box_features = []
+            feedback_species_labels = []
+            feedback_activity_labels = []
+            with torch.no_grad():
+                for batch_species_labels,\
+                        batch_activity_labels,\
+                        _,\
+                        batch_box_images,\
+                        _ in feedback_loader:
+                    # Move batch to device
+                    batch_species_labels =\
+                        batch_species_labels.to(self._device)
+                    batch_activity_labels =\
+                        batch_activity_labels.to(self._device)
+                    batch_box_images =\
+                        [b.to(self._device) for b in batch_box_images]
 
-        # TODO Construct custom feedback dataset; separate class from known data
-        # datasets because of the multiple instance problems. Weighted sampling
-        # will come from explicitly drawing batches from each loader (known
-        # and feedback) separately, and then balancing them mid-iteration
+                    # Get list of per-image box counts
+                    batch_box_counts = [len(x) for x in batch_box_images]
 
-        # TODO Construct custom weighted sampling concatenated dataset between
-        # known and feedback data, and use that rather than the full-batch
-        # approach
+                    # Flatten box images and compute features
+                    flattened_box_images = torch.cat(batch_box_images, dim=0)
+                    batch_box_features = self._backbone(flattened_box_images)
+
+                    # Use batch_box_counts to split the computed features back
+                    # to per-image feature tensors and concatenate to
+                    # feedback_box_features
+                    feedback_box_features += torch.split(
+                        batch_box_features,
+                        batch_box_counts,
+                        dim=0
+                    )
+
+                    # Record labels
+                    feedback_species_labels.append(batch_species_labels)
+                    feedback_activity_labels.append(batch_activity_labels)
+
+                # Concatenate labels
+                feedback_species_labels = torch.cat(
+                    feedback_species_labels,
+                    dim=0
+                )
+                feedback_activity_labels = torch.cat(
+                    feedback_activity_labels,
+                    dim=0
+                )
+        else:
+            feedback_box_features = None
+            feedback_species_labels = None
+            feedback_activity_labels = None
 
         # Train
         progress = tqdm(
@@ -1042,6 +1286,9 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 train_box_features,
                 train_species_labels,
                 train_activity_labels,
+                feedback_box_features,
+                feedback_species_labels,
+                feedback_activity_labels,
                 species_classifier,
                 activity_classifier,
                 optimizer
@@ -1112,8 +1359,16 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
 
     def prepare_for_retraining(
             self,
-            classifier):
+            classifier,
+            activation_statistical_model):
         classifier.reset()
+
+    def fit_activation_statistics(
+            self,
+            backbone,
+            activation_statistical_model,
+            val_known_dataset):
+        pass
 
 class EndToEndClassifierTrainer(ClassifierTrainer):
     def __init__(
@@ -1324,11 +1579,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             self,
             species_classifier,
             activity_classifier,
-            root_log_dir):
-        # TODO new feedback setup will require a separate dataloader since
-        # feedback data has several multiple instance issues and thus requires
-        # image-level labels and special loss functions
-
+            root_log_dir,
+            feedback_dataset):
         # TODO Class balancing
         train_dataset = FlattenedBoxImageDataset(self._train_dataset)
         if self._train_sampler_fn is not None:
@@ -1346,6 +1598,23 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 shuffle=True,
                 num_workers=2
             )
+
+        if feedback_dataset is not None:
+            unbuffered_feedback_loader = DataLoader(
+                feedback_dataset,
+                batch_size=32,
+                num_workers=2,
+                shuffle=True,
+                collate_fn=custom_collate
+            )
+            feedback_loader = BufferedFeedbackDataLoader(
+                unbuffered_feedback_loader,
+                self._retraining_batch_size
+            )
+        else:
+            feedback_loader = None
+        
+        # TODO Make use of feedback data
 
         # Construct validation loaders for early stopping / model selection.
         # I'm assuming our model selection strategy will be based solely on the
@@ -1609,8 +1878,39 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
     def prepare_for_retraining(
             self,
-            classifier):
+            classifier,
+            activation_statistical_model):
         classifier.reset()
+        self._backbone.reset()
+        activation_statistical_model.reset()
+
+    def fit_activation_statistics(
+            self,
+            backbone,
+            activation_statistical_model,
+            val_known_dataset):
+        activation_stats_training_loader = DataLoader(
+            val_known_dataset,
+            batch_size = 32,
+            shuffle = False,
+            collate_fn=custom_collate,
+            num_workers=2
+        )
+        backbone.eval()
+
+        device = backbone.device
+
+        all_features = []
+        with torch.no_grad():
+            for _, _, _, _, batch in activation_stats_training_loader:
+                batch = batch.to(device)
+                features = activation_statistical_model.compute_features(
+                    backbone,
+                    batch
+                )
+                all_features.append(features)
+        all_features = torch.cat(all_features, dim=0)
+        activation_statistical_model.fit(all_features)
 
 
 class SideTuningClassifierTrainer(ClassifierTrainer):
@@ -1624,6 +1924,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             val_feature_file,
             box_transform,
             post_cache_train_transform,
+            feedback_batch_size=32,
             retraining_batch_size=32,
             patience=3,
             min_epochs=3,
@@ -1639,6 +1940,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         self._val_feature_file = val_feature_file
         self._box_transform = box_transform
         self._post_cache_train_transform = post_cache_train_transform
+        self._feedback_batch_size = feedback_batch_size
         self._retraining_batch_size = retraining_batch_size
         self._patience = patience
         self._min_epochs = min_epochs
@@ -1842,11 +2144,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             self,
             species_classifier,
             activity_classifier,
-            root_log_dir):
-        # TODO new feedback setup will require a separate dataloader since
-        # feedback data has several multiple instance issues and thus requires
-        # image-level labels and special loss functions.
-
+            root_log_dir,
+            feedback_dataset):
         # TODO Class balancing
 
         # Load training and validation backbone features from feature
@@ -1862,7 +2161,27 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                 map_location=self._device
             )
 
-        # TODO Precompute feedback backbone features
+        if feedback_dataset is not None:
+            unbuffered_feedback_loader = DataLoader(
+                feedback_dataset,
+                batch_size=32,
+                num_workers=2,
+                shuffle=True,
+                collate_fn=custom_collate
+            )
+            feedback_loader = BufferedFeedbackDataLoader(
+                unbuffered_feedback_loader,
+                self._feedback_batch_size
+            )
+            # TODO Precompute feedback backbone
+
+            # TODO Construct custom FeatureConcatBoxImageDataset for the feedback
+            # dataset
+            raise NotImplementedError
+        else:
+            feedback_feature_loader = None
+
+        # TODO Make use of feedback data
 
         # Construct training and validation
         # FeatureConcatFlattenedBoxImageDataset objects from known features
@@ -1875,11 +2194,6 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             FlattenedBoxImageDataset(self._val_known_dataset),
             val_box_features
         )
-
-        # TODO Construct custom feedback dataset; separate class from known data
-        # datasets because of the multiple instance problems. Weighted sampling
-        # will come from explicitly drawing batches from each loader (known
-        # and feedback) separately, and then balancing them mid-iteration
 
         # For now, we just have a single loader for training and a single loader
         # for validation (until feedback is implemented)
@@ -2057,7 +2371,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
 
     def prepare_for_retraining(
             self,
-            classifier):
+            classifier,
+            activation_statistical_model):
         # Reset only the side network's weights
         self._backbone.reset()
 
@@ -2065,6 +2380,12 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         # features before resetting
         classifier.reset(bottleneck_dim=512)
 
+    def fit_activation_statistics(
+            self,
+            backbone,
+            activation_statistical_model,
+            val_known_dataset):
+        pass
 
 def get_transforms(augmentation):
     box_transform = ResizePad(224)
@@ -2286,14 +2607,8 @@ class TuplePredictorTrainer:
         self._n_activity_cls = n_activity_cls
         self._dynamic_label_mapper = dynamic_label_mapper
         self._classifier_trainer = classifier_trainer
-
-        # TODO class balancing? In the SVO system, we balanced 50/50 known
-        # and novel examples to avoid biasing P(N_i) toward 1. But maybe it
-        # doesn't matter here since we aren't using P(N_i) for merging
-        # SCG / non-SCG predictions. We also previously would sample a batch
-        # from each of 6 data loaders, which naturally balanced them, when
-        # training the classifier: S/V/O x known/novel
-        self._feedback_data = None
+        self._feedback_data = []
+        self._n_feedback_examples = 0
 
     def add_feedback_data(self, data_root, csv_path):
         new_novel_dataset = BoxImageDataset(
@@ -2312,63 +2627,34 @@ class TuplePredictorTrainer:
         )
 
         # Put new feedback data in list
-        if self._feedback_data is None:
-            self._feedback_data = new_novel_dataset
-        else:
-            self._feedback_data = ConcatDataset(
-                [self._feedback_data, new_novel_dataset]
-            )
-    
+        self._feedback_data.append(new_novel_dataset)
+        self._n_feedback_examples += len(new_novel_dataset)
+
+    def n_feedback_examples(self):
+        return self._n_feedback_examples
+
     # Should be called before train_novelty_detection_module(), except when
     # training for the very first time manually. This prepares the
     # backbone, classifier, and novelty type logistic regressions for
-    # retraining. Most likely this is done by fully randomizing them, but in
-    # the future we might change the process to be e.g. a warm-start,
-    # shrink-and-perturb, or crashing a single layer.
+    # retraining.
     def prepare_for_retraining(
             self,
-            backbone,
             classifier,
             confidence_calibrator,
             novelty_type_classifier,
             activation_statistical_model):
         # Reset the classifiers (and possibly certain backbone components,
         # depending on the classifier retraining method) if appropriate
-        self._classifier_trainer.prepare_for_retraining(classifier)
+        self._classifier_trainer.prepare_for_retraining(
+            classifier,
+            activation_statistical_model
+        )
         
         # Reset the confidence calibrator
         confidence_calibrator.reset()
 
         # Reset logistic regressions and statistical model
         novelty_type_classifier.reset()
-        activation_statistical_model.reset()
-
-    def fit_activation_statistics(
-            self,
-            backbone,
-            activation_statistical_model):
-        activation_stats_training_loader = DataLoader(
-            self._val_known_dataset,
-            batch_size = 32,
-            shuffle = False,
-            collate_fn=custom_collate,
-            num_workers=2
-        )
-        backbone.eval()
-
-        device = backbone.device
-
-        all_features = []
-        with torch.no_grad():
-            for _, _, _, _, batch in activation_stats_training_loader:
-                batch = batch.to(device)
-                features = activation_statistical_model.compute_features(
-                    backbone,
-                    batch
-                )
-                all_features.append(features)
-        all_features = torch.cat(all_features, dim=0)
-        activation_statistical_model.fit(all_features)
 
     def calibrate_temperature_scalers(
             self,
@@ -2394,6 +2680,8 @@ class TuplePredictorTrainer:
 
         device = backbone.device
 
+        print('Calibrating temperature scalers...')
+        start = time.time()
         # Extract logits to fit confidence calibration temperatures
         with torch.no_grad():
             species_logits = []
@@ -2467,6 +2755,10 @@ class TuplePredictorTrainer:
                 f'Training calibrators... | Loss: {loss.detach().cpu().item()}'
             )
 
+        end = time.time()
+        t = end - start
+        print(f'Took {t} seconds')
+
     def train_novelty_type_logistic_regressions(
             self,
             backbone,
@@ -2491,7 +2783,9 @@ class TuplePredictorTrainer:
             collate_fn=custom_collate,
             num_workers=2
         )
-        
+
+        print('Training novelty type classifier...')
+        start = time.time()
         with torch.no_grad():
             # Extract novelty scores and labels
             scores = []
@@ -2542,6 +2836,9 @@ class TuplePredictorTrainer:
             labels,
             epochs=3000
         )
+        end = time.time()
+        t = end - start
+        print(f'Took {t} seconds')
 
     def train_novelty_detection_module(
             self,
@@ -2551,30 +2848,28 @@ class TuplePredictorTrainer:
             novelty_type_classifier,
             activation_statistical_model,
             scorer,
-            lr=0.0005,
-            root_checkpoint_dir=None,
-            root_log_dir=None,
-            train_sampler_fn=None,
-            patience=3,
-            min_epochs=3,
-            max_epochs=30,
-            label_smoothing=0.0,
-            scheduler_type=SchedulerType.none):
+            root_log_dir=None):
         species_classifier = classifier.species_classifier
         activity_classifier = classifier.activity_classifier
         species_calibrator = confidence_calibrator.species_calibrator
         activity_calibrator = confidence_calibrator.activity_calibrator
         
         # Retrain the backbone and classifiers
+        feedback_dataset = None
+        if len(self._feedback_data) > 0:
+            feedback_dataset = ConcatDataset(self._feedback_data)
+        
         self._classifier_trainer.train(
             species_classifier,
             activity_classifier,
-            root_log_dir
+            root_log_dir,
+            feedback_dataset
         )
 
-        self.fit_activation_statistics(
+        self._classifier_trainer.fit_activation_statistics(
             backbone,
-            activation_statistical_model
+            activation_statistical_model,
+            self._val_known_dataset
         )
 
         # Retrain the classifier's temperature scaling calibrators

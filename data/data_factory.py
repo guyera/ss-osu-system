@@ -94,7 +94,7 @@ class DataFactory(Dataset):
             raise ValueError("Unknown dataset ", name)
 
         json_path = f'{os.path.splitext(csv_path)[0]}.json'
-        self.dataset = CustomDet(root=data_root, csv_path=csv_path, json_path=json_path, n_species_cls=n_species_cls, n_activity_cls=n_activity_cls, label_mapper=label_mapper, target_transform=pocket.ops.ToTensor(input_format='dict'), image_filter=image_filter)
+        self.dataset = CustomDet(root=data_root, csv_path=csv_path, json_path=json_path, n_species_cls=n_species_cls, n_activity_cls=n_activity_cls, label_mapper=label_mapper, image_filter=image_filter)
 
         self.name = name
 
@@ -107,8 +107,10 @@ class DataFactory(Dataset):
         return len(self.dataset)
 
     def flip_boxes(self, detection, target, w):
-        detection['boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['boxes'])
-        target['boxes'] = pocket.ops.horizontal_flip_boxes(w, target['boxes'])
+        if len(detection['boxes']) > 0:
+            detection['boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['boxes'])
+        if len(target['boxes']) > 0:
+            target['boxes'] = pocket.ops.horizontal_flip_boxes(w, target['boxes'])
 
     def __getitem__(self, i):
         image, target = self.dataset[i]
@@ -118,16 +120,17 @@ class DataFactory(Dataset):
         # size. Translate to absolute dimensions in order of xmin, ymin, xmax,
         # ymax.
         width, height = image.size
-        detection['boxes'][:, 0] =\
-            torch.round(detection['boxes'][:, 0] * width).to(torch.int)
-        detection['boxes'][:, 1] =\
-            torch.round(detection['boxes'][:, 1] * height).to(torch.int)
-        detection['boxes'][:, 2] =\
-            torch.round(detection['boxes'][:, 2] * width).to(torch.int) +\
-                detection['boxes'][:, 0]
-        detection['boxes'][:, 3] =\
-            torch.round(detection['boxes'][:, 3] * height).to(torch.int) +\
-                detection['boxes'][:, 1]
+        if len(detection['boxes']) > 0:
+            detection['boxes'][:, 0] =\
+                torch.round(detection['boxes'][:, 0] * width).to(torch.int)
+            detection['boxes'][:, 1] =\
+                torch.round(detection['boxes'][:, 1] * height).to(torch.int)
+            detection['boxes'][:, 2] =\
+                torch.round(detection['boxes'][:, 2] * width).to(torch.int) +\
+                    detection['boxes'][:, 0]
+            detection['boxes'][:, 3] =\
+                torch.round(detection['boxes'][:, 3] * height).to(torch.int) +\
+                    detection['boxes'][:, 1]
 
         if not self.training:
             detection['img_id'] = self.dataset.filename(i)

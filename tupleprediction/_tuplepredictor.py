@@ -15,376 +15,510 @@ class TuplePredictor:
         n_known_activity_cls: int
             The number of known activity classes
     '''
-    def __init__(self, n_known_species_cls, n_known_activity_cls):
+    def __init__(
+            self,
+            n_species_cls,
+            n_activity_cls,
+            n_known_species_cls,
+            n_known_activity_cls):
+        self._n_species_cls = n_species_cls
+        self._n_activity_cls = n_activity_cls
         self._n_known_species_cls = n_known_species_cls
         self._n_known_activity_cls = n_known_activity_cls
 
-    def _species(self, species_probs, p_type):
-        # TODO I'm not sure that these computations are rigorously correct.
-        # I think we make some conditional independence assumptions where
-        # inappropriate. For instance, even if S_j is conditionally
-        # independent of S_k given the box images, when we also condition
-        # on type=4, then that's not necessarily the case anymore. And yet,
-        # I don't think a rigorous solution can be computed without solving
-        # a potentially massive, combinatoric problem. We need to think more
-        # carefully about how to construct these predictions. The exhaustive
-        # solution would be to compute joint probabilities for every possible
-        # tuple prediction, and then use those probabilities to compute a
-        # weighted average of appropriate count and presence vectors. Then
-        # we'd merge those weighted-average vectors across novelty types.
+    def _counts_presence(self,
+            class_probs,
+            p_type,
+            n_cls,
+            n_known_cls,
+            unique_types,
+            novel_box_type,
+            combination_type):
+        # If there are no box images, then return a bunch of zeros for
+        # both presence and counts
+        if class_probs is None:
+            zero_count = torch.zeros(
+                n_cls,
+                device=p_type.device
+            )
+            zero_presence = torch.zeros(
+                n_cls,
+                device=p_type.device
+            )
+            return zero_count, zero_presence
 
-        # NOTE However, the count solutions are technically correct. Here's
-        # a proof:
+        t0 = torch.tensor(0.0, device=p_type.device)
+
+        # NOTE: Comments draw out math from the perspective of species.
+        # Translating to activities, type 2 <-> type 3, and type 4 <-> type 5.
+        # In the comments, type 2 means "novel box", type 4 means "combination",
+        # and the remaining types mean "unique"
+        n_max_novel_cls = class_probs.shape[1] - n_known_cls
+
+        n = class_probs.shape[0]
+        known_class_probs = class_probs[:, :n_known_cls]
+
+        # If the novelty type is 0, 3, 5, or 6, then we know the class vector
+        # vector only contains known class, and the labels are the same
+        # across boxes. Compute a single count vector for all three of these
+        # types.
+        
+        # For each class s, compute
+        # P(all S_j=k | all S_j are the same and known)
+        same_class_probs = torch.prod(known_class_probs, dim=0)
+        unique_types_class_probs = same_class_probs / same_class_probs.sum()
+        unique_types_class_probs[
+            same_class_probs.isclose(t0)
+        ] = 0.0
+
+        # If all unique types class probs are zero, then we'll end up with
+        # a prediction of zero agents. In that case, we should renormalize
+        # to a uniform distribution
+        normalizer = unique_types_class_probs.sum()
+        if normalizer != 0:
+            unique_types_class_probs /= normalizer
+        else:
+            unique_types_class_probs[:] = 1.0 / len(unique_types_class_probs)
+
+        # Compute the class count vector given that all the class are the
+        # same and known (this can be done by just multiplying
+        # same_class_cond_prob by the number of boxes)
+        unique_types_class_count = unique_types_class_probs * n
+
+        # Append zeros for the novel classes
+        unique_types_class_count = torch.cat(
+            (
+                unique_types_class_count,
+                torch.zeros(
+                    n_max_novel_cls,
+                    device=unique_types_class_count.device
+                )
+            ),
+            dim=0
+        )
+
+        # Type 0/3/5/6 class presence / absence. In this particular case,
+        # it's just equal to the class probs
+        unique_types_class_presence = unique_types_class_probs
+
+        # Append zeros for the novel classes
+        unique_types_class_presence = torch.cat(
+            (
+                unique_types_class_presence,
+                torch.zeros(
+                    n_max_novel_cls,
+                    device=unique_types_class_presence.device
+                )
+            ),
+            dim=0
+        )
+
+        # To compute type 2/4 count predictions, here is the general strategy:
         # To compute a count, we want a weighted average of counts across
         # possible valid predictions, with the weights being the conditional
         # probabilities of those predictions and the counts being the counts
-        # of the species per-prediction. That is, for some species k, we
+        # of the class per-prediction. That is, for some class k, we
         # want to compute the count n_k as
         # \sum_{valid p}(# boxes containing k in p * P(Tuple=p|valid)).
         # Suppose p is a matrix with each row representing a box and each
-        # column representing a species. Each row is a one-hot vector.
+        # column representing a class. Each row is a one-hot vector.
         # Then n_k = \sum_{valid p}(\sum_j(p_jk) * P(Tuple=p|valid))
         # = \sum_j(\sum_{valid p}(p_jk * P(Tuple=p|valid)))
         # = \sum_j(\sum_{valid p s.t. p_jk = 1}(p_jk * P(Tuple=p|valid)))
         # = \sum_j(\sum_{valid p s.t. p_jk = 1}(P(Tuple=p|valid)))
         # = \sum_j(P(S_j=k | valid)).
-        # And this is exactly what they compute. So, as it turns out, we only
-        # need to fix the presence solutions.
+        # That is, we start by computing P(S_j=k | valid prediction), i.e.
+        # P(S_j=k | Type=t), for each box. Then we just sum over the boxes.
 
-        # NOTE The rigorous presence solution would be as follows. We want
-        # to compute the probability that the predicted tuple contains the
-        # species and is a valid prediction for the given type, and then divide
-        # (normalize) by the probability that the prediction is valid for the
-        # given type.
+        # If the novelty type is 4, then we know the class vector only
+        # contains known class, and they cannot all be the same. We'll
+        # compute this in two stages. First, we'll ignore the novel class
+        # and renormalize to condition out type 2. Then, we'll subtract off
+        # the probability vector for all the class being the same---a box
+        # belongs to class j if all the boxes belong to class j, OR it
+        # belongs to class j AND one or more other boxes belong to another
+        # class. We want to compute the latter, but it's difficult to compute
+        # directly due to a combinatoric problem. So instead, we just subtract
+        # off the former value from the sum of the two disjoint event
+        # probabilities.
 
-        # NOTE Type 4 presence solution: 
+        ### Type 4 counts:
+
+        # Stage 1: Compute label predictions conditioned on the absence of any
+        # novel labels
+        known_class_cond_probs = \
+            known_class_probs / known_class_probs.sum(dim=1, keepdim=True)
+        # Set values to zero wherever numerator was extremely close to zero
+        known_class_cond_probs[
+            known_class_probs.isclose(t0)
+        ] = 0.0
+        # If all values are zero for a given box, set the probabilities to the
+        # uniform distribution
+        known_class_cond_probs[
+            torch.all(known_class_cond_probs.isclose(t0), dim=1)
+        ] = 1.0 / known_class_cond_probs.shape[1]
+
+        # known_class_cond_probs represents P(S_j=k | c), where c is the
+        # condition: there are no novel class.
+
+        # Stage 2:
+        # P(S_j=k, >=2 unique class | c) = P(S_j=k, NOT ALL S_j=k | c)
+        # = P(S_j=k | c) - P(all S_j=k | c)
+        same_class_cond_probs = torch.prod(known_class_cond_probs, dim=0)
+        diff_class_cond_probs = \
+            known_class_cond_probs - same_class_cond_probs
+
+        # Normalize to convert from P(S_j=k, >=2 unique class | c) to
+        # P(S_j=k | type=4)
+        combination_type_class_probs = diff_class_cond_probs / \
+            diff_class_cond_probs.sum(dim=1, keepdim=True)
+        # Set values to zero wherever numerator was extremely close to zero
+        combination_type_class_probs[
+            diff_class_cond_probs.isclose(t0)
+        ] = 0.0
+        # If all values are zero for a given box, set the probabilities to the
+        # uniform distribution
+        combination_type_class_probs[
+            torch.all(combination_type_class_probs.isclose(t0), dim=1)
+        ] = 1.0 / combination_type_class_probs.shape[1]
+
+        # Compute class count vector for type 4
+        combination_type_class_count = combination_type_class_probs.sum(dim=0)
+
+        # Append zeros for the novel classes
+        combination_type_class_count = torch.cat(
+            (
+                combination_type_class_count,
+                torch.zeros(
+                    n_max_novel_cls,
+                    device=combination_type_class_count.device
+                )
+            ),
+            dim=0
+        )
+
+        ### Type 4 presence:
+
         # First, compute P(k present, valid t4 | no novel boxes)
-        # = P(at least one k | no novel boxes) - P(all k | no novel boxes)
+        # = P(k present | no novel boxes) - P(all k | no novel boxes)
+        # = P(k present | c) - P(all k | c)
+        # = [1 - \prod_j(1 - P(S_j=k | c))] - \prod_j(P(S_j=k | c))
+        # = [1 - \prod_j(1 - P(S_j=k | c))] - same_class_cond_probs
+        p_cond_present = 1 - torch.prod(1 - known_class_cond_probs, dim=0)
+        p_cond_present_combination_type = p_cond_present - same_class_cond_probs
+
         # Next, compute P(valid t4 | no novel boxes)
-        # = 1 - P(one unique species | no novel boxes)
-        # = 1 - \sum_k(P(all k | no novel boxes)).
+        # = P(valid t4 | c)
+        # = 1 - P(one unique class | c)
+        # = 1 - \sum_k(P(all k | c))
+        # = 1 - \sum_k(\prod_j(P(S_j=k | c)))
+        p_cond_combination_type = 1 - torch.prod(known_class_cond_probs, dim=0).sum(dim=0)
+
         # Lastly, compute P(k present | valid t4)
         # = P(k present | valid t4, no novel boxes)
         # = P(k present, valid t4 | no novel boxes) / P(t4 | no novel boxes).
-        # NOTE that we can condition all of our box-label probabilites on
-        # no-novel-boxes by just dropping the novel box probabilities and
-        # renormalizing.
-        
-        # NOTE Type 2 presence solution:
-        # First, compute each P(k present, valid t2) = P(all boxes k or novel)
-        # - P(all boxes k) - P(all boxes novel).
-        # Next, compute P(all novel).
-        # Next, P(valid t2) = P(all novel) + \sum_k(P(k present, valid t2)).
-        # Finally, P(k present | valid t2)
-        # = P(k present, valid t2) / P(valid t2)
+        combination_type_class_presence = p_cond_present_combination_type / p_cond_combination_type
+        combination_type_class_presence[
+            p_cond_present_combination_type.isclose(t0)
+        ] = 0.0
 
-        n = species_probs.shape[0]
-        known_species_probs = species_probs[:self._n_known_species_cls]
+        # This may result in predicting zero presence for everything in certain
+        # edge cases or due to numerical inprecision, but
+        # at least two classes MUST be present. This means that for any class
+        # k, the logical OR of the remaining classes should have presence
+        # probability 1, which means that their sum should be at LEAST 1.
+        # Similarly, the sums of their complements should be at MOST K - 2.
+        # Determine the scalar constant by which we must scale down each non-k
+        # group's compliments in order to achieve a complement sum of K - 2.
+        non_k_mask = 1 - torch.eye(len(combination_type_class_presence), device=p_type.device)
+        non_k_compliment_sums = (non_k_mask * (1 - combination_type_class_presence)).sum(dim=1)
+        scalers = (len(combination_type_class_presence) - 2) / non_k_compliment_sums
 
-        # If the novelty type is 0, 3, 5, or 6, then we know the species vector
-        # vector only contains known species, and the labels are the same
-        # across boxes. Compute a single count vector for all three of these
-        # types.
-        
-        # For each species s, compute
-        # P(all S_j=s | all S_j are the same and known)
-        same_species_probs = torch.prod(known_species_probs, dim=0)
-        t0356_species_probs = same_species_probs / same_species_probs.sum()
-        
-        # Compute the species count vector given that all the species are the
-        # same and known (this can be done by just multiplying
-        # same_species_cond_prob by the number of boxes)
-        t0356_species_count = t0356_species_probs * n
+        # We need ALL of these compliment sums to be at most K - 1, but we want
+        # to scale down each compliment sum, and therefore each compliment,
+        # equally. So we use the minimum of these compliment sums and scale
+        # them ALL down by that amount---unless, of course, the minimum of these
+        # compliment sums is greater than 1, in which case no scaling is
+        # necessary.
+        selected_scaler = scalers.min()
+        if not selected_scaler.isnan() and selected_scaler < 1.0:
+            # Scale down all the compliments
+            scaled_compliments = selected_scaler * (1 - combination_type_class_presence)
 
-        # Type 0/3/5/6 species presence / absence. In this particular case,
-        # it's just equal to the species probs
-        t0356_species_presence = t0356_species_probs
+            # And recompute the presence probabilities from these scaled
+            # compliments
+            combination_type_class_presence = 1 - scaled_compliments
 
-        # If the novelty type is 4, then we know the species vector only
-        # contains known species, and they cannot all be the same. We'll
-        # compute this in two stages. First, we'll ignore the novel species
-        # and renormalize to condition out type 2. Then, we'll subtract off
-        # the probability vector for all the species being the same---a box
-        # belongs to species j if all the boxes belong to species j, OR it
-        # belongs to species j AND one or more other boxes belong to another
-        # species. We want to compute the latter, but it's difficult to compute
-        # directly due to a combinatoric problem. So instead, we just subtract
-        # off the former value from the sum of the two disjoint event
-        # probabilities.
+        # Append zeros for the novel classes
+        combination_type_class_presence = torch.cat(
+            (
+                combination_type_class_presence,
+                torch.zeros(
+                    n_max_novel_cls,
+                    device=combination_type_class_presence.device
+                )
+            ),
+            dim=0
+        )
 
-        # Stage 1: Compute label predictions conditioned on the absence of any
-        # novel labels
-        known_species_cond_probs = \
-            known_species_probs / known_species_probs.sum(dim=1, keepdim=True)
+        ### Type 2 count:
 
-        # known_species_cond_probs represents P(S_j=s | c), where c is the
-        # condition: there are no novel species.
-
-        # Stage 2:
-        # P(S_j=s, >=2 unique species | c) = P(S_j=s, NOT ALL S_j=s | c)
-        # = P(S_j=s | c) - P(all S_j=s | c)
-        same_species_cond_probs = torch.prod(known_species_cond_probs, dim=0)
-        diff_species_cond_probs = \
-            known_species_cond_probs - same_species_cond_probs
-
-        # Normalize to convert from P(S_j=s, >=2 unique species | c) to
-        # P(S_j=s | type=4)
-        t4_species_probs = diff_species_cond_probs / \
-            diff_species_cond_probs.sum(dim=1, keepdim=True)
-
-        # Compute species count vector for type 4
-        t4_species_count = t4_species_probs.sum(dim=0)
-
-        # Type 4 species presence / absence
-        t4_species_presence = 1 - torch.prod(1 - t4_species_probs, dim=0)
-
-        # Given c, a species is absent and it's a type 4 image if and only if
-        # none of the boxes match the species and the boxes do not belong to
-        # exactly one known species.
-
-        # To compute type 2 species probabilities, we consider the following:
-        # A type 2 image's box labels cannot belong to two or more known species
+        # A type 2 image's box labels cannot belong to two or more known class
         # classes, and there must be at least one novel label. These two
         # criteria form a necessary and sufficient definition for type 2.
         # We'll condition on them one at a time, starting with the former:
-        # For known s:
-        # P(S_j=s, <2 known species) = P(S_j=s, all other S_j in {s, novel})
-        novel_species_probs = species_probs[self._n_known_species_cls:]
-        combined_novel_species_probs = novel_species_probs.sum(dim=1)
-        known_or_novel_species_probs = \
-            known_species_probs + combined_novel_species_probs[:, None]
-        unique_known_species_probs = \
-            torch.prod(known_or_novel_species_probs, dim=0) / \
-                known_or_novel_species_probs
-        known_unique_species_probs = \
-            known_species_probs * unique_known_species_probs
+        # For known k:
+        # P(S_j=k, <2 known class) = P(S_j=k, all other S_j in {k, novel})
+        novel_class_probs = class_probs[:, n_known_cls:]
+        combined_novel_class_probs = novel_class_probs.sum(dim=1)
+        known_or_novel_class_probs = \
+            known_class_probs + combined_novel_class_probs[:, None]
+        # TODO Maybe we can't compute it this way. If one of the probabilities
+        # is zero but the rest aren't, that'll give us an NaN where there
+        # shouldn't be neither an NaN nor zero. We might have to do some
+        # fancy indexing instead
+        unique_known_class_probs = \
+            torch.prod(known_or_novel_class_probs, dim=0) / \
+                known_or_novel_class_probs
+        known_unique_class_probs = \
+            known_class_probs * unique_known_class_probs
 
-        # For novel s:
-        # P(S_j=s, <2 known species)
-        # = P(S_j=s) * \sum_{known k} P(All other S_j in {k, novel})
-        novel_unique_species_probs = \
-            novel_species_probs * \
-                known_or_novel_species_probs.sum(dim=1, keepdim=True)
+        # For novel k:
+        # P(S_j=k, <2 known class)
+        # = P(S_j=k, \union_{known k}(remaining S_j in {k, novel}))
+        # = P(S_j=k, \union_{known k}(A_k)),
+        #       where A_k = "remaining S_j in {k, novel}"
+        # = P(S_j=k) * P(\union_{known k}(A_k))
+        # = P(S_j=k) * [
+        #       \sum_{known k}(P(A_k))
+        #       - \sum_{known k1, k2}(P(A_k1, A_k2))
+        #       + \sum_{known k1, k2, k3}(P(A_k1, A_k2, A_k3))
+        #       - ... + ... .....
+        #   ]
+        # ... NOTE: This is just the formula for the union of K events
+        # ... NOTE: (A_k1 AND A_k2) = N = "remaining S_j all novel"
+        # ... NOTE: (N AND A_k) = N, for any k
+        # = P(S_j=k) * [
+        #       \sum_{known k}(P(A_k))
+        #       - \sum_{known k1, k2}(P(N))
+        #       + \sum_{known k1, k2, k3}(P(N))
+        #       - ... + ... .....
+        #   ]
+        # = P(S_j=k) * [
+        #       \sum_{known k}(P(A_k))
+        #       + P(N) * (-(K choose 2) + (K choose 3) - ... (K choose K))
+        #   ], where K is the number of known classes
+        # = P(S_j=k) * [
+        #       \sum_{known k}(P(A_k))
+        #       + P(N) * (1 - K)
+        #   ].
 
-        # Concatenate the results for known and novel species
-        unique_species_probs = torch.cat(
-            (known_unique_species_probs, novel_unique_species_probs),
+        # P(A_k) = \prod_{remaining j'}(P(S_j' in {k, novel}))
+        # = \prod_j'(P(S_j' in {k, novel})) / P(S_j in {k, novel})
+        # = unique_known_class_probs. Already computed.
+ 
+        # P(N) = \prod_{remaining j'}(P(S_j' in novel))
+        # = \prod_j'(P(S_j' in novel)) / P(S_j in novel)
+        # TODO again, we might have to do some fancy indexing instead. Otherwise
+        # we'll get NaNs or zeros where we shouldn't.
+        prob_remaining_novel =\
+            torch.prod(combined_novel_class_probs, dim=0) /\
+                combined_novel_class_probs
+
+        # Now, P(S_j=k, <2 known class) for novel s:
+        novel_unique_class_probs = novel_class_probs *\
+            (
+                unique_known_class_probs.sum(dim=1)\
+                    + prob_remaining_novel * (1 - known_class_probs.shape[1])
+            )[:, None]
+
+        # Concatenate the results for known and novel class
+        unique_class_probs = torch.cat(
+            (known_unique_class_probs, novel_unique_class_probs),
             dim=1
         )
 
-        # Normalize to convert from joint to conditional probability
-        unique_species_cond_probs = \
-            unique_species_probs / unique_species_probs.sum(dim=1, keepdim=True)
+        # Normalize to convert from joint to conditional probability,
+        # P(S_j=k | <2 known class)
+        unique_class_cond_probs = \
+            unique_class_probs / unique_class_probs.sum(dim=1, keepdim=True)
+        # Set NANs to zero
+        unique_class_cond_probs[
+            unique_class_probs.isclose(t0)
+        ] = 0.0
+        # If they're all zero for a given box, set them to the uniform
+        # distribution
+        unique_class_cond_probs[
+            (unique_class_cond_probs == 0.0).all(dim=1)
+        ] = 1.0 / unique_class_cond_probs.shape[1]
 
         # Extract known and novel parts of conditional probabilities
-        known_unique_species_cond_probs = \
-            unique_species_cond_probs[:self._n_known_species_cls]
-        novel_unique_species_cond_probs = \
-            unique_species_cond_probs[self._n_known_species_cls:]
+        known_unique_class_cond_probs = \
+            unique_class_cond_probs[:, :n_known_cls]
+        novel_unique_class_cond_probs = \
+            unique_class_cond_probs[:, n_known_cls:]
 
-        # unique_species_cond_probs represents P(S_j=s | c), where c is the
-        # condition: there are 0 or 1 unique species among the boxes.
+        # unique_class_cond_probs represents P(S_j=k | c), where c is the
+        # condition: there are 0 or 1 unique class among the boxes.
         # The next step is to additionally condition on the event that there
         # is at least one novel label. That's easy.
-        # For known s:
-        # P(S_j=s, >=1 novel label | c)
-        # = P(S_j=s | c) - P(S_j=s, no novel labels | c)
-        # = P(S_j=s | c) - P(all S_j=s | c)
-        exactly_one_species_cond_probs = \
-            torch.prod(known_unique_species_cond_probs, dim=0)
-        known_t2_joint_probs = \
-            known_unique_species_cond_probs - exactly_one_species_cond_probs
+        # For known k:
+        # P(S_j=k, >=1 novel label | c)
+        # = P(S_j=k | c) - P(S_j=k, no novel labels | c)
+        # = P(S_j=k | c) - P(all S_j=k | c)
+        exactly_one_class_cond_probs = \
+            torch.prod(known_unique_class_cond_probs, dim=0)
+        known_novel_box_type_joint_probs = \
+            known_unique_class_cond_probs - exactly_one_class_cond_probs
 
         # And for novel s, it's trivial:
-        # P(S_j=s, >=1 novel label | c) = P(S_j=s | c)
-        # = novel_unique_species_cond_probs
+        # P(S_j=k, >=1 novel label | c) = P(S_j=k | c)
+        # = novel_unique_class_cond_probs
         
-        # Concatenate known and novel parts to get P(S_j=s | type=2)
-        t2_species_probs = torch.cat(
-            (known_t2_joint_probs, novel_unique_species_cond_probs),
+        # Concatenate known and novel parts to get P(S_j=k | type=2)
+        novel_box_type_class_joint_probs = torch.cat(
+            (known_novel_box_type_joint_probs, novel_unique_class_cond_probs),
             dim=1
         )
 
-        # Compute species count vector for type 2
-        t2_species_count = t2_species_probs.sum(dim=0)
+        # Again, normalize to get conditional probability
+        # P(S_j=k | >=1 novel label, c) = P(S_j=k | valid type 2)
+        novel_box_type_class_probs = novel_box_type_class_joint_probs /\
+            novel_box_type_class_joint_probs.sum(dim=1, keepdim=True)
+        # Set NANs to zero
+        novel_box_type_class_probs[
+            novel_box_type_class_joint_probs.isclose(t0)
+        ] = 0.0
+        # If they're all zero for a given box, set them to the uniform
+        # distribution
+        novel_box_type_class_probs[
+            (novel_box_type_class_probs == 0.0).all(dim=1)
+        ] = 1.0 / novel_box_type_class_probs.shape[1]
 
-        # Type 2 species presence / absence
-        t2_species_presence = 1 - torch.prod(1 - t2_species_probs, dim=0)
+        # Compute class count vector for type 2
+        novel_box_type_class_count = novel_box_type_class_probs.sum(dim=0)
 
-        # Compute expectation of species counts and presence / absence 
-        # probabilities by mixing the per-type predictions weighted by the
-        # corresponding P(Type) probabilities
-        t0356 = p_type[0] + p_type[2] + p_type[4] + p_type[5]
-        t2 = p_type[1]
-        t4 = p_type[3]
-        species_count = t0356_species_count * t0356 \
-            + t2_species_count * t2 \
-            + t4_species_count * t4
+        ### Type 2 presence:
 
-        return species_count, species_presence
-
-    def _activity(self, activity_probs, p_type):
-        # TODO I'm not sure that these computations are rigorously correct.
-        # I think we make some conditional independence assumptions where
-        # inappropriate. For instance, even if S_j is conditionally
-        # independent of S_k given the box images, when we also condition
-        # on type=4, then that's not necessarily the case anymore. And yet,
-        # I don't think a rigorous solution can be computed without solving
-        # a potentially massive, combinatoric problem. We need to think more
-        # carefully about how to construct these predictions. The exhaustive
-        # solution would be to compute joint probabilities for every possible
-        # tuple prediction, and then use those probabilities to compute a
-        # weighted average of appropriate count and presence vectors. Then
-        # we'd merge those weighted-average vectors across novelty types.
-
-        # NOTE: Every probability here is implicitly conditioned on the box
-        # image. And we're able to multiply probabilities across boxes to
-        # compute intersection probabilities because we're making a conditional
-        # independence assumption: box class probabilities are conditionally
-        # independent given the box images themselves because a box should
-        # generally be a sufficient statistic for the label.
-        n = activity_probs.shape[0]
-        known_activity_probs = activity_probs[:self._n_known_activity_cls]
-
-        # If the novelty type is 0, 2, 4, or 6, then we know the activity vector
-        # vector only contains known activities, and the labels are the same
-        # across boxes. Compute a single count vector for all three of these
-        # types.
+        # First, compute P(valid t2)
+        # P(valid t2) = P(\union_{known k}(A_k)),
+        #   where A_k = "all in {k, novel} but not all k"
+        # = \sum_{known k}(P(A_k))
+        #       - \sum_{known k1, k2}(P(A_k1, A_k2))
+        #       + \sum_{known k1, k2, k3}(P(A_k1, A_k2, A_k3))
+        #       - ... 
+        # ... NOTE: This is just the formula for the union of N events
+        # ... NOTE: (A_k1 AND A_k2) = N = "all novel"
+        # ... NOTE: (N AND A_k) = N, for any k
+        # = \sum_{known k}(P(A_k))
+        #       - \sum_{known k1, k2}(P(N))
+        #       + \sum_{known k1, k2, k3}(P(N))
+        #       - ...
+        # = \sum_{known k}(P(A_k))
+        #       + P(N) * (-(K choose 2) + (K choose 3) - ... (K choose K))
+        # = \sum_{known k}(P(A_k))
+        #       + P(N) * (1 - K)
         
-        # For each activity s, compute
-        # P(all S_j=s | all S_j are the same and known)
-        same_activity_probs = torch.prod(known_activity_probs, dim=0)
-        t0246_activity_probs = same_activity_probs / same_activity_probs.sum()
+        # P(A_k) = P(all in {k, novel}) - P(all k)
+        prob_a_k =\
+            torch.prod(known_or_novel_class_probs, dim=0) -\
+                torch.prod(known_class_probs, dim=0)
+
+        # P(N) = P(all novel)
+        prob_n = torch.prod(combined_novel_class_probs, dim=0)
+
+        # P(valid t2)
+        prob_novel_box_type =\
+            prob_a_k.sum(dim=0) +\
+                prob_n * (1 - known_class_probs.shape[1])
+
+        # Next, compute each P(k present, valid t2).
         
-        # Compute the activity count vector given that all the activity are the
-        # same and known (this can be done by just multiplying
-        # same_activity_cond_prob by the number of boxes)
-        t0246_activity_count = t0246_activity_probs * n
-
-        # Type 0/2/4/6 activity presence / absence
-        t0246_activity_presence = 1 - torch.prod(1 - t0246_activity_probs, dim=0)
-
-        # If the novelty type is 5, then we know the activity vector only
-        # contains known activity, and they cannot all be the same. We'll
-        # compute this in two stages. First, we'll ignore the novel activity
-        # and renormalize to condition out type 2. Then, we'll subtract off
-        # the probability vector for all the activity being the same---a box
-        # belongs to activity j if all the boxes belong to activity j, OR it
-        # belongs to activity j AND one or more other boxes belong to another
-        # activity. We want to compute the latter, but it's difficult to compute
-        # directly due to a combinatoric problem. So instead, we just subtract
-        # off the former value from the sum of the two disjoint event
-        # probabilities.
-        
-        # Stage 1: Compute label predictions conditioned on the absence of any
-        # novel labels
-        known_activity_cond_probs = \
-            known_activity_probs / known_activity_probs.sum(dim=1, keepdim=True)
-
-        # known_activity_cond_probs represents P(S_j=s | c), where c is the
-        # condition: there are no novel activity.
-        # Stage 2:
-        # P(S_j=s, >=2 unique activity | c) = P(S_j=s, NOT ALL S_j=s | c)
-        # = P(S_j=s | c) - P(all S_j=s | c)
-        same_activity_cond_probs = torch.prod(known_activity_cond_probs, dim=0)
-        diff_activity_cond_probs = \
-            known_activity_cond_probs - same_activity_cond_probs
-
-        # Normalize to convert from P(S_j=s, >=2 unique activity | c) to
-        # P(S_j=s | type=5)
-        t5_activity_probs = diff_activity_cond_probs / \
-            diff_activity_cond_probs.sum(dim=1, keepdim=True)
-
-        # Compute activity count vector for type 5
-        t5_activity_count = t5_activity_probs.sum(dim=0)
-
-        # Type 5 activity presence / absence
-        t5_activity_presence = 1 - torch.prod(1 - t5_activity_probs, dim=0)
-
-        # To compute type 3 activity probabilities, we consider the following:
-        # A type 3 image's box labels cannot belong to two or more known activity
-        # classes, and there must be at least one novel label. These two
-        # criteria form a necessary and sufficient definition for type 3.
-        # We'll condition on them one at a time, starting with the former:
-        # For known s:
-        # P(S_j=s, <3 known activity) = P(S_j=s, all other S_j in {s, novel})
-        novel_activity_probs = activity_probs[self._n_known_activity_cls:]
-        combined_novel_activity_probs = novel_activity_probs.sum(dim=1)
-        known_or_novel_activity_probs = \
-            known_activity_probs + combined_novel_activity_probs[:, None]
-        unique_known_activity_probs = \
-            torch.prod(known_or_novel_activity_probs, dim=0) / \
-                known_or_novel_activity_probs
-        known_unique_activity_probs = \
-            known_activity_probs * unique_known_activity_probs
+        # For known k:
+        # P(k present, valid t2)
+        # = P(all boxes s or novel) - P(all boxes s) - P(all boxes novel).
+        known_prob_present_novel_box_type =\
+            torch.prod(known_or_novel_class_probs, dim=0) -\
+                torch.prod(known_class_probs, dim=0) -\
+                torch.prod(combined_novel_class_probs, dim=0)
 
         # For novel s:
-        # P(S_j=s, <3 known activity)
-        # = P(S_j=s) * \sum_{known k} P(All other S_j in {k, novel})
-        novel_unique_activity_probs = \
-            novel_activity_probs * \
-                known_or_novel_activity_probs.sum(dim=1, keepdim=True)
+        # P(k present, valid t2) = P(valid t2) - P(k absent, valid t2).
 
-        # Concatenate the results for known and novel activity
-        unique_activity_probs = torch.cat(
-            (known_unique_activity_probs, novel_unique_activity_probs),
-            dim=1
+        # P(k absent, valid t2)
+        # = \union_{known k}(A_k),
+        #       where A_k = "all in {k, novel / k} and not all k"
+        # = \sum_{known k}(P(A_k))
+        #       - \sum_{known k1, k2}(P(A_k1, A_k2))
+        #       + \sum_{known k1, k2, k3}(P(A_k1, A_k2, A_k3))
+        #       - ... 
+        # ... NOTE: This is just the formula for the union of N events
+        # ... NOTE: (A_k1 AND A_k2) = N = "all in novel / k"
+        # ... NOTE: (N AND A_k) = N, for any k
+        # = \sum_{known k}(P(A_k))
+        #       - \sum_{known k1, k2}(P(N))
+        #       + \sum_{known k1, k2, k3}(P(N))
+        #       - ...
+        # = \sum_{known k}(P(A_k))
+        #       + P(N) * (-(K choose 2) + (K choose 3) - ... (K choose K))
+        # = \sum_{known k}(P(A_k))
+        #       + P(N) * (1 - K)
+
+        # P(A_k) = P(all in {k, novel / k}) - P(all k)
+        novel_not_s_prob =\
+            combined_novel_class_probs[:, None] - novel_class_probs
+        prob_not_s_maybe_k =\
+            known_class_probs[:, None] + novel_not_s_prob[:, :, None]
+        prob_absent_s_unique_k = torch.prod(prob_not_s_maybe_k, dim=0)
+        prob_a_k =\
+            prob_absent_s_unique_k - torch.prod(known_class_probs, dim=0)
+
+        # P(N) = P(all in {novel / k})
+        prob_n = torch.prod(novel_not_s_prob, dim=0)
+
+        # P(k absent, valid t2)
+        prob_s_absent_novel_box_type = prob_a_k.sum(dim=1) +\
+            prob_n * (1 - known_class_probs.shape[1])
+
+        # P(k present, valid t2)
+        novel_prob_present_novel_box_type = prob_novel_box_type - prob_s_absent_novel_box_type
+
+        # Concatenate known and novel components for P(k present, valid t2)
+        prob_present_novel_box_type = torch.cat(
+            (known_prob_present_novel_box_type, novel_prob_present_novel_box_type),
+            dim=0
         )
 
-        # Normalize to convert from joint to conditional probability
-        unique_activity_cond_probs = \
-            unique_activity_probs / unique_activity_probs.sum(dim=1, keepdim=True)
+        # Finally, P(k present | valid t2)
+        # = P(k present, valid t2) / P(valid t2)
+        novel_box_type_class_presence = prob_present_novel_box_type / prob_novel_box_type
+        novel_box_type_class_presence[
+            prob_present_novel_box_type.isclose(t0)
+        ] = 0.0
+        # TODO This may result in predicting zero presence for everything.
+        # But at least one novel class MUST be present, given that the correct
+        # tuple is a box class novelty. Since we know that at least
+        # one class must be present, then the OR of all of them should be
+        # 1, and the OR of all of them is less than or equal to the sum
+        # of each of them. That is, the sums of the presences of each class
+        # must be at least 1. So rather than predicting zeros for everything,
+        # Our presence predictions will likely be a bit closer to the ground
+        # truth if we at least predict the lower bound.
 
-        # Extract known and novel parts of conditional probabilities
-        known_unique_activity_cond_probs = \
-            unique_activity_cond_probs[:self._n_known_activity_cls]
-        novel_unique_activity_cond_probs = \
-            unique_activity_cond_probs[self._n_known_activity_cls:]
-
-        # unique_activity_cond_probs represents P(S_j=s | c), where c is the
-        # condition: there are 0 or 1 unique activity among the boxes.
-        # The next step is to additionally condition on the event that there
-        # is at least one novel label. That's easy.
-        # For known s:
-        # P(S_j=s, >=1 novel label | c)
-        # = P(S_j=s | c) - P(S_j=s, no novel labels | c)
-        # = P(S_j=s | c) - P(all S_j=s | c)
-        exactly_one_activity_cond_probs = \
-            torch.prod(known_unique_activity_cond_probs, dim=0)
-        known_t3_joint_probs = \
-            known_unique_activity_cond_probs - exactly_one_activity_cond_probs
-
-        # And for novel s, it's trivial:
-        # P(S_j=s, >=1 novel label | c) = P(S_j=s | c)
-        # = novel_unique_activity_cond_probs
-        
-        # Concatenate known and novel parts to get P(S_j=s | type=3)
-        t3_activity_probs = torch.cat(
-            (known_t3_joint_probs, novel_unique_activity_cond_probs),
-            dim=1
-        )
-
-        # Compute activity count vector for type 3
-        t3_activity_count = t3_activity_probs.sum(dim=0)
-
-        # Type 3 activity presence / absence
-        t3_activity_presence = 1 - torch.prod(1 - t3_activity_probs, dim=0)
-
-        # Compute expectation of activity counts and presence / absence 
+        # Compute expectation of class counts and presence / absence 
         # probabilities by mixing the per-type predictions weighted by the
         # corresponding P(Type) probabilities
-        t0246 = p_type[0] + p_type[2] + p_type[4] + p_type[5]
-        t2 = p_type[1]
-        t4 = p_type[3]
-        activity_count = t0246_activity_count * t0246 \
-            + t2_activity_count * t2 \
-            + t4_activity_count * t4
+        p_unique_type = p_type[unique_types].sum()
+        p_novel_box = p_type[novel_box_type]
+        p_combination = p_type[combination_type]
+        class_count = unique_types_class_count * p_unique_type \
+            + novel_box_type_class_count * p_novel_box \
+            + combination_type_class_count * p_combination
+        class_presence = unique_types_class_presence * p_unique_type \
+            + novel_box_type_class_presence * p_novel_box \
+            + combination_type_class_presence * p_combination
 
-        activity_presence = t0246_activity_presence * t0246 \
-            + t2_activity_presence * t2 \
-            + t4_activity_presence * t4
-
-        return activity_count, activity_presence
+        return class_count, class_presence
 
     '''
     Parameters:
@@ -409,13 +543,23 @@ class TuplePredictor:
             cur_activity_probs = activity_probs[idx]
             cur_p_type = p_type[idx]
 
-            species_count, species_presence = self._species(
+            species_count, species_presence = self._counts_presence(
                 cur_species_probs,
-                cur_p_type
+                cur_p_type,
+                self._n_species_cls,
+                self._n_known_species_cls,
+                [0, 2, 4, 5],
+                1,
+                3
             )
-            activity_count, activity_presence = self._activity(
+            activity_count, activity_presence = self._counts_presence(
                 cur_activity_probs,
-                cur_p_type
+                cur_p_type,
+                self._n_activity_cls,
+                self._n_known_activity_cls,
+                [0, 1, 3, 5],
+                2,
+                4
             )
             predictions.append((
                 species_count,

@@ -46,3 +46,13 @@ class LabelMapper:
         for k, v in self._inverse_label_mapping.items():
             res[labels == k] = v
         return res
+
+    def map_range(self, end):
+        mapped_range = []
+        placeholder_index = self._highest_label + 1
+        for i in range(end):
+            if i in self._label_mapping:
+                mapped_range.append(self._label_mapping[i])
+            else:
+                mapped_range.append(placeholder_index)
+                placeholder_index += 1

@@ -18,7 +18,7 @@ def smallest_non_none(A):
     return smallest
 
 
-def select_queries(budget, P_type, P_N, A_S, A_V, A_O):
+def select_queries(budget, P_N, bbox_counts):
     ''' 
     Formulates a set of images for which we'll be asking
     for oracle feedback.
@@ -30,8 +30,11 @@ def select_queries(budget, P_type, P_N, A_S, A_V, A_O):
     if P_N.shape[0] == 0:
         raise ValueError("Must pass in a nonzero number of queries")
 
-    indices = torch.argsort(P_N, descending=True)
-    selection = indices[:budget]
+    sorted_indices = torch.argsort(P_N, descending=True)
+    non_empty_mask = bbox_counts > 0
+    sorted_non_empty_mask = non_empty_mask[sorted_indices]
+    sorted_non_empty_indices = sorted_indices[sorted_non_empty_mask]
+    selection = sorted_non_empty_indices[:budget]
     return selection.tolist()
 
 if __name__ == "__main__":

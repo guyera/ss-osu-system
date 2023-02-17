@@ -4,6 +4,7 @@ import time
 import os
 import argparse
 
+from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader
 import torch.distributed as dist
@@ -171,7 +172,8 @@ val_species_labels = []
 val_activity_labels = []
 
 with torch.no_grad():
-    for species_labels, activity_labels, box_images in train_loader:
+    progress = tqdm(train_loader)
+    for species_labels, activity_labels, box_images in progress:
         # Move to device
         species_labels = species_labels.to(device)
         activity_labels = activity_labels.to(device)
@@ -189,7 +191,8 @@ with torch.no_grad():
     train_species_labels = torch.cat(train_species_labels, dim=0)
     train_activity_labels = torch.cat(train_activity_labels, dim=0)
 
-    for species_labels, activity_labels, box_images in val_loader:
+    progress = tqdm(val_loader)
+    for species_labels, activity_labels, box_images in progress:
         # Move to device
         species_labels = species_labels.to(device)
         activity_labels = activity_labels.to(device)

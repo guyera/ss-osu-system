@@ -122,7 +122,10 @@ class BoxImageDataset(torch.utils.data.Dataset):
             pil_box_image = Image.open(box_image_cache_file)
             box_image = to_tensor(pil_box_image)
             box_images.append(box_image)
-        box_images = torch.stack(box_images, dim=0)
+        if len(box_images) > 0:
+            box_images = torch.stack(box_images, dim=0)
+        else:
+            box_images = torch.empty(0, 0, 0, 0)
 
         return species_labels,\
             activity_labels,\
@@ -145,15 +148,22 @@ class BoxImageDataset(torch.utils.data.Dataset):
             image_tensor = images.tensors[0]
             image_size = images.image_sizes[0]
             target = targets[0]
-            detection['boxes'] = transform.resize_boxes(
-                detection['boxes'],
-                original_image_size,
-                image_size
-            )
+            if len(detection['boxes']) > 0:
+                detection['boxes'] = transform.resize_boxes(
+                    detection['boxes'],
+                    original_image_size,
+                    image_size
+                )
 
-            species_labels = target['species'].detach()
-            activity_labels = target['activity'].detach()
-            novelty_type_labels = target['novelty_type'].detach()
+            species_labels = target['species']
+            species_labels = species_labels.detach()\
+                if species_labels is not None else None
+            activity_labels = target['activity']
+            activity_labels = activity_labels.detach()\
+                if activity_labels is not None else None
+            novelty_type_labels = target['novelty_type']
+            novelty_type_labels = novelty_type_labels.detach()\
+                if novelty_type_labels is not None else None
 
             box_images = []
             for xmin, ymin, xmax, ymax in detection['boxes']:
@@ -167,7 +177,10 @@ class BoxImageDataset(torch.utils.data.Dataset):
                 if self._box_transform is not None:
                     box_image = self._box_transform(box_image)
                 box_images.append(box_image)
-            box_images = torch.stack(box_images, dim=0)
+            if len(box_images) > 0:
+                box_images = torch.stack(box_images, dim=0)
+            else:
+                box_images = torch.empty(0, 0, 0, 0)
             whole_image = self._box_transform(image_tensor)
 
             # Cache data if configured to do so
