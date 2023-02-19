@@ -5,6 +5,7 @@ Stores items by class an provides feeds
 # Copyright 2008-2022 by Raytheon BBN Technologies.  All Rights Reserved
 #########################################################################
 
+import ast
 import pandas as pd
 
 from enums import NoveltyType, EnvironmentType, Id2noveltyType, get_subnovelty_varname
@@ -14,49 +15,8 @@ class Data:
     def __init__(self):
         pass
 
-    '''
     def load_train(self, csv_file, log):
-        df = pd.read_csv(csv_file)
-        self.train_count = len(df)
-        self.train_valid = []
-        self.train_invalid = []
-        self.train_known = []
-        self.train_novel = []
-        self.known_svo = set()
-        self.known_sv = set()
-        for _tuple in df.itertuples():
-            item = Item(_tuple)
-            if not item.valid:
-                self.train_invalid.append(item)
-                continue
-            self.train_valid.append(item)
-            s = _tuple.subject_id
-            v = _tuple.verb_id
-            o = _tuple.object_id
-            if item.instance_type == InstanceType.BOTH_PRESENT:
-                if s > 0 and v > 0 and o > 0:
-                    self.known_svo.add((s, v, o))
-            if item.instance_type != InstanceType.S_MISSING:
-                if s > 0 and v > 0 and o <= 0:
-                    self.known_sv.add((s, v))
-            if item.is_non_comb_novel():
-                self.train_novel.append(item)
-            else:
-                self.train_known.append(item)
-        log.write(f'Found {self.train_count} items, {len(self.train_valid)} valid.\n')
-        if self.train_invalid:
-            log.write(f'Skipped {len(self.train_invalid)} invalid items.\n')
-            for item in self.train_invalid:
-                log.write(f'Skipping invalid item: ')
-                item.debug_print(log)
-        log.write(f'In train.csv, found {len(self.train_known)} non-novel and '
-                  f'{len(self.train_novel)} novel instances.\n')
-        log.write(f'Found {len(self.known_svo)} distinct known SVO combinations\n')
-        log.write(f'Found {len(self.known_sv)} distinct known SV combinations\n')
-    '''
-
-    def load_train(self, csv_file, log):
-        df = pd.read_csv(csv_file)
+        df = pd.read_csv(csv_file, quotechar='"', skipinitialspace=True)
         self.train_count = len(df)
         self.train_valid = []
         self.train_invalid = []
@@ -74,7 +34,9 @@ class Data:
             self.train_valid.append(item)
             self.known_species.add(item.agent1_name)
             self.kwown_environments.add(item.environment_id)
+
             assert len(item.activities) <= 1
+            
             if len(item.activities) > 0:
                 self.known_activities.add(item.activities[0])
             
@@ -91,7 +53,7 @@ class Data:
         self.bins = {novelty_type: [] for novelty_type in NoveltyType}
         for sub_nov in EnvironmentType:
             self.bins[sub_nov] = []
-        df = pd.read_csv(csv_file)
+        df = pd.read_csv(csv_file, quotechar='"', skipinitialspace=True)
         self.val_count = len(df)
         log.write(f'Found {self.val_count} total val items.\n')
         for _tuple in df.itertuples():

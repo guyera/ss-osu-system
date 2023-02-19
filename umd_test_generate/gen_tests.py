@@ -154,7 +154,7 @@ def gen_api_single_novelty_tests(test_source_data, out_dir, test_configs, novelt
         elif novelty_type == NoveltyType.NOVEL_ENVIRONMENT:
             assert subnov_type is None
             # the feed from which the novel examples are drawn is the union of all subnovelty of type 7 (environment)
-            print('>|>|>>> Test being generate with all subnovelties in novelty type 7!')
+            # print('>|>|>>> Test being generate with all subnovelties in novelty type 7!')
             for type6_subnov in EnvironmentType:
                 novel_feeds[type6_subnov] = Feed(test_source_data.novelty_bins[type6_subnov])
         else:

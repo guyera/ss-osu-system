@@ -10,6 +10,7 @@ import ast
 import math
 import pandas as pd
 from enums import NoveltyType, get_subnovelty_varname, Id2noveltyType
+import json
 
 
 # all_subnovelties = [sub.value for sub in SubNoveltyType]
@@ -94,16 +95,6 @@ class Item:
         # If the input validation data does not have master_id columns
         # print('type of _tuple:', type(_tuple), '\n', _tuple, '\n')
 
-        '''
-        return ','.join([str(val) for val in [
-            _tuple.image_path,
-            _tuple.filename,
-            _tuple.width,
-            _tuple.height,
-            _tuple.master_id if val else None
-        ]])
-        '''
-
         return ','.join([str(value) for value in [
             _tuple.image_path,
             _tuple.filename,
@@ -118,8 +109,8 @@ class Item:
             _tuple.agent3_name,
             _tuple.agent3_id if pd.isnull(_tuple.agent3_id) else int(_tuple.agent3_id),
             _tuple.agent3_count if pd.isnull(_tuple.agent3_count) else int(_tuple.agent3_count),
-            _tuple.activities,
-            _tuple.activities_id,
+            json.dumps(_tuple.activities),
+            json.dumps(_tuple.activities_id),
             _tuple.environment_id,
             _tuple.novelty_type if pd.isnull(_tuple.novelty_type) else int(_tuple.novelty_type),
             _tuple.master_id if pd.isnull(_tuple.master_id) else int(_tuple.master_id),
