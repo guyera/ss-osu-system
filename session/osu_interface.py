@@ -1,3 +1,5 @@
+import json
+import uuid
 import pathlib
 import os
 import pandas as pd
@@ -9,7 +11,7 @@ class OSUInterface:
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_batch_size, trial_size, disable_retraining,
             root_cache_dir, n_known_val, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_patience,
-            retraining_min_epochs, retraining_max_epochs, retraining_label_smoothing, retraining_scheduler_type):
+            retraining_min_epochs, retraining_max_epochs, retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight):
 
         self.app = TopLevelApp( 
             data_root=data_root,
@@ -35,16 +37,16 @@ class OSUInterface:
             retraining_min_epochs=retraining_min_epochs,
             retraining_max_epochs=retraining_max_epochs,
             retraining_label_smoothing=retraining_label_smoothing,
-            retraining_scheduler_type=retraining_scheduler_type
+            retraining_scheduler_type=retraining_scheduler_type,
+            feedback_loss_weight=feedback_loss_weight
         )
 
         self.temp_path = pathlib.Path('./session/temp/')
 
-    def start_session(self, session_id, detection_feedback, classification_feedback, given_detection):
+    def start_session(self, session_id, detection_feedback, given_detection):
         """
         :param session_id:
         :param detection_feedback:  We assume this weill be True
-        :param classification_feedback:  We assume this weill be False
         :param given_detection: I haven't figure out yet how this will work
         :return: None
         """
@@ -123,36 +125,30 @@ class OSUInterface:
         :param feedback_max_ids: number of image_paths to pick
         :return: list of selected image_paths
         """
-        queries = self.app.select_queries(feedback_max_ids)
-        return queries
+        queries, bboxes = self.app.select_queries(feedback_max_ids)
+        return queries, bboxes
     
-    def record_type0(self):       
-        self.app._type_inferenceType0()
+    def characterize_round(self, red_light_dec):
+        self.app.characterize_round(red_light_dec)
 
-    def record_type67(self):       
-        self.app._type_inferenceType67()
-
-    def record_detection_feedback(self, test_id, round_id, feedback_results):
+    def record_detection_feedback(self, test_id, round_id, feedback_csv_content, bboxes):
         """
         :param test_id:
         :param round_id:
         :param feedback_results: dict with boolean value for each image_path
         :return: Null
         """
-        print(f'  ==> OSU got detection feedback results for '
-            f'{len(feedback_results)} images for round {round_id}')
+        print(f'  ==> OSU got detection feedback results for round {round_id}')
 
-        d = {}
-        for e in feedback_results:
-            d[e[0]] = e[1]
-
-        self.app.feedback_callback(d)
-
-    def choose_classification_feedback_ids(self, filenames, feedback_max_ids):
-        raise NotImplementedError
-
-    def record_classification_feedback(self, feedback_results):
-        raise NotImplementedError
+        feedback_uuid = uuid.uuid4()
+        csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}_feedback_{feedback_uuid}.csv')
+        with open(csv_path, 'w') as f:
+            f.write(feedback_csv_content)
+        json_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}_feedback_{feedback_uuid}.json')
+        with open(json_path, 'w') as f:
+            json.dump(bboxes, f)
+        
+        self.app.feedback_callback(csv_path)
 
     def end_test(self, test_id):
         print(f'==> OSU got end test {test_id}')

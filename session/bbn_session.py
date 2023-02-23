@@ -10,7 +10,7 @@ import itertools
 import numpy as np
 
 class BBNSession:
-    def __init__(self, protocol, domain, class_count, class_fb, detection_fb, given_detection,
+    def __init__(self, protocol, domain, class_count, detection_fb, given_detection,
                  image_directory, results_directory, api_url,
                  batch_size, version, detection_threshold,
                  api_stubs, osu_interface, hintA, hintB):
@@ -24,7 +24,6 @@ class BBNSession:
         self.protocol = protocol
         self.domain = domain
         self.class_count = class_count
-        self.class_fb = class_fb
         self.detection_fb = detection_fb
         self.given_detection = given_detection
         self.results_directory = results_directory
@@ -59,40 +58,7 @@ class BBNSession:
         if self.api_stubs:
             self.api_stubs.clear_results_dirs()
 
-    def request_class_feedback(self, session_id, test_id, round_id, feedback_ids):
-        print(f'====> Requesting class feedback on round {round_id} for {len(feedback_ids)} images.')
-        # for feedback_item in feedback_ids:
-        # print(f'  ====> {feedback_ids}')
-        response = requests.get(
-            f'{self.url}/session/feedback',
-            {'session_id': session_id,
-             'test_id': test_id,
-             'round_id': round_id,
-             'feedback_type': 'classification',
-             'feedback_ids': '|'.join(feedback_ids),
-             }
-        )
-
-        if response.status_code == 500:
-            raise Exception(f'Got error response from feedback request: {response}')
-
-        feedback_vals = response.content.decode('utf-8').split('\n')
-        feedback_vals = [x for x in feedback_vals if x.strip("\n\t\"',.") != ""]
-        # feedback_answers = [int(val.split(',')[1]) for val in feedback_vals]
-        returned_ids = []
-        returned_answers = []
-
-        for val in feedback_vals:
-            segments = val.split(',')
-            returned_ids.append(segments[0])
-            returned_answers.append(segments[1:])
-        
-        if set(returned_ids) != set(feedback_ids):
-            raise Exception('feedback returned ids not matching requested')
-
-        return {id: val for (id, val) in zip(returned_ids, returned_answers)}
-
-    def request_detection_feedback(self, session_id, test_id, round_id, feedback_ids):
+    def request_feedback(self, session_id, test_id, round_id, feedback_ids):
         # print(f'====> Requesting detection feedback on round {round_id} for {len(feedback_ids)} images.')
         if self.api_stubs:
             return self.api_stubs.detection_feedback(test_id, round_id, feedback_ids)
@@ -102,7 +68,7 @@ class BBNSession:
                 {'session_id': session_id,
                  'test_id': test_id,
                  'round_id': round_id,
-                 'feedback_type': 'detection',
+                 'feedback_type': 'classification',
                  'feedback_ids': '|'.join(feedback_ids),
                  }
             )
@@ -110,20 +76,9 @@ class BBNSession:
             if response.status_code == 500:
                 raise Exception(f'Got error response from feedback request: {response}')
             
-            feedback_vals = response.content.decode('utf-8').split('\n')
-            feedback_vals = [x for x in feedback_vals if x.strip("\n\t\"',.") != ""]
-            # feedback_answers = [int(val.split(',')[1]) for val in feedback_vals]
-            returned_ids = []
-            returned_answers = []
-            for val in feedback_vals:
-                segments = val.split(',')
-                returned_ids.append(segments[0])
-                returned_answers.append(segments[1] == '1')
+            feedback_csv_content = response.content.decode('utf-8')
 
-            if set(returned_ids) != set(feedback_ids):
-                raise Exception('feedback returned ids not matching requested')
-                       
-            return [(id, val) for (id, val) in zip(returned_ids, returned_answers)]
+            return feedback_csv_content
 
     def request_hint_typeA(self, session_id, test_id):
         print(f'====> Asking for hint on test_id {test_id}')
@@ -289,6 +244,7 @@ class BBNSession:
                                   (filename, species_counts_str, species_presence_str, activity_presence_str))
 
     def run(self, detector_seed, test_ids=None):
+        print('Running')
         if not test_ids:
             # test_ids = requests.get(
             #     f"{self.url}/test/ids?protocol={self.protocol}&detector_seed={detector_seed}").content.decode('utf-8').split('\n')
@@ -326,9 +282,10 @@ class BBNSession:
                     'hints': ['red_light' if self.given_detection else '']
                 }
             })
+            # print(response.content.decode('utf-8'))
             session_id = ast.literal_eval(response.content.decode('utf-8'))['session_id']
         if self.osu_stubs:
-            self.osu_stubs.start_session(session_id, detection_feedback=True, classification_feedback=False, given_detection=self.given_detection)
+            self.osu_stubs.start_session(session_id, detection_feedback=True, given_detection=self.given_detection)
 
 
         print(f"=> initialized session: {session_id}")
@@ -484,10 +441,7 @@ class BBNSession:
                     self.write_file_entries(novelty_image_path, detection_file, classification_file,
                                             species_counts, species_presence, activity_presence, float(red_light_str), float(per_image_nov_str),
                                             round_id, red_light_declared)
-                if red_light_declared:
-                    self.osu_stubs.record_type67()
-                else:                        
-                    self.osu_stubs.record_type0()
+                self.osu_stubs.characterize_round(red_light_declared)
             else:
                 pass
 
@@ -514,13 +468,7 @@ class BBNSession:
                 })
                         
             ## Handle classification feedback
-            if self.detection_fb or self.class_fb:
-                if self.class_fb and red_light_declared:
-                    feedback_ids = self.osu_stubs.choose_classification_feedback_ids(filenames, feedback_max_ids)
-                    class_feedback_results = self.request_class_feedback(session_id, test_id, round_id, feedback_ids)
-                    # self.record_feedback_stub(feedback_results)
-                    # self.history.record_feedback(known_count, novel_count)
-
+            if self.detection_fb:
                 ## Handle detection feedback
                 if (self.detection_fb or self.given_detection) and red_light_declared:
                     # Lance: It should be OK to always call choose_detection_feedback_ids
@@ -535,12 +483,12 @@ class BBNSession:
                     #     print(f' **** About to call choose_detection_feedback_ids, round {round_id}')
                     
                     num_ids_to_request = len(filenames) if self.given_detection else feedback_max_ids
-                    feedback_ids = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
+                    feedback_ids, feedback_bboxes = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
                                                                                 filenames, num_ids_to_request)
-                    detection_feedback_results = self.request_detection_feedback(session_id, test_id, round_id,
+                    feedback_csv_content = self.request_feedback(session_id, test_id, round_id,
                                                                                 feedback_ids)
 
-                    self.osu_stubs.record_detection_feedback(test_id, round_id, detection_feedback_results)
+                    self.osu_stubs.record_detection_feedback(test_id, round_id, feedback_csv_content, feedback_bboxes)
 
                 ## LAR
                 ## Write characterization files after every round for experimental testing.
