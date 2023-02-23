@@ -359,23 +359,30 @@ class TuplePredictor:
             unique_class_cond_probs[:, n_known_cls:]
 
         # unique_class_cond_probs represents P(S_j=k | c), where c is the
-        # condition: there are 0 or 1 unique class among the boxes.
+        # condition: there are 0 or 1 unique known classes among the boxes.
         # The next step is to additionally condition on the event that there
         # is at least one novel label. That's easy.
         # For known k:
         # P(S_j=k, >=1 novel label | c)
-        # = P(S_j=k | c) - P(S_j=k, no novel labels | c)
-        # = P(S_j=k | c) - P(all S_j=k | c)
-        exactly_one_class_cond_probs = \
-            torch.prod(known_unique_class_cond_probs, dim=0)
+        # = P(S_j=k | c) * P(>=1 novel label | S_j=k, c)
+        # = P(S_j=k | c) * (1 - P(0 novel labels | S_j=k, c))
+        # = P(S_j=k | c) * (1 - P(all other S_j'=k | S_j=k, c))
+        # = P(S_j=k | c)
+        #     * (1 - P(all other S_j'=k | each other S_j' in {k, novel}))
+        # = P(S_j=k | c)
+        #     * (1 - \prod_{other j'}[P(S_j'=k | S_j' in {k, novel})])
+        known_or_novel_class_cond_probs = known_class_probs /\
+            known_or_novel_class_probs
+        novel_class_absent_cond_probs =\
+            torch.prod(known_or_novel_class_cond_probs, dim=0)
         known_novel_box_type_joint_probs = \
-            known_unique_class_cond_probs - exactly_one_class_cond_probs
+            known_unique_class_cond_probs * (1 - novel_class_absent_cond_probs)
 
         # And for novel s, it's trivial:
         # P(S_j=k, >=1 novel label | c) = P(S_j=k | c)
         # = novel_unique_class_cond_probs
         
-        # Concatenate known and novel parts to get P(S_j=k | type=2)
+        # Concatenate known and novel parts to get P(S_j=k, >=1 novel label | c)
         novel_box_type_class_joint_probs = torch.cat(
             (known_novel_box_type_joint_probs, novel_unique_class_cond_probs),
             dim=1
