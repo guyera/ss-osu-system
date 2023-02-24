@@ -47,6 +47,7 @@ class NoveltyTypeClassifier(torch.nn.Module):
 # TODO tensorize
 def compute_probability_novelty(
         scores,
+        box_counts,
         novelty_type_classifier,
         device,
         hint_a = None,
@@ -70,6 +71,7 @@ def compute_probability_novelty(
 
     for idx in range(len(scores)):
         img_scores = scores[idx]
+        box_count = box_counts[idx]
         if img_scores is None:
             # Image was empty. Assume non-novel.
             # TODO Maybe we should allow novel empty images. But in that case
@@ -109,23 +111,33 @@ def compute_probability_novelty(
             if n_possible_types == 1:
                 cur_p_type = possible_nov_types.to(torch.float)
             else:
-                logits = \
-                    novelty_type_classifier(img_scores[None]).squeeze(0)
-                cur_p_type = torch.nn.functional.softmax(logits, dim = 0)
+                # Edge case: Images with one box cannot have type 4 or type 5
+                # novelties.
+                if box_count == 1:
+                    possible_nov_types[[3, 4]] = False
 
-                # Some impossible novelty types still have predicted non-zero
-                # probabilities associated with them; zero them out and
-                # renormalize the predictions
-                cur_p_type[~possible_nov_types] = 0.0
-                normalizer = cur_p_type.sum()
-                if normalizer == 0:
-                    # All of the possible types were assigned probabilities of
-                    # zero; set them all to 1 / K, where K is the number of
-                    # possible novelty types
+                n_possible_types = possible_nov_types.to(torch.int).sum()
+                assert n_possible_types > 0
+                if n_possible_types == 1:
                     cur_p_type = possible_nov_types.to(torch.float)
-                    cur_p_type = cur_p_type / cur_p_type.sum()
                 else:
-                    cur_p_type = cur_p_type / normalizer
+                    logits = \
+                        novelty_type_classifier(img_scores[None]).squeeze(0)
+                    cur_p_type = torch.nn.functional.softmax(logits, dim = 0)
+
+                    # Some impossible novelty types still have predicted non-zero
+                    # probabilities associated with them; zero them out and
+                    # renormalize the predictions
+                    cur_p_type[~possible_nov_types] = 0.0
+                    normalizer = cur_p_type.sum()
+                    if normalizer == 0:
+                        # All of the possible types were assigned probabilities of
+                        # zero; set them all to 1 / K, where K is the number of
+                        # possible novelty types
+                        cur_p_type = possible_nov_types.to(torch.float)
+                        cur_p_type = cur_p_type / cur_p_type.sum()
+                    else:
+                        cur_p_type = cur_p_type / normalizer
 
         p_type.append(cur_p_type)
 
