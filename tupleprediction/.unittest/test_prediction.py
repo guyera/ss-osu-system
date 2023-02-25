@@ -34,6 +34,7 @@ class TestPrediction(unittest.TestCase):
                 self.assertTrue(species_presence[k].isclose(self.t(sp_dict[k]), atol=atol))
             else:
                 self.assertFalse(species_presence[k].isnan().any())
+                self.assertFalse(species_presence[k].isinf().any())
                 self.assertTrue(
                     torch.logical_and(
                         species_presence >= 0,
@@ -56,6 +57,7 @@ class TestPrediction(unittest.TestCase):
                 self.assertTrue(activity_presence[k].isclose(self.t(ap_dict[k]), atol=atol))
             else:
                 self.assertFalse(activity_presence[k].isnan().any())
+                self.assertFalse(activity_presence[k].isinf().any())
                 self.assertTrue(
                     torch.logical_and(
                         activity_presence >= 0,
@@ -261,6 +263,23 @@ class TestPrediction(unittest.TestCase):
         sub_dict = answer_dict['uniform']
         self._generic_sub_tests(tuple_predictor, probs, p_type, sub_dict, atol)
 
+        # Case: One box, uniform prediction (for catching one-box edge cases,
+        # like with combination novelties)
+        sub_dict = answer_dict['one-box']
+        if sub_dict is not None:
+            probs = torch.tensor(
+                [
+                    [
+                        0.25,
+                        0.25,
+                        0.25,
+                        0.25
+                    ]
+                ],
+                device=self.device
+            )
+            self._generic_sub_tests(tuple_predictor, probs, p_type, sub_dict, atol)
+
     def test_t06(self):
         epsilon = self.epsilon
         answer_dict = {
@@ -325,6 +344,16 @@ class TestPrediction(unittest.TestCase):
                 }
             },
             'uniform': {
+                'species': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [0.5, 0.5, 0.0, 0.0]
+                },
+                'activity': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [0.5, 0.5, 0.0, 0.0]
+                }
+            },
+            'one-box': {
                 'species': {
                     'count': [0.5, 0.5, 0.0, 0.0],
                     'presence': [0.5, 0.5, 0.0, 0.0]
@@ -460,6 +489,16 @@ class TestPrediction(unittest.TestCase):
                     'count': [0.5, 0.5, 0.0, 0.0],
                     'presence': [0.5, 0.5, 0.0, 0.0]
                 }
+            },
+            'one-box': {
+                'species': {
+                    'count': [0.0, 0.0, 0.0, 0.0],
+                    'presence': [0.0, 0.0, 0.0, 0.0]
+                },
+                'activity': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [0.5, 0.5, 0.0, 0.0]
+                }
             }
         }
 
@@ -568,6 +607,16 @@ class TestPrediction(unittest.TestCase):
                     'count': [0.5, 0.5, 0.0, 0.0],
                     'presence': [0.5, 0.5, 0.0, 0.0]
                 }
+            },
+            'one-box': {
+                'species': {
+                    'count': [0.0, 0.0, 0.5, 0.5],
+                    'presence': [0.0, 0.0, 0.5, 0.5]
+                },
+                'activity': {
+                    'count': [0.5, 0.5, 0.0, 0.0],
+                    'presence': [0.5, 0.5, 0.0, 0.0]
+                }
             }
         }
 
@@ -596,6 +645,96 @@ class TestPrediction(unittest.TestCase):
             device=self.device
         )
         self._generic_tests(answer_dict, p_type, epsilon, atol=1e-2)
+
+    def test_tuniform(self):
+        epsilon = self.epsilon
+        answer_dict = {
+            'known-confident-1': {
+                'species': {
+                    'count': None,
+                    'presence': None
+                },
+                'activity': {
+                    'count': None,
+                    'presence': None
+                }
+            },
+            'known-confident-2': {
+                'species': {
+                    'count': None,
+                    'presence': None
+                },
+                'activity': {
+                    'count': None,
+                    'presence': None
+                }
+            },
+            'known-unconfident': {
+                'species': {
+                    'count': None,
+                    'presence': None
+                },
+                'activity': {
+                    'count': None,
+                    'presence': None
+                }
+            },
+            'novel-confident-1': {
+                'species': {
+                    'count': None,
+                    'presence': None
+                },
+                'activity': {
+                    'count': None,
+                    'presence': None
+                }
+            },
+            'novel-confident-2': {
+                'species': {
+                    'count': None,
+                    'presence': None
+                },
+                'activity': {
+                    'count': None,
+                    'presence': None
+                }
+            },
+            'novel-unconfident': {
+                'species': {
+                    'count': None,
+                    'presence': None
+                },
+                'activity': {
+                    'count': None,
+                    'presence': None
+                }
+            },
+            'uniform': {
+                'species': {
+                    'count': None,
+                    'presence': None
+                },
+                'activity': {
+                    'count': None,
+                    'presence': None
+                }
+            },
+            'one-box': None
+        }
+
+        p_type = torch.tensor(
+            [
+                1.0 / 6.0,
+                1.0 / 6.0,
+                1.0 / 6.0,
+                1.0 / 6.0,
+                1.0 / 6.0,
+                1.0 / 6.0
+            ],
+            device=self.device
+        )
+        self._generic_tests(answer_dict, p_type, epsilon)
+
 
 if __name__ == '__main__':
     unittest.main()

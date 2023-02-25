@@ -235,10 +235,14 @@ class TopLevelApp:
         activity_probs = unsupervised_results['activity_probs']
         assert len(scores) == len(species_probs) == len(activity_probs)
 
+        # Get box counts from probs
+        box_counts = [(x.shape[0] if x is not None else 0) for x in species_probs]
+
         # compute P_n
         with torch.no_grad():
             batch_p_type, p_ni = compute_probability_novelty(
                 scores,
+                box_counts,
                 self.und_manager.novelty_type_classifier,
                 self.backbone.device,
                 hint_a=hint_typeA_data,

@@ -56,3 +56,4 @@ class LabelMapper:
             else:
                 mapped_range.append(placeholder_index)
                 placeholder_index += 1
+        return mapped_range
