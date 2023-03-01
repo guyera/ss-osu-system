@@ -43,8 +43,8 @@ class BBNSession:
         self.api_stubs = api_stubs
         self.osu_stubs = osu_interface
         # These are also defined in toplevel
-        self.n_species_cls = 30
-        self.n_activity_cls = 4
+        self.n_species_cls = 31 # TODO pass this in from main
+        self.n_activity_cls = 8 # TODO pass this in from main
         self.hintA = hintA
         self.hintB = hintB
 

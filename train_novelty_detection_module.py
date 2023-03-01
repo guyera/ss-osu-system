@@ -1,3 +1,4 @@
+from enum import Enum
 import pickle
 import time
 import os
@@ -7,6 +8,7 @@ import torch
 import torch.distributed as dist
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader
 
 import boxclassifier
 import tupleprediction
@@ -16,14 +18,22 @@ from tupleprediction.training import\
     get_transforms,\
     get_datasets,\
     TuplePredictorTrainer,\
-    EndToEndClassifierTrainer
+    EndToEndClassifierTrainer,\
+    LogitLayerClassifierTrainer
 from backbone import Backbone
 from scoring import\
     ActivationStatisticalModel,\
     make_logit_scorer,\
     CompositeScorer
-from data.custom import build_species_label_mapping
-from labelmapping import LabelMapper
+from labelmapping import IdentityLabelMapper
+from utils import custom_collate
+
+class ClassifierTrainer(Enum):
+    end_to_end = 'end-to-end'
+    logit_layer = 'logit-layer'
+
+    def __str__(self):
+        return self.value
 
 parser = argparse.ArgumentParser()
 
@@ -120,6 +130,26 @@ parser.add_argument(
     help='Log directory'
 )
 
+parser.add_argument(
+    '--classifier-trainer',
+    type=ClassifierTrainer,
+    choices=list(ClassifierTrainer),
+    default=ClassifierTrainer.end_to_end,
+    help='Classifier trainer to use'
+)
+
+parser.add_argument(
+    '--pretrained-backbone-path',
+    type=str,
+    default=None
+)
+
+parser.add_argument(
+    '--precomputed-feature-dir',
+    type=str,
+    default='./.features/resizepad=224/none/normalized'
+)
+
 args = parser.parse_args()
 
 dist.init_process_group('nccl')
@@ -139,10 +169,17 @@ architecture = Backbone.Architecture.swin_t
 backbone = Backbone(architecture, pretrained=False).to(device)
 backbone = DDP(backbone, device_ids=[device_id])
 
+if args.pretrained_backbone_path is not None:
+    backbone_state_dict = torch.load(
+        args.pretrained_backbone_path,
+        map_location='cuda:0'
+    )
+    backbone.load_state_dict(backbone_state_dict)
+
 n_known_species_cls = 10
-n_species_cls = 30 # TODO Determine
+n_species_cls = 31
 n_known_activity_cls = 2
-n_activity_cls = 4 # TODO Determine
+n_activity_cls = 8
 
 classifier = boxclassifier.ClassifierV2(
     256,
@@ -154,6 +191,8 @@ classifier.ddp(device_ids=[device_id])
 confidence_calibrator = boxclassifier.ConfidenceCalibrator()
 confidence_calibrator = confidence_calibrator.to(device)
 tuple_predictor = tupleprediction.TuplePredictor(
+    n_species_cls,
+    n_activity_cls,
     n_known_species_cls,
     n_known_activity_cls
 )
@@ -168,17 +207,18 @@ novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
     scorer.n_scores()
 ).to(device)
 
-label_mapping = build_species_label_mapping(args.train_csv_path)
+label_mapper = IdentityLabelMapper()
 box_transform, post_cache_train_transform, post_cache_val_transform =\
     get_transforms(args.augmentation)
-train_dataset, val_known_dataset, val_dataset, dynamic_label_mapper, _ =\
+train_dataset, val_known_dataset, val_dataset =\
     get_datasets(
         args.data_root,
         args.train_csv_path,
         args.cal_csv_path,
         n_species_cls,
         n_activity_cls,
-        label_mapping,
+        label_mapper,
+        label_mapper,
         box_transform,
         post_cache_train_transform,
         post_cache_val_transform,
@@ -187,23 +227,46 @@ train_dataset, val_known_dataset, val_dataset, dynamic_label_mapper, _ =\
         n_known_val=args.n_known_val
     )
 
-classifier_trainer = EndToEndClassifierTrainer(
-    backbone,
-    args.lr,
-    train_dataset,
-    val_known_dataset,
-    box_transform,
-    post_cache_train_transform,
-    retraining_batch_size=args.batch_size,
-    train_sampler_fn=train_sampler_fn,
-    root_checkpoint_dir=args.root_checkpoint_dir,
-    patience=None,
-    min_epochs=0,
-    max_epochs=args.max_epochs,
-    label_smoothing=args.label_smoothing,
-    scheduler_type=args.scheduler_type,
-    allow_write=(rank==0)
-)
+if args.classifier_trainer == ClassifierTrainer.end_to_end:
+    classifier_trainer = EndToEndClassifierTrainer(
+        backbone,
+        args.lr,
+        train_dataset,
+        val_known_dataset,
+        box_transform,
+        post_cache_train_transform,
+        retraining_batch_size=args.batch_size,
+        train_sampler_fn=train_sampler_fn,
+        root_checkpoint_dir=args.root_checkpoint_dir,
+        patience=None,
+        min_epochs=0,
+        max_epochs=args.max_epochs,
+        label_smoothing=args.label_smoothing,
+        scheduler_type=args.scheduler_type,
+        allow_write=(rank==0)
+    )
+else:
+    train_feature_file = os.path.join(
+        args.precomputed_feature_dir,
+        'training.pth'
+    )
+    val_feature_file = os.path.join(
+        args.precomputed_feature_dir,
+        'validation.pth'
+    )
+    classifier_trainer = LogitLayerClassifierTrainer(
+        backbone,
+        args.lr,
+        train_feature_file,
+        val_feature_file,
+        box_transform,
+        post_cache_train_transform,
+        device=backbone.device,
+        patience=None,
+        min_epochs=0,
+        max_epochs=args.max_epochs,
+        label_smoothing=args.label_smoothing
+    )
 
 trainer = TuplePredictorTrainer(
     train_dataset,
@@ -213,7 +276,7 @@ trainer = TuplePredictorTrainer(
     post_cache_train_transform,
     n_species_cls,
     n_activity_cls,
-    dynamic_label_mapper,
+    label_mapper,
     classifier_trainer
 )
 
@@ -228,14 +291,33 @@ activity_calibrator = confidence_calibrator.activity_calibrator
 classifier_trainer.train(
     species_classifier,
     activity_classifier,
-    args.root_log_dir
+    args.root_log_dir,
+    None
 )
 
 if rank == 0:
-    trainer.fit_activation_statistics(
-        backbone.module,
-        activation_statistical_model
+    # Refit activation statistics. Do it manually since the classifier trainer
+    # might opt to skip this step. For instance, the logit layer trainer skips
+    # this step since the backbone is not reset during accommodation.
+    activation_stats_training_loader = DataLoader(
+        val_known_dataset,
+        batch_size = 32,
+        shuffle = False,
+        collate_fn=custom_collate,
+        num_workers=2
     )
+    backbone.eval()
+    all_features = []
+    with torch.no_grad():
+        for _, _, _, _, batch in activation_stats_training_loader:
+            batch = batch.to(device)
+            features = activation_statistical_model.compute_features(
+                backbone.module,
+                batch
+            )
+            all_features.append(features)
+    all_features = torch.cat(all_features, dim=0)
+    activation_statistical_model.fit(all_features)
 
     # Retrain the classifier's temperature scaling calibrators
     trainer.calibrate_temperature_scalers(

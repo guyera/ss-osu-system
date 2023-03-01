@@ -18,8 +18,7 @@ from scipy.stats import ks_2samp
 import os
 
 from backbone import Backbone
-from data.custom import build_species_label_mapping
-from labelmapping import LabelMapper
+from labelmapping import IdentityLabelMapper
 from tupleprediction.training import\
     Augmentation,\
     SchedulerType,\
@@ -53,8 +52,8 @@ class TopLevelApp:
         self.train_csv_path = train_csv_path
         self.val_csv_path = val_csv_path
         self.pretrained_backbone_path = pretrained_backbone_path
-        self.n_species_cls = 30
-        self.n_activity_cls = 4
+        self.n_species_cls = 31
+        self.n_activity_cls = 8
         self.n_known_species_cls = 10
         self.n_known_activity_cls = 2
         self.post_red = False
@@ -136,24 +135,24 @@ class TopLevelApp:
             self.n_known_activity_cls
         )
 
-        label_mapping = build_species_label_mapping(self.train_csv_path)
         self.box_transform,\
             post_cache_train_transform,\
             post_cache_val_transform =\
                 get_transforms(self.retraining_augmentation)
 
+        self.static_label_mapper = IdentityLabelMapper()
+        self.dynamic_label_mapper = IdentityLabelMapper()
         train_dataset,\
             val_known_dataset,\
-            val_dataset,\
-            self.dynamic_label_mapper,\
-            self.static_label_mapper =\
+            val_dataset =\
                 get_datasets(
                     self.data_root,
                     self.train_csv_path,
                     self.val_csv_path,
                     self.n_species_cls,
                     self.n_activity_cls,
-                    label_mapping,
+                    self.static_label_mapper,
+                    self.dynamic_label_mapper,
                     self.box_transform,
                     post_cache_train_transform,
                     post_cache_val_transform,
@@ -562,24 +561,24 @@ class TopLevelApp:
             self.n_known_activity_cls
         )
 
-        label_mapping = build_species_label_mapping(self.train_csv_path)
         self.box_transform,\
             post_cache_train_transform,\
             post_cache_val_transform =\
                 get_transforms(self.retraining_augmentation)
 
+        self.static_label_mapper = IdentityLabelMapper()
+        self.dynamic_label_mapper = IdentityLabelMapper()
         train_dataset,\
             val_known_dataset,\
-            val_dataset,\
-            self.dynamic_label_mapper,\
-            self.static_label_mapper =\
+            val_dataset =\
                 get_datasets(
                     self.data_root,
                     self.train_csv_path,
                     self.val_csv_path,
                     self.n_species_cls,
                     self.n_activity_cls,
-                    label_mapping,
+                    self.static_label_mapper,
+                    self.dynamic_label_mapper,
                     self.box_transform,
                     post_cache_train_transform,
                     post_cache_val_transform,

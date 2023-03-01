@@ -19,7 +19,6 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from boximagedataset import BoxImageDataset
 from utils import custom_collate, gen_tqdm_description
-from labelmapping import LabelMapper
 from transforms import\
     Compose,\
     Normalize,\
@@ -773,12 +772,12 @@ class FlattenedBoxImageDataset(Dataset):
 
 
 '''
-Wraps a dataset around a FlattenedBoxImageDataset and a precomputed feature
+Wraps a dataset around an existing dataset and a precomputed feature
 tensor for the whole dataset. Indexing at i returns the underlying data
-from the FlattenedBoxImageDataset as well as sub-tensor of the feature tensor
+from the dataset as well as a sub-tensor of the feature tensor
 indexed at i along dim 0 (most likely the ith datapoint's feature vector).
 '''
-class FeatureConcatFlattenedBoxImageDataset(Dataset):
+class FeatureConcatDataset(Dataset):
     def __init__(self, dataset, box_features):
         self._dataset = dataset
         self._box_features = box_features
@@ -787,9 +786,9 @@ class FeatureConcatFlattenedBoxImageDataset(Dataset):
         return len(self._dataset)
 
     def __getitem__(self, idx):
-        species_label, activity_label, box_image = self._dataset[idx]
+        data = self._dataset[idx]
         box_features = self._box_features[idx]
-        return species_label, activity_label, box_image, box_features
+        return data + (box_features,)
 
 
 class TransformingBoxImageDataset(Dataset):
@@ -824,59 +823,57 @@ class TransformingBoxImageDataset(Dataset):
         return self._dataset.box_count(idx)
 
 
-class BufferedFeedbackDataLoader:
+'''
+Buffers images from a DataLoader wrapped around a BoxImageDataset so that each
+batch returns (at most, unless exceeding is necessary) a fixed number of
+bounding boxes, rather than a fixed number of images each with varying box
+counts.
+'''
+class BufferedBoxImageDataLoader:
     class _Iter:
-        def __init__(self, box_image_iter, batch_size):
+        def _default_box_count_fn(self, batch):
+            # The default behavior is to assume that the fourth element in
+            # the batch tuple is the box image list. Computing the length of
+            # each element in the list gives the number of boxes in each image.
+            return [len(x) for x in batch[3]]
+
+        def __init__(self, box_image_iter, batch_size, box_count_fn=None):
             self._box_image_iter = box_image_iter
             self._batch_size = batch_size
             self._buffer = None
             self._buffer_box_counts = []
+            if box_count_fn is not None:
+                self._box_count_fn = box_count_fn
+            else:
+                self._box_count_fn = self._default_box_count_fn
 
         def __next__(self):
             total_buffer_box_count = sum(self._buffer_box_counts)
             while total_buffer_box_count < self._batch_size:
                 # Buffer is underfull. Grab another batch.
                 try:
-                    species_labels,\
-                        activity_labels,\
-                        novelty_type_labels,\
-                        box_images,\
-                        whole_images = next(self._box_image_iter)
+                    data = next(self._box_image_iter)
                 except StopIteration:
                     break
 
                 # Append the batch to the buffer
                 if self._buffer is None:
-                    self._buffer = [
-                        species_labels,
-                        activity_labels,
-                        novelty_type_labels,
-                        box_images,
-                        whole_images
-                    ]
+                    self._buffer = []
+                    for component in data:
+                        self._buffer.append(component)
                 else:
-                    self._buffer[0] = torch.cat(
-                        (self._buffer[0], species_labels),
-                        dim=0
-                    )
-                    self._buffer[1] = torch.cat(
-                        (self._buffer[1], activity_labels),
-                        dim=0
-                    )
-                    self._buffer[2] = torch.cat(
-                        (self._buffer[2], novelty_type_labels),
-                        dim=0
-                    )
-                    self._buffer[3] = self._buffer[3] + box_images
-                    self._buffer[4] = torch.cat(
-                        (self._buffer[4], whole_images),
-                        dim=0
-                    )
+                    for i, component in data:
+                        if isinstance(component, list):
+                            self._buffer[i] += component
+                        else:
+                            self._buffer[i] = torch.cat(
+                                (self._buffer[i], component),
+                                dim=0
+                            )
 
                 # Update the buffer box counts and total_buffer_box_count
-                batch_box_counts = [len(t) for t in box_images]
-                self._buffer_box_counts =\
-                    self._buffer_box_counts + batch_box_counts
+                batch_box_counts = self._box_count_fn(data)
+                self._buffer_box_counts += batch_box_counts
                 total_buffer_box_count += sum(batch_box_counts)
             
             # Either the buffer has enough data to retrieve a batch, or we've
@@ -900,34 +897,42 @@ class BufferedFeedbackDataLoader:
 
             # n_images denotes the number of images that should be pulled from
             # the buffer. Grab the data
-            species_labels = self._buffer[0][:n_images]
-            activity_labels = self._buffer[1][:n_images]
-            novelty_type_labels = self._buffer[2][:n_images]
-            box_images = self._buffer[3][:n_images]
-            whole_images = self._buffer[4][:n_images]
+            res = []
+            for component in self._buffer:
+                res.append(component[:n_images])
 
             # Remove the data from the buffer
-            self._buffer[0] = self._buffer[0][n_images:]
-            self._buffer[1] = self._buffer[1][n_images:]
-            self._buffer[2] = self._buffer[2][n_images:]
-            self._buffer[3] = self._buffer[3][n_images:]
-            self._buffer[4] = self._buffer[4][n_images:]
+            for i in range(len(self._buffer)):
+                self._buffer[i] = self._buffer[i][n_images:]
             self._buffer_box_counts = self._buffer_box_counts[n_images:]
 
-            return species_labels,\
-                activity_labels,\
-                novelty_type_labels,\
-                box_images,\
-                whole_images
+            return tuple(res)
                 
 
-    def __init__(self, box_image_loader, batch_size):
+    '''
+    Parameters:
+        box_image_loader: DataLoader
+            Underlying DataLoader
+        batch_size: int
+            Target batch size in # of bounding boxes
+        box_count_fn: Callable[[BatchT], List[int]], where BatchT is the
+                data type returned by next(iter(box_image_loader))
+            Function that accepts a batch of data and returns the number
+            of bounding boxes contained in each image of the batch as a list
+            of integers.
+    '''
+    def __init__(self, box_image_loader, batch_size, box_count_fn=None):
         self._box_image_loader = box_image_loader
         self._batch_size = batch_size
+        self._box_count_fn = box_count_fn
 
     def __iter__(self):
         box_image_iter = iter(self._box_image_loader)
-        return self._Iter(box_image_iter, self._batch_size)
+        return self._Iter(
+            box_image_iter,
+            self._batch_size,
+            box_count_fn=self._box_count_fn
+        )
 
 
 def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
@@ -1009,42 +1014,12 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         species_classifier.train()
         activity_classifier.train()
 
+        ## Non-feedback
+
         # Compute logits by passing the features through the appropriate
         # classifiers
         species_preds = species_classifier(box_features)
         activity_preds = activity_classifier(box_features)
-
-        # Flatten feedback box features, compute predictions, and re-split
-        # per-image
-        flattened_feedback_box_features = torch.cat(
-            feedback_box_features,
-            dim=0
-        )
-        flattened_feedback_species_logits = species_classifier(
-            flattened_feedback_box_features
-        )
-        flattened_feedback_activity_logits = activity_classifier(
-            flattened_feedback_box_features
-        )
-        flattened_feedback_species_preds = torch.nn.functional.softmax(
-            flattened_feedback_species_logits,
-            dim=1
-        )
-        flattened_feedback_activity_preds = torch.nn.functional.softmax(
-            flattened_feedback_activity_logits,
-            dim=1
-        )
-        feedback_box_counts = [len(x) for x in feedback_box_features]
-        feedback_species_preds = torch.split(
-            flattened_feedback_species_preds,
-            feedback_box_counts,
-            dim=0
-        )
-        feedback_activity_preds = torch.split(
-            flattened_feedback_activity_preds,
-            feedback_box_counts,
-            dim=0
-        )
 
         # Compute losses
         species_loss = torch.nn.functional.cross_entropy(
@@ -1057,25 +1032,67 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             activity_labels,
             label_smoothing=self._label_smoothing
         )
-        # We have image-level count feedback labels for species
-        feedback_species_loss = multiple_instance_count_cross_entropy_dyn(
-            feedback_species_preds,
-            feedback_species_labels
-        )
-        # We have image-level presence feedback labels for activities
-        feedback_activity_loss = multiple_instance_presence_cross_entropy_dyn(
-            feedback_activity_preds,
-            feedback_activity_labels
-        )
-
-        # Compute non-feedback and feedback loss sums
         non_feedback_loss = species_loss + activity_loss
-        feedback_loss = feedback_species_loss + feedback_activity_loss
 
-        # Compute loss as weighted average between feedback and non-feedback
-        # losses
-        loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
-            self._feedback_loss_weight * feedback_loss
+        ## Feedback
+
+        # Flatten feedback box features, compute predictions, and re-split
+        # per-image
+        if feedback_box_features is not None and\
+                feedback_species_labels is not None and\
+                feedback_activity_labels is not None:
+            flattened_feedback_box_features = torch.cat(
+                feedback_box_features,
+                dim=0
+            )
+            flattened_feedback_species_logits = species_classifier(
+                flattened_feedback_box_features
+            )
+            flattened_feedback_activity_logits = activity_classifier(
+                flattened_feedback_box_features
+            )
+            flattened_feedback_species_preds = torch.nn.functional.softmax(
+                flattened_feedback_species_logits,
+                dim=1
+            )
+            flattened_feedback_activity_preds = torch.nn.functional.softmax(
+                flattened_feedback_activity_logits,
+                dim=1
+            )
+            feedback_box_counts = [len(x) for x in feedback_box_features]
+            feedback_species_preds = torch.split(
+                flattened_feedback_species_preds,
+                feedback_box_counts,
+                dim=0
+            )
+            feedback_activity_preds = torch.split(
+                flattened_feedback_activity_preds,
+                feedback_box_counts,
+                dim=0
+            )
+
+            # Compute loss
+            # We have image-level count feedback labels for species
+            feedback_species_loss = multiple_instance_count_cross_entropy_dyn(
+                feedback_species_preds,
+                feedback_species_labels
+            )
+            # We have image-level presence feedback labels for activities
+            feedback_activity_loss = multiple_instance_presence_cross_entropy_dyn(
+                feedback_activity_preds,
+                feedback_activity_labels
+            )
+            feedback_loss = feedback_species_loss + feedback_activity_loss
+
+            # Compute loss as weighted average between feedback and non-feedback
+            # losses
+            loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
+                self._feedback_loss_weight * feedback_loss
+        else:
+            # No feedback data. Loss is just equal to the non-feedback loss.
+            loss = non_feedback_loss
+
+        # Optimizer step
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -1206,7 +1223,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 shuffle=True,
                 collate_fn=custom_collate
             )
-            feedback_loader = BufferedFeedbackDataLoader(
+            feedback_loader = BufferedBoxImageDataLoader(
                 unbuffered_feedback_loader,
                 self._feedback_batch_size
             )
@@ -1607,7 +1624,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 shuffle=True,
                 collate_fn=custom_collate
             )
-            feedback_loader = BufferedFeedbackDataLoader(
+            feedback_loader = BufferedBoxImageDataLoader(
                 unbuffered_feedback_loader,
                 self._retraining_batch_size
             )
@@ -1930,6 +1947,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             min_epochs=3,
             max_epochs=30,
             label_smoothing=0.0,
+            feedback_loss_weight=0.5,
             scheduler_type=SchedulerType.none,
             allow_write=False):
         self._backbone = side_tuning_backbone
@@ -1946,6 +1964,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         self._min_epochs = min_epochs
         self._max_epochs = max_epochs
         self._label_smoothing = label_smoothing
+        self._feedback_loss_weight = feedback_loss_weight
         self._scheduler_type = scheduler_type
         self._allow_write = allow_write
 
@@ -1954,68 +1973,127 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             species_classifier,
             activity_classifier,
             optimizer,
-            species_labels,
-            activity_labels,
-            box_images,
-            box_backbone_features):
+            train_species_labels,
+            train_activity_labels,
+            train_box_images,
+            train_box_backbone_features,
+            feedback_species_labels,
+            feedback_activity_labels,
+            feedback_box_images,
+            feedback_box_backbone_features):
         # Determine the device to use based on the backbone's fc weights
         device = self._backbone.device
 
         # Move to device
-        species_labels = species_labels.to(device)
-        activity_labels = activity_labels.to(device)
-        box_images = box_images.to(device)
-        box_backbone_features = box_backbone_features.to(device)
+        train_species_labels = train_species_labels.to(device)
+        train_activity_labels = train_activity_labels.to(device)
+        train_box_images = train_box_images.to(device)
+        train_box_backbone_features = train_box_backbone_features.to(device)
+        feedback_species_labels = feedback_species_labels.to(device)
+        feedback_activity_labels = feedback_activity_labels.to(device)
+        feedback_box_images = feedback_box_images.to(device)
+        feedback_box_backbone_features = feedback_box_backbone_features.to(device)
+
+        # Record feedback box counts, and temporarily flatten feedback box
+        # images and backbone features
+        feedback_box_counts = [len(x) for x in feedback_box_images]
+        feedback_box_images = torch.cat(feedback_box_images, dim=0)
+        feedback_box_backbone_features =\
+            torch.cat(feedback_box_backbone_features, dim=0)
 
         # Extract side network box features
-        box_side_features = self._backbone.compute_side_features(box_images)
+        train_box_side_features =\
+            self._backbone.compute_side_features(train_box_images)
+        feedback_box_side_features =\
+            self._backbone.compute_side_features(feedback_box_images)
 
         # Concatenate backbone and side features
-        box_features = torch.cat(
-            (box_backbone_features, box_side_features),
+        train_box_features = torch.cat(
+            (train_box_backbone_features, train_box_side_features),
+            dim=1
+        )
+        feedback_box_features = torch.cat(
+            (feedback_box_backbone_features, feedback_box_side_features),
             dim=1
         )
 
         # Compute logits by passing the features through the appropriate
         # classifiers
-        species_preds = species_classifier(box_features)
-        activity_preds = activity_classifier(box_features)
+        train_species_preds = species_classifier(train_box_features)
+        train_activity_preds = activity_classifier(train_box_features)
+        feedback_species_logits = species_classifier(feedback_box_features)
+        feedback_activity_logits = activity_classifier(feedback_box_features)
 
-        species_loss = torch.nn.functional.cross_entropy(
-            species_preds,
-            species_labels,
+        # Compute softmax predictions for feedback data
+        feedback_species_preds =\
+            torch.nn.functional.softmax(feedback_species_logits, dim=1)
+        feedback_activity_preds =\
+            torch.nn.functional.softmax(feedback_activity_logits, dim=1)
+
+        # Re-split feedback predictions for loss computation
+        feedback_species_preds = torch.split(
+            feedback_species_preds,
+            feedback_box_counts,
+            dim=0
+        )
+        feedback_activity_preds = torch.split(
+            feedback_activity_preds,
+            feedback_box_counts,
+            dim=0
+        )
+
+        # Compute losses
+        train_species_loss = torch.nn.functional.cross_entropy(
+            train_species_preds,
+            train_species_labels,
             label_smoothing=self._label_smoothing
         )
-        activity_loss = torch.nn.functional.cross_entropy(
-            activity_preds,
-            activity_labels,
+        train_activity_loss = torch.nn.functional.cross_entropy(
+            train_activity_preds,
+            train_activity_labels,
             label_smoothing=self._label_smoothing
         )
+        # We have image-level count feedback labels for species
+        feedback_species_loss = multiple_instance_count_cross_entropy_dyn(
+            feedback_species_preds,
+            feedback_species_labels
+        )
+        # We have image-level presence feedback labels for activities
+        feedback_activity_loss = multiple_instance_presence_cross_entropy_dyn(
+            feedback_activity_preds,
+            feedback_activity_labels
+        )
 
-        loss = species_loss + activity_loss
+        # Compute non-feedback and feedback loss sums
+        non_feedback_loss = train_species_loss + train_activity_loss
+        feedback_loss = feedback_species_loss + feedback_activity_loss
+
+        loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
+            self._feedback_loss_weight * feedback_loss
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        species_correct = torch.argmax(species_preds, dim=1) == \
-            species_labels
-        n_species_correct = int(
-            species_correct.to(torch.int).sum().detach().cpu().item()
+        train_species_correct = torch.argmax(train_species_preds, dim=1) == \
+            train_species_labels
+        train_n_species_correct = int(
+            train_species_correct.to(torch.int).sum().detach().cpu().item()
         )
 
-        activity_correct = torch.argmax(activity_preds, dim=1) == \
-            activity_labels
-        n_activity_correct = int(
-            activity_correct.to(torch.int).sum().detach().cpu().item()
+        train_activity_correct = torch.argmax(train_activity_preds, dim=1) == \
+            train_activity_labels
+        train_n_activity_correct = int(
+            train_activity_correct.to(torch.int).sum().detach().cpu().item()
         )
         
         return loss.detach().cpu().item(),\
-            n_species_correct,\
-            n_activity_correct
+            train_n_species_correct,\
+            train_n_activity_correct
 
     def _train_epoch(
             self,
             data_loader,
+            feedback_feature_loader,
             species_classifier,
             activity_classifier,
             optimizer):
@@ -2031,17 +2109,34 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         n_species_correct = 0
         n_activity_correct = 0
 
-        for species_labels, activity_labels, box_images, box_backbone_features\
-                in data_loader:
+        # For each batch of feedback data...
+        train_data_iter = iter(data_loader)
+        for feedback_species_labels, feedback_activity_labels, _,\
+                feedback_box_images, _, feedback_box_backbone_features in\
+                    feedback_feature_loader:
+            # Sample a batch of regular training data
+            try:
+                train_species_labels, train_activity_labels, train_box_images,\
+                    train_box_backbone_features = next(train_data_iter)
+            except:
+                train_data_iter = iter(data_loader)
+                train_species_labels, train_activity_labels, train_box_images,\
+                    train_box_backbone_features = next(train_data_iter)
+            
+            # Train on both the feedback and regular training batch
             batch_loss, batch_n_species_correct, batch_n_activity_correct =\
                 self._train_batch(
                     species_classifier,
                     activity_classifier,
                     optimizer,
-                    species_labels,
-                    activity_labels,
-                    box_images,
-                    box_backbone_features
+                    train_species_labels,
+                    train_activity_labels,
+                    train_box_images,
+                    train_box_backbone_features,
+                    feedback_species_labels,
+                    feedback_activity_labels,
+                    feedback_box_images,
+                    feedback_box_backbone_features
                 )
 
             sum_loss += batch_loss
@@ -2166,31 +2261,59 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                 feedback_dataset,
                 batch_size=32,
                 num_workers=2,
-                shuffle=True,
+                shuffle=False,
                 collate_fn=custom_collate
             )
-            feedback_loader = BufferedFeedbackDataLoader(
+            feedback_loader = BufferedBoxImageDataLoader(
                 unbuffered_feedback_loader,
                 self._feedback_batch_size
             )
-            # TODO Precompute feedback backbone
+            # Precompute feedback backbone features
+            self._backbone.eval_backbone()
+            feedback_box_features = []
+            with torch.no_grad():
+                for _, _, _, batch_box_images, _ in feedback_loader:
+                    # Move batch to device
+                    batch_box_images =\
+                        [b.to(self._device) for b in batch_box_images]
 
-            # TODO Construct custom FeatureConcatBoxImageDataset for the feedback
-            # dataset
-            raise NotImplementedError
+                    # Get list of per-image box counts
+                    batch_box_counts = [len(x) for x in batch_box_images]
+
+                    # Flatten box images and compute features
+                    flattened_box_images = torch.cat(batch_box_images, dim=0)
+                    batch_box_features = self._backbone.compute_backbone_features(flattened_box_images)
+
+                    # Use batch_box_counts to split the computed features back
+                    # to per-image feature tensors and concatenate to
+                    # feedback_box_features
+                    feedback_box_features += torch.split(
+                        batch_box_features,
+                        batch_box_counts,
+                        dim=0
+                    )
+
+            # Construct FeatureConcatDataset for the feedback dataset
+            feedback_feature_loader = BufferedBoxImageDataLoader(
+                DataLoader(
+                    FeatureConcatDataset(
+                        feedback_dataset,
+                        feedback_box_features
+                    )
+                ),
+                self._feedback_batch_size
+            )
         else:
             feedback_feature_loader = None
 
-        # TODO Make use of feedback data
-
         # Construct training and validation
-        # FeatureConcatFlattenedBoxImageDataset objects from known features
+        # FeatureConcatDataset objects from known features.
 
-        known_train_dataset = FeatureConcatFlattenedBoxImageDataset(
+        known_train_dataset = FeatureConcatDataset(
             FlattenedBoxImageDataset(self._train_dataset),
             train_box_features
         )
-        known_val_dataset = FeatureConcatFlattenedBoxImageDataset(
+        known_val_dataset = FeatureConcatDataset(
             FlattenedBoxImageDataset(self._val_known_dataset),
             val_box_features
         )
@@ -2296,7 +2419,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
 
             # Train for one full epoch
             mean_train_loss, mean_train_accuracy = self._train_epoch(
-                train_loader, 
+                train_loader,
+                feedback_feature_loader,
                 species_classifier,
                 activity_classifier,
                 optimizer
@@ -2403,18 +2527,14 @@ def get_datasets(
         val_csv_path,
         n_species_cls,
         n_activity_cls,
-        label_mapping,
+        static_label_mapper,
+        dynamic_label_mapper,
         box_transform,
         post_cache_train_transform,
         post_cache_val_transform,
         root_cache_dir=None,
         allow_write=False,
         n_known_val=4068):
-    static_label_mapper =\
-        LabelMapper(label_mapping=deepcopy(label_mapping), update=False)
-    dynamic_label_mapper =\
-        LabelMapper(label_mapping, update=True)
-
     if root_cache_dir is not None:
         train_cache_dir = os.path.join(root_cache_dir, 'train')
         val_cache_dir = os.path.join(root_cache_dir, 'val')
@@ -2479,9 +2599,7 @@ def get_datasets(
 
     return train_dataset,\
         val_known_dataset,\
-        val_dataset,\
-        dynamic_label_mapper,\
-        static_label_mapper
+        val_dataset
 
 
 def compute_features(
