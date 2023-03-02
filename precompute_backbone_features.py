@@ -3,6 +3,7 @@ import pickle
 import time
 import os
 import argparse
+from copy import deepcopy
 
 from tqdm import tqdm
 import torch
@@ -24,8 +25,8 @@ from scoring import\
     ActivationStatisticalModel,\
     make_logit_scorer,\
     CompositeScorer
-from data.custom import build_species_label_mapping
 from labelmapping import LabelMapper
+from data.custom import build_species_label_mapping
 
 parser = argparse.ArgumentParser()
 
@@ -108,15 +109,18 @@ n_known_activity_cls = 2
 n_activity_cls = 4 # TODO Determine
 
 label_mapping = build_species_label_mapping(args.train_csv_path)
+static_label_mapper = LabelMapper(deepcopy(label_mapping), update=False)
+dynamic_label_mapper = LabelMapper(label_mapping, update=True)
 box_transform, post_cache_train_transform, post_cache_val_transform =\
     get_transforms(Augmentation.none)
-train_dataset, val_known_dataset, _, _, _ = get_datasets(
+train_dataset, val_known_dataset, _ = get_datasets(
     args.data_root,
     args.train_csv_path,
     args.cal_csv_path,
     n_species_cls,
     n_activity_cls,
-    label_mapping,
+    static_label_mapper,
+    dynamic_label_mapper,
     box_transform,
     post_cache_train_transform,
     post_cache_val_transform,

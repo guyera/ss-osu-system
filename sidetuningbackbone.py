@@ -59,3 +59,15 @@ class SideTuningBackbone(Module):
             return RuntimeError(('Cannot compute side features before '
                                  'resetting model for retraining at least once'
                                  '---side network not initialized'))
+
+    def eval_backbone(self):
+        self._backbone.eval()
+
+    def train_backbone(self):
+        self._backbone.train()
+
+    def eval_side(self):
+        self._model.eval()
+
+    def train_side(self):
+        self._model.train()
