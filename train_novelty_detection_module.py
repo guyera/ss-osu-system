@@ -3,6 +3,7 @@ import pickle
 import time
 import os
 import argparse
+from copy import deepcopy
 
 import torch
 import torch.distributed as dist
@@ -25,8 +26,9 @@ from scoring import\
     ActivationStatisticalModel,\
     make_logit_scorer,\
     CompositeScorer
-from labelmapping import IdentityLabelMapper
+from labelmapping import LabelMapper
 from utils import custom_collate
+from data.custom import build_species_label_mapping
 
 class ClassifierTrainer(Enum):
     end_to_end = 'end-to-end'
@@ -179,7 +181,7 @@ if args.pretrained_backbone_path is not None:
 n_known_species_cls = 10
 n_species_cls = 31
 n_known_activity_cls = 2
-n_activity_cls = 8
+n_activity_cls = 7
 
 classifier = boxclassifier.ClassifierV2(
     256,
@@ -207,7 +209,9 @@ novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
     scorer.n_scores()
 ).to(device)
 
-label_mapper = IdentityLabelMapper()
+label_mapping = build_species_label_mapping(args.train_csv_path)
+static_label_mapper = LabelMapper(deepcopy(label_mapping), update=False)
+dynamic_label_mapper = LabelMapper(label_mapping, update=True)
 box_transform, post_cache_train_transform, post_cache_val_transform =\
     get_transforms(args.augmentation)
 train_dataset, val_known_dataset, val_dataset =\
@@ -217,8 +221,8 @@ train_dataset, val_known_dataset, val_dataset =\
         args.cal_csv_path,
         n_species_cls,
         n_activity_cls,
-        label_mapper,
-        label_mapper,
+        static_label_mapper,
+        dynamic_label_mapper,
         box_transform,
         post_cache_train_transform,
         post_cache_val_transform,
@@ -276,7 +280,7 @@ trainer = TuplePredictorTrainer(
     post_cache_train_transform,
     n_species_cls,
     n_activity_cls,
-    label_mapper,
+    dynamic_label_mapper,
     classifier_trainer
 )
 

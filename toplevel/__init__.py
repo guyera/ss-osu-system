@@ -14,11 +14,12 @@ from tupleprediction import compute_probability_novelty
 from adaptation.query_formulation import select_queries
 import pickle
 from scipy.stats import ks_2samp
+from copy import deepcopy
 
 import os
 
 from backbone import Backbone
-from labelmapping import IdentityLabelMapper
+from labelmapping import LabelMapper
 from tupleprediction.training import\
     Augmentation,\
     SchedulerType,\
@@ -26,6 +27,7 @@ from tupleprediction.training import\
     get_datasets,\
     TuplePredictorTrainer,\
     LogitLayerClassifierTrainer
+from data.custom import build_species_label_mapping
 
 class TopLevelApp:
     def __init__(self, data_root, pretrained_models_dir, backbone_architecture,
@@ -53,7 +55,7 @@ class TopLevelApp:
         self.val_csv_path = val_csv_path
         self.pretrained_backbone_path = pretrained_backbone_path
         self.n_species_cls = 31
-        self.n_activity_cls = 8
+        self.n_activity_cls = 7
         self.n_known_species_cls = 10
         self.n_known_activity_cls = 2
         self.post_red = False
@@ -140,8 +142,9 @@ class TopLevelApp:
             post_cache_val_transform =\
                 get_transforms(self.retraining_augmentation)
 
-        self.static_label_mapper = IdentityLabelMapper()
-        self.dynamic_label_mapper = IdentityLabelMapper()
+        label_mapping = build_species_label_mapping(self.train_csv_path)
+        self.static_label_mapper = LabelMapper(deepcopy(label_mapping), update=False)
+        self.dynamic_label_mapper = LabelMapper(label_mapping, update=True)
         train_dataset,\
             val_known_dataset,\
             val_dataset =\
@@ -566,8 +569,9 @@ class TopLevelApp:
             post_cache_val_transform =\
                 get_transforms(self.retraining_augmentation)
 
-        self.static_label_mapper = IdentityLabelMapper()
-        self.dynamic_label_mapper = IdentityLabelMapper()
+        label_mapping = build_species_label_mapping(self.train_csv_path)
+        self.static_label_mapper = LabelMapper(deepcopy(label_mapping), update=False)
+        self.dynamic_label_mapper = LabelMapper(label_mapping, update=True)
         train_dataset,\
             val_known_dataset,\
             val_dataset =\

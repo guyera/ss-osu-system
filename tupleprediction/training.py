@@ -862,7 +862,7 @@ class BufferedBoxImageDataLoader:
                     for component in data:
                         self._buffer.append(component)
                 else:
-                    for i, component in data:
+                    for i, component in enumerate(data):
                         if isinstance(component, list):
                             self._buffer[i] += component
                         else:
