@@ -10,7 +10,7 @@ class OSUInterface:
     def __init__(self, scg_ensemble, data_root, pretrained_models_dir, backbone_architecture,
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_batch_size, trial_size, disable_retraining,
-            root_cache_dir, n_known_val, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_patience,
+            root_cache_dir, n_known_val, classifier_trainer, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_val_interval, retraining_patience,
             retraining_min_epochs, retraining_max_epochs, retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight):
 
         self.app = TopLevelApp( 
@@ -29,10 +29,12 @@ class OSUInterface:
             disable_retraining=disable_retraining,
             root_cache_dir=root_cache_dir,
             n_known_val=n_known_val,
+            classifier_trainer=classifier_trainer,
             precomputed_feature_dir=precomputed_feature_dir,
             retraining_augmentation=retraining_augmentation,
             retraining_lr=retraining_lr,
             retraining_batch_size=retraining_batch_size,
+            retraining_val_interval=retraining_val_interval,
             retraining_patience=retraining_patience,
             retraining_min_epochs=retraining_min_epochs,
             retraining_max_epochs=retraining_max_epochs,

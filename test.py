@@ -12,7 +12,7 @@ import numpy as np
 
 from models.scg import SpatiallyConditionedGraph as SCG
 from data.data_factory import DataFactory, CustomInput
-from utils import custom_collate
+from utils import gen_custom_collate
 
 
 def get_net(args):
@@ -311,7 +311,7 @@ def main(rank, args):
 
     val_loader = DataLoader(
         dataset=valset,
-        collate_fn=custom_collate, batch_size=args.batch_size,
+        collate_fn=gen_custom_collate(), batch_size=args.batch_size,
         num_workers=args.num_workers, pin_memory=True,
         sampler=DistributedSampler(
             valset,

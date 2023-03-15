@@ -27,7 +27,7 @@ from scoring import\
     make_logit_scorer,\
     CompositeScorer
 from labelmapping import LabelMapper
-from utils import custom_collate
+from utils import gen_custom_collate
 from data.custom import build_species_label_mapping
 
 class ClassifierTrainer(Enum):
@@ -307,7 +307,7 @@ if rank == 0:
         val_known_dataset,
         batch_size = 32,
         shuffle = False,
-        collate_fn=custom_collate,
+        collate_fn=gen_custom_collate(),
         num_workers=2
     )
     backbone.eval()

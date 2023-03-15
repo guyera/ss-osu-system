@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from models.scg import SpatiallyConditionedGraph as SCG
 from models.scg import CustomisedDLE
 from data.data_factory import DataFactory
-from utils import custom_collate
+from utils import gen_custom_collate
 
 
 class Train(object):
@@ -77,7 +77,7 @@ def main(rank, args):
 
     train_loader = DataLoader(
         dataset=trainset,
-        collate_fn=custom_collate, batch_size=args.batch_size,
+        collate_fn=gen_custom_collate(), batch_size=args.batch_size,
         num_workers=args.num_workers, pin_memory=True,
         sampler=DistributedSampler(
             trainset,
@@ -86,7 +86,7 @@ def main(rank, args):
 
     val_loader = DataLoader(
         dataset=valset,
-        collate_fn=custom_collate, batch_size=args.batch_size,
+        collate_fn=gen_custom_collate(), batch_size=args.batch_size,
         num_workers=args.num_workers, pin_memory=True,
         sampler=DistributedSampler(
             valset,
