@@ -6,6 +6,7 @@ from pathlib import Path
 
 from backbone import Backbone
 from tupleprediction.training import Augmentation, SchedulerType
+from toplevel import TopLevelApp
 
 if __name__ == "__main__":
     p = ArgumentParser()
@@ -35,10 +36,12 @@ if __name__ == "__main__":
     p.add_argument('--hintB', default=False)
     p.add_argument('--root-cache-dir', type=str, default='/nfs/hpc/share/sail_on3/.data-cache')
     p.add_argument('--n-known-val', type=int, default=4068)
+    p.add_argument('--classifier-trainer', type=TopLevelApp.ClassifierTrainer, choices=list(TopLevelApp.ClassifierTrainer), default=TopLevelApp.ClassifierTrainer.logit_layer)
     p.add_argument('--precomputed-feature-dir', type=str, default='./.features/resizepad=224/none/normalized')
     p.add_argument('--retraining-augmentation', type=Augmentation, choices=list(Augmentation), default=Augmentation.none)
     p.add_argument('--retraining-lr', type=float, default=0.005)
     p.add_argument('--retraining-batch-size', type=int, default=32)
+    p.add_argument('--retraining-val-interval', type=int, default=1)
     p.add_argument('--retraining-patience', type=int, default=50)
     p.add_argument('--retraining-min-epochs', type=int, default=1)
     p.add_argument('--retraining-max-epochs', type=int, default=1000)
@@ -77,10 +80,12 @@ if __name__ == "__main__":
         disable_retraining=args.disable_retraining,
         root_cache_dir=args.root_cache_dir,
         n_known_val=args.n_known_val,
+        classifier_trainer=args.classifier_trainer,
         precomputed_feature_dir=args.precomputed_feature_dir,
         retraining_augmentation=args.retraining_augmentation,
         retraining_lr=args.retraining_lr,
         retraining_batch_size=args.retraining_batch_size,
+        retraining_val_interval=args.retraining_val_interval,
         retraining_patience=args.retraining_patience,
         retraining_min_epochs=args.retraining_min_epochs,
         retraining_max_epochs=args.retraining_max_epochs,

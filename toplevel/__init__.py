@@ -1,3 +1,4 @@
+from enum import Enum
 import json
 import re
 import itertools
@@ -6,7 +7,6 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from data.data_factory import DataFactory
-from utils import custom_collate
 from toplevel.util import *
 from boximagedataset import BoxImageDataset
 import pandas as pd
@@ -19,6 +19,7 @@ from copy import deepcopy
 import os
 
 from backbone import Backbone
+from sidetuningbackbone import SideTuningBackbone
 from labelmapping import LabelMapper
 from tupleprediction.training import\
     Augmentation,\
@@ -26,14 +27,22 @@ from tupleprediction.training import\
     get_transforms,\
     get_datasets,\
     TuplePredictorTrainer,\
-    LogitLayerClassifierTrainer
+    LogitLayerClassifierTrainer,\
+    SideTuningClassifierTrainer
 from data.custom import build_species_label_mapping
 
 class TopLevelApp:
+    class ClassifierTrainer(Enum):
+        logit_layer = 'logit-layer'
+        side_tuning = 'side-tuning'
+
+        def __str__(self):
+            return self.value
+
     def __init__(self, data_root, pretrained_models_dir, backbone_architecture,
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_size, trial_batch_size, disable_retraining,
-            root_cache_dir, n_known_val, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_patience, retraining_min_epochs, retraining_max_epochs,
+            root_cache_dir, n_known_val, classifier_trainer, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_val_interval, retraining_patience, retraining_min_epochs, retraining_max_epochs,
             retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight):
 
         pretrained_backbone_path = os.path.join(
@@ -65,6 +74,8 @@ class TopLevelApp:
         self.all_predictions = []
         self.all_p_type = torch.tensor([])
         self.all_red_light_scores = np.array([])
+        self.p_type_override = None
+        self.p_type_override_mask = None
 
         self.p_type_th = 0.75
         self.post_red_base = None
@@ -100,12 +111,17 @@ class TopLevelApp:
         self.second_retrain_batch_num = (self.trial_size - 30) // self.trial_batch_size
         self.disable_retraining = disable_retraining
 
+        # Auxiliary debugging data
+        self._classifier_debugging_data = {}
+
         self.root_cache_dir = root_cache_dir
         self.n_known_val = n_known_val
+        self.classifier_trainer_enum = classifier_trainer
         self.precomputed_feature_dir = precomputed_feature_dir
         self.retraining_augmentation = retraining_augmentation
         self.retraining_lr = retraining_lr
         self.retraining_batch_size = retraining_batch_size
+        self.retraining_val_interval = retraining_val_interval
         self.retraining_patience = retraining_patience
         self.retraining_min_epochs = retraining_min_epochs
         self.retraining_max_epochs = retraining_max_epochs
@@ -172,20 +188,41 @@ class TopLevelApp:
             self.precomputed_feature_dir,
             'validation.pth'
         )
-        classifier_trainer = LogitLayerClassifierTrainer(
-            self.backbone,
-            self.retraining_lr,
-            train_feature_file,
-            val_feature_file,
-            self.box_transform,
-            post_cache_train_transform,
-            device=self.backbone.device,
-            patience=self.retraining_patience,
-            min_epochs=self.retraining_min_epochs,
-            max_epochs=self.retraining_max_epochs,
-            label_smoothing=self.retraining_label_smoothing,
-            feedback_loss_weight=self.feedback_loss_weight
-        )
+        if self.classifier_trainer_enum == self.ClassifierTrainer.logit_layer:
+            classifier_trainer = LogitLayerClassifierTrainer(
+                self.backbone,
+                self.retraining_lr,
+                train_feature_file,
+                val_feature_file,
+                self.box_transform,
+                post_cache_train_transform,
+                device=self.backbone.device,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.side_tuning:
+            self.backbone = SideTuningBackbone(self.backbone)
+            classifier_trainer = SideTuningClassifierTrainer(
+                self.backbone,
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                train_feature_file,
+                val_feature_file,
+                self.box_transform,
+                post_cache_train_transform,
+                feedback_batch_size=self.retraining_batch_size,
+                retraining_batch_size=self.retraining_batch_size,
+                val_interval=self.retraining_val_interval,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight
+            )
 
         self.novelty_trainer = TuplePredictorTrainer(
             train_dataset,
@@ -208,6 +245,8 @@ class TopLevelApp:
         self.all_nc = torch.tensor([], dtype=torch.long)
         self.all_predictions = []
         self.all_p_type = torch.tensor([])
+        self.p_type_override = None
+        self.p_type_override_mask = None
         self.post_red_base = None
         self.characterization_preds = []
         self.per_image_p_type = torch.tensor([])
@@ -217,6 +256,9 @@ class TopLevelApp:
         self.t_tn = None
         self.batch_num = 0 
         self.num_retrains_so_far = 0
+
+        # Auxiliary debugging data
+        self._classifier_debugging_data = {}
               
         self._reset_backbone_and_detectors()
 
@@ -239,15 +281,38 @@ class TopLevelApp:
 
         # Get box counts from probs
         box_counts = [(x.shape[0] if x is not None else 0) for x in species_probs]
+        
+        # Construct dictionary containing debugging data for classifier,
+        # including the image IDs and their responective species_probs and
+        # activity_probs tensors
+        assert len(image_paths) == len(species_probs)
+        assert len(image_paths) == len(activity_probs)
+        mapped_permutation =\
+            self.dynamic_label_mapper.map_range(self.n_species_cls)
+        for img_path, img_species_probs, img_activity_probs in\
+                zip(image_paths, species_probs, activity_probs):
+            mapped_img_species_probs = img_species_probs[:, mapped_permutation] if img_species_probs is not None else None
+            self._classifier_debugging_data[img_path] = {
+                'species_probs': mapped_img_species_probs.detach().cpu().numpy() if mapped_img_species_probs is not None else None,
+                'activity_probs': img_activity_probs.detach().cpu().numpy() if img_activity_probs is not None else None
+            }
 
         # compute P_n
         with torch.no_grad():
+            # If we haven't received hint type A, but we have received a novel
+            # feedback instance so that we know the trial novelty type anyway,
+            # substitute it for the hint.
+            if self.p_type_override is not None and hint_typeA_data is None:
+                hint_a = self.p_type_override
+            else:
+                hint_a = hint_typeA_data
+
             batch_p_type, p_ni = compute_probability_novelty(
                 scores,
                 box_counts,
                 self.und_manager.novelty_type_classifier,
                 self.backbone.device,
-                hint_a=hint_typeA_data,
+                hint_a=hint_a,
                 hint_b=hint_typeB_data
             )
         
@@ -338,6 +403,7 @@ class TopLevelApp:
             logs['post_red_base'] = self.post_red_base
             logs['characterization'] = self.characterization_preds
             logs['red_light_scores'] = self.all_red_light_scores
+            logs['per_box_predictions'] = self._classifier_debugging_data
 
             pickle.dump(logs, handle)
         return self.all_p_ni.numpy()
@@ -382,19 +448,63 @@ class TopLevelApp:
         assert self.feedback_enabled, "feedback is disabled"
 
         p_ni_raw = np.copy(self.batch_context.p_ni)
-        # TODO adjust batch_context.p_ni and batch_context.all_p_type
-        # based on feedback (the characterization becomes trivial once we've
-        # observed a positive feedback instance, so we want to make some
-        # override characterization prediction tensor that's None until we've
-        # gotten such an instance, at which point it's the proper
-        # characterization tensor. Then, we should adjust how
-        # characterize_round works to check for that override and use it
-        # when available)
+        # Adjust batch_context.p_type, batch_context.p_ni, and characterization
+        # strategy based on feedback
+
+        df = pd.read_csv(feedback_csv_path)
+        nov_types = df['novelty_type'].to_numpy()
+        for idx, nov_type in enumerate(nov_types):
+            batch_idx = self.batch_context.query_indices[idx]
+
+            # Shift novelty type to get index:
+            # Types 0, 2, 3, 4, 5, 6 get mapped to 0, 1, 2, 3, 4, 5
+            if nov_type >= 2:
+                nov_type -= 1
+
+            # Update p_type
+            self.batch_context.p_type[batch_idx, :] = 0.0
+            self.batch_context.p_type[batch_idx, nov_type] = 1.0
+
+            # Update p_ni
+            if nov_type == 0:
+                self.batch_context.p_ni[batch_idx] = 0.0
+            else:
+                self.batch_context.p_ni[batch_idx] = 1.0
+
+                # If this is the first novel feedback instance, initialize the
+                # override and update the rest of the batch's p_type and p_ni
+                # values to match
+                if self.p_type_override is None:
+                    # Novel feedback---update characterization strategy by
+                    # initializing the p_type_override and mask
+                    self.p_type_override = nov_type
+                    p_type_override_mask = torch.ones(6, dtype=torch.bool)
+                    p_type_override_mask[0] = False
+                    p_type_override_mask[nov_type] = False
+                    self.p_type_override_mask = p_type_override_mask
+
+
+                    # Update batch_context.p_type to match the characterization
+                    # override
+                    self.batch_context.p_type[:, p_type_override_mask] = 0.0
+                    normalizer =\
+                        self.batch_context.p_type.sum(dim=1)
+                    self.batch_context.p_type = self.batch_context.p_type /\
+                        normalizer[:, None]
+                    # Remove NaNs by setting them to the normalized override
+                    # mask compliment
+                    self.batch_context.p_type[normalizer == 0] =\
+                        (~p_type_override_mask[:]).to(torch.float)
+                    self.batch_context.p_type = self.batch_context.p_type /\
+                        self.batch_context.p_type.sum(dim=1, keepdim=True)
+
+                    # Update batch_context.p_ni as well
+                    self.batch_context.p_ni =\
+                        1 - self.batch_context.p_type[:, 0]
 
         self._accumulate(self.batch_context.predictions, self.batch_context.p_ni, p_ni_raw,
             self.batch_context.p_type)
 
-        df = pd.read_csv(feedback_csv_path)
         self.novelty_trainer.add_feedback_data(self.data_root, feedback_csv_path)
 
         if not self.disable_retraining:
@@ -544,6 +654,10 @@ class TopLevelApp:
         assert self.all_p_ni.shape[0] == self.all_p_type.shape[0] == len(self.all_predictions)
 
     def _reset_backbone_and_detectors(self):
+        self.backbone = Backbone(
+            self.backbone_architecture,
+            pretrained=False
+        ).to('cuda:0')
         backbone_state_dict = torch.load(
             self.pretrained_backbone_path,
             map_location='cuda:0'
@@ -599,20 +713,41 @@ class TopLevelApp:
             self.precomputed_feature_dir,
             'validation.pth'
         )
-        classifier_trainer = LogitLayerClassifierTrainer(
-            self.backbone,
-            self.retraining_lr,
-            train_feature_file,
-            val_feature_file,
-            self.box_transform,
-            post_cache_train_transform,
-            device=self.backbone.device,
-            patience=self.retraining_patience,
-            min_epochs=self.retraining_min_epochs,
-            max_epochs=self.retraining_max_epochs,
-            label_smoothing=self.retraining_label_smoothing,
-            feedback_loss_weight=self.feedback_loss_weight
-        )
+        if self.classifier_trainer_enum == self.ClassifierTrainer.logit_layer:
+            classifier_trainer = LogitLayerClassifierTrainer(
+                self.backbone,
+                self.retraining_lr,
+                train_feature_file,
+                val_feature_file,
+                self.box_transform,
+                post_cache_train_transform,
+                device=self.backbone.device,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.side_tuning:
+            self.backbone = SideTuningBackbone(self.backbone)
+            classifier_trainer = SideTuningClassifierTrainer(
+                self.backbone,
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                train_feature_file,
+                val_feature_file,
+                self.box_transform,
+                post_cache_train_transform,
+                feedback_batch_size=self.retraining_batch_size,
+                retraining_batch_size=self.retraining_batch_size,
+                val_interval=self.retraining_val_interval,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight
+            )
 
         self.novelty_trainer = TuplePredictorTrainer(
             train_dataset,

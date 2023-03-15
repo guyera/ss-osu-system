@@ -17,8 +17,8 @@ import torch
 from torch.nn import Module
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from boximagedataset import BoxImageDataset
-from utils import custom_collate, gen_tqdm_description
+from boximagedataset import BoxImageDataset, BoxImageMemoryDataset
+from utils import gen_custom_collate, gen_tqdm_description
 from transforms import\
     Compose,\
     Normalize,\
@@ -1221,7 +1221,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 batch_size=32,
                 num_workers=2,
                 shuffle=True,
-                collate_fn=custom_collate
+                collate_fn=gen_custom_collate()
             )
             feedback_loader = BufferedBoxImageDataLoader(
                 unbuffered_feedback_loader,
@@ -1622,7 +1622,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 batch_size=32,
                 num_workers=2,
                 shuffle=True,
-                collate_fn=custom_collate
+                collate_fn=gen_custom_collate()
             )
             feedback_loader = BufferedBoxImageDataLoader(
                 unbuffered_feedback_loader,
@@ -1910,7 +1910,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             val_known_dataset,
             batch_size = 32,
             shuffle = False,
-            collate_fn=custom_collate,
+            collate_fn=gen_custom_collate(),
             num_workers=2
         )
         backbone.eval()
@@ -1943,6 +1943,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             post_cache_train_transform,
             feedback_batch_size=32,
             retraining_batch_size=32,
+            val_interval=20,
             patience=3,
             min_epochs=3,
             max_epochs=30,
@@ -1960,6 +1961,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         self._post_cache_train_transform = post_cache_train_transform
         self._feedback_batch_size = feedback_batch_size
         self._retraining_batch_size = retraining_batch_size
+        self._val_interval = val_interval
         self._patience = patience
         self._min_epochs = min_epochs
         self._max_epochs = max_epochs
@@ -1991,8 +1993,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         train_box_backbone_features = train_box_backbone_features.to(device)
         feedback_species_labels = feedback_species_labels.to(device)
         feedback_activity_labels = feedback_activity_labels.to(device)
-        feedback_box_images = feedback_box_images.to(device)
-        feedback_box_backbone_features = feedback_box_backbone_features.to(device)
+        feedback_box_images = [x.to(device) for x in feedback_box_images]
+        feedback_box_backbone_features = [x.to(device) for x in feedback_box_backbone_features]
 
         # Record feedback box counts, and temporarily flatten feedback box
         # images and backbone features
@@ -2029,7 +2031,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             torch.nn.functional.softmax(feedback_species_logits, dim=1)
         feedback_activity_preds =\
             torch.nn.functional.softmax(feedback_activity_logits, dim=1)
-
+        
         # Re-split feedback predictions for loss computation
         feedback_species_preds = torch.split(
             feedback_species_preds,
@@ -2070,6 +2072,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
 
         loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
             self._feedback_loss_weight * feedback_loss
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -2141,7 +2144,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
 
             sum_loss += batch_loss
             n_iterations += 1
-            n_examples += box_images.shape[0]
+            n_examples += train_box_images.shape[0]
             n_species_correct += batch_n_species_correct
             n_activity_correct += batch_n_activity_correct
 
@@ -2248,12 +2251,12 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         train_box_features, train_species_labels, train_activity_labels =\
             torch.load(
                 self._train_feature_file,
-                map_location=self._device
+                map_location='cpu'
             )
         val_box_features, val_species_labels, val_activity_labels =\
             torch.load(
                 self._val_feature_file,
-                map_location=self._device
+                map_location='cpu'
             )
 
         if feedback_dataset is not None:
@@ -2262,7 +2265,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                 batch_size=32,
                 num_workers=2,
                 shuffle=False,
-                collate_fn=custom_collate
+                collate_fn=gen_custom_collate()
             )
             feedback_loader = BufferedBoxImageDataLoader(
                 unbuffered_feedback_loader,
@@ -2275,7 +2278,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                 for _, _, _, batch_box_images, _ in feedback_loader:
                     # Move batch to device
                     batch_box_images =\
-                        [b.to(self._device) for b in batch_box_images]
+                        [b.to(self._backbone.device) for b in batch_box_images]
 
                     # Get list of per-image box counts
                     batch_box_counts = [len(x) for x in batch_box_images]
@@ -2283,6 +2286,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                     # Flatten box images and compute features
                     flattened_box_images = torch.cat(batch_box_images, dim=0)
                     batch_box_features = self._backbone.compute_backbone_features(flattened_box_images)
+                    batch_box_features = batch_box_features.detach().cpu()
 
                     # Use batch_box_counts to split the computed features back
                     # to per-image feature tensors and concatenate to
@@ -2299,7 +2303,11 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                     FeatureConcatDataset(
                         feedback_dataset,
                         feedback_box_features
-                    )
+                    ),
+                    batch_size=32,
+                    num_workers=2,
+                    shuffle=True,
+                    collate_fn=gen_custom_collate(jagged_indices=[3,5])
                 ),
                 self._feedback_batch_size
             )
@@ -2440,7 +2448,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                     pkl.dump(sd, f)
 
             # Measure validation accuracy for early stopping / model selection.
-            if epoch >= self._min_epochs - 1:
+            if epoch >= self._min_epochs - 1 and\
+                    (epoch + 1) % self._val_interval == 0:
                 mean_val_accuracy = self._val_epoch(
                     val_loader,
                     species_classifier,
@@ -2729,6 +2738,7 @@ class TuplePredictorTrainer:
         self._n_feedback_examples = 0
 
     def add_feedback_data(self, data_root, csv_path):
+        # Construct feedback dataset
         new_novel_dataset = BoxImageDataset(
             name = 'Custom',
             data_root = data_root,
@@ -2739,6 +2749,10 @@ class TuplePredictorTrainer:
             label_mapper=self._dynamic_label_mapper,
             box_transform=self._box_transform
         )
+        # Add in-memory caching layer (feedback data shouldn't be cached
+        # to disk)
+        new_novel_dataset = BoxImageMemoryDataset(new_novel_dataset)
+        # Apply post-cache train transforms (augment, normalize)
         new_novel_dataset = TransformingBoxImageDataset(
             new_novel_dataset,
             self._post_cache_train_transform
@@ -2785,7 +2799,7 @@ class TuplePredictorTrainer:
             self._val_known_dataset,
             batch_size=64,
             shuffle=False,
-            collate_fn=custom_collate,
+            collate_fn=gen_custom_collate(),
             num_workers=2
         )
 
@@ -2898,7 +2912,7 @@ class TuplePredictorTrainer:
             self._val_dataset,
             batch_size = 32,
             shuffle = False,
-            collate_fn=custom_collate,
+            collate_fn=gen_custom_collate(),
             num_workers=2
         )
 

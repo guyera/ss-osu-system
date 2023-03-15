@@ -23,31 +23,37 @@ class DataLoaderX(DataLoader):
         return BackgroundGenerator(super().__iter__())
 
 
-def custom_collate(batch):
-    species_labels = []
-    activity_labels = []
-    novelty_type_labels = []
-    box_images = []
-    whole_images = []
-    for cur_species_labels,\
-            cur_activity_labels,\
-            cur_novelty_type_labels,\
-            cur_box_images,\
-            cur_whole_images in batch:
-        species_labels.append(cur_species_labels)
-        activity_labels.append(cur_activity_labels)
-        novelty_type_labels.append(cur_novelty_type_labels)
-        box_images.append(cur_box_images)
-        whole_images.append(cur_whole_images)
-    species_labels = torch.stack(species_labels, dim=0)
-    activity_labels = torch.stack(activity_labels, dim=0)
-    novelty_type_labels = torch.stack(novelty_type_labels, dim=0)
-    whole_images = torch.stack(whole_images, dim=0)
-    return species_labels,\
-        activity_labels,\
-        novelty_type_labels,\
-        box_images,\
-        whole_images
+'''
+Parameters: 
+    jagged_indices: list[int]
+        Specifies a set of indices corresponding to "jagged tensor" components
+        of the batch item tuple, which should be kept in list form. Default is
+        [3], which corresponds to the box_images component in a BoxImageDataset
+'''
+def gen_custom_collate(jagged_indices=None):
+    if jagged_indices is None:
+        jagged_indices = [3]
+    jagged_indices_set = set(jagged_indices)
+    def custom_collate(batch):
+        res_list = []
+        init_list = False
+        for data_tuple in batch:
+            for i, component in enumerate(data_tuple):
+                if not init_list:
+                    res_list.append([])
+                res_list[i].append(component)
+            init_list = True
+
+        # Stack each of the list components, except for the ones corresponding
+        # to jagged tensor indices (keep them in list form)
+        for i, component in enumerate(res_list):
+            if i in jagged_indices_set:
+                continue
+            res_list[i] = torch.stack(component, dim=0)
+
+        # Convert res_list to tuple and return
+        return tuple(res_list)
+    return custom_collate
 
 
 def compute_spatial_encodings(

@@ -9,7 +9,7 @@ from ensemble.cal_model import LogisticRegression
 from models.scg import SpatiallyConditionedGraph as SCG
 from torch.utils.data import DataLoader
 from data.data_factory import DataFactory
-from utils import custom_collate
+from utils import gen_custom_collate
 
 
 class Ensemble:
@@ -80,7 +80,7 @@ class Ensemble:
 
             data_loader = DataLoader(
                 dataset=valset,
-                collate_fn=custom_collate, 
+                collate_fn=gen_custom_collate(), 
                 batch_size=1,
                 num_workers=1, 
                 pin_memory=True,
@@ -94,7 +94,7 @@ class Ensemble:
 
             data_loader2 = DataLoader(
                 dataset=valset2,
-                collate_fn=custom_collate, 
+                collate_fn=gen_custom_collate(), 
                 batch_size=1,
                 num_workers=1, 
                 pin_memory=True,

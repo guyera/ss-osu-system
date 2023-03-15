@@ -1,5 +1,8 @@
 from swin_et import swin_et
 
+import torch
+from torch.nn import Module
+
 class SideTuningBackbone(Module):
     def __init__(self, backbone):
         super().__init__()
@@ -59,6 +62,7 @@ class SideTuningBackbone(Module):
             return RuntimeError(('Cannot compute side features before '
                                  'resetting model for retraining at least once'
                                  '---side network not initialized'))
+        return self._model(x)
 
     def eval_backbone(self):
         self._backbone.eval()
