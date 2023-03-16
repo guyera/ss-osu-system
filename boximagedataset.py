@@ -2,6 +2,7 @@ import pickle
 import os
 import torch
 import pocket
+import copy
 from utils import binary_focal_loss
 from torchvision.ops import MultiScaleRoIAlign
 from torchvision.models.detection import transform
@@ -13,6 +14,25 @@ import torchvision
 
 from torchvision.transforms.functional import to_pil_image, to_tensor
 from PIL import Image
+
+class BoxImageMemoryDataset(torch.utils.data.Dataset):
+    def __init__(self, box_image_dataset):
+        self._box_image_dataset = box_image_dataset
+        self._cache = {}
+
+    def __len__(self):
+        return len(self._box_image_dataset)
+
+    def __getitem__(self, idx):
+        if idx not in self._cache:
+            self._cache[idx] = self._box_image_dataset[idx]
+        return copy.deepcopy(self._cache[idx])
+
+    def label_dataset(self):
+        return self._box_image_dataset.label_dataset()
+
+    def box_count(self, i):
+        return self._box_image_dataset.box_count(i)
 
 class BoxImageDataset(torch.utils.data.Dataset):
     class LabelDataset(torch.utils.data.Dataset):
