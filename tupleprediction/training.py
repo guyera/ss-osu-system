@@ -647,6 +647,14 @@ class SchedulerType(Enum):
         return self.value['ctor']
 
 
+class LossFnEnum(Enum):
+    cross_entropy = 'cross-entropy'
+    focal = 'focal'
+
+    def __str__(self):
+        return self.value
+
+
 class BackboneTrainingType(Enum):
     end_to_end = 'end-to-end'
     classifiers = 'classifiers'
@@ -984,7 +992,9 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             min_epochs=3,
             max_epochs=30,
             label_smoothing=0.0,
-            feedback_loss_weight=0.5):
+            feedback_loss_weight=0.5,
+            loss_fn=LossFnEnum.cross_entropy,
+            class_frequencies=None):
         self._backbone = backbone
         self._lr = lr
         self._train_feature_file = train_feature_file
@@ -998,6 +1008,18 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         self._max_epochs = max_epochs
         self._label_smoothing = label_smoothing
         self._feedback_loss_weight = feedback_loss_weight
+        self._loss_fn = loss_fn
+        self._class_frequencies = class_frequencies.to(device)\
+            if class_frequencies is not None else None
+        self._focal_loss = torch.hub.load(
+            'adeelh/pytorch-multi-class-focal-loss',
+            model='FocalLoss',
+            alpha=torch.tensor([.75, .25]),
+            gamma=2,
+            reduction='none',
+            device=device,
+            force_reload=False
+        )
 
     def _train_epoch(
             self,
@@ -1022,16 +1044,62 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         activity_preds = activity_classifier(box_features)
 
         # Compute losses
-        species_loss = torch.nn.functional.cross_entropy(
-            species_preds,
-            species_labels,
-            label_smoothing=self._label_smoothing
-        )
-        activity_loss = torch.nn.functional.cross_entropy(
-            activity_preds,
-            activity_labels,
-            label_smoothing=self._label_smoothing
-        )
+        species_weights = None
+        activity_weights = None
+        if self._class_frequencies is not None:
+            species_frequencies, activity_frequencies =\
+                self._class_frequencies
+
+            species_proportions = species_frequencies /\
+                species_frequencies.sum()
+            unnormalized_species_weights =\
+                torch.pow(1.0 / species_proportions, 1.0 / 3.0)
+            unnormalized_species_weights[species_proportions == 0.0] = 0.0
+            proportional_species_sum =\
+                (species_proportions * unnormalized_species_weights).sum()
+            species_weights =\
+                unnormalized_species_weights / proportional_species_sum
+
+            activity_proportions = activity_frequencies /\
+                activity_frequencies.sum()
+            unnormalized_activity_weights =\
+                torch.pow(1.0 / activity_proportions, 1.0 / 3.0)
+            unnormalized_activity_weights[activity_proportions == 0.0] = 0.0
+            proportional_activity_sum =\
+                (activity_proportions * unnormalized_activity_weights).sum()
+            activity_weights =\
+                unnormalized_activity_weights / proportional_activity_sum
+
+        if self._loss_fn == LossFnEnum.cross_entropy:
+            species_loss = torch.nn.functional.cross_entropy(
+                species_preds,
+                species_labels,
+                weight=species_weights,
+                label_smoothing=self._label_smoothing
+            )
+            activity_loss = torch.nn.functional.cross_entropy(
+                activity_preds,
+                activity_labels,
+                weight=activity_weights,
+                label_smoothing=self._label_smoothing
+            )
+        else:
+            ex_species_weights = species_weights[species_labels]
+            species_loss_all = self._focal_loss(
+                species_preds,
+                species_labels
+            )
+            species_loss =\
+                (species_loss_all * ex_species_weights).mean()
+            
+            ex_activity_weights = activity_weights[activity_labels]
+            activity_loss_all = self._focal_loss(
+                activity_preds,
+                activity_labels
+            )
+            activity_loss =\
+                (activity_loss_all * ex_activity_weights).mean()
+
         non_feedback_loss = species_loss + activity_loss
 
         ## Feedback
@@ -1404,7 +1472,11 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             max_epochs=30,
             label_smoothing=0.0,
             scheduler_type=SchedulerType.none,
-            allow_write=False):
+            allow_write=False,
+            loss_fn=LossFnEnum.cross_entropy,
+            class_frequencies=None,
+            memory_cache=True,
+            load_best_after_training=True):
         self._backbone = backbone
         self._lr = lr
         self._train_dataset = train_dataset
@@ -1420,6 +1492,23 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         self._label_smoothing = label_smoothing
         self._scheduler_type = scheduler_type
         self._allow_write = allow_write
+        self._loss_fn = loss_fn
+        if class_frequencies is not None:
+            species_frequencies, activity_frequencies = class_frequencies
+            species_frequencies = species_frequencies.to(backbone.device)
+            activity_frequencies = activity_frequencies.to(backbone.device)
+            class_frequencies = species_frequencies, activity_frequencies
+        self._class_frequencies = class_frequencies
+        self._focal_loss = torch.hub.load(
+            'adeelh/pytorch-multi-class-focal-loss',
+            model='FocalLoss',
+            alpha=None,
+            gamma=2,
+            reduction='none',
+            force_reload=False
+        )
+        self._memory_cache = memory_cache
+        self._load_best_after_training = load_best_after_training
 
     def _train_batch(
             self,
@@ -1445,16 +1534,68 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         species_preds = species_classifier(box_features)
         activity_preds = activity_classifier(box_features)
 
-        species_loss = torch.nn.functional.cross_entropy(
-            species_preds,
-            species_labels,
-            label_smoothing=self._label_smoothing
-        )
-        activity_loss = torch.nn.functional.cross_entropy(
-            activity_preds,
-            activity_labels,
-            label_smoothing=self._label_smoothing
-        )
+        # Compute losses
+        species_weights = None
+        activity_weights = None
+        if self._class_frequencies is not None:
+            species_frequencies, activity_frequencies =\
+                self._class_frequencies
+
+            species_proportions = species_frequencies /\
+                species_frequencies.sum()
+            unnormalized_species_weights =\
+                torch.pow(1.0 / species_proportions, 1.0 / 3.0)
+            unnormalized_species_weights[species_proportions == 0.0] = 0.0
+            proportional_species_sum =\
+                (species_proportions * unnormalized_species_weights).sum()
+            species_weights =\
+                unnormalized_species_weights / proportional_species_sum
+
+            activity_proportions = activity_frequencies /\
+                activity_frequencies.sum()
+            unnormalized_activity_weights =\
+                torch.pow(1.0 / activity_proportions, 1.0 / 3.0)
+            unnormalized_activity_weights[activity_proportions == 0.0] = 0.0
+            proportional_activity_sum =\
+                (activity_proportions * unnormalized_activity_weights).sum()
+            activity_weights =\
+                unnormalized_activity_weights / proportional_activity_sum
+
+        if self._loss_fn == LossFnEnum.cross_entropy:
+            species_loss = torch.nn.functional.cross_entropy(
+                species_preds,
+                species_labels,
+                weight=species_weights,
+                label_smoothing=self._label_smoothing
+            )
+            activity_loss = torch.nn.functional.cross_entropy(
+                activity_preds,
+                activity_labels,
+                weight=activity_weights,
+                label_smoothing=self._label_smoothing
+            )
+        else:
+            if species_weights is not None:
+                ex_species_weights = species_weights[species_labels]
+            else:
+                ex_species_weights = 1
+            species_loss_all = self._focal_loss(
+                species_preds,
+                species_labels
+            )
+            species_loss =\
+                (species_loss_all * ex_species_weights).mean()
+            
+            if activity_weights is not None:
+                ex_activity_weights = activity_weights[activity_labels]
+            else:
+                ex_activity_weights = 1
+            activity_loss_all = self._focal_loss(
+                activity_preds,
+                activity_labels
+            )
+            activity_loss =\
+                (activity_loss_all * ex_activity_weights).mean()
 
         loss = species_loss + activity_loss
         optimizer.zero_grad()
@@ -1598,8 +1739,10 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             activity_classifier,
             root_log_dir,
             feedback_dataset):
-        # TODO Class balancing
-        train_dataset = FlattenedBoxImageDataset(self._train_dataset)
+        if self._memory_cache:
+            train_dataset = FlattenedBoxImageDataset(BoxImageMemoryDataset(self._train_dataset))
+        else:
+            train_dataset = FlattenedBoxImageDataset(self._train_dataset)
         if self._train_sampler_fn is not None:
             train_sampler = self._train_sampler_fn(train_dataset)
             train_loader = DataLoader(
@@ -1640,7 +1783,10 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         # data to measure novelty detection performance. These currently aren't
         # being stored (except in a special form for the logistic regressions),
         # so we'd have to modify __init__().
-        val_dataset = FlattenedBoxImageDataset(self._val_known_dataset)
+        if self._memory_cache:
+            val_dataset = FlattenedBoxImageDataset(BoxImageMemoryDataset(self._val_known_dataset))
+        else:
+            val_dataset = FlattenedBoxImageDataset(self._val_known_dataset)
         val_loader = DataLoader(
             val_dataset,
             batch_size=self._retraining_batch_size,
@@ -1882,16 +2028,17 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
         progress.close()
 
-        # Load the best-accuracy state dicts
+        # Load the best-accuracy state dict if configured to do so
         # NOTE To save GPU memory, we could temporarily move the models to the
         # CPU before copying or loading their state dicts.
-        self._backbone.load_state_dict(best_accuracy_backbone_state_dict)
-        species_classifier.load_state_dict(
-            best_accuracy_species_classifier_state_dict
-        )
-        activity_classifier.load_state_dict(
-            best_accuracy_activity_classifier_state_dict
-        )
+        if self._load_best_after_training:
+            self._backbone.load_state_dict(best_accuracy_backbone_state_dict)
+            species_classifier.load_state_dict(
+                best_accuracy_species_classifier_state_dict
+            )
+            activity_classifier.load_state_dict(
+                best_accuracy_activity_classifier_state_dict
+            )
 
     def prepare_for_retraining(
             self,
@@ -1950,7 +2097,9 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             label_smoothing=0.0,
             feedback_loss_weight=0.5,
             scheduler_type=SchedulerType.none,
-            allow_write=False):
+            allow_write=False,
+            loss_fn=LossFnEnum.cross_entropy,
+            class_frequencies=None):
         self._backbone = side_tuning_backbone
         self._lr = lr
         self._train_dataset = train_dataset
@@ -1969,6 +2118,19 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         self._feedback_loss_weight = feedback_loss_weight
         self._scheduler_type = scheduler_type
         self._allow_write = allow_write
+        self._loss_fn = loss_fn
+        self._class_frequencies =\
+            class_frequencies.to(side_tuning_backbone.device)\
+                if class_frequencies is not None else None
+        self._focal_loss = torch.hub.load(
+            'adeelh/pytorch-multi-class-focal-loss',
+            model='FocalLoss',
+            alpha=torch.tensor([.75, .25]),
+            gamma=2,
+            reduction='none',
+            device=side_tuning_backbone.device,
+            force_reload=False
+        )
 
     def _train_batch(
             self,
@@ -2045,16 +2207,62 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         )
 
         # Compute losses
-        train_species_loss = torch.nn.functional.cross_entropy(
-            train_species_preds,
-            train_species_labels,
-            label_smoothing=self._label_smoothing
-        )
-        train_activity_loss = torch.nn.functional.cross_entropy(
-            train_activity_preds,
-            train_activity_labels,
-            label_smoothing=self._label_smoothing
-        )
+        species_weights = None
+        activity_weights = None
+        if self._class_frequencies is not None:
+            species_frequencies, activity_frequencies =\
+                self._class_frequencies
+
+            species_proportions = species_frequencies /\
+                species_frequencies.sum()
+            unnormalized_species_weights =\
+                torch.pow(1.0 / species_proportions, 1.0 / 3.0)
+            unnormalized_species_weights[species_proportions == 0.0] = 0.0
+            proportional_species_sum =\
+                (species_proportions * unnormalized_species_weights).sum()
+            species_weights =\
+                unnormalized_species_weights / proportional_species_sum
+
+            activity_proportions = activity_frequencies /\
+                activity_frequencies.sum()
+            unnormalized_activity_weights =\
+                torch.pow(1.0 / activity_proportions, 1.0 / 3.0)
+            unnormalized_activity_weights[activity_proportions == 0.0] = 0.0
+            proportional_activity_sum =\
+                (activity_proportions * unnormalized_activity_weights).sum()
+            activity_weights =\
+                unnormalized_activity_weights / proportional_activity_sum
+
+        if self._loss_fn == LossFnEnum.cross_entropy:
+            train_species_loss = torch.nn.functional.cross_entropy(
+                train_species_preds,
+                train_species_labels,
+                weight=species_weights,
+                label_smoothing=self._label_smoothing
+            )
+            train_activity_loss = torch.nn.functional.cross_entropy(
+                train_activity_preds,
+                train_activity_labels,
+                weight=activity_weights,
+                label_smoothing=self._label_smoothing
+            )
+        else:
+            ex_species_weights = species_weights[train_species_labels]
+            train_species_loss_all = self._focal_loss(
+                train_species_preds,
+                train_species_labels
+            )
+            train_species_loss =\
+                (train_species_loss_all * ex_species_weights).mean()
+            
+            ex_activity_weights = activity_weights[train_activity_labels]
+            train_activity_loss_all = self._focal_loss(
+                train_activity_preds,
+                train_activity_labels
+            )
+            train_activity_loss =\
+                (train_activity_loss_all * ex_activity_weights).mean()
+
         # We have image-level count feedback labels for species
         feedback_species_loss = multiple_instance_count_cross_entropy_dyn(
             feedback_species_preds,

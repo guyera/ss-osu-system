@@ -20,7 +20,8 @@ from tupleprediction.training import\
     get_datasets,\
     TuplePredictorTrainer,\
     EndToEndClassifierTrainer,\
-    LogitLayerClassifierTrainer
+    LogitLayerClassifierTrainer,\
+    LossFnEnum
 from backbone import Backbone
 from scoring import\
     ActivationStatisticalModel,\
@@ -79,6 +80,22 @@ parser.add_argument(
     type=float,
     default=0.05,
     help='Label smoothing for training backbone and classifiers'
+)
+
+parser.add_argument(
+    '--loss-fn',
+    type=LossFnEnum,
+    choices=list(LossFnEnum),
+    default=LossFnEnum.cross_entropy,
+    help='Loss function'
+)
+
+parser.add_argument(
+    '--class-frequency-file',
+    type=str,
+    default=None,
+    help=('Path to pth file containing class frequency tensor, used for class '
+          'balancing')
 )
 
 parser.add_argument(
@@ -151,6 +168,25 @@ parser.add_argument(
     type=str,
     default='./.features/resizepad=224/none/normalized'
 )
+
+parser.add_argument(
+    '--save-dir',
+    type=str,
+    default='./pretrained-models'
+)
+
+parser.add_argument(
+    '--no-memory-cache',
+    action='store_false',
+    dest='memory_cache'
+)
+
+parser.add_argument(
+    '--no-load-after-training',
+    action='store_false',
+    dest='load_best_after_training'
+)
+
 
 args = parser.parse_args()
 
@@ -231,6 +267,10 @@ train_dataset, val_known_dataset, val_dataset =\
         n_known_val=args.n_known_val
     )
 
+class_frequencies = None
+if args.class_frequency_file is not None:
+    class_frequencies = torch.load(args.class_frequency_file)
+
 if args.classifier_trainer == ClassifierTrainer.end_to_end:
     classifier_trainer = EndToEndClassifierTrainer(
         backbone,
@@ -247,7 +287,11 @@ if args.classifier_trainer == ClassifierTrainer.end_to_end:
         max_epochs=args.max_epochs,
         label_smoothing=args.label_smoothing,
         scheduler_type=args.scheduler_type,
-        allow_write=(rank==0)
+        allow_write=(rank==0),
+        loss_fn=args.loss_fn,
+        class_frequencies=class_frequencies,
+        memory_cache=args.memory_cache,
+        load_best_after_training=args.load_best_after_training
     )
 else:
     train_feature_file = os.path.join(
@@ -269,7 +313,9 @@ else:
         patience=None,
         min_epochs=0,
         max_epochs=args.max_epochs,
-        label_smoothing=args.label_smoothing
+        label_smoothing=args.label_smoothing,
+        loss_fn=args.loss_fn,
+        class_frequencies=class_frequencies
     )
 
 trainer = TuplePredictorTrainer(
@@ -350,7 +396,7 @@ if rank == 0:
     tuple_prediction_state_dicts['activation_statistical_model'] = activation_statistical_model.state_dict()
 
     save_dir = os.path.join(
-        'pretrained-models',
+        args.save_dir,
         architecture.value['name']
     )
     if not os.path.exists(save_dir):

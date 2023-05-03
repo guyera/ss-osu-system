@@ -5,7 +5,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 from backbone import Backbone
-from tupleprediction.training import Augmentation, SchedulerType
+from tupleprediction.training import Augmentation, SchedulerType, LossFnEnum
 from toplevel import TopLevelApp
 
 if __name__ == "__main__":
@@ -49,6 +49,8 @@ if __name__ == "__main__":
     p.add_argument('--retraining-scheduler-type', type=SchedulerType, choices=list(SchedulerType), default=SchedulerType.none)
     p.add_argument('--feedback-loss-weight', type=float, default=0.5)
     p.add_argument('--detection-threshold', type=float, default=0.5)
+    p.add_argument('--retraining-loss-fn', type=LossFnEnum, choices=list(LossFnEnum), default=LossFnEnum.cross_entropy)
+    p.add_argument('--class-frequency-file', type=str, default=None)
 
     args = p.parse_args()
 
@@ -91,7 +93,9 @@ if __name__ == "__main__":
         retraining_max_epochs=args.retraining_max_epochs,
         retraining_label_smoothing=args.retraining_label_smoothing,
         retraining_scheduler_type=args.retraining_scheduler_type,
-        feedback_loss_weight=args.feedback_loss_weight
+        feedback_loss_weight=args.feedback_loss_weight,
+        retraining_loss_fn=args.retraining_loss_fn,
+        class_frequency_file=args.class_frequency_file
     )
     
     test_session = BBNSession('OND', args.domain, args.class_count, 
