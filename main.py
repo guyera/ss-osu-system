@@ -30,7 +30,7 @@ if __name__ == "__main__":
     p.add_argument('--domain', default='image_classification')
     p.add_argument('--detector_seed', type=int, default=1234)
     p.add_argument('--version', default='101')
-    p.add_argument('--sys_results_dir', default='./session/temp/SS_test_trials_results_with_detection_feedback')
+    p.add_argument('--sys_results_dir', default='./GAN_Tests/resutls/SS_GAN_Augment')
     p.add_argument('--test_ids', nargs="+", default=None)
     p.add_argument('--hintA', default=False)
     p.add_argument('--hintB', default=False)
@@ -49,6 +49,7 @@ if __name__ == "__main__":
     p.add_argument('--retraining-scheduler-type', type=SchedulerType, choices=list(SchedulerType), default=SchedulerType.none)
     p.add_argument('--feedback-loss-weight', type=float, default=0.5)
     p.add_argument('--detection-threshold', type=float, default=0.5)
+    p.add_argument('--gan_augment', default= False)
 
     args = p.parse_args()
 
@@ -91,7 +92,8 @@ if __name__ == "__main__":
         retraining_max_epochs=args.retraining_max_epochs,
         retraining_label_smoothing=args.retraining_label_smoothing,
         retraining_scheduler_type=args.retraining_scheduler_type,
-        feedback_loss_weight=args.feedback_loss_weight
+        feedback_loss_weight=args.feedback_loss_weight,
+        gan_augment= args.gan_augment
     )
     
     test_session = BBNSession('OND', args.domain, args.class_count, 
