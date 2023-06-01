@@ -1436,7 +1436,10 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             optimizer,
             species_labels,
             activity_labels,
-            box_images):
+            box_images,
+            feedback_species_labels,
+            feedback_activity_labels,
+            feedback_box_images):
         # Determine the device to use based on the backbone's fc weights
         device = self._device
 
@@ -1516,7 +1519,60 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             activity_loss =\
                 (activity_loss_all * ex_activity_weights).mean()
 
-        loss = species_loss + activity_loss
+        non_feedback_loss = species_loss + activity_loss
+
+        if feedback_box_images is not None:
+            feedback_species_labels = feedback_species_labels.to(device)
+            feedback_activity_labels = feedback_activity_labels.to(device)
+            feedback_box_images = [x.to(device) for x in feedback_box_images]
+
+            feedback_box_counts = [len(x) for x in feedback_box_images]
+            feedback_box_images = torch.cat(feedback_box_images, dim=0)
+
+            feedback_box_features = self._backbone(feedback_box_images)
+
+            feedback_species_logits =\
+                species_classifier(feedback_box_features)
+            feedback_activity_logits =\
+                activity_classifier(feedback_box_features)
+
+            feedback_species_preds =\
+                torch.nn.functional.softmax(feedback_species_logits, dim=1)
+            feedback_activity_preds =\
+                torch.nn.functional.softmax(feedback_activity_logits, dim=1)
+            
+            # Re-split feedback predictions for loss computation
+            feedback_species_preds = torch.split(
+                feedback_species_preds,
+                feedback_box_counts,
+                dim=0
+            )
+            feedback_activity_preds = torch.split(
+                feedback_activity_preds,
+                feedback_box_counts,
+                dim=0
+            )
+
+            # We have image-level count feedback labels for species
+            feedback_species_loss =\
+                multiple_instance_count_cross_entropy_dyn(
+                    feedback_species_preds,
+                    feedback_species_labels
+                )
+            # We have image-level presence feedback labels for activities
+            feedback_activity_loss =\
+                multiple_instance_presence_cross_entropy_dyn(
+                    feedback_activity_preds,
+                    feedback_activity_labels
+                )
+
+            feedback_loss = feedback_species_loss + feedback_activity_loss
+
+            loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
+                self._feedback_loss_weight * feedback_loss
+        else:
+            loss = non_feedback_loss
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -1539,7 +1595,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
     def _train_epoch(
             self,
-            data_loader,
+            train_loader,
+            feedback_loader,
             species_classifier,
             activity_classifier,
             optimizer):
@@ -1555,7 +1612,26 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         n_species_correct = 0
         n_activity_correct = 0
 
-        for species_labels, activity_labels, box_images in data_loader:
+        feedback_iter =\
+            iter(feedback_loader) if feedback_loader is not None else None
+        feedback_species_labels = None
+        feedback_activity_labels = None
+        feedback_box_images = None
+        for species_labels, activity_labels, box_images in train_loader:
+            if feedback_iter is not None:
+                try:
+                    feedback_species_labels,\
+                        feedback_activity_labels,\
+                        _,\
+                        feedback_box_images,\
+                        _ = next(feedback_iter)
+                except:
+                    feedback_iter = iter(feedback_loader)
+                    feedback_species_labels,\
+                        feedback_activity_labels,\
+                        _,\
+                        feedback_box_images,\
+                        _ = next(feedback_iter)
             batch_loss, batch_n_species_correct, batch_n_activity_correct =\
                 self._train_batch(
                     species_classifier,
@@ -1563,7 +1639,10 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     optimizer,
                     species_labels,
                     activity_labels,
-                    box_images
+                    box_images,
+                    feedback_species_labels,
+                    feedback_activity_labels,
+                    feedback_box_images
                 )
 
             sum_loss += batch_loss
@@ -1876,9 +1955,9 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 train_loader.sampler.set_epoch(epoch)
 
             # Train for one full epoch
-            # TODO use feedback data
             mean_train_loss, mean_train_accuracy = self._train_epoch(
-                train_loader, 
+                train_loader,
+                feedback_loader,
                 species_classifier,
                 activity_classifier,
                 optimizer
