@@ -21,7 +21,8 @@ from tupleprediction.training import\
     TuplePredictorTrainer,\
     EndToEndClassifierTrainer,\
     LogitLayerClassifierTrainer,\
-    LossFnEnum
+    LossFnEnum,\
+    DistributedRandomBoxImageBatchSampler
 from backbone import Backbone
 from scoring import\
     ActivationStatisticalModel,\
@@ -192,6 +193,7 @@ args = parser.parse_args()
 
 dist.init_process_group('nccl')
 rank = dist.get_rank()
+local_rank = int(os.environ['LOCAL_RANK'])
 world_size = dist.get_world_size()
 device_id = rank
 device = f'cuda:{device_id}'
@@ -271,9 +273,21 @@ class_frequencies = None
 if args.class_frequency_file is not None:
     class_frequencies = torch.load(args.class_frequency_file)
 
+def val_reduce_fn(count_tensor):
+    return dist.all_reduce(count_tensor, op=dist.ReduceOp.SUM)
+
+def feedback_batch_sampler_fn(box_counts):
+    return DistributedRandomBoxImageBatchSampler(
+        box_counts,
+        args.batch_size,
+        world_size,
+        rank
+    )
+
 if args.classifier_trainer == ClassifierTrainer.end_to_end:
     classifier_trainer = EndToEndClassifierTrainer(
         backbone,
+        device,
         args.lr,
         train_dataset,
         val_known_dataset,
@@ -281,6 +295,7 @@ if args.classifier_trainer == ClassifierTrainer.end_to_end:
         post_cache_train_transform,
         retraining_batch_size=args.batch_size,
         train_sampler_fn=train_sampler_fn,
+        feedback_batch_sampler_fn=feedback_batch_sampler_fn,
         root_checkpoint_dir=args.root_checkpoint_dir,
         patience=None,
         min_epochs=0,
@@ -288,10 +303,12 @@ if args.classifier_trainer == ClassifierTrainer.end_to_end:
         label_smoothing=args.label_smoothing,
         scheduler_type=args.scheduler_type,
         allow_write=(rank==0),
+        allow_print=(local_rank==0),
         loss_fn=args.loss_fn,
         class_frequencies=class_frequencies,
         memory_cache=args.memory_cache,
-        load_best_after_training=args.load_best_after_training
+        load_best_after_training=args.load_best_after_training,
+        val_reduce_fn=val_reduce_fn
     )
 else:
     train_feature_file = os.path.join(
