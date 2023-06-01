@@ -195,7 +195,7 @@ dist.init_process_group('nccl')
 rank = dist.get_rank()
 local_rank = int(os.environ['LOCAL_RANK'])
 world_size = dist.get_world_size()
-device_id = rank
+device_id = local_rank
 device = f'cuda:{device_id}'
 
 def train_sampler_fn(train_dataset):
