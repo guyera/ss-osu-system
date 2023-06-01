@@ -831,150 +831,64 @@ class TransformingBoxImageDataset(Dataset):
         return self._dataset.box_count(idx)
 
 
-'''
-Buffers images from a DataLoader wrapped around a BoxImageDataset so that each
-batch returns (at most, unless exceeding is necessary) a fixed number of
-bounding boxes, rather than a fixed number of images each with varying box
-counts.
-'''
-class BufferedBoxImageDataLoader:
-    class _Iter:
-        def _default_box_count_fn(self, batch):
-            # The default behavior is to assume that the fourth element in
-            # the batch tuple is the box image list. Computing the length of
-            # each element in the list gives the number of boxes in each image.
-            return [len(x) for x in batch[3]]
-
-        def __init__(self, box_image_iter, batch_size, box_count_fn=None):
-            self._box_image_iter = box_image_iter
-            self._batch_size = batch_size
-            self._buffer = None
-            self._buffer_box_counts = []
-            if box_count_fn is not None:
-                self._box_count_fn = box_count_fn
-            else:
-                self._box_count_fn = self._default_box_count_fn
-
-        def __next__(self):
-            total_buffer_box_count = sum(self._buffer_box_counts)
-            while total_buffer_box_count < self._batch_size:
-                # Buffer is underfull. Grab another batch.
-                try:
-                    data = next(self._box_image_iter)
-                except StopIteration:
-                    break
-
-                # Append the batch to the buffer
-                if self._buffer is None:
-                    self._buffer = []
-                    for component in data:
-                        self._buffer.append(component)
-                else:
-                    for i, component in enumerate(data):
-                        if isinstance(component, list):
-                            self._buffer[i] += component
-                        else:
-                            self._buffer[i] = torch.cat(
-                                (self._buffer[i], component),
-                                dim=0
-                            )
-
-                # Update the buffer box counts and total_buffer_box_count
-                batch_box_counts = self._box_count_fn(data)
-                self._buffer_box_counts += batch_box_counts
-                total_buffer_box_count += sum(batch_box_counts)
-            
-            # Either the buffer has enough data to retrieve a batch, or we've
-            # hit the end of the underlying iterator.
-            if len(self._buffer_box_counts) == 0:
-                # Empty buffer. Stop.
-                raise StopIteration
-
-            # There is at least a partial batch to retrieve. Determine the
-            # number of items that should be grabbed in order to get as
-            # close to the batch size as possible without exceeding it.
-            # We must grab at least one image.
-            n_images = 1
-            n_boxes = self._buffer_box_counts[0]
-            for buffer_box_count in self._buffer_box_counts[1:]:
-                next_n_boxes = n_boxes + buffer_box_count
-                if next_n_boxes > self._batch_size:
-                    break
-                n_boxes = next_n_boxes
-                n_images += 1
-
-            # n_images denotes the number of images that should be pulled from
-            # the buffer. Grab the data
-            res = []
-            for component in self._buffer:
-                res.append(component[:n_images])
-
-            # Remove the data from the buffer
-            for i in range(len(self._buffer)):
-                self._buffer[i] = self._buffer[i][n_images:]
-            self._buffer_box_counts = self._buffer_box_counts[n_images:]
-
-            return tuple(res)
-                
-
-    '''
-    Parameters:
-        box_image_loader: DataLoader
-            Underlying DataLoader
-        batch_size: int
-            Target batch size in # of bounding boxes
-        box_count_fn: Callable[[BatchT], List[int]], where BatchT is the
-                data type returned by next(iter(box_image_loader))
-            Function that accepts a batch of data and returns the number
-            of bounding boxes contained in each image of the batch as a list
-            of integers.
-    '''
-    def __init__(self, box_image_loader, batch_size, box_count_fn=None):
-        self._box_image_loader = box_image_loader
-        self._batch_size = batch_size
-        self._box_count_fn = box_count_fn
+class DistributedRandomBoxImageBatchSampler:
+    def __init__(
+            self,
+            box_counts,
+            boxes_per_batch,
+            num_replicas,
+            rank,
+            seed=0):
+        self._box_counts = box_counts
+        self._boxes_per_batch = boxes_per_batch
+        self._num_replicas = num_replicas
+        self._rank = rank
+        self._generator = np.random.default_rng(seed=seed)
 
     def __iter__(self):
-        box_image_iter = iter(self._box_image_loader)
-        return self._Iter(
-            box_image_iter,
-            self._batch_size,
-            box_count_fn=self._box_count_fn
-        )
+        # Randomly permute indices and corresponding box counts
+        unpermuted_indices = list(range(len(self._box_counts)))
+        indices = self._generator.permuted(unpermuted_indices)
+        box_counts = self._box_counts[indices]
 
+        # Determine the batch organization for each replica
+        all_batches = []
+        more_boxes = True
+        img_idx = 0
+        # While there are more boxes to allocate to batches
+        while more_boxes:
+            # For each replica, sample a batch
+            batches = []
+            for cur_rank in range(self._num_replicas):
+                cur_batch = []
+                cur_batch_size = 0
+                # Keep adding images to the batch until just before the box
+                # count exceeds the target batch size
+                while img_idx < len(box_counts) and \
+                        cur_batch_size + box_counts[img_idx] <= \
+                            self._boxes_per_batch:
+                    cur_batch.append(indices[img_idx])
+                    cur_batch_size += box_counts[img_idx]
+                    img_idx += 1
 
-def fit_logistic_regression(logistic_regression, scores, labels, epochs = 3000):
-    criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(
-        logistic_regression.parameters(),
-        lr = 0.01,
-        momentum = 0.9
-    )
-    logistic_regression.fit_standardization_statistics(scores)
-    
-    loss_item = None
-    progress = tqdm(
-        range(epochs),
-        desc=gen_tqdm_description(
-            'Fitting logistic regression...',
-            loss=loss_item
-        )
-    )
-    for epoch in progress:
-        optimizer.zero_grad()
-        logits = logistic_regression(scores)
-        loss = criterion(logits, labels)
-        loss.backward()
-        optimizer.step()
+                # If the sampled batch is non-empty, then append it to the
+                # list of batches. Else, record that there are no more boxes to
+                # be sampled, and break to avoid sampling more empty batches
+                if cur_batch_size > 0:
+                    batches.append(cur_batch)
+                else:
+                    more_boxes = False
+                    break
 
-        loss_item = loss.detach().cpu().item()
-        progress.set_description(
-            gen_tqdm_description(
-                'Fitting logistic regression...',
-                loss=loss_item
-            )
-        )
-    progress.close()
+            # If a non-empty batch was sampled for each replica, then append
+            # this replica's batch to the list
+            if len(batches) == self._num_replicas:
+                all_batches.append(batches[self._rank])
+
+        # Return an iterator for the batches corresponding to this replica's
+        # rank (resting assured that all replicas will receive the same
+        # number of batches by construction)
+        return iter(all_batches)
 
 
 class LogitLayerClassifierTrainer(ClassifierTrainer):
@@ -1236,8 +1150,6 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             activity_classifier,
             root_log_dir,
             feedback_dataset):
-        # TODO Class balancing
-
         # Construct the optimizer
         optimizer = torch.optim.SGD(
             list(species_classifier.parameters())\
@@ -1284,16 +1196,16 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             )
 
         if feedback_dataset is not None:
-            unbuffered_feedback_loader = DataLoader(
+            feedback_box_counts = [
+                feedback_dataset.box_count(i) for\
+                    i in range(len(feedback_dataset))
+            ]
+            feedback_batch_sampler = DistributedRandomBoxImageBatchSampler(feedback_box_counts, self._retraining_batch_size, 1, 0)
+            feedback_loader = DataLoader(
                 feedback_dataset,
-                batch_size=32,
                 num_workers=2,
-                shuffle=True,
+                batch_sampler=feedback_batch_sampler
                 collate_fn=gen_custom_collate()
-            )
-            feedback_loader = BufferedBoxImageDataLoader(
-                unbuffered_feedback_loader,
-                self._feedback_batch_size
             )
             # Precompute feedback backbone features
             self._backbone.eval()
@@ -1473,10 +1385,12 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             label_smoothing=0.0,
             scheduler_type=SchedulerType.none,
             allow_write=False,
+            allow_print=True,
             loss_fn=LossFnEnum.cross_entropy,
             class_frequencies=None,
             memory_cache=True,
-            load_best_after_training=True):
+            load_best_after_training=True,
+            val_reduce_fn=None):
         self._backbone = backbone
         self._lr = lr
         self._train_dataset = train_dataset
@@ -1492,6 +1406,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         self._label_smoothing = label_smoothing
         self._scheduler_type = scheduler_type
         self._allow_write = allow_write
+        self._allow_print = allow_print
         self._loss_fn = loss_fn
         if class_frequencies is not None:
             species_frequencies, activity_frequencies = class_frequencies
@@ -1509,6 +1424,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         )
         self._memory_cache = memory_cache
         self._load_best_after_training = load_best_after_training
+        self._val_reduce_fn = val_reduce_fn
 
     def _train_batch(
             self,
@@ -1708,9 +1624,9 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             species_classifier.eval()
             activity_classifier.eval()
 
-            n_examples = 0
-            n_species_correct = 0
-            n_activity_correct = 0
+            n_examples = torch.zeros(1)
+            n_species_correct = torch.zeros(1)
+            n_activity_correct = torch.zeros(1)
 
             for species_labels, activity_labels, box_images in data_loader:
                 batch_n_species_correct, batch_n_activity_correct =\
@@ -1725,8 +1641,12 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 n_species_correct += batch_n_species_correct
                 n_activity_correct += batch_n_activity_correct
 
-            mean_species_accuracy = float(n_species_correct) / n_examples
-            mean_activity_accuracy = float(n_activity_correct) / n_examples
+            if self._val_reduce_fn is not None:
+                self._val_reduce_fn(n_examples)
+                self._val_reduce_fn(n_species_correct)
+                self._val_reduce_fn(n_activity_correct)
+            mean_species_accuracy = float(n_species_correct.item()) / n_examples.item()
+            mean_activity_accuracy = float(n_activity_correct.item()) / n_examples.item()
 
             mean_accuracy = \
                 (mean_species_accuracy + mean_activity_accuracy) / 2.0
@@ -1760,22 +1680,15 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             )
 
         if feedback_dataset is not None:
-            unbuffered_feedback_loader = DataLoader(
+            feedback_loader = DataLoader(
                 feedback_dataset,
-                batch_size=32,
                 num_workers=2,
-                shuffle=True,
+                batch_sampler=feedback_batch_sampler
                 collate_fn=gen_custom_collate()
-            )
-            feedback_loader = BufferedBoxImageDataLoader(
-                unbuffered_feedback_loader,
-                self._retraining_batch_size
             )
         else:
             feedback_loader = None
         
-        # TODO Make use of feedback data
-
         # Construct validation loaders for early stopping / model selection.
         # I'm assuming our model selection strategy will be based solely on the
         # validation classification accuracy and not based on novelty detection
@@ -1787,12 +1700,22 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             val_dataset = FlattenedBoxImageDataset(BoxImageMemoryDataset(self._val_known_dataset))
         else:
             val_dataset = FlattenedBoxImageDataset(self._val_known_dataset)
-        val_loader = DataLoader(
-            val_dataset,
-            batch_size=self._retraining_batch_size,
-            shuffle=False,
-            num_workers=2
-        )
+
+        if self._train_sampler_fn is not None:
+            val_sampler = self._train_sampler_fn(val_dataset)
+            val_loader = DataLoader(
+                val_dataset,
+                batch_size=self._retraining_batch_size,
+                num_workers=2,
+                sampler=val_sampler
+            )
+        else:
+            val_loader = DataLoader(
+                val_dataset,
+                batch_size=self._retraining_batch_size,
+                shuffle=False,
+                num_workers=2
+            )
 
         # Retrain the backbone and classifiers
         # Construct the optimizer
@@ -1908,17 +1831,20 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     validation_accuracy_curve = pkl.load(f)
 
         # Train
-        progress = tqdm(
-            range(start_epoch, self._max_epochs),
-            desc=gen_tqdm_description(
-                'Training backbone and classifiers...',
-                train_loss=mean_train_loss,
-                train_accuracy=mean_train_accuracy,
-                val_accuracy=mean_val_accuracy
-            ),
-            total=self._max_epochs,
-            initial=start_epoch
-        )
+        if self._allow_print:
+            progress = tqdm(
+                range(start_epoch, self._max_epochs),
+                desc=gen_tqdm_description(
+                    'Training backbone and classifiers...',
+                    train_loss=mean_train_loss,
+                    train_accuracy=mean_train_accuracy,
+                    val_accuracy=mean_val_accuracy
+                ),
+                total=self._max_epochs,
+                initial=start_epoch
+            )
+        else:
+            progress = range(start_epoch, self._max_epochs)
         for epoch in progress:
             if self._patience is not None and\
                     epochs_since_improvement >= self._patience:
@@ -1932,6 +1858,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 train_loader.sampler.set_epoch(epoch)
 
             # Train for one full epoch
+            # TODO use feedback data
             mean_train_loss, mean_train_accuracy = self._train_epoch(
                 train_loader, 
                 species_classifier,
@@ -1963,7 +1890,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 log_dir = get_log_dir()
                 os.makedirs(log_dir, exist_ok=True)
                 training_log = os.path.join(log_dir, 'training.pkl')
-                
+
                 with open(training_log, 'wb') as f:
                     sd = {}
                     sd['training_loss_curve'] = training_loss_curve
@@ -2017,16 +1944,18 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     with open(validation_log, 'wb') as f:
                         pkl.dump(validation_accuracy_curve, f)
 
-            progress.set_description(
-                gen_tqdm_description(
-                    'Training backbone and classifiers...',
-                    train_loss=mean_train_loss,
-                    train_accuracy=mean_train_accuracy,
-                    val_accuracy=mean_val_accuracy
+            if self._allow_print:
+                progress.set_description(
+                    gen_tqdm_description(
+                        'Training backbone and classifiers...',
+                        train_loss=mean_train_loss,
+                        train_accuracy=mean_train_accuracy,
+                        val_accuracy=mean_val_accuracy
+                    )
                 )
-            )
 
-        progress.close()
+        if self._allow_print:
+            progress.close()
 
         # Load the best-accuracy state dict if configured to do so
         # NOTE To save GPU memory, we could temporarily move the models to the
@@ -2452,8 +2381,6 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             activity_classifier,
             root_log_dir,
             feedback_dataset):
-        # TODO Class balancing
-
         # Load training and validation backbone features from feature
         # files
         train_box_features, train_species_labels, train_activity_labels =\
@@ -2468,16 +2395,21 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             )
 
         if feedback_dataset is not None:
-            unbuffered_feedback_loader = DataLoader(
-                feedback_dataset,
-                batch_size=32,
-                num_workers=2,
-                shuffle=False,
-                collate_fn=gen_custom_collate()
+            feedback_box_counts = [
+                feedback_dataset.box_count(i) for\
+                    i in range(len(feedback_dataset))
+            ]
+            feedback_batch_sampler = DistributedRandomBoxImageBatchSampler(
+                feedback_box_counts,
+                self._retraining_batch_size,
+                1,
+                0
             )
-            feedback_loader = BufferedBoxImageDataLoader(
-                unbuffered_feedback_loader,
-                self._feedback_batch_size
+            feedback_loader = DataLoader(
+                feedback_dataset,
+                num_workers=2,
+                batch_sampler=feedback_batch_sampler
+                collate_fn=gen_custom_collate()
             )
             # Precompute feedback backbone features
             self._backbone.eval_backbone()
@@ -2506,18 +2438,21 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                     )
 
             # Construct FeatureConcatDataset for the feedback dataset
-            feedback_feature_loader = BufferedBoxImageDataLoader(
-                DataLoader(
-                    FeatureConcatDataset(
-                        feedback_dataset,
-                        feedback_box_features
-                    ),
-                    batch_size=32,
-                    num_workers=2,
-                    shuffle=True,
-                    collate_fn=gen_custom_collate(jagged_indices=[3,5])
+            feedback_feature_batch_sampler =\
+                DistributedRandomBoxImageBatchSampler(
+                    feedback_box_counts,
+                    self._retraining_batch_size,
+                    1,
+                    0
+                )
+            feedback_feature_loader = DataLoader(
+                FeatureConcatDataset(
+                    feedback_dataset,
+                    feedback_box_features
                 ),
-                self._feedback_batch_size
+                num_workers=2,
+                batch_sampler=feedback_feature_batch_sampler
+                collate_fn=gen_custom_collate()
             )
         else:
             feedback_feature_loader = None
@@ -2932,7 +2867,8 @@ class TuplePredictorTrainer:
             n_species_cls,
             n_activity_cls,
             dynamic_label_mapper,
-            classifier_trainer):
+            classifier_trainer,
+            allow_print=True):
         self._train_dataset = train_dataset
         self._val_known_dataset = val_known_dataset
         self._val_dataset = val_dataset
@@ -2944,6 +2880,7 @@ class TuplePredictorTrainer:
         self._classifier_trainer = classifier_trainer
         self._feedback_data = []
         self._n_feedback_examples = 0
+        self._allow_print = allow_print
 
     def add_feedback_data(self, data_root, csv_path):
         # Construct feedback dataset
@@ -3020,7 +2957,8 @@ class TuplePredictorTrainer:
 
         device = backbone.device
 
-        print('Calibrating temperature scalers...')
+        if self._allow_print:
+            print('Calibrating temperature scalers...')
         start = time.time()
         # Extract logits to fit confidence calibration temperatures
         with torch.no_grad():
@@ -3097,7 +3035,51 @@ class TuplePredictorTrainer:
 
         end = time.time()
         t = end - start
-        print(f'Took {t} seconds')
+        if self._allow_print:
+            print(f'Took {t} seconds')
+
+    def fit_logistic_regression(
+            self,
+            logistic_regression,
+            scores,
+            labels,
+            epochs=3000):
+        criterion = torch.nn.CrossEntropyLoss()
+        optimizer = torch.optim.SGD(
+            logistic_regression.parameters(),
+            lr = 0.01,
+            momentum = 0.9
+        )
+        logistic_regression.fit_standardization_statistics(scores)
+
+        loss_item = None
+        if self._allow_print:
+            progress = tqdm(
+                range(epochs),
+                desc=gen_tqdm_description(
+                    'Fitting logistic regression...',
+                    loss=loss_item
+                )
+            )
+        else:
+            progress = range(epochs)
+        for epoch in progress:
+            optimizer.zero_grad()
+            logits = logistic_regression(scores)
+            loss = criterion(logits, labels)
+            loss.backward()
+            optimizer.step()
+
+            loss_item = loss.detach().cpu().item()
+            if self._allow_print:
+                progress.set_description(
+                    gen_tqdm_description(
+                        'Fitting logistic regression...',
+                        loss=loss_item
+                    )
+                )
+        if self._allow_print:
+            progress.close()
 
     def train_novelty_type_logistic_regressions(
             self,
@@ -3124,7 +3106,8 @@ class TuplePredictorTrainer:
             num_workers=2
         )
 
-        print('Training novelty type classifier...')
+        if self._allow_print:
+            print('Training novelty type classifier...')
         start = time.time()
         with torch.no_grad():
             # Extract novelty scores and labels
@@ -3170,7 +3153,7 @@ class TuplePredictorTrainer:
             labels = torch.cat(labels, dim = 0)
 
         # Fit the logistic regression
-        fit_logistic_regression(
+        self.fit_logistic_regression(
             novelty_type_classifier,
             scores,
             labels,
@@ -3178,7 +3161,8 @@ class TuplePredictorTrainer:
         )
         end = time.time()
         t = end - start
-        print(f'Took {t} seconds')
+        if self._allow_print:
+            print(f'Took {t} seconds')
 
     def train_novelty_detection_module(
             self,
