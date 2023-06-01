@@ -1371,6 +1371,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
     def __init__(
             self,
             backbone,
+            device,
             lr,
             train_dataset,
             val_known_dataset,
@@ -1378,6 +1379,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             post_cache_train_transform,
             retraining_batch_size=32,
             train_sampler_fn=None,
+            feedback_batch_sampler_fn=None,
             root_checkpoint_dir=None,
             patience=3,
             min_epochs=3,
@@ -1392,6 +1394,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             load_best_after_training=True,
             val_reduce_fn=None):
         self._backbone = backbone
+        self._device = device
         self._lr = lr
         self._train_dataset = train_dataset
         self._val_known_dataset = val_known_dataset
@@ -1410,8 +1413,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         self._loss_fn = loss_fn
         if class_frequencies is not None:
             species_frequencies, activity_frequencies = class_frequencies
-            species_frequencies = species_frequencies.to(backbone.device)
-            activity_frequencies = activity_frequencies.to(backbone.device)
+            species_frequencies = species_frequencies.to(device)
+            activity_frequencies = activity_frequencies.to(device)
             class_frequencies = species_frequencies, activity_frequencies
         self._class_frequencies = class_frequencies
         self._focal_loss = torch.hub.load(
@@ -1435,7 +1438,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             activity_labels,
             box_images):
         # Determine the device to use based on the backbone's fc weights
-        device = self._backbone.device
+        device = self._device
 
         # Move to device
         species_labels = species_labels.to(device)
@@ -1585,7 +1588,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             species_labels,
             activity_labels,
             box_images):
-        device = self._backbone.device
+        device = self._device
 
         # Move to device
         species_labels = species_labels.to(device)
@@ -1680,6 +1683,21 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             )
 
         if feedback_dataset is not None:
+            feedback_box_counts = [
+                feedback_dataset.box_count(i) for\
+                    i in range(len(feedback_dataset))
+            ]
+            if self._feedback_batch_sampler_fn is not None:
+                feedback_batch_sampler = self._feedback_batch_sampler_fn(
+                    feedback_box_counts
+                )
+            else:
+                feedback_batch_sampler = DistributedRandomBoxImageBatchSampler(
+                    feedback_box_counts,
+                    self._retraining_batch_size,
+                    1,
+                    0
+                )
             feedback_loader = DataLoader(
                 feedback_dataset,
                 num_workers=2,
@@ -1763,7 +1781,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             if os.path.exists(training_checkpoint):
                 sd = torch.load(
                     training_checkpoint,
-                    map_location=self._backbone.device
+                    map_location=self._device
                 )
                 self._backbone.load_state_dict(sd['backbone'])
                 species_classifier.load_state_dict(sd['species_classifier'])
@@ -1782,7 +1800,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             if os.path.exists(validation_checkpoint):
                 sd = torch.load(
                     validation_checkpoint,
-                    map_location=self._backbone.device
+                    map_location=self._device
                 )
                 epochs_since_improvement = sd['epochs_since_improvement']
                 best_accuracy = sd['accuracy']
