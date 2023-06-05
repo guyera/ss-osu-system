@@ -15,7 +15,7 @@ if __name__ == "__main__":
     p.add_argument('--pretrained-models-dir', default='./pretrained-models')
     p.add_argument('--backbone-architecture', type=Backbone.Architecture, choices=list(Backbone.Architecture), default=Backbone.Architecture.swin_t)
     p.add_argument('--log', action='store_true')
-    p.add_argument('--log-dir', default='./logsDete10')
+    p.add_argument('--log-dir', default='./session/temp/logsDete10')
     p.add_argument('--ignore-verb-novelty', default=False, action='store_true')
     p.add_argument('--detection-feedback', action='store_true')
     p.add_argument('--given-detection', default=False, action='store_true')
@@ -30,7 +30,7 @@ if __name__ == "__main__":
     p.add_argument('--domain', default='image_classification')
     p.add_argument('--detector_seed', type=int, default=1234)
     p.add_argument('--version', default='101')
-    p.add_argument('--sys_results_dir', default='./session/temp/SVO_10_test_trials_csv60_with_detection_feedback')
+    p.add_argument('--sys_results_dir', default='./GAN_Tests/resutls/SS_GAN_Augment')
     p.add_argument('--test_ids', nargs="+", default=None)
     p.add_argument('--hintA', default=False)
     p.add_argument('--hintB', default=False)
@@ -51,6 +51,7 @@ if __name__ == "__main__":
     p.add_argument('--detection-threshold', type=float, default=0.5)
     p.add_argument('--retraining-loss-fn', type=LossFnEnum, choices=list(LossFnEnum), default=LossFnEnum.cross_entropy)
     p.add_argument('--class-frequency-file', type=str, default=None)
+    p.add_argument('--gan_augment', default= False)
 
     args = p.parse_args()
 
@@ -95,7 +96,8 @@ if __name__ == "__main__":
         retraining_scheduler_type=args.retraining_scheduler_type,
         feedback_loss_weight=args.feedback_loss_weight,
         retraining_loss_fn=args.retraining_loss_fn,
-        class_frequency_file=args.class_frequency_file
+        class_frequency_file=args.class_frequency_file,
+        gan_augment= args.gan_augment
     )
     
     test_session = BBNSession('OND', args.domain, args.class_count, 

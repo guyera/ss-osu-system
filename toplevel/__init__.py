@@ -31,6 +31,8 @@ from tupleprediction.training import\
     SideTuningClassifierTrainer
 from data.custom import build_species_label_mapping
 
+from taming_transformers.cycleGAN import CycleGAN
+
 class TopLevelApp:
     class ClassifierTrainer(Enum):
         logit_layer = 'logit-layer'
@@ -43,7 +45,7 @@ class TopLevelApp:
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_size, trial_batch_size, disable_retraining,
             root_cache_dir, n_known_val, classifier_trainer, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_val_interval, retraining_patience, retraining_min_epochs, retraining_max_epochs,
-            retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, class_frequency_file):
+            retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, class_frequency_file, gan_augment):
 
         pretrained_backbone_path = os.path.join(
             pretrained_models_dir,
@@ -57,6 +59,14 @@ class TopLevelApp:
         # if not Path(val_csv_path).exists():
         #     raise Exception(f'validation CSV was not found in path {val_csv_path}')
         # import ipdb; ipdb.set_trace()
+        self.gan_augment = gan_augment
+        if self.gan_augment:
+            self.cycleGAN = CycleGAN('./taming_transformers/logs/vqgan_imagenet_f16_1024/configs/model.yaml','./taming_transformers/logs/vqgan_imagenet_f16_1024/checkpoints/last.ckpt')
+        self.retraining_buffer = pd.DataFrame(columns=['image_path','filename','width','height','agent1_name','agent1_id'
+                                                        ,'agent1_count','agent2_name','agent2_id','agent2_count','agent3_name',
+                                                        'agent3_id','agent3_count','activities','activities_id','environment',
+                                                        'novelty_type','master_id','novel'
+                                                    ])
         self.data_root = data_root
         self.pretrained_models_dir = pretrained_models_dir
         self.backbone_architecture = backbone_architecture
@@ -103,7 +113,7 @@ class TopLevelApp:
         self.red_light_img = None
         self.red_light_this_batch = False
         self.num_retrains_so_far = 0
-        self.temp_path = Path('./session/temp/')
+        self.temp_path = Path(self.data_root+'/temp/')
         self.t_tn = None
         self.batch_num = 0 
         self.trial_size = trial_size
@@ -264,6 +274,7 @@ class TopLevelApp:
         self.t_tn = None
         self.batch_num = 0 
         self.num_retrains_so_far = 0
+        self.retraining_buffer = self.retraining_buffer.iloc[0:0]  
 
         # Auxiliary debugging data
         self._classifier_debugging_data = {}
@@ -378,6 +389,7 @@ class TopLevelApp:
         self.batch_context.bboxes = bboxes
         self.batch_context.predictions = predictions
         self.batch_context.p_type = batch_p_type.cpu()
+        self.batch_context.round_id = round_id
 
         red_light_scores = self._compute_red_light_scores(p_ni, N, img_paths)
 
@@ -461,6 +473,7 @@ class TopLevelApp:
 
         df = pd.read_csv(feedback_csv_path)
         nov_types = df['novelty_type'].to_numpy()
+        # import ipdb; ipdb.set_trace()
         for idx, nov_type in enumerate(nov_types):
             batch_idx = self.batch_context.query_indices[idx]
 
@@ -512,6 +525,8 @@ class TopLevelApp:
 
         self._accumulate(self.batch_context.predictions, self.batch_context.p_ni, p_ni_raw,
             self.batch_context.p_type)
+
+        self.retraining_buffer = pd.concat([self.retraining_buffer, df[df['novel'] == 1]])
 
         self.novelty_trainer.add_feedback_data(self.data_root, feedback_csv_path)
 
@@ -774,10 +789,26 @@ class TopLevelApp:
         )
 
     def _retrain_supervised_detectors(self):
-        retrain_cond_1 = self.num_retrains_so_far == 0 and self.novelty_trainer.n_feedback_examples() >= 15
-        retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.novelty_trainer.n_feedback_examples() > 0)
+        # retrain_cond_1 = self.num_retrains_so_far == 0 and self.novelty_trainer.n_feedback_examples() >= 15
+        # retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.novelty_trainer.n_feedback_examples() > 0)
+        print(len(self.retraining_buffer))
 
-        if retrain_cond_1 or retrain_cond_2:
+        retrain_cond_1 = self.num_retrains_so_far == 0 and len(self.retraining_buffer) >= 15
+        retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (len(self.retraining_buffer) > 0)
+
+        if retrain_cond_1: #or retrain_cond_2:
+            if self.gan_augment:
+                # import ipdb; ipdb.set_trace()
+                csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
+                self.retraining_buffer.to_csv(csv_path, index=True)
+                csv_path_temp = os.path.join(self.temp_path, f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
+                # csv_path_temp = './'+ csv_path_temp
+                self.cycleGAN.load_datasets(self.data_root, self.train_csv_path, csv_path_temp, 4) 
+                self.cycleGAN.train(350)
+                self.cycleGAN.delete_models()
+                self.novelty_trainer.add_feedback_data(self.data_root, csv_path_temp)   
+
+
             self.num_retrains_so_far += 1
             self.novelty_trainer.prepare_for_retraining(
                 self.und_manager.classifier, 
@@ -794,3 +825,4 @@ class TopLevelApp:
                 self.und_manager.scorer
             )
             self.backbone.eval()
+            self.retraining_buffer = self.retraining_buffer.iloc[0:0]

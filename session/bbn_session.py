@@ -245,6 +245,7 @@ class BBNSession:
 
     def run(self, detector_seed, test_ids=None):
         print('Running')
+        print('test_ids:', test_ids)
         if not test_ids:
             # test_ids = requests.get(
             #     f"{self.url}/test/ids?protocol={self.protocol}&detector_seed={detector_seed}").content.decode('utf-8').split('\n')

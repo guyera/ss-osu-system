@@ -1,0 +1,822 @@
+python -u main.py --detection-feedback --url 'http://127.0.0.1:8002' --trial-size 1000 --trial-batch-size 10     --log     --log-dir './session/temp/logs_SS_GAN' --root-cache-dir '/nfs/hpc/share/sail_on3/.data-cache'     --pretrained-models-dir '/nfs/hpc/share/sail_on3/share/balanced/pretrained-models-balanced/hack'     --precomputed-feature-dir '/nfs/hpc/share/sail_on3/share/balanced/.features-balanced/hack/resizepad=224/none/normalized' --detection-threshold 0.6
+Running
+test_ids: None
+==> OSU got start session a38994d7-71a8-4959-b40d-622e5771949e
+=> initialized session: a38994d7-71a8-4959-b40d-622e5771949e
+==> starting test: OND.1061.000
+Hint A is :  None
+{'feedback_max_ids': 5, 'known_classes': 11, 'max_novel_classes': 16, 'protocol': 'OND', 'round_size': 10}
+==> OSU got start test OND.1061.000
+===> Round 0
+  ==> OSU processed round 0
+===> Round 1
+  ==> OSU processed round 1
+===> Round 2
+  ==> OSU processed round 2
+===> Round 3
+  ==> OSU processed round 3
+===> Round 4
+  ==> OSU processed round 4
+===> Round 5
+  ==> OSU processed round 5
+===> Round 6
+  ==> OSU processed round 6
+===> Round 7
+  ==> OSU processed round 7
+===> Round 8
+  ==> OSU processed round 8
+===> Round 9
+  ==> OSU processed round 9
+===> Round 10
+  ==> OSU processed round 10
+===> Round 11
+  ==> OSU processed round 11
+===> Round 12
+  ==> OSU processed round 12
+===> Round 13
+  ==> OSU processed round 13
+===> Round 14
+  ==> OSU processed round 14
+===> Round 15
+  ==> OSU processed round 15
+===> Round 16
+  ==> OSU processed round 16
+===> Round 17
+  ==> OSU processed round 17
+===> Round 18
+  ==> OSU processed round 18
+===> Round 19
+  ==> OSU processed round 19
+===> Round 20
+  ==> OSU processed round 20
+===> Round 21
+  ==> OSU processed round 21
+===> Round 22
+  ==> OSU processed round 22
+===> Round 23
+  ==> OSU processed round 23
+===> Round 24
+  ==> OSU processed round 24
+===> Round 25
+  ==> OSU processed round 25
+===> Round 26
+  ==> OSU processed round 26
+===> Round 27
+  ==> OSU processed round 27
+===> Round 28
+  ==> OSU processed round 28
+===> Round 29
+  ==> OSU processed round 29
+===> Round 30
+  ==> OSU processed round 30
+===> Round 31
+  ==> OSU processed round 31
+===> Round 32
+  ==> OSU processed round 32
+===> Round 33
+  ==> OSU processed round 33
+===> Round 34
+  ==> OSU processed round 34
+===> Round 35
+  ==> OSU processed round 35
+===> Round 36
+  ==> OSU processed round 36
+===> Round 37
+  ==> OSU processed round 37
+===> Round 38
+  ==> OSU processed round 38
+===> Round 39
+  ==> OSU processed round 39
+===> Round 40
+  ==> OSU processed round 40
+===> Round 41
+  ==> OSU processed round 41
+===> Round 42
+  ==> OSU processed round 42
+===> Round 43
+  ==> OSU processed round 43
+===> Round 44
+  ==> OSU processed round 44
+===> Round 45
+  ==> OSU processed round 45
+===> Round 46
+  ==> OSU processed round 46
+===> Round 47
+  ==> OSU processed round 47
+===> Round 48
+  ==> OSU processed round 48
+===> Round 49
+  ==> OSU processed round 49
+===> Round 50
+  ==> OSU processed round 50
+===> Round 51
+  ==> OSU processed round 51
+===> Round 52
+  ==> OSU processed round 52
+===> Round 53
+  ==> OSU processed round 53
+===> Round 54
+  ==> OSU processed round 54
+===> Round 55
+  ==> OSU processed round 55
+===> Round 56
+  ==> OSU processed round 56
+===> Round 57
+  ==> OSU processed round 57
+===> Round 58
+  ==> OSU processed round 58
+===> Round 59
+  ==> OSU processed round 59
+===> Round 60
+  ==> OSU processed round 60
+===> Round 61
+  ==> OSU processed round 61
+===> Round 62
+  ==> OSU processed round 62
+===> Round 63
+  ==> OSU processed round 63
+===> Round 64
+  ==> OSU processed round 64
+===> Round 65
+  ==> OSU processed round 65
+===> Round 66
+  ==> OSU processed round 66
+===> Round 67
+  ==> OSU processed round 67
+===> Round 68
+  ==> OSU processed round 68
+===> Round 69
+  ==> OSU processed round 69
+===> Round 70
+  ==> OSU processed round 70
+===> Round 71
+  ==> OSU processed round 71
+===> Round 72
+  ==> OSU processed round 72
+===> Round 73
+  ==> OSU processed round 73
+===> Round 74
+  ==> OSU processed round 74
+===> Round 75
+  ==> OSU processed round 75
+===> Round 76
+  ==> OSU processed round 76
+  ==> OSU got detection feedback results for round 76
+===> Round 77
+  ==> OSU processed round 77
+  ==> OSU got detection feedback results for round 77
+===> Round 78
+  ==> OSU processed round 78
+  ==> OSU got detection feedback results for round 78
+===> Round 79
+  ==> OSU processed round 79
+  ==> OSU got detection feedback results for round 79
+/nfs/stak/users/ullaham/hpc-share/anaconda3/envs/pocket/lib/python3.8/site-packages/torch/utils/data/dataloader.py:563: UserWarning: This DataLoader will create 2 worker processes in total. Our suggested max number of worker in current system is 1, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  warnings.warn(_create_warning_msg(
+Training classifiers... | train_loss: 2.0339319705963135 | train_accuracy: 0.7643934658071921 | val_accuracy: 0.7654848654708519:   9%|\u2588\u2589                   | 90/1000 [00:07<01:18, 11.53it/s]
+Calibrating temperature scalers...
+Training calibrators... | Loss: 1.3942720890045166: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 10000/10000 [00:06<00:00, 1482.50it/s]
+Took 371.8141984939575 seconds
+Training novelty type classifier...
+Fitting logistic regression... | loss: 1.176735520362854: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 3000/3000 [00:01<00:00, 1520.56it/s]
+Took 287.6868121623993 seconds
+===> Round 80
+  ==> OSU processed round 80
+  ==> OSU got detection feedback results for round 80
+===> Round 81
+  ==> OSU processed round 81
+  ==> OSU got detection feedback results for round 81
+===> Round 82
+  ==> OSU processed round 82
+  ==> OSU got detection feedback results for round 82
+===> Round 83
+  ==> OSU processed round 83
+  ==> OSU got detection feedback results for round 83
+===> Round 84
+  ==> OSU processed round 84
+  ==> OSU got detection feedback results for round 84
+===> Round 85
+  ==> OSU processed round 85
+  ==> OSU got detection feedback results for round 85
+===> Round 86
+  ==> OSU processed round 86
+  ==> OSU got detection feedback results for round 86
+===> Round 87
+  ==> OSU processed round 87
+  ==> OSU got detection feedback results for round 87
+===> Round 88
+  ==> OSU processed round 88
+  ==> OSU got detection feedback results for round 88
+===> Round 89
+  ==> OSU processed round 89
+  ==> OSU got detection feedback results for round 89
+===> Round 90
+  ==> OSU processed round 90
+  ==> OSU got detection feedback results for round 90
+===> Round 91
+  ==> OSU processed round 91
+  ==> OSU got detection feedback results for round 91
+===> Round 92
+  ==> OSU processed round 92
+  ==> OSU got detection feedback results for round 92
+===> Round 93
+  ==> OSU processed round 93
+  ==> OSU got detection feedback results for round 93
+===> Round 94
+  ==> OSU processed round 94
+  ==> OSU got detection feedback results for round 94
+===> Round 95
+  ==> OSU processed round 95
+  ==> OSU got detection feedback results for round 95
+===> Round 96
+  ==> OSU processed round 96
+  ==> OSU got detection feedback results for round 96
+/nfs/stak/users/ullaham/hpc-share/anaconda3/envs/pocket/lib/python3.8/site-packages/torch/utils/data/dataloader.py:563: UserWarning: This DataLoader will create 2 worker processes in total. Our suggested max number of worker in current system is 1, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  warnings.warn(_create_warning_msg(
+Training classifiers... | train_loss: 2.0397815704345703 | train_accuracy: 0.8049477858965556 | val_accuracy: 0.8075952914798206:  44%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258a           | 441/1000 [03:05<03:55,  2.38it/s]
+Calibrating temperature scalers...
+Training calibrators... | Loss: 1.0231597423553467: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 10000/10000 [00:06<00:00, 1480.89it/s]
+Took 41.6820387840271 seconds
+Training novelty type classifier...
+Fitting logistic regression... | loss: 1.1404601335525513: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 3000/3000 [00:01<00:00, 1518.72it/s]
+Took 89.52345776557922 seconds
+===> Round 97
+  ==> OSU processed round 97
+  ==> OSU got detection feedback results for round 97
+===> Round 98
+  ==> OSU processed round 98
+  ==> OSU got detection feedback results for round 98
+===> Round 99
+  ==> OSU processed round 99
+  ==> OSU got detection feedback results for round 99
+==> No more rounds
+==> test end response: <Response [200]>
+==> OSU got end test OND.1061.000
+==> starting test: OND.1063.000
+Hint A is :  None
+{'feedback_max_ids': 5, 'known_classes': 11, 'max_novel_classes': 16, 'protocol': 'OND', 'round_size': 10}
+==> OSU got start test OND.1063.000
+===> Round 0
+  ==> OSU processed round 0
+===> Round 1
+  ==> OSU processed round 1
+===> Round 2
+  ==> OSU processed round 2
+===> Round 3
+  ==> OSU processed round 3
+===> Round 4
+  ==> OSU processed round 4
+===> Round 5
+  ==> OSU processed round 5
+===> Round 6
+  ==> OSU processed round 6
+===> Round 7
+  ==> OSU processed round 7
+===> Round 8
+  ==> OSU processed round 8
+===> Round 9
+  ==> OSU processed round 9
+===> Round 10
+  ==> OSU processed round 10
+===> Round 11
+  ==> OSU processed round 11
+===> Round 12
+  ==> OSU processed round 12
+===> Round 13
+  ==> OSU processed round 13
+===> Round 14
+  ==> OSU processed round 14
+===> Round 15
+  ==> OSU processed round 15
+===> Round 16
+  ==> OSU processed round 16
+===> Round 17
+  ==> OSU processed round 17
+===> Round 18
+  ==> OSU processed round 18
+===> Round 19
+  ==> OSU processed round 19
+===> Round 20
+  ==> OSU processed round 20
+===> Round 21
+  ==> OSU processed round 21
+===> Round 22
+  ==> OSU processed round 22
+===> Round 23
+  ==> OSU processed round 23
+===> Round 24
+  ==> OSU processed round 24
+===> Round 25
+  ==> OSU processed round 25
+===> Round 26
+  ==> OSU processed round 26
+===> Round 27
+  ==> OSU processed round 27
+===> Round 28
+  ==> OSU processed round 28
+===> Round 29
+  ==> OSU processed round 29
+===> Round 30
+  ==> OSU processed round 30
+===> Round 31
+  ==> OSU processed round 31
+===> Round 32
+  ==> OSU processed round 32
+===> Round 33
+  ==> OSU processed round 33
+===> Round 34
+  ==> OSU processed round 34
+===> Round 35
+  ==> OSU processed round 35
+===> Round 36
+  ==> OSU processed round 36
+===> Round 37
+  ==> OSU processed round 37
+  ==> OSU got detection feedback results for round 37
+===> Round 38
+  ==> OSU processed round 38
+  ==> OSU got detection feedback results for round 38
+===> Round 39
+  ==> OSU processed round 39
+  ==> OSU got detection feedback results for round 39
+===> Round 40
+  ==> OSU processed round 40
+  ==> OSU got detection feedback results for round 40
+/nfs/stak/users/ullaham/hpc-share/anaconda3/envs/pocket/lib/python3.8/site-packages/torch/utils/data/dataloader.py:563: UserWarning: This DataLoader will create 2 worker processes in total. Our suggested max number of worker in current system is 1, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  warnings.warn(_create_warning_msg(
+Training classifiers... | train_loss: 1.8272424936294556 | train_accuracy: 0.7989398333657857 | val_accuracy: 0.8002382286995515:   8%|\u2588\u258b                   | 81/1000 [00:05<01:01, 15.03it/s]
+Calibrating temperature scalers...
+Training calibrators... | Loss: 1.2459648847579956: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 10000/10000 [00:06<00:00, 1508.51it/s]
+Took 41.32762598991394 seconds
+Training novelty type classifier...
+Fitting logistic regression... | loss: 1.1743452548980713: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 3000/3000 [00:01<00:00, 1560.42it/s]
+Took 87.72291398048401 seconds
+===> Round 41
+  ==> OSU processed round 41
+  ==> OSU got detection feedback results for round 41
+===> Round 42
+  ==> OSU processed round 42
+  ==> OSU got detection feedback results for round 42
+===> Round 43
+  ==> OSU processed round 43
+  ==> OSU got detection feedback results for round 43
+===> Round 44
+  ==> OSU processed round 44
+  ==> OSU got detection feedback results for round 44
+===> Round 45
+  ==> OSU processed round 45
+  ==> OSU got detection feedback results for round 45
+===> Round 46
+  ==> OSU processed round 46
+  ==> OSU got detection feedback results for round 46
+===> Round 47
+  ==> OSU processed round 47
+  ==> OSU got detection feedback results for round 47
+===> Round 48
+  ==> OSU processed round 48
+  ==> OSU got detection feedback results for round 48
+===> Round 49
+  ==> OSU processed round 49
+  ==> OSU got detection feedback results for round 49
+===> Round 50
+  ==> OSU processed round 50
+  ==> OSU got detection feedback results for round 50
+===> Round 51
+  ==> OSU processed round 51
+  ==> OSU got detection feedback results for round 51
+===> Round 52
+  ==> OSU processed round 52
+  ==> OSU got detection feedback results for round 52
+===> Round 53
+  ==> OSU processed round 53
+  ==> OSU got detection feedback results for round 53
+===> Round 54
+  ==> OSU processed round 54
+  ==> OSU got detection feedback results for round 54
+===> Round 55
+  ==> OSU processed round 55
+  ==> OSU got detection feedback results for round 55
+===> Round 56
+  ==> OSU processed round 56
+  ==> OSU got detection feedback results for round 56
+===> Round 57
+  ==> OSU processed round 57
+  ==> OSU got detection feedback results for round 57
+===> Round 58
+  ==> OSU processed round 58
+  ==> OSU got detection feedback results for round 58
+===> Round 59
+  ==> OSU processed round 59
+  ==> OSU got detection feedback results for round 59
+===> Round 60
+  ==> OSU processed round 60
+  ==> OSU got detection feedback results for round 60
+===> Round 61
+  ==> OSU processed round 61
+  ==> OSU got detection feedback results for round 61
+===> Round 62
+  ==> OSU processed round 62
+  ==> OSU got detection feedback results for round 62
+===> Round 63
+  ==> OSU processed round 63
+  ==> OSU got detection feedback results for round 63
+===> Round 64
+  ==> OSU processed round 64
+  ==> OSU got detection feedback results for round 64
+===> Round 65
+  ==> OSU processed round 65
+  ==> OSU got detection feedback results for round 65
+===> Round 66
+  ==> OSU processed round 66
+  ==> OSU got detection feedback results for round 66
+===> Round 67
+  ==> OSU processed round 67
+  ==> OSU got detection feedback results for round 67
+===> Round 68
+  ==> OSU processed round 68
+  ==> OSU got detection feedback results for round 68
+===> Round 69
+  ==> OSU processed round 69
+  ==> OSU got detection feedback results for round 69
+===> Round 70
+  ==> OSU processed round 70
+  ==> OSU got detection feedback results for round 70
+===> Round 71
+  ==> OSU processed round 71
+  ==> OSU got detection feedback results for round 71
+===> Round 72
+  ==> OSU processed round 72
+  ==> OSU got detection feedback results for round 72
+===> Round 73
+  ==> OSU processed round 73
+  ==> OSU got detection feedback results for round 73
+===> Round 74
+  ==> OSU processed round 74
+  ==> OSU got detection feedback results for round 74
+===> Round 75
+  ==> OSU processed round 75
+  ==> OSU got detection feedback results for round 75
+===> Round 76
+  ==> OSU processed round 76
+  ==> OSU got detection feedback results for round 76
+===> Round 77
+  ==> OSU processed round 77
+  ==> OSU got detection feedback results for round 77
+===> Round 78
+  ==> OSU processed round 78
+  ==> OSU got detection feedback results for round 78
+===> Round 79
+  ==> OSU processed round 79
+  ==> OSU got detection feedback results for round 79
+===> Round 80
+  ==> OSU processed round 80
+  ==> OSU got detection feedback results for round 80
+===> Round 81
+  ==> OSU processed round 81
+  ==> OSU got detection feedback results for round 81
+===> Round 82
+  ==> OSU processed round 82
+  ==> OSU got detection feedback results for round 82
+===> Round 83
+  ==> OSU processed round 83
+  ==> OSU got detection feedback results for round 83
+===> Round 84
+  ==> OSU processed round 84
+  ==> OSU got detection feedback results for round 84
+===> Round 85
+  ==> OSU processed round 85
+  ==> OSU got detection feedback results for round 85
+===> Round 86
+  ==> OSU processed round 86
+  ==> OSU got detection feedback results for round 86
+===> Round 87
+  ==> OSU processed round 87
+  ==> OSU got detection feedback results for round 87
+===> Round 88
+  ==> OSU processed round 88
+  ==> OSU got detection feedback results for round 88
+===> Round 89
+  ==> OSU processed round 89
+  ==> OSU got detection feedback results for round 89
+===> Round 90
+  ==> OSU processed round 90
+  ==> OSU got detection feedback results for round 90
+===> Round 91
+  ==> OSU processed round 91
+  ==> OSU got detection feedback results for round 91
+===> Round 92
+  ==> OSU processed round 92
+  ==> OSU got detection feedback results for round 92
+===> Round 93
+  ==> OSU processed round 93
+  ==> OSU got detection feedback results for round 93
+===> Round 94
+  ==> OSU processed round 94
+  ==> OSU got detection feedback results for round 94
+===> Round 95
+  ==> OSU processed round 95
+  ==> OSU got detection feedback results for round 95
+===> Round 96
+  ==> OSU processed round 96
+  ==> OSU got detection feedback results for round 96
+/nfs/stak/users/ullaham/hpc-share/anaconda3/envs/pocket/lib/python3.8/site-packages/torch/utils/data/dataloader.py:563: UserWarning: This DataLoader will create 2 worker processes in total. Our suggested max number of worker in current system is 1, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  warnings.warn(_create_warning_msg(
+Training classifiers... | train_loss: 2.0221757888793945 | train_accuracy: 0.8238222363418358 | val_accuracy: 0.8250420403587444:  39%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258b            | 387/1000 [06:25<10:10,  1.00it/s]
+Calibrating temperature scalers...
+Training calibrators... | Loss: 0.9483143091201782: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 10000/10000 [00:06<00:00, 1495.98it/s]
+Took 41.71994066238403 seconds
+Training novelty type classifier...
+Fitting logistic regression... | loss: 1.1594706773757935: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 3000/3000 [00:01<00:00, 1545.64it/s]
+Took 87.5593090057373 seconds
+===> Round 97
+  ==> OSU processed round 97
+  ==> OSU got detection feedback results for round 97
+===> Round 98
+  ==> OSU processed round 98
+  ==> OSU got detection feedback results for round 98
+===> Round 99
+  ==> OSU processed round 99
+  ==> OSU got detection feedback results for round 99
+==> No more rounds
+==> test end response: <Response [200]>
+==> OSU got end test OND.1063.000
+==> starting test: OND.1064.000
+Hint A is :  None
+{'feedback_max_ids': 5, 'known_classes': 11, 'max_novel_classes': 16, 'protocol': 'OND', 'round_size': 10}
+==> OSU got start test OND.1064.000
+===> Round 0
+  ==> OSU processed round 0
+===> Round 1
+  ==> OSU processed round 1
+===> Round 2
+  ==> OSU processed round 2
+===> Round 3
+  ==> OSU processed round 3
+===> Round 4
+  ==> OSU processed round 4
+===> Round 5
+  ==> OSU processed round 5
+===> Round 6
+  ==> OSU processed round 6
+===> Round 7
+  ==> OSU processed round 7
+===> Round 8
+  ==> OSU processed round 8
+===> Round 9
+  ==> OSU processed round 9
+===> Round 10
+  ==> OSU processed round 10
+===> Round 11
+  ==> OSU processed round 11
+===> Round 12
+  ==> OSU processed round 12
+===> Round 13
+  ==> OSU processed round 13
+===> Round 14
+  ==> OSU processed round 14
+===> Round 15
+  ==> OSU processed round 15
+===> Round 16
+  ==> OSU processed round 16
+===> Round 17
+  ==> OSU processed round 17
+===> Round 18
+  ==> OSU processed round 18
+===> Round 19
+  ==> OSU processed round 19
+===> Round 20
+  ==> OSU processed round 20
+===> Round 21
+  ==> OSU processed round 21
+===> Round 22
+  ==> OSU processed round 22
+===> Round 23
+  ==> OSU processed round 23
+===> Round 24
+  ==> OSU processed round 24
+===> Round 25
+  ==> OSU processed round 25
+===> Round 26
+  ==> OSU processed round 26
+===> Round 27
+  ==> OSU processed round 27
+===> Round 28
+  ==> OSU processed round 28
+===> Round 29
+  ==> OSU processed round 29
+===> Round 30
+  ==> OSU processed round 30
+===> Round 31
+  ==> OSU processed round 31
+===> Round 32
+  ==> OSU processed round 32
+===> Round 33
+  ==> OSU processed round 33
+===> Round 34
+  ==> OSU processed round 34
+===> Round 35
+  ==> OSU processed round 35
+===> Round 36
+  ==> OSU processed round 36
+===> Round 37
+  ==> OSU processed round 37
+===> Round 38
+  ==> OSU processed round 38
+===> Round 39
+  ==> OSU processed round 39
+===> Round 40
+  ==> OSU processed round 40
+===> Round 41
+  ==> OSU processed round 41
+===> Round 42
+  ==> OSU processed round 42
+===> Round 43
+  ==> OSU processed round 43
+===> Round 44
+  ==> OSU processed round 44
+===> Round 45
+  ==> OSU processed round 45
+===> Round 46
+  ==> OSU processed round 46
+===> Round 47
+  ==> OSU processed round 47
+  ==> OSU got detection feedback results for round 47
+===> Round 48
+  ==> OSU processed round 48
+  ==> OSU got detection feedback results for round 48
+===> Round 49
+  ==> OSU processed round 49
+  ==> OSU got detection feedback results for round 49
+===> Round 50
+  ==> OSU processed round 50
+  ==> OSU got detection feedback results for round 50
+/nfs/stak/users/ullaham/hpc-share/anaconda3/envs/pocket/lib/python3.8/site-packages/torch/utils/data/dataloader.py:563: UserWarning: This DataLoader will create 2 worker processes in total. Our suggested max number of worker in current system is 1, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  warnings.warn(_create_warning_msg(
+Training classifiers... | train_loss: 1.9210865497589111 | train_accuracy: 0.7816666495864889 | val_accuracy: 0.7848234304932735:   9%|\u2588\u2589                   | 92/1000 [00:06<01:03, 14.27it/s]
+Calibrating temperature scalers...
+Training calibrators... | Loss: 1.2238596677780151: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 10000/10000 [00:06<00:00, 1482.53it/s]
+Took 42.136916399002075 seconds
+Training novelty type classifier...
+Fitting logistic regression... | loss: 1.1434193849563599: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 3000/3000 [00:01<00:00, 1548.46it/s]
+Took 87.68151259422302 seconds
+===> Round 51
+  ==> OSU processed round 51
+  ==> OSU got detection feedback results for round 51
+===> Round 52
+  ==> OSU processed round 52
+  ==> OSU got detection feedback results for round 52
+===> Round 53
+  ==> OSU processed round 53
+  ==> OSU got detection feedback results for round 53
+===> Round 54
+  ==> OSU processed round 54
+  ==> OSU got detection feedback results for round 54
+===> Round 55
+  ==> OSU processed round 55
+  ==> OSU got detection feedback results for round 55
+===> Round 56
+  ==> OSU processed round 56
+  ==> OSU got detection feedback results for round 56
+===> Round 57
+  ==> OSU processed round 57
+  ==> OSU got detection feedback results for round 57
+===> Round 58
+  ==> OSU processed round 58
+  ==> OSU got detection feedback results for round 58
+===> Round 59
+  ==> OSU processed round 59
+  ==> OSU got detection feedback results for round 59
+===> Round 60
+  ==> OSU processed round 60
+  ==> OSU got detection feedback results for round 60
+===> Round 61
+  ==> OSU processed round 61
+  ==> OSU got detection feedback results for round 61
+===> Round 62
+  ==> OSU processed round 62
+  ==> OSU got detection feedback results for round 62
+===> Round 63
+  ==> OSU processed round 63
+  ==> OSU got detection feedback results for round 63
+===> Round 64
+  ==> OSU processed round 64
+  ==> OSU got detection feedback results for round 64
+===> Round 65
+  ==> OSU processed round 65
+  ==> OSU got detection feedback results for round 65
+===> Round 66
+  ==> OSU processed round 66
+  ==> OSU got detection feedback results for round 66
+===> Round 67
+  ==> OSU processed round 67
+  ==> OSU got detection feedback results for round 67
+===> Round 68
+  ==> OSU processed round 68
+  ==> OSU got detection feedback results for round 68
+===> Round 69
+  ==> OSU processed round 69
+  ==> OSU got detection feedback results for round 69
+===> Round 70
+  ==> OSU processed round 70
+  ==> OSU got detection feedback results for round 70
+===> Round 71
+  ==> OSU processed round 71
+  ==> OSU got detection feedback results for round 71
+===> Round 72
+  ==> OSU processed round 72
+  ==> OSU got detection feedback results for round 72
+===> Round 73
+  ==> OSU processed round 73
+  ==> OSU got detection feedback results for round 73
+===> Round 74
+  ==> OSU processed round 74
+  ==> OSU got detection feedback results for round 74
+===> Round 75
+  ==> OSU processed round 75
+  ==> OSU got detection feedback results for round 75
+===> Round 76
+  ==> OSU processed round 76
+  ==> OSU got detection feedback results for round 76
+===> Round 77
+  ==> OSU processed round 77
+  ==> OSU got detection feedback results for round 77
+===> Round 78
+  ==> OSU processed round 78
+  ==> OSU got detection feedback results for round 78
+===> Round 79
+  ==> OSU processed round 79
+  ==> OSU got detection feedback results for round 79
+===> Round 80
+  ==> OSU processed round 80
+  ==> OSU got detection feedback results for round 80
+===> Round 81
+  ==> OSU processed round 81
+  ==> OSU got detection feedback results for round 81
+===> Round 82
+  ==> OSU processed round 82
+  ==> OSU got detection feedback results for round 82
+===> Round 83
+  ==> OSU processed round 83
+  ==> OSU got detection feedback results for round 83
+===> Round 84
+  ==> OSU processed round 84
+  ==> OSU got detection feedback results for round 84
+===> Round 85
+  ==> OSU processed round 85
+  ==> OSU got detection feedback results for round 85
+===> Round 86
+  ==> OSU processed round 86
+  ==> OSU got detection feedback results for round 86
+===> Round 87
+  ==> OSU processed round 87
+  ==> OSU got detection feedback results for round 87
+===> Round 88
+  ==> OSU processed round 88
+  ==> OSU got detection feedback results for round 88
+===> Round 89
+  ==> OSU processed round 89
+  ==> OSU got detection feedback results for round 89
+===> Round 90
+  ==> OSU processed round 90
+  ==> OSU got detection feedback results for round 90
+===> Round 91
+  ==> OSU processed round 91
+  ==> OSU got detection feedback results for round 91
+===> Round 92
+  ==> OSU processed round 92
+  ==> OSU got detection feedback results for round 92
+===> Round 93
+  ==> OSU processed round 93
+  ==> OSU got detection feedback results for round 93
+===> Round 94
+  ==> OSU processed round 94
+  ==> OSU got detection feedback results for round 94
+===> Round 95
+  ==> OSU processed round 95
+  ==> OSU got detection feedback results for round 95
+===> Round 96
+  ==> OSU processed round 96
+  ==> OSU got detection feedback results for round 96
+/nfs/stak/users/ullaham/hpc-share/anaconda3/envs/pocket/lib/python3.8/site-packages/torch/utils/data/dataloader.py:563: UserWarning: This DataLoader will create 2 worker processes in total. Our suggested max number of worker in current system is 1, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  warnings.warn(_create_warning_msg(
+Training classifiers... | train_loss: 2.066135883331299 | train_accuracy: 0.8231919777821048 | val_accuracy: 0.8254624439461884:  36%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258c             | 363/1000 [05:02<08:50,  1.20it/s]
+Calibrating temperature scalers...
+Training calibrators... | Loss: 0.9360947608947754: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 10000/10000 [00:06<00:00, 1511.66it/s]
+Took 42.39913058280945 seconds
+Training novelty type classifier...
+Fitting logistic regression... | loss: 1.1440075635910034: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 3000/3000 [00:01<00:00, 1564.07it/s]
+Took 87.54820346832275 seconds
+===> Round 97
+  ==> OSU processed round 97
+  ==> OSU got detection feedback results for round 97
+===> Round 98
+  ==> OSU processed round 98
+  ==> OSU got detection feedback results for round 98
+===> Round 99
+  ==> OSU processed round 99
+  ==> OSU got detection feedback results for round 99
+==> No more rounds
+==> test end response: <Response [200]>
+==> OSU got end test OND.1064.000
+=> terminating session
+==> OSU got end session a38994d7-71a8-4959-b40d-622e5771949e
