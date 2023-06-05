@@ -10,22 +10,19 @@ import numpy as np
 
 class ClassFileReader():
     def __init__(self):
-        self.num_subj = 5
-        self.num_verb = 8
-        self.num_obj = 12
-        self.triple_list = list(itertools.product(np.arange(-1, self.num_subj),
-                                                  np.arange(0, self.num_verb),
-                                                  np.arange(-1, self.num_obj)))
-        self.get_triple = {}
-        for i, triple in enumerate(self.triple_list):
-            self.get_triple[i] = triple
+        self.max_species = 31
+        self.max_activities = 5
+        
 
-    def get_answers(self, class_line):
+    def get_answers(self, class_line, num_species=None, num_activities=None):
         chunks = class_line.split(',')
-        prob_strs = chunks[1:]
-        probs = np.array([float(prob_str) for prob_str in prob_strs])
-        ind_1, ind_2, ind_3 = np.argsort(-1.0 * probs)[:3]
-        ans_1_s, ans_1_v, ans_1_o = self.get_triple[ind_1]
-        ans_2_s, ans_2_v, ans_2_o = self.get_triple[ind_2]
-        ans_3_s, ans_3_v, ans_3_o = self.get_triple[ind_3]
-        return ans_1_s, ans_1_v, ans_1_o, ans_2_s, ans_2_v, ans_2_o, ans_3_s, ans_3_v, ans_3_o
+        if num_species is None:
+            num_species = self.max_species
+        if num_activities is None:
+            num_activities = self.max_activities
+        assert len(chunks) == 2 * num_species + num_activities + 1
+
+        species_counts = chunks[1:num_species+1]
+        species_presence = chunks[num_species+1:2*num_species+1]
+        activity_presence = chunks[2*num_species+1:]
+        return [float(x) for x in species_counts], [float(x) for x in species_presence], [float(x) for x in activity_presence]

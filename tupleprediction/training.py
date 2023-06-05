@@ -806,7 +806,6 @@ class TransformingBoxImageDataset(Dataset):
             box_images,\
             whole_image =\
                 self._dataset[idx]
-
         box_images = self._transform(box_images)
         whole_image = self._transform(whole_image)
 
@@ -2990,7 +2989,6 @@ class TuplePredictorTrainer:
         feedback_dataset = None
         if len(self._feedback_data) > 0:
             feedback_dataset = ConcatDataset(self._feedback_data)
-        
         self._classifier_trainer.train(
             species_classifier,
             activity_classifier,
