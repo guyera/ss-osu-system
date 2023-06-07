@@ -33,6 +33,48 @@ from data.custom import build_species_label_mapping
 
 from taming_transformers.cycleGAN import CycleGAN
 
+def gen_retrain_fn(device, train_sampler_fn, feedback_batch_sampler_fn, allow_write, allow_print, distributed=False):
+    def retrain(
+            tuple_predictor_trainer,
+            backbone,
+            classifier,
+            confidence_calibrator,
+            novelty_type_classifier,
+            activation_statistical_model,
+            scorer,
+            root_log_dir):
+        if distributed:
+            # Wrap backbone and classifiers in DDPs
+            backbone = DDP(backbone)
+            classifier.ddp()
+
+        tuple_predictor_trainer.train_novelty_detection_module(
+            backbone,
+            classifier,
+            confidence_calibrator,
+            novelty_type_classifier,
+            activation_statistical_model,
+            scorer,
+            device,
+            train_sampler_fn,
+            feedback_batch_sampler_fn,
+            allow_write,
+            allow_print,
+            root_log_dir=root_log_dir
+        )
+
+        if distributed:
+            # Unwrap the DDPs around the classifiers. The backbone DDP will
+            # disappear when it falls out of scope. This is only necessary
+            # for the classifiers since DDPs only wrap around modules---they
+            # can't wrap around arbitrary objects that compose multiple modules.
+            # Alternatively, we could refactor so that the underlying activity
+            # and species classifiers are used directly instead. The first thing
+            # that the TuplePredictorTrainer does anyways is extract them from
+            # the ClassifierV2
+            classifier.un_ddp()
+    return retrain
+
 class TopLevelApp:
     class ClassifierTrainer(Enum):
         logit_layer = 'logit-layer'
@@ -45,7 +87,7 @@ class TopLevelApp:
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_size, trial_batch_size, disable_retraining,
             root_cache_dir, n_known_val, classifier_trainer, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_val_interval, retraining_patience, retraining_min_epochs, retraining_max_epochs,
-            retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, class_frequency_file, gan_augment):
+            retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, class_frequency_file, gan_augment, device, retrain_fn):
 
         pretrained_backbone_path = os.path.join(
             pretrained_models_dir,
@@ -67,6 +109,7 @@ class TopLevelApp:
                                                         'agent3_id','agent3_count','activities','activities_id','environment',
                                                         'novelty_type','master_id','novel'
                                                     ])
+        self.device = device
         self.data_root = data_root
         self.pretrained_models_dir = pretrained_models_dir
         self.backbone_architecture = backbone_architecture
@@ -146,10 +189,10 @@ class TopLevelApp:
         self.backbone = Backbone(
             backbone_architecture,
             pretrained=False
-        ).to('cuda:0')
+        ).to(self.device)
         backbone_state_dict = torch.load(
             self.pretrained_backbone_path,
-            map_location='cuda:0'
+            map_location=self.device
         )
         backbone_state_dict = {
             re.sub('^module\.', '', k): v for\
@@ -164,7 +207,8 @@ class TopLevelApp:
             self.n_species_cls,
             self.n_activity_cls,
             self.n_known_species_cls,
-            self.n_known_activity_cls
+            self.n_known_activity_cls,
+            self.device
         )
 
         self.box_transform,\
@@ -190,7 +234,6 @@ class TopLevelApp:
                     post_cache_train_transform,
                     post_cache_val_transform,
                     root_cache_dir=self.root_cache_dir,
-                    allow_write=True,
                     n_known_val=self.n_known_val
                 )
 
@@ -210,7 +253,7 @@ class TopLevelApp:
                 val_feature_file,
                 self.box_transform,
                 post_cache_train_transform,
-                device=self.backbone.device,
+                self.device,
                 patience=self.retraining_patience,
                 min_epochs=self.retraining_min_epochs,
                 max_epochs=self.retraining_max_epochs,
@@ -230,6 +273,7 @@ class TopLevelApp:
                 val_feature_file,
                 self.box_transform,
                 post_cache_train_transform,
+                self.device,
                 feedback_batch_size=self.retraining_batch_size,
                 retraining_batch_size=self.retraining_batch_size,
                 val_interval=self.retraining_val_interval,
@@ -251,8 +295,11 @@ class TopLevelApp:
             self.n_species_cls,
             self.n_activity_cls,
             self.dynamic_label_mapper,
-            classifier_trainer
+            classifier_trainer,
+            self.device
         )
+
+        self.retrain_fn = retrain_fn
         
     def reset(self):
         self.post_red = False
@@ -330,7 +377,7 @@ class TopLevelApp:
                 scores,
                 box_counts,
                 self.und_manager.novelty_type_classifier,
-                self.backbone.device,
+                self.device,
                 hint_a=hint_a,
                 hint_b=hint_typeB_data
             )
@@ -440,7 +487,7 @@ class TopLevelApp:
         bbox_counts = torch.tensor(
             bbox_counts,
             dtype=torch.long,
-            device=self.batch_context.p_ni.device
+            device=self.device
         )
         query_indices = select_queries(
             feedback_max_ids,
@@ -650,8 +697,8 @@ class TopLevelApp:
             label_mapper=self.static_label_mapper,
             box_transform=self.box_transform,
             cache_dir=None,
-            write_cache=False,
-            image_filter=None
+            image_filter=None,
+            write_cache=False
         )
 
         N = len(novelty_dataset)
@@ -680,10 +727,10 @@ class TopLevelApp:
         self.backbone = Backbone(
             self.backbone_architecture,
             pretrained=False
-        ).to('cuda:0')
+        ).to(self.device)
         backbone_state_dict = torch.load(
             self.pretrained_backbone_path,
-            map_location='cuda:0'
+            map_location=self.device
         )
         backbone_state_dict = {
             re.sub('^module\.', '', k): v for\
@@ -698,7 +745,8 @@ class TopLevelApp:
             self.n_species_cls,
             self.n_activity_cls,
             self.n_known_species_cls,
-            self.n_known_activity_cls
+            self.n_known_activity_cls,
+            self.device
         )
 
         self.box_transform,\
@@ -724,7 +772,6 @@ class TopLevelApp:
                     post_cache_train_transform,
                     post_cache_val_transform,
                     root_cache_dir=self.root_cache_dir,
-                    allow_write=True,
                     n_known_val=self.n_known_val
                 )
 
@@ -744,7 +791,7 @@ class TopLevelApp:
                 val_feature_file,
                 self.box_transform,
                 post_cache_train_transform,
-                device=self.backbone.device,
+                self.device,
                 patience=self.retraining_patience,
                 min_epochs=self.retraining_min_epochs,
                 max_epochs=self.retraining_max_epochs,
@@ -816,13 +863,16 @@ class TopLevelApp:
                 self.und_manager.novelty_type_classifier,
                 self.und_manager.activation_statistical_model
             )
-            self.novelty_trainer.train_novelty_detection_module(
+            # TODO Log training by passing in desired log directory
+            self.retrain_fn(
+                self.novelty_trainer,
                 self.backbone,
                 self.und_manager.classifier, 
                 self.und_manager.confidence_calibrator,
                 self.und_manager.novelty_type_classifier,
                 self.und_manager.activation_statistical_model,
-                self.und_manager.scorer
+                self.und_manager.scorer,
+                None
             )
             self.backbone.eval()
             self.retraining_buffer = self.retraining_buffer.iloc[0:0]

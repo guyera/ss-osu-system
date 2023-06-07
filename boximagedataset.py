@@ -80,8 +80,8 @@ class BoxImageDataset(torch.utils.data.Dataset):
             image_std = None,
             box_transform=None,
             cache_dir=None,
-            write_cache=False,
-            image_filter='nonblank'):
+            image_filter='nonblank',
+            write_cache=False):
         super().__init__()
 
         filename = os.path.join(f'{os.path.splitext(csv_path)[0]}_novelty_features.pth')

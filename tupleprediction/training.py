@@ -671,7 +671,12 @@ class ClassifierTrainer(ABC):
             species_classifier,
             activity_classifier,
             root_log_dir,
-            feedback_dataset):
+            feedback_dataset,
+            device,
+            train_sampler_fn,
+            feedback_batch_sampler_fn,
+            allow_write,
+            allow_print):
         return NotImplemented
 
     @abstractmethod
@@ -686,7 +691,8 @@ class ClassifierTrainer(ABC):
             self,
             backbone,
             activation_statistical_model,
-            val_known_dataset):
+            val_known_dataset,
+            device):
         return NotImplemented
 
 
@@ -899,7 +905,6 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             val_feature_file,
             box_transform,
             post_cache_train_transform,
-            device,
             feedback_batch_size=32,
             patience=3,
             min_epochs=3,
@@ -914,7 +919,6 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         self._val_feature_file = val_feature_file
         self._box_transform = box_transform
         self._post_cache_train_transform = post_cache_train_transform
-        self._device = device
         self._feedback_batch_size = feedback_batch_size
         self._patience = patience
         self._min_epochs = min_epochs
@@ -922,15 +926,13 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         self._label_smoothing = label_smoothing
         self._feedback_loss_weight = feedback_loss_weight
         self._loss_fn = loss_fn
-        self._class_frequencies = class_frequencies.to(device)\
-            if class_frequencies is not None else None
+        self._class_frequencies = class_frequencies
         self._focal_loss = torch.hub.load(
             'adeelh/pytorch-multi-class-focal-loss',
             model='FocalLoss',
             alpha=torch.tensor([.75, .25]),
             gamma=2,
             reduction='none',
-            device=device,
             force_reload=False
         )
 
@@ -944,7 +946,8 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             feedback_activity_labels,
             species_classifier,
             activity_classifier,
-            optimizer):
+            optimizer,
+            device):
         # Set everything to train mode
         species_classifier.train()
         activity_classifier.train()
@@ -960,8 +963,9 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         species_weights = None
         activity_weights = None
         if self._class_frequencies is not None:
-            species_frequencies, activity_frequencies =\
-                self._class_frequencies
+            species_frequencies, activity_frequencies = self._class_frequencies
+            species_frequencies = species_frequencies.to(device)
+            activity_frequencies = activity_frequencies.to(device)
 
             species_proportions = species_frequencies /\
                 species_frequencies.sum()
@@ -1148,7 +1152,12 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             species_classifier,
             activity_classifier,
             root_log_dir,
-            feedback_dataset):
+            feedback_dataset,
+            device,
+            train_sampler_fn,
+            feedback_batch_sampler_fn,
+            allow_write,
+            allow_print):
         # Construct the optimizer
         optimizer = torch.optim.SGD(
             list(species_classifier.parameters())\
@@ -1186,12 +1195,12 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         train_box_features, train_species_labels, train_activity_labels =\
             torch.load(
                 self._train_feature_file,
-                map_location=self._device
+                map_location=device
             )
         val_box_features, val_species_labels, val_activity_labels =\
             torch.load(
                 self._val_feature_file,
-                map_location=self._device
+                map_location=device
             )
 
         if feedback_dataset is not None:
@@ -1219,11 +1228,11 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                         _ in feedback_loader:
                     # Move batch to device
                     batch_species_labels =\
-                        batch_species_labels.to(self._device)
+                        batch_species_labels.to(device)
                     batch_activity_labels =\
-                        batch_activity_labels.to(self._device)
+                        batch_activity_labels.to(device)
                     batch_box_images =\
-                        [b.to(self._device) for b in batch_box_images]
+                        [b.to(device) for b in batch_box_images]
 
                     # Get list of per-image box counts
                     batch_box_counts = [len(x) for x in batch_box_images]
@@ -1287,7 +1296,8 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 feedback_activity_labels,
                 species_classifier,
                 activity_classifier,
-                optimizer
+                optimizer,
+                device
             )
 
             if root_log_dir is not None:
@@ -1363,58 +1373,47 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             self,
             backbone,
             activation_statistical_model,
-            val_known_dataset):
+            val_known_dataset,
+            device):
         pass
 
 class EndToEndClassifierTrainer(ClassifierTrainer):
     def __init__(
             self,
             backbone,
-            device,
             lr,
             train_dataset,
             val_known_dataset,
             box_transform,
             post_cache_train_transform,
             retraining_batch_size=32,
-            train_sampler_fn=None,
-            feedback_batch_sampler_fn=None,
             root_checkpoint_dir=None,
             patience=3,
             min_epochs=3,
             max_epochs=30,
             label_smoothing=0.0,
+            feedback_loss_weight=0.5,
             scheduler_type=SchedulerType.none,
-            allow_write=False,
-            allow_print=True,
             loss_fn=LossFnEnum.cross_entropy,
             class_frequencies=None,
             memory_cache=True,
             load_best_after_training=True,
             val_reduce_fn=None):
         self._backbone = backbone
-        self._device = device
         self._lr = lr
         self._train_dataset = train_dataset
         self._val_known_dataset = val_known_dataset
         self._box_transform = box_transform
         self._post_cache_train_transform = post_cache_train_transform
         self._retraining_batch_size = retraining_batch_size
-        self._train_sampler_fn = train_sampler_fn
         self._root_checkpoint_dir = root_checkpoint_dir
         self._patience = patience
         self._min_epochs = min_epochs
         self._max_epochs = max_epochs
         self._label_smoothing = label_smoothing
+        self._feedback_loss_weight = feedback_loss_weight
         self._scheduler_type = scheduler_type
-        self._allow_write = allow_write
-        self._allow_print = allow_print
         self._loss_fn = loss_fn
-        if class_frequencies is not None:
-            species_frequencies, activity_frequencies = class_frequencies
-            species_frequencies = species_frequencies.to(device)
-            activity_frequencies = activity_frequencies.to(device)
-            class_frequencies = species_frequencies, activity_frequencies
         self._class_frequencies = class_frequencies
         self._focal_loss = torch.hub.load(
             'adeelh/pytorch-multi-class-focal-loss',
@@ -1438,10 +1437,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             box_images,
             feedback_species_labels,
             feedback_activity_labels,
-            feedback_box_images):
-        # Determine the device to use based on the backbone's fc weights
-        device = self._device
-
+            feedback_box_images,
+            device):
         # Move to device
         species_labels = species_labels.to(device)
         activity_labels = activity_labels.to(device)
@@ -1459,8 +1456,9 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         species_weights = None
         activity_weights = None
         if self._class_frequencies is not None:
-            species_frequencies, activity_frequencies =\
-                self._class_frequencies
+            species_frequencies, activity_frequencies = self._class_frequencies
+            species_frequencies = species_frequencies.to(device)
+            activity_frequencies = activity_frequencies.to(device)
 
             species_proportions = species_frequencies /\
                 species_frequencies.sum()
@@ -1598,7 +1596,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             feedback_loader,
             species_classifier,
             activity_classifier,
-            optimizer):
+            optimizer,
+            device):
         # Set everything to train mode
         self._backbone.train()
         species_classifier.train()
@@ -1641,7 +1640,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     box_images,
                     feedback_species_labels,
                     feedback_activity_labels,
-                    feedback_box_images
+                    feedback_box_images,
+                    device
                 )
 
             sum_loss += batch_loss
@@ -1665,9 +1665,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             activity_classifier,
             species_labels,
             activity_labels,
-            box_images):
-        device = self._device
-
+            box_images,
+            device):
         # Move to device
         species_labels = species_labels.to(device)
         activity_labels = activity_labels.to(device)
@@ -1699,7 +1698,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             self,
             data_loader,
             species_classifier,
-            activity_classifier):
+            activity_classifier,
+            device):
         with torch.no_grad():
             self._backbone.eval()
             species_classifier.eval()
@@ -1716,7 +1716,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                         activity_classifier,
                         species_labels,
                         activity_labels,
-                        box_images
+                        box_images,
+                        device
                     )
                 n_examples += box_images.shape[0]
                 n_species_correct += batch_n_species_correct
@@ -1739,13 +1740,18 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             species_classifier,
             activity_classifier,
             root_log_dir,
-            feedback_dataset):
+            feedback_dataset,
+            device,
+            train_sampler_fn,
+            feedback_batch_sampler_fn,
+            allow_write,
+            allow_print):
         if self._memory_cache:
             train_dataset = FlattenedBoxImageDataset(BoxImageMemoryDataset(self._train_dataset))
         else:
             train_dataset = FlattenedBoxImageDataset(self._train_dataset)
-        if self._train_sampler_fn is not None:
-            train_sampler = self._train_sampler_fn(train_dataset)
+        if train_sampler_fn is not None:
+            train_sampler = train_sampler_fn(train_dataset)
             train_loader = DataLoader(
                 train_dataset,
                 batch_size=self._retraining_batch_size,
@@ -1765,8 +1771,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 feedback_dataset.box_count(i) for\
                     i in range(len(feedback_dataset))
             ]
-            if self._feedback_batch_sampler_fn is not None:
-                feedback_batch_sampler = self._feedback_batch_sampler_fn(
+            if feedback_batch_sampler_fn is not None:
+                feedback_batch_sampler = feedback_batch_sampler_fn(
                     feedback_box_counts
                 )
             else:
@@ -1797,8 +1803,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         else:
             val_dataset = FlattenedBoxImageDataset(self._val_known_dataset)
 
-        if self._train_sampler_fn is not None:
-            val_sampler = self._train_sampler_fn(val_dataset)
+        if train_sampler_fn is not None:
+            val_sampler = train_sampler_fn(val_dataset)
             val_loader = DataLoader(
                 val_dataset,
                 batch_size=self._retraining_batch_size,
@@ -1859,7 +1865,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             if os.path.exists(training_checkpoint):
                 sd = torch.load(
                     training_checkpoint,
-                    map_location=self._device
+                    map_location=device
                 )
                 self._backbone.load_state_dict(sd['backbone'])
                 species_classifier.load_state_dict(sd['species_classifier'])
@@ -1878,7 +1884,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             if os.path.exists(validation_checkpoint):
                 sd = torch.load(
                     validation_checkpoint,
-                    map_location=self._device
+                    map_location=device
                 )
                 epochs_since_improvement = sd['epochs_since_improvement']
                 best_accuracy = sd['accuracy']
@@ -1910,7 +1916,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 f'label_smoothing={self._label_smoothing:.2f}'
             )
 
-        if root_log_dir is not None and self._allow_write:
+        if root_log_dir is not None and allow_write:
             log_dir = get_log_dir()
             training_log = os.path.join(log_dir, 'training.pkl')
             validation_log =\
@@ -1927,7 +1933,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     validation_accuracy_curve = pkl.load(f)
 
         # Train
-        if self._allow_print:
+        if allow_print:
             progress = tqdm(
                 range(start_epoch, self._max_epochs),
                 desc=gen_tqdm_description(
@@ -1959,10 +1965,11 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 feedback_loader,
                 species_classifier,
                 activity_classifier,
-                optimizer
+                optimizer,
+                device
             )
 
-            if self._root_checkpoint_dir is not None and self._allow_write:
+            if self._root_checkpoint_dir is not None and allow_write:
                 checkpoint_dir = get_checkpoint_dir()
                 training_checkpoint =\
                     os.path.join(checkpoint_dir, 'training.pth')
@@ -1980,7 +1987,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     sd['scheduler'] = scheduler.state_dict()
                 torch.save(sd, training_checkpoint)
 
-            if root_log_dir is not None and self._allow_write:
+            if root_log_dir is not None and allow_write:
                 training_loss_curve[epoch] = mean_train_loss
                 training_accuracy_curve[epoch] = mean_train_accuracy
                 log_dir = get_log_dir()
@@ -1998,7 +2005,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 mean_val_accuracy = self._val_epoch(
                     val_loader,
                     species_classifier,
-                    activity_classifier
+                    activity_classifier,
+                    device
                 )
 
                 if best_accuracy is None or mean_val_accuracy > best_accuracy:
@@ -2013,7 +2021,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 else:
                     epochs_since_improvement += 1
 
-                if self._root_checkpoint_dir is not None and self._allow_write:
+                if self._root_checkpoint_dir is not None and allow_write:
                     checkpoint_dir = get_checkpoint_dir()
                     validation_checkpoint =\
                         os.path.join(checkpoint_dir, 'validation.pth')
@@ -2031,7 +2039,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     sd['mean_val_accuracy'] = mean_val_accuracy
                     torch.save(sd, validation_checkpoint)
 
-                if root_log_dir is not None and self._allow_write:
+                if root_log_dir is not None and allow_write:
                     validation_accuracy_curve[epoch] = mean_val_accuracy
                     log_dir = get_log_dir()
                     os.makedirs(log_dir, exist_ok=True)
@@ -2040,7 +2048,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     with open(validation_log, 'wb') as f:
                         pkl.dump(validation_accuracy_curve, f)
 
-            if self._allow_print:
+            if allow_print:
                 progress.set_description(
                     gen_tqdm_description(
                         'Training backbone and classifiers...',
@@ -2050,7 +2058,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     )
                 )
 
-        if self._allow_print:
+        if allow_print:
             progress.close()
 
         # Load the best-accuracy state dict if configured to do so
@@ -2077,7 +2085,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             self,
             backbone,
             activation_statistical_model,
-            val_known_dataset):
+            val_known_dataset,
+            device):
         activation_stats_training_loader = DataLoader(
             val_known_dataset,
             batch_size = 32,
@@ -2086,8 +2095,6 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             num_workers=2
         )
         backbone.eval()
-
-        device = backbone.device
 
         all_features = []
         with torch.no_grad():
@@ -2122,7 +2129,6 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             label_smoothing=0.0,
             feedback_loss_weight=0.5,
             scheduler_type=SchedulerType.none,
-            allow_write=False,
             loss_fn=LossFnEnum.cross_entropy,
             class_frequencies=None):
         self._backbone = side_tuning_backbone
@@ -2142,18 +2148,14 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         self._label_smoothing = label_smoothing
         self._feedback_loss_weight = feedback_loss_weight
         self._scheduler_type = scheduler_type
-        self._allow_write = allow_write
         self._loss_fn = loss_fn
-        self._class_frequencies =\
-            class_frequencies.to(side_tuning_backbone.device)\
-                if class_frequencies is not None else None
+        self._class_frequencies = class_frequencies
         self._focal_loss = torch.hub.load(
             'adeelh/pytorch-multi-class-focal-loss',
             model='FocalLoss',
             alpha=torch.tensor([.75, .25]),
             gamma=2,
             reduction='none',
-            device=side_tuning_backbone.device,
             force_reload=False
         )
 
@@ -2169,10 +2171,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             feedback_species_labels,
             feedback_activity_labels,
             feedback_box_images,
-            feedback_box_backbone_features):
-        # Determine the device to use based on the backbone's fc weights
-        device = self._backbone.device
-
+            feedback_box_backbone_features,
+            device):
         # Move to device
         train_species_labels = train_species_labels.to(device)
         train_activity_labels = train_activity_labels.to(device)
@@ -2235,8 +2235,9 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         species_weights = None
         activity_weights = None
         if self._class_frequencies is not None:
-            species_frequencies, activity_frequencies =\
-                self._class_frequencies
+            species_frequencies, activity_frequencies = self._class_frequencies
+            species_frequencies = species_frequencies.to(device)
+            activity_frequencies = activity_frequencies.to(device)
 
             species_proportions = species_frequencies /\
                 species_frequencies.sum()
@@ -2332,7 +2333,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             feedback_feature_loader,
             species_classifier,
             activity_classifier,
-            optimizer):
+            optimizer,
+            device):
         # Set everything to train mode
         self._backbone.train()
         species_classifier.train()
@@ -2372,7 +2374,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                     feedback_species_labels,
                     feedback_activity_labels,
                     feedback_box_images,
-                    feedback_box_backbone_features
+                    feedback_box_backbone_features,
+                    device
                 )
 
             sum_loss += batch_loss
@@ -2397,9 +2400,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             species_labels,
             activity_labels,
             box_images,
-            box_backbone_features):
-        device = self._backbone.device
-
+            box_backbone_features,
+            device):
         # Move to device
         species_labels = species_labels.to(device)
         activity_labels = activity_labels.to(device)
@@ -2438,7 +2440,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             self,
             data_loader,
             species_classifier,
-            activity_classifier):
+            activity_classifier,
+            device):
         with torch.no_grad():
             self._backbone.eval()
             species_classifier.eval()
@@ -2457,7 +2460,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                         species_labels,
                         activity_labels,
                         box_images,
-                        box_backbone_features
+                        box_backbone_features,
+                        device
                     )
                 n_examples += box_images.shape[0]
                 n_species_correct += batch_n_species_correct
@@ -2476,7 +2480,12 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             species_classifier,
             activity_classifier,
             root_log_dir,
-            feedback_dataset):
+            feedback_dataset,
+            device,
+            train_sampler_fn,
+            feedback_batch_sampler_fn,
+            allow_write,
+            allow_print):
         # Load training and validation backbone features from feature
         # files
         train_box_features, train_species_labels, train_activity_labels =\
@@ -2514,7 +2523,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                 for _, _, _, batch_box_images, _ in feedback_loader:
                     # Move batch to device
                     batch_box_images =\
-                        [b.to(self._backbone.device) for b in batch_box_images]
+                        [b.to(device) for b in batch_box_images]
 
                     # Get list of per-image box counts
                     batch_box_counts = [len(x) for x in batch_box_images]
@@ -2629,7 +2638,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                 f'label_smoothing={self._label_smoothing:.2f}'
             )
 
-        if root_log_dir is not None and self._allow_write:
+        if root_log_dir is not None and allow_write:
             log_dir = get_log_dir()
             training_log = os.path.join(log_dir, 'training.pkl')
             validation_log =\
@@ -2670,10 +2679,11 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                 feedback_feature_loader,
                 species_classifier,
                 activity_classifier,
-                optimizer
+                optimizer,
+                device
             )
 
-            if root_log_dir is not None and self._allow_write:
+            if root_log_dir is not None and allow_write:
                 training_loss_curve[epoch] = mean_train_loss
                 training_accuracy_curve[epoch] = mean_train_accuracy
                 log_dir = get_log_dir()
@@ -2692,7 +2702,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                 mean_val_accuracy = self._val_epoch(
                     val_loader,
                     species_classifier,
-                    activity_classifier
+                    activity_classifier,
+                    device
                 )
 
                 if best_accuracy is None or mean_val_accuracy > best_accuracy:
@@ -2707,7 +2718,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                 else:
                     epochs_since_improvement += 1
 
-                if root_log_dir is not None and self._allow_write:
+                if root_log_dir is not None and allow_write:
                     validation_accuracy_curve[epoch] = mean_val_accuracy
                     log_dir = get_log_dir()
                     os.makedirs(log_dir, exist_ok=True)
@@ -2756,7 +2767,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             self,
             backbone,
             activation_statistical_model,
-            val_known_dataset):
+            val_known_dataset,
+            device):
         pass
 
 def get_transforms(augmentation):
@@ -2781,7 +2793,6 @@ def get_datasets(
         post_cache_train_transform,
         post_cache_val_transform,
         root_cache_dir=None,
-        allow_write=False,
         n_known_val=4068):
     if root_cache_dir is not None:
         train_cache_dir = os.path.join(root_cache_dir, 'train')
@@ -2800,7 +2811,7 @@ def get_datasets(
         label_mapper=dynamic_label_mapper,
         box_transform=box_transform,
         cache_dir=train_cache_dir,
-        write_cache=allow_write
+        write_cache=True
     )
     raw_train_dataset.commit_cache()
 
@@ -2833,7 +2844,7 @@ def get_datasets(
         label_mapper=static_label_mapper,
         box_transform=box_transform,
         cache_dir=val_cache_dir,
-        write_cache=allow_write
+        write_cache=True
     )
     raw_val_dataset.commit_cache()
 
@@ -2964,7 +2975,7 @@ class TuplePredictorTrainer:
             n_activity_cls,
             dynamic_label_mapper,
             classifier_trainer,
-            allow_print=True):
+            device):
         self._train_dataset = train_dataset
         self._val_known_dataset = val_known_dataset
         self._val_dataset = val_dataset
@@ -2974,9 +2985,13 @@ class TuplePredictorTrainer:
         self._n_activity_cls = n_activity_cls
         self._dynamic_label_mapper = dynamic_label_mapper
         self._classifier_trainer = classifier_trainer
+        self._device = device
         self._feedback_data = []
         self._n_feedback_examples = 0
-        self._allow_print = allow_print
+
+    def set_device(self, device):
+        self._device = device
+        self.classifier_trainer.set_device(device)
 
     def add_feedback_data(self, data_root, csv_path):
         # Construct feedback dataset
@@ -3035,7 +3050,8 @@ class TuplePredictorTrainer:
             species_classifier,
             activity_classifier,
             species_calibrator,
-            activity_calibrator):
+            activity_calibrator,
+            allow_print):
         cal_loader = DataLoader(
             self._val_known_dataset,
             batch_size=64,
@@ -3051,9 +3067,7 @@ class TuplePredictorTrainer:
         species_calibrator.train()
         activity_calibrator.train()
 
-        device = backbone.device
-
-        if self._allow_print:
+        if allow_print:
             print('Calibrating temperature scalers...')
         start = time.time()
         # Extract logits to fit confidence calibration temperatures
@@ -3070,20 +3084,20 @@ class TuplePredictorTrainer:
                 flattened_box_images = torch.cat(box_images, dim=0)
 
                 # Move to device
-                batch_species_labels = batch_species_labels.to(device)
-                batch_activity_labels = batch_activity_labels.to(device)
-                flattened_box_images = flattened_box_images.to(device)
+                batch_species_labels = batch_species_labels.to(self._device)
+                batch_activity_labels = batch_activity_labels.to(self._device)
+                flattened_box_images = flattened_box_images.to(self._device)
 
                 # Construct per-box labels.
                 one_hot_species_labels = torch.argmax(batch_species_labels, dim=1)
                 flattened_species_labels = torch.cat([
-                    torch.full((box_count,), species_label, device=device)\
+                    torch.full((box_count,), species_label, device=self._device)\
                         for species_label, box_count in\
                             zip(one_hot_species_labels, box_counts)
                 ])
                 one_hot_activity_labels = torch.argmax(batch_activity_labels, dim=1)
                 flattened_activity_labels = torch.cat([
-                    torch.full((box_count,), activity_label, device=device)\
+                    torch.full((box_count,), activity_label, device=self._device)\
                         for activity_label, box_count in\
                             zip(one_hot_activity_labels, box_counts)
                 ])
@@ -3131,7 +3145,7 @@ class TuplePredictorTrainer:
 
         end = time.time()
         t = end - start
-        if self._allow_print:
+        if allow_print:
             print(f'Took {t} seconds')
 
     def fit_logistic_regression(
@@ -3139,7 +3153,8 @@ class TuplePredictorTrainer:
             logistic_regression,
             scores,
             labels,
-            epochs=3000):
+            epochs,
+            allow_print):
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.SGD(
             logistic_regression.parameters(),
@@ -3149,7 +3164,7 @@ class TuplePredictorTrainer:
         logistic_regression.fit_standardization_statistics(scores)
 
         loss_item = None
-        if self._allow_print:
+        if allow_print:
             progress = tqdm(
                 range(epochs),
                 desc=gen_tqdm_description(
@@ -3167,14 +3182,14 @@ class TuplePredictorTrainer:
             optimizer.step()
 
             loss_item = loss.detach().cpu().item()
-            if self._allow_print:
+            if allow_print:
                 progress.set_description(
                     gen_tqdm_description(
                         'Fitting logistic regression...',
                         loss=loss_item
                     )
                 )
-        if self._allow_print:
+        if allow_print:
             progress.close()
 
     def train_novelty_type_logistic_regressions(
@@ -3184,15 +3199,14 @@ class TuplePredictorTrainer:
             activity_classifier,
             novelty_type_classifier,
             activation_statistical_model,
-            scorer):
+            scorer,
+            allow_print):
         # Set the backbone and classifiers to eval(), but set the logistic
         # regressions to train()
         backbone.eval()
         species_classifier.eval()
         activity_classifier.eval()
         novelty_type_classifier.train()
-
-        device = backbone.device
 
         val_loader = DataLoader(
             self._val_dataset,
@@ -3202,7 +3216,7 @@ class TuplePredictorTrainer:
             num_workers=2
         )
 
-        if self._allow_print:
+        if allow_print:
             print('Training novelty type classifier...')
         start = time.time()
         with torch.no_grad():
@@ -3216,9 +3230,9 @@ class TuplePredictorTrainer:
                 flattened_box_images = torch.cat(box_images, dim=0)
 
                 # Move to device
-                flattened_box_images = flattened_box_images.to(device)
-                whole_images = whole_images.to(device)
-                batch_labels = batch_labels.to(device)
+                flattened_box_images = flattened_box_images.to(self._device)
+                whole_images = whole_images.to(self._device)
+                batch_labels = batch_labels.to(self._device)
 
                 # Extract box features
                 box_features = backbone(flattened_box_images)
@@ -3253,11 +3267,12 @@ class TuplePredictorTrainer:
             novelty_type_classifier,
             scores,
             labels,
-            epochs=3000
+            3000,
+            allow_print
         )
         end = time.time()
         t = end - start
-        if self._allow_print:
+        if allow_print:
             print(f'Took {t} seconds')
 
     def train_novelty_detection_module(
@@ -3268,6 +3283,11 @@ class TuplePredictorTrainer:
             novelty_type_classifier,
             activation_statistical_model,
             scorer,
+            device,
+            train_sampler_fn,
+            feedback_batch_sampler_fn,
+            allow_write,
+            allow_print,
             root_log_dir=None):
         species_classifier = classifier.species_classifier
         activity_classifier = classifier.activity_classifier
@@ -3282,13 +3302,19 @@ class TuplePredictorTrainer:
             species_classifier,
             activity_classifier,
             root_log_dir,
-            feedback_dataset
+            feedback_dataset,
+            device,
+            train_sampler_fn,
+            feedback_batch_sampler_fn,
+            allow_write,
+            allow_print
         )
 
         self._classifier_trainer.fit_activation_statistics(
             backbone,
             activation_statistical_model,
-            self._val_known_dataset
+            self._val_known_dataset,
+            device
         )
 
         # Retrain the classifier's temperature scaling calibrators
@@ -3297,7 +3323,8 @@ class TuplePredictorTrainer:
             species_classifier,
             activity_classifier,
             species_calibrator,
-            activity_calibrator
+            activity_calibrator,
+            allow_print
         )
 
         # Retrain the logistic regressions
@@ -3307,5 +3334,6 @@ class TuplePredictorTrainer:
             activity_classifier,
             novelty_type_classifier,
             activation_statistical_model,
-            scorer
+            scorer,
+            allow_print
         )

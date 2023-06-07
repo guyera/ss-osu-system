@@ -96,3 +96,7 @@ class ClassifierV2:
             self.activity_classifier,
             device_ids=device_ids
         )
+
+    def un_ddp(self):
+        self.species_classifier = self.species_classifier.module
+        self.activity_classifier = self.species_classifier.module

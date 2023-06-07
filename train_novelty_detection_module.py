@@ -198,13 +198,6 @@ world_size = dist.get_world_size()
 device_id = local_rank
 device = f'cuda:{device_id}'
 
-def train_sampler_fn(train_dataset):
-    return DistributedSampler(
-        train_dataset,
-        num_replicas=world_size,
-        rank=rank
-    )
-
 architecture = Backbone.Architecture.swin_t
 backbone = Backbone(architecture, pretrained=False).to(device)
 backbone = DDP(backbone, device_ids=[device_id])
@@ -265,13 +258,19 @@ train_dataset, val_known_dataset, val_dataset =\
         post_cache_train_transform,
         post_cache_val_transform,
         root_cache_dir=args.root_cache_dir,
-        allow_write=(rank==0),
         n_known_val=args.n_known_val
     )
 
 class_frequencies = None
 if args.class_frequency_file is not None:
     class_frequencies = torch.load(args.class_frequency_file)
+
+def train_sampler_fn(train_dataset):
+    return DistributedSampler(
+        train_dataset,
+        num_replicas=world_size,
+        rank=rank
+    )
 
 def val_reduce_fn(count_tensor):
     return dist.all_reduce(count_tensor, op=dist.ReduceOp.SUM)
@@ -294,16 +293,13 @@ if args.classifier_trainer == ClassifierTrainer.end_to_end:
         box_transform,
         post_cache_train_transform,
         retraining_batch_size=args.batch_size,
-        train_sampler_fn=train_sampler_fn,
-        feedback_batch_sampler_fn=feedback_batch_sampler_fn,
         root_checkpoint_dir=args.root_checkpoint_dir,
         patience=None,
         min_epochs=0,
         max_epochs=args.max_epochs,
         label_smoothing=args.label_smoothing,
+        feedback_loss_weight=0.5,
         scheduler_type=args.scheduler_type,
-        allow_write=(rank==0),
-        allow_print=(local_rank==0),
         loss_fn=args.loss_fn,
         class_frequencies=class_frequencies,
         memory_cache=args.memory_cache,
@@ -326,11 +322,12 @@ else:
         val_feature_file,
         box_transform,
         post_cache_train_transform,
-        device=backbone.device,
+        feedback_batch_size=32,
         patience=None,
         min_epochs=0,
         max_epochs=args.max_epochs,
         label_smoothing=args.label_smoothing,
+        feedback_loss_weight=0.5,
         loss_fn=args.loss_fn,
         class_frequencies=class_frequencies
     )
@@ -344,7 +341,8 @@ trainer = TuplePredictorTrainer(
     n_species_cls,
     n_activity_cls,
     dynamic_label_mapper,
-    classifier_trainer
+    classifier_trainer,
+    device
 )
 
 start_time = time.time()
@@ -359,7 +357,12 @@ classifier_trainer.train(
     species_classifier,
     activity_classifier,
     args.root_log_dir,
-    None
+    None,
+    device,
+    train_sampler_fn,
+    feedback_batch_sampler_fn,
+    rank==0,
+    local_rank==0
 )
 
 if rank == 0:
@@ -392,7 +395,8 @@ if rank == 0:
         species_classifier,
         activity_classifier,
         species_calibrator,
-        activity_calibrator
+        activity_calibrator,
+        True
     )
 
     # Retrain the logistic regressions
@@ -402,7 +406,8 @@ if rank == 0:
         activity_classifier,
         novelty_type_classifier,
         activation_statistical_model,
-        scorer
+        scorer,
+        True
     )
 
     end_time = time.time()

@@ -1,3 +1,6 @@
+import sys
+import os
+
 import torch
 from session.bbn_session import BBNSession
 from session.osu_interface import OSUInterface
@@ -52,8 +55,103 @@ if __name__ == "__main__":
     p.add_argument('--retraining-loss-fn', type=LossFnEnum, choices=list(LossFnEnum), default=LossFnEnum.cross_entropy)
     p.add_argument('--class-frequency-file', type=str, default=None)
     p.add_argument('--gan_augment', default= False)
+    p.add_argument('--distributed', action='store_true')
+    p.add_argument('--device', type=str, default='cuda:0')
 
     args = p.parse_args()
+
+    if args.distributed:
+        dist.init_process_group('nccl')
+        rank = dist.get_rank()
+        local_rank = int(os.environ['LOCAL_RANK'])
+        world_size = dist.get_world_size()
+        device_id = local_rank
+        device = f'cuda:{device_id}'
+        torch.cuda.set_device(device)
+
+        def train_sampler_fn(train_dataset):
+            return DistributedSampler(
+                train_dataset,
+                num_replicas=world_size,
+                rank=rank
+            )
+
+        def val_reduce_fn(count_tensor):
+            return dist.all_reduce(count_tensor, op=dist.ReduceOp.SUM)
+
+        def feedback_batch_sampler_fn(box_counts):
+            return DistributedRandomBoxImageBatchSampler(
+                box_counts,
+                args.retraining_batch_size,
+                world_size,
+                rank
+            )
+
+        allow_write = rank == 0
+        allow_print = local_rank == 0
+
+        if rank != 0:
+            terminate = False
+            # Prepare the retraining function that will be called with received
+            # (broadcasted-by-rank-0) arguments
+            retrain_fn = toplevel.gen_retrain_fn(
+                device,
+                train_sampler_fn,
+                feedback_batch_sampler_fn,
+                allow_write,
+                allow_print
+            )
+            # Run the retrain function in a loop until told to terminate
+            # (signified by a skip of the function call, in-turn signified by
+            # broadcasted Nonetype objects for the function's arguments)
+            while not terminate:
+                # Run the specified function
+                _, run = distutils.receive_call(
+                    src=0,
+                    device=device
+                )
+
+                # If the retraining function was run successfully, then keep
+                # looping. Otherwise, terminate
+                terminate = not run
+
+            # Terminate the process (do not proceed to init the system---that
+            # is reserved for the rank 0 process)
+            sys.exit(0)
+        else:
+            # Generate the argument-broadcasting master retraining function
+            # to be used by the system in this (rank 0) master process. Each
+            # time this function is called with the retraining arguments, those
+            # arguments will be broadcasted to the slave processes so that they
+            # can run their respective retraining functions. Each process's
+            # retraining function is pre-conditioned on the process-specific
+            # retraining arguments (device, samplers, allow_write, allow_print)
+            retrain_fn = distutils.gen_broadcast_call(
+                toplevel.gen_retrain_fn(
+                    device,
+                    train_sampler_fn,
+                    feedback_batch_sampler_fn,
+                    allow_write,
+                    allow_print
+                ),
+                src=0,
+                device=device
+            )
+    else:
+        device = args.device
+        train_sampler_fn = None
+        val_reduce_fn = None
+        feedback_batch_sampler_fn = None
+        allow_write = True
+        allow_print = True
+
+        retrain_fn = toplevel.gen_retrain_fn(
+            device,
+            train_sampler_fn,
+            feedback_batch_sampler_fn,
+            allow_write,
+            allow_print
+        )
 
     torch.backends.cudnn.benchmark = False
 
@@ -97,14 +195,21 @@ if __name__ == "__main__":
         feedback_loss_weight=args.feedback_loss_weight,
         retraining_loss_fn=args.retraining_loss_fn,
         class_frequency_file=args.class_frequency_file,
-        gan_augment= args.gan_augment
+        gan_augment=args.gan_augment,
+        device=device,
+        retrain_fn=retrain_fn
     )
-    
+
     test_session = BBNSession('OND', args.domain, args.class_count, 
         args.detection_feedback,
         args.given_detection, args.data_root,
         args.sys_results_dir, args.url, args.batch_size,
         args.version, detection_threshold,
         None, osu_int, args.hintA, args.hintB)
-        
+
     test_session.run(args.detector_seed, args.test_ids)
+
+    # If distributed, tell the slave processes to skip their next call (which
+    # signifies that they should terminate)
+    if args.distributed:
+        distutils.broadcast_terminate(src=0, device=device)
