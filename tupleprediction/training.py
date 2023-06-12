@@ -1212,7 +1212,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             feedback_loader = DataLoader(
                 feedback_dataset,
                 num_workers=2,
-                batch_sampler=feedback_batch_sampler
+                batch_sampler=feedback_batch_sampler,
                 collate_fn=gen_custom_collate()
             )
             # Precompute feedback backbone features
@@ -1785,7 +1785,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             feedback_loader = DataLoader(
                 feedback_dataset,
                 num_workers=2,
-                batch_sampler=feedback_batch_sampler
+                batch_sampler=feedback_batch_sampler,
                 collate_fn=gen_custom_collate()
             )
         else:
@@ -2513,7 +2513,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             feedback_loader = DataLoader(
                 feedback_dataset,
                 num_workers=2,
-                batch_sampler=feedback_batch_sampler
+                batch_sampler=feedback_batch_sampler,
                 collate_fn=gen_custom_collate()
             )
             # Precompute feedback backbone features
@@ -2556,7 +2556,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                     feedback_box_features
                 ),
                 num_workers=2,
-                batch_sampler=feedback_feature_batch_sampler
+                batch_sampler=feedback_feature_batch_sampler,
                 collate_fn=gen_custom_collate()
             )
         else:
