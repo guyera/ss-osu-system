@@ -100,7 +100,7 @@ class ResizePad(NamedTransform):
             new_size = [self.size, new_min_side_length]
         
         # Resize x to the new size
-        resized_x = resize(x, new_size)
+        resized_x = resize(x, new_size, antialias=True)
         
         # X needs to be padded to square. Determine the amount of padding
         # necessary, i.e. the difference between the max and min side lengths.

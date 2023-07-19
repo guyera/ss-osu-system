@@ -1208,7 +1208,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 feedback_dataset.box_count(i) for\
                     i in range(len(feedback_dataset))
             ]
-            feedback_batch_sampler = DistributedRandomBoxImageBatchSampler(feedback_box_counts, self._retraining_batch_size, 1, 0)
+            feedback_batch_sampler = DistributedRandomBoxImageBatchSampler(feedback_box_counts, self._feedback_batch_size, 1, 0)
             feedback_loader = DataLoader(
                 feedback_dataset,
                 num_workers=2,
@@ -2974,8 +2974,7 @@ class TuplePredictorTrainer:
             n_species_cls,
             n_activity_cls,
             dynamic_label_mapper,
-            classifier_trainer,
-            device):
+            classifier_trainer):
         self._train_dataset = train_dataset
         self._val_known_dataset = val_known_dataset
         self._val_dataset = val_dataset
@@ -2985,13 +2984,8 @@ class TuplePredictorTrainer:
         self._n_activity_cls = n_activity_cls
         self._dynamic_label_mapper = dynamic_label_mapper
         self._classifier_trainer = classifier_trainer
-        self._device = device
         self._feedback_data = []
         self._n_feedback_examples = 0
-
-    def set_device(self, device):
-        self._device = device
-        self.classifier_trainer.set_device(device)
 
     def add_feedback_data(self, data_root, csv_path):
         # Construct feedback dataset
@@ -3046,6 +3040,7 @@ class TuplePredictorTrainer:
 
     def calibrate_temperature_scalers(
             self,
+            device,
             backbone,
             species_classifier,
             activity_classifier,
@@ -3084,20 +3079,20 @@ class TuplePredictorTrainer:
                 flattened_box_images = torch.cat(box_images, dim=0)
 
                 # Move to device
-                batch_species_labels = batch_species_labels.to(self._device)
-                batch_activity_labels = batch_activity_labels.to(self._device)
-                flattened_box_images = flattened_box_images.to(self._device)
+                batch_species_labels = batch_species_labels.to(device)
+                batch_activity_labels = batch_activity_labels.to(device)
+                flattened_box_images = flattened_box_images.to(device)
 
                 # Construct per-box labels.
                 one_hot_species_labels = torch.argmax(batch_species_labels, dim=1)
                 flattened_species_labels = torch.cat([
-                    torch.full((box_count,), species_label, device=self._device)\
+                    torch.full((box_count,), species_label, device=device)\
                         for species_label, box_count in\
                             zip(one_hot_species_labels, box_counts)
                 ])
                 one_hot_activity_labels = torch.argmax(batch_activity_labels, dim=1)
                 flattened_activity_labels = torch.cat([
-                    torch.full((box_count,), activity_label, device=self._device)\
+                    torch.full((box_count,), activity_label, device=device)\
                         for activity_label, box_count in\
                             zip(one_hot_activity_labels, box_counts)
                 ])
@@ -3194,6 +3189,7 @@ class TuplePredictorTrainer:
 
     def train_novelty_type_logistic_regressions(
             self,
+            device,
             backbone,
             species_classifier,
             activity_classifier,
@@ -3230,9 +3226,9 @@ class TuplePredictorTrainer:
                 flattened_box_images = torch.cat(box_images, dim=0)
 
                 # Move to device
-                flattened_box_images = flattened_box_images.to(self._device)
-                whole_images = whole_images.to(self._device)
-                batch_labels = batch_labels.to(self._device)
+                flattened_box_images = flattened_box_images.to(device)
+                whole_images = whole_images.to(device)
+                batch_labels = batch_labels.to(device)
 
                 # Extract box features
                 box_features = backbone(flattened_box_images)

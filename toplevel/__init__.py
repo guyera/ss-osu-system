@@ -253,7 +253,7 @@ class TopLevelApp:
                 val_feature_file,
                 self.box_transform,
                 post_cache_train_transform,
-                self.device,
+                feedback_batch_size=self.retraining_batch_size,
                 patience=self.retraining_patience,
                 min_epochs=self.retraining_min_epochs,
                 max_epochs=self.retraining_max_epochs,
@@ -273,7 +273,6 @@ class TopLevelApp:
                 val_feature_file,
                 self.box_transform,
                 post_cache_train_transform,
-                self.device,
                 feedback_batch_size=self.retraining_batch_size,
                 retraining_batch_size=self.retraining_batch_size,
                 val_interval=self.retraining_val_interval,
@@ -295,8 +294,7 @@ class TopLevelApp:
             self.n_species_cls,
             self.n_activity_cls,
             self.dynamic_label_mapper,
-            classifier_trainer,
-            self.device
+            classifier_trainer
         )
 
         self.retrain_fn = retrain_fn
@@ -791,7 +789,7 @@ class TopLevelApp:
                 val_feature_file,
                 self.box_transform,
                 post_cache_train_transform,
-                self.device,
+                feedback_batch_size=self.retraining_batch_size,
                 patience=self.retraining_patience,
                 min_epochs=self.retraining_min_epochs,
                 max_epochs=self.retraining_max_epochs,

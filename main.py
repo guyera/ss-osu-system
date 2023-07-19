@@ -2,14 +2,17 @@ import sys
 import os
 
 import torch
+import torch.distributed as dist
+from torch.utils.data.distributed import DistributedSampler
 from session.bbn_session import BBNSession
 from session.osu_interface import OSUInterface
 from argparse import ArgumentParser
 from pathlib import Path
 
 from backbone import Backbone
-from tupleprediction.training import Augmentation, SchedulerType, LossFnEnum
-from toplevel import TopLevelApp
+from tupleprediction.training import Augmentation, SchedulerType, LossFnEnum, DistributedRandomBoxImageBatchSampler
+from toplevel import TopLevelApp, gen_retrain_fn
+import distributedutils
 
 if __name__ == "__main__":
     p = ArgumentParser()
@@ -94,7 +97,7 @@ if __name__ == "__main__":
             terminate = False
             # Prepare the retraining function that will be called with received
             # (broadcasted-by-rank-0) arguments
-            retrain_fn = toplevel.gen_retrain_fn(
+            retrain_fn = gen_retrain_fn(
                 device,
                 train_sampler_fn,
                 feedback_batch_sampler_fn,
@@ -106,7 +109,8 @@ if __name__ == "__main__":
             # broadcasted Nonetype objects for the function's arguments)
             while not terminate:
                 # Run the specified function
-                _, run = distutils.receive_call(
+                _, run = distributedutils.receive_call(
+                    retrain_fn,
                     src=0,
                     device=device
                 )
@@ -126,8 +130,8 @@ if __name__ == "__main__":
             # can run their respective retraining functions. Each process's
             # retraining function is pre-conditioned on the process-specific
             # retraining arguments (device, samplers, allow_write, allow_print)
-            retrain_fn = distutils.gen_broadcast_call(
-                toplevel.gen_retrain_fn(
+            retrain_fn = distributedutils.gen_broadcast_call(
+                gen_retrain_fn(
                     device,
                     train_sampler_fn,
                     feedback_batch_sampler_fn,
@@ -145,7 +149,7 @@ if __name__ == "__main__":
         allow_write = True
         allow_print = True
 
-        retrain_fn = toplevel.gen_retrain_fn(
+        retrain_fn = gen_retrain_fn(
             device,
             train_sampler_fn,
             feedback_batch_sampler_fn,
@@ -212,4 +216,4 @@ if __name__ == "__main__":
     # If distributed, tell the slave processes to skip their next call (which
     # signifies that they should terminate)
     if args.distributed:
-        distutils.broadcast_terminate(src=0, device=device)
+        distributedutils.broadcast_terminate(src=0, device=device)
