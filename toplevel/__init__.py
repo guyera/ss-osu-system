@@ -88,7 +88,7 @@ class TopLevelApp:
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_size, trial_batch_size, disable_retraining,
             root_cache_dir, n_known_val, classifier_trainer, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_val_interval, retraining_patience, retraining_min_epochs, retraining_max_epochs,
-            retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, class_frequency_file, gan_augment, device, retrain_fn):
+            retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, class_frequency_file, gan_augment, device, retrain_fn, val_reduce_fn):
 
         pretrained_backbone_path = os.path.join(
             pretrained_models_dir,
@@ -246,6 +246,7 @@ class TopLevelApp:
             self.precomputed_feature_dir,
             'validation.pth'
         )
+        self._val_reduce_fn = val_reduce_fn
         if self.classifier_trainer_enum == self.ClassifierTrainer.logit_layer:
             classifier_trainer = LogitLayerClassifierTrainer(
                 self.backbone,
@@ -284,6 +285,25 @@ class TopLevelApp:
                 feedback_loss_weight=self.feedback_loss_weight,
                 loss_fn=self.retraining_loss_fn,
                 class_frequencies=self.class_frequencies
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.end_to_end:
+            classifier_trainer = EndToEndClassifierTrainer(
+                self.backbone,
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                self.box_transform,
+                post_cache_train_transform,
+                retraining_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                memory_cache=False,
+                val_reduce_fn=self._val_reduce_fn
             )
 
         self.novelty_trainer = TuplePredictorTrainer(
@@ -820,6 +840,25 @@ class TopLevelApp:
                 feedback_loss_weight=self.feedback_loss_weight,
                 loss_fn=self.retraining_loss_fn,
                 class_frequencies=self.class_frequencies
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.end_to_end:
+            classifier_trainer = EndToEndClassifierTrainer(
+                self.backbone,
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                self.box_transform,
+                post_cache_train_transform,
+                retraining_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                memory_cache=False,
+                val_reduce_fn=self._val_reduce_fn
             )
 
         self.novelty_trainer = TuplePredictorTrainer(

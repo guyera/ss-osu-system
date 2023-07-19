@@ -204,7 +204,8 @@ if __name__ == "__main__":
         class_frequency_file=args.class_frequency_file,
         gan_augment=args.gan_augment,
         device=device,
-        retrain_fn=retrain_fn
+        retrain_fn=retrain_fn,
+        val_reduce_fn=val_reduce_fn
     )
 
     test_session = BBNSession('OND', args.domain, args.class_count, 
