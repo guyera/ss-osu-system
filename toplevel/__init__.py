@@ -79,6 +79,7 @@ class TopLevelApp:
     class ClassifierTrainer(Enum):
         logit_layer = 'logit-layer'
         side_tuning = 'side-tuning'
+        end_to_end = 'end-to-end'
 
         def __str__(self):
             return self.value

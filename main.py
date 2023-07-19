@@ -63,6 +63,9 @@ if __name__ == "__main__":
 
     args = p.parse_args()
 
+    assert ((not args.distributed) or (args.classifier_trainer == TopLevelApp.ClassifierTrainer.end_to_end)),\
+        'Only end-to-end training is supported in distributed mode'
+
     if args.distributed:
         dist.init_process_group('nccl')
         rank = dist.get_rank()
