@@ -5,6 +5,7 @@ import itertools
 from pathlib import Path
 import numpy as np
 import torch
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from data.data_factory import DataFactory
 from toplevel.util import *
@@ -28,12 +29,15 @@ from tupleprediction.training import\
     get_datasets,\
     TuplePredictorTrainer,\
     LogitLayerClassifierTrainer,\
-    SideTuningClassifierTrainer
+    SideTuningClassifierTrainer,\
+    EndToEndClassifierTrainer
 from data.custom import build_species_label_mapping
 
 from taming_transformers.cycleGAN import CycleGAN
 
-def gen_retrain_fn(device, train_sampler_fn, feedback_batch_sampler_fn, allow_write, allow_print, distributed=False):
+def gen_retrain_fn(device_id, train_sampler_fn, feedback_batch_sampler_fn, allow_write, allow_print, distributed=False):
+    device = f'cuda:{device_id}' if device_id is not None else 'cpu'
+    device_ids = [device_id] if device_id is not None else None
     def retrain(
             tuple_predictor_trainer,
             backbone,
@@ -42,11 +46,18 @@ def gen_retrain_fn(device, train_sampler_fn, feedback_batch_sampler_fn, allow_wr
             novelty_type_classifier,
             activation_statistical_model,
             scorer,
-            root_log_dir):
+            root_log_dir,
+            model_unwrap_fn):
+        # Move everything to target device
+        backbone = backbone.to(device)
+        classifier = classifier.to(device)
+        confidence_calibrator = confidence_calibrator.to(device)
+        novelty_type_classifier = novelty_type_classifier.to(device)
+
         if distributed:
             # Wrap backbone and classifiers in DDPs
-            backbone = DDP(backbone)
-            classifier.ddp()
+            backbone = DDP(backbone, device_ids=device_ids)
+            classifier.ddp(device_ids=device_ids)
 
         tuple_predictor_trainer.train_novelty_detection_module(
             backbone,
@@ -60,19 +71,10 @@ def gen_retrain_fn(device, train_sampler_fn, feedback_batch_sampler_fn, allow_wr
             feedback_batch_sampler_fn,
             allow_write,
             allow_print,
-            root_log_dir=root_log_dir
+            root_log_dir=root_log_dir,
+            model_unwrap_fn=model_unwrap_fn
         )
 
-        if distributed:
-            # Unwrap the DDPs around the classifiers. The backbone DDP will
-            # disappear when it falls out of scope. This is only necessary
-            # for the classifiers since DDPs only wrap around modules---they
-            # can't wrap around arbitrary objects that compose multiple modules.
-            # Alternatively, we could refactor so that the underlying activity
-            # and species classifiers are used directly instead. The first thing
-            # that the TuplePredictorTrainer does anyways is extract them from
-            # the ClassifierV2
-            classifier.un_ddp()
     return retrain
 
 class TopLevelApp:
@@ -88,7 +90,7 @@ class TopLevelApp:
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_size, trial_batch_size, disable_retraining,
             root_cache_dir, n_known_val, classifier_trainer, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_val_interval, retraining_patience, retraining_min_epochs, retraining_max_epochs,
-            retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, class_frequency_file, gan_augment, device, retrain_fn, val_reduce_fn):
+            retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, class_frequency_file, gan_augment, device, retrain_fn, val_reduce_fn, model_unwrap_fn):
 
         pretrained_backbone_path = os.path.join(
             pretrained_models_dir,
@@ -319,6 +321,8 @@ class TopLevelApp:
         )
 
         self.retrain_fn = retrain_fn
+
+        self.model_unwrap_fn = model_unwrap_fn
         
     def reset(self):
         self.post_red = False
@@ -505,8 +509,7 @@ class TopLevelApp:
         ]
         bbox_counts = torch.tensor(
             bbox_counts,
-            dtype=torch.long,
-            device=self.device
+            dtype=torch.long
         )
         query_indices = select_queries(
             feedback_max_ids,
@@ -910,7 +913,8 @@ class TopLevelApp:
                 self.und_manager.novelty_type_classifier,
                 self.und_manager.activation_statistical_model,
                 self.und_manager.scorer,
-                None
+                None,
+                self.model_unwrap_fn
             )
             self.backbone.eval()
             self.retraining_buffer = self.retraining_buffer.iloc[0:0]

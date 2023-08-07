@@ -32,20 +32,25 @@ def _resnet50_ctor(weights=None, num_classes=1000):
         )
         return model
 
+def register_swin_t_feature_hook(model, hook):
+    return model.features[2].register_forward_hook(hook)
+
+def register_resnet50_feature_hook(model, hook):
+    return model.layer4.register_forward_hook(hook)
+
 class Backbone(Module):
     class Architecture(Enum):
         swin_t = {
             'name': 'swin_t',
             'ctor': _swin_t_ctor,
             'register_feature_hook' :\
-                (lambda model, hook : model.features[2]\
-                    .register_forward_hook(hook))
+                register_swin_t_feature_hook
         }
         resnet50 = {
             'name': 'resnet50',
             'ctor': _resnet50_ctor,
             'register_feature_hook' :\
-                (lambda model, hook : model.layer4.register_forward_hook(hook))
+                register_resnet50_feature_hook
         }
 
         def __str__(self):

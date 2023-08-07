@@ -286,7 +286,6 @@ def feedback_batch_sampler_fn(box_counts):
 if args.classifier_trainer == ClassifierTrainer.end_to_end:
     classifier_trainer = EndToEndClassifierTrainer(
         backbone,
-        device,
         args.lr,
         train_dataset,
         val_known_dataset,
@@ -341,8 +340,7 @@ trainer = TuplePredictorTrainer(
     n_species_cls,
     n_activity_cls,
     dynamic_label_mapper,
-    classifier_trainer,
-    device
+    classifier_trainer
 )
 
 start_time = time.time()
@@ -391,6 +389,7 @@ if rank == 0:
 
     # Retrain the classifier's temperature scaling calibrators
     trainer.calibrate_temperature_scalers(
+        device,
         backbone.module,
         species_classifier,
         activity_classifier,
@@ -401,6 +400,7 @@ if rank == 0:
 
     # Retrain the logistic regressions
     trainer.train_novelty_type_logistic_regressions(
+        device,
         backbone.module,
         species_classifier,
         activity_classifier,

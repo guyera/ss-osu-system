@@ -844,6 +844,10 @@ class DistributedRandomBoxImageBatchSampler:
             num_replicas,
             rank,
             seed=0):
+        box_counts = torch.tensor(
+            box_counts,
+            dtype=torch.long
+        )
         self._box_counts = box_counts
         self._boxes_per_batch = boxes_per_batch
         self._num_replicas = num_replicas
@@ -927,14 +931,6 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         self._feedback_loss_weight = feedback_loss_weight
         self._loss_fn = loss_fn
         self._class_frequencies = class_frequencies
-        self._focal_loss = torch.hub.load(
-            'adeelh/pytorch-multi-class-focal-loss',
-            model='FocalLoss',
-            alpha=torch.tensor([.75, .25]),
-            gamma=2,
-            reduction='none',
-            force_reload=False
-        )
 
     def _train_epoch(
             self,
@@ -958,6 +954,15 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         # classifiers
         species_preds = species_classifier(box_features)
         activity_preds = activity_classifier(box_features)
+
+        focal_loss = torch.hub.load(
+            'adeelh/pytorch-multi-class-focal-loss',
+            model='FocalLoss',
+            alpha=torch.tensor([.75, .25]),
+            gamma=2,
+            reduction='none',
+            force_reload=False
+        )
 
         # Compute losses
         species_weights = None
@@ -1002,7 +1007,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             )
         else:
             ex_species_weights = species_weights[species_labels]
-            species_loss_all = self._focal_loss(
+            species_loss_all = focal_loss(
                 species_preds,
                 species_labels
             )
@@ -1010,7 +1015,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 (species_loss_all * ex_species_weights).mean()
             
             ex_activity_weights = activity_weights[activity_labels]
-            activity_loss_all = self._focal_loss(
+            activity_loss_all = focal_loss(
                 activity_preds,
                 activity_labels
             )
@@ -1415,14 +1420,6 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         self._scheduler_type = scheduler_type
         self._loss_fn = loss_fn
         self._class_frequencies = class_frequencies
-        self._focal_loss = torch.hub.load(
-            'adeelh/pytorch-multi-class-focal-loss',
-            model='FocalLoss',
-            alpha=None,
-            gamma=2,
-            reduction='none',
-            force_reload=False
-        )
         self._memory_cache = memory_cache
         self._load_best_after_training = load_best_after_training
         self._val_reduce_fn = val_reduce_fn
@@ -1494,11 +1491,19 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 label_smoothing=self._label_smoothing
             )
         else:
+            focal_loss = torch.hub.load(
+                'adeelh/pytorch-multi-class-focal-loss',
+                model='FocalLoss',
+                alpha=None,
+                gamma=2,
+                reduction='none',
+                force_reload=False
+            )
             if species_weights is not None:
                 ex_species_weights = species_weights[species_labels]
             else:
                 ex_species_weights = 1
-            species_loss_all = self._focal_loss(
+            species_loss_all = focal_loss(
                 species_preds,
                 species_labels
             )
@@ -1509,7 +1514,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 ex_activity_weights = activity_weights[activity_labels]
             else:
                 ex_activity_weights = 1
-            activity_loss_all = self._focal_loss(
+            activity_loss_all = focal_loss(
                 activity_preds,
                 activity_labels
             )
@@ -1597,7 +1602,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             species_classifier,
             activity_classifier,
             optimizer,
-            device):
+            device,
+            allow_print):
         # Set everything to train mode
         self._backbone.train()
         species_classifier.train()
@@ -1615,7 +1621,17 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         feedback_species_labels = None
         feedback_activity_labels = None
         feedback_box_images = None
-        for species_labels, activity_labels, box_images in train_loader:
+        if allow_print:
+            train_loader_progress = tqdm(train_loader, desc='Training batch...')
+        else:
+            train_loader_progress = train_loader
+        # TODO remove i and usages (used to clip training batches for debugging)
+        i = 0
+        for species_labels, activity_labels, box_images in train_loader_progress:
+            if i >= 10:
+                #break
+                pass
+            i += 1
             if feedback_iter is not None:
                 try:
                     feedback_species_labels,\
@@ -1682,15 +1698,11 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
         species_correct = torch.argmax(species_preds, dim=1) == \
             species_labels
-        n_species_correct = int(
-            species_correct.to(torch.int).sum().detach().cpu().item()
-        )
+        n_species_correct = species_correct.to(torch.int).sum()
 
         activity_correct = torch.argmax(activity_preds, dim=1) == \
             activity_labels
-        n_activity_correct = int(
-            activity_correct.to(torch.int).sum().detach().cpu().item()
-        )
+        n_activity_correct = activity_correct.to(torch.int).sum()
 
         return n_species_correct, n_activity_correct
 
@@ -1705,9 +1717,9 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             species_classifier.eval()
             activity_classifier.eval()
 
-            n_examples = torch.zeros(1)
-            n_species_correct = torch.zeros(1)
-            n_activity_correct = torch.zeros(1)
+            n_examples = torch.zeros(1, device=device)
+            n_species_correct = torch.zeros(1, device=device)
+            n_activity_correct = torch.zeros(1, device=device)
 
             for species_labels, activity_labels, box_images in data_loader:
                 batch_n_species_correct, batch_n_activity_correct =\
@@ -1727,8 +1739,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 self._val_reduce_fn(n_examples)
                 self._val_reduce_fn(n_species_correct)
                 self._val_reduce_fn(n_activity_correct)
-            mean_species_accuracy = float(n_species_correct.item()) / n_examples.item()
-            mean_activity_accuracy = float(n_activity_correct.item()) / n_examples.item()
+            mean_species_accuracy = float(n_species_correct.detach().cpu().item()) / float(n_examples.detach().cpu().item())
+            mean_activity_accuracy = float(n_activity_correct.detach().cpu().item()) / float(n_examples.detach().cpu().item())
 
             mean_accuracy = \
                 (mean_species_accuracy + mean_activity_accuracy) / 2.0
@@ -1966,7 +1978,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 species_classifier,
                 activity_classifier,
                 optimizer,
-                device
+                device,
+                allow_print
             )
 
             if self._root_checkpoint_dir is not None and allow_write:
@@ -3284,7 +3297,8 @@ class TuplePredictorTrainer:
             feedback_batch_sampler_fn,
             allow_write,
             allow_print,
-            root_log_dir=None):
+            root_log_dir=None,
+            model_unwrap_fn=None):
         species_classifier = classifier.species_classifier
         activity_classifier = classifier.activity_classifier
         species_calibrator = confidence_calibrator.species_calibrator
@@ -3305,6 +3319,13 @@ class TuplePredictorTrainer:
             allow_write,
             allow_print
         )
+
+        # Unwrap backbone and classifiers (e.g., from DDP adapters) if
+        # appropriate
+        if model_unwrap_fn is not None:
+            backbone, classifier = model_unwrap_fn(backbone, classifier)
+            species_classifier = classifier.species_classifier
+            activity_classifier = classifier.activity_classifier
 
         self._classifier_trainer.fit_activation_statistics(
             backbone,

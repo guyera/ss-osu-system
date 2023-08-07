@@ -75,6 +75,11 @@ if __name__ == "__main__":
         device = f'cuda:{device_id}'
         torch.cuda.set_device(device)
 
+        def _model_unwrap_fn(backbone, classifier):
+            classifier.un_ddp
+            return backbone.module, classifier
+        model_unwrap_fn = _model_unwrap_fn
+
         def train_sampler_fn(train_dataset):
             return DistributedSampler(
                 train_dataset,
@@ -101,11 +106,12 @@ if __name__ == "__main__":
             # Prepare the retraining function that will be called with received
             # (broadcasted-by-rank-0) arguments
             retrain_fn = gen_retrain_fn(
-                device,
+                device_id,
                 train_sampler_fn,
                 feedback_batch_sampler_fn,
                 allow_write,
-                allow_print
+                allow_print,
+                distributed=True
             )
             # Run the retrain function in a loop until told to terminate
             # (signified by a skip of the function call, in-turn signified by
@@ -135,17 +141,22 @@ if __name__ == "__main__":
             # retraining arguments (device, samplers, allow_write, allow_print)
             retrain_fn = distributedutils.gen_broadcast_call(
                 gen_retrain_fn(
-                    device,
+                    device_id,
                     train_sampler_fn,
                     feedback_batch_sampler_fn,
                     allow_write,
-                    allow_print
+                    allow_print,
+                    distributed=True
                 ),
                 src=0,
                 device=device
             )
     else:
         device = args.device
+        if device == 'cpu':
+            device_id = None
+        else:
+            device_id = device.split(':')[1]
         train_sampler_fn = None
         val_reduce_fn = None
         feedback_batch_sampler_fn = None
@@ -153,12 +164,15 @@ if __name__ == "__main__":
         allow_print = True
 
         retrain_fn = gen_retrain_fn(
-            device,
+            device_id,
             train_sampler_fn,
             feedback_batch_sampler_fn,
             allow_write,
-            allow_print
+            allow_print,
+            distributed=False
         )
+
+        model_unwrap_fn = None
 
     torch.backends.cudnn.benchmark = False
 
@@ -205,7 +219,8 @@ if __name__ == "__main__":
         gan_augment=args.gan_augment,
         device=device,
         retrain_fn=retrain_fn,
-        val_reduce_fn=val_reduce_fn
+        val_reduce_fn=val_reduce_fn,
+        model_unwrap_fn=model_unwrap_fn
     )
 
     test_session = BBNSession('OND', args.domain, args.class_count, 
