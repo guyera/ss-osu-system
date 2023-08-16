@@ -56,8 +56,8 @@ def gen_retrain_fn(device_id, train_sampler_fn, feedback_batch_sampler_fn, allow
 
         if distributed:
             # Wrap backbone and classifiers in DDPs
-            backbone = DDP(backbone, device_ids=device_ids)
-            classifier.ddp(device_ids=device_ids)
+            backbone = DDP(backbone, device_ids=device_ids, broadcast_buffers=False)
+            classifier.ddp(device_ids=device_ids, broadcast_buffers=False)
 
         tuple_predictor_trainer.train_novelty_detection_module(
             backbone,
@@ -251,7 +251,6 @@ class TopLevelApp:
         self._val_reduce_fn = val_reduce_fn
         if self.classifier_trainer_enum == self.ClassifierTrainer.logit_layer:
             classifier_trainer = LogitLayerClassifierTrainer(
-                self.backbone,
                 self.retraining_lr,
                 train_feature_file,
                 val_feature_file,
@@ -269,7 +268,6 @@ class TopLevelApp:
         elif self.classifier_trainer_enum == self.ClassifierTrainer.side_tuning:
             self.backbone = SideTuningBackbone(self.backbone)
             classifier_trainer = SideTuningClassifierTrainer(
-                self.backbone,
                 self.retraining_lr,
                 train_dataset,
                 val_known_dataset,
@@ -290,7 +288,6 @@ class TopLevelApp:
             )
         elif self.classifier_trainer_enum == self.ClassifierTrainer.end_to_end:
             classifier_trainer = EndToEndClassifierTrainer(
-                self.backbone,
                 self.retraining_lr,
                 train_dataset,
                 val_known_dataset,
@@ -807,7 +804,6 @@ class TopLevelApp:
         )
         if self.classifier_trainer_enum == self.ClassifierTrainer.logit_layer:
             classifier_trainer = LogitLayerClassifierTrainer(
-                self.backbone,
                 self.retraining_lr,
                 train_feature_file,
                 val_feature_file,
@@ -825,7 +821,6 @@ class TopLevelApp:
         elif self.classifier_trainer_enum == self.ClassifierTrainer.side_tuning:
             self.backbone = SideTuningBackbone(self.backbone)
             classifier_trainer = SideTuningClassifierTrainer(
-                self.backbone,
                 self.retraining_lr,
                 train_dataset,
                 val_known_dataset,
@@ -846,7 +841,6 @@ class TopLevelApp:
             )
         elif self.classifier_trainer_enum == self.ClassifierTrainer.end_to_end:
             classifier_trainer = EndToEndClassifierTrainer(
-                self.backbone,
                 self.retraining_lr,
                 train_dataset,
                 val_known_dataset,
@@ -899,6 +893,7 @@ class TopLevelApp:
 
             self.num_retrains_so_far += 1
             self.novelty_trainer.prepare_for_retraining(
+                self.backbone,
                 self.und_manager.classifier, 
                 self.und_manager.confidence_calibrator,
                 self.und_manager.novelty_type_classifier,

@@ -6,6 +6,7 @@ import os
 from enum import Enum
 import pickle as pkl
 from abc import ABC, abstractmethod
+import sys
 
 from tqdm import tqdm
 from torch.utils.data import\
@@ -27,6 +28,13 @@ from transforms import\
     RandomHorizontalFlip,\
     NoOpTransform
 
+def print_nan(t, name):
+    if torch.any(torch.isnan(t)):
+        print("NaNs present in", name)
+        sys.exit(-1)
+    elif torch.any(torch.isinf(t)):
+        print("Infs present in", name)
+        sys.exit(-1)
 
 '''
 Dynamic program solution to the multiple instance count problem
@@ -43,7 +51,7 @@ Parameters:
         targets[i, k] is the ground truth number of boxes in image i that
         belong to class k.
 '''
-def multiple_instance_count_cross_entropy_dyn(predictions, targets):
+def multiple_instance_count_cross_entropy_dyn(predictions, targets, allow_print=False):
     losses = []
     for img_predictions, img_targets in zip(predictions, targets):
         present_classes = img_targets != 0
@@ -156,12 +164,16 @@ def multiple_instance_count_cross_entropy_dyn(predictions, targets):
         # of the dynamic program>
         prob_match = dyn_prog[tuple(dyn_prog_shape_tensor - 1)]
 
-        # NLL is loss
-        losses.append(-torch.log(prob_match))
+        cur_loss = -torch.log(prob_match)
+        if not torch.isinf(cur_loss):
+            losses.append(cur_loss)
 
     # Compute aggregate loss across images
-    losses = torch.stack(losses, dim=0)
-    loss = losses.mean()
+    if len(losses) > 0:
+        losses = torch.stack(losses, dim=0)
+        loss = losses.mean()
+    else:
+        loss = 0
     return loss
 
 
@@ -180,11 +192,13 @@ Parameters:
         targets[i, k] is the ground truth number of boxes in image i that
         belong to class k.
 '''
-def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
+def multiple_instance_presence_cross_entropy_dyn(predictions, targets, allow_print=False):
     losses = []
     for img_predictions, img_targets in zip(predictions, targets):
         present_classes = img_targets != 0
         present_predictions = img_predictions[:, present_classes]
+        if allow_print:
+            print_nan(present_predictions, 'present_predictions')
 
         # Construct the dynamic program buffer. Its size is
         # [N+1, 2, 2, ... 2], where N is the number of boxes, and there are
@@ -203,6 +217,8 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
             dtype=torch.long,
             device=targets.device
         )
+        if allow_print:
+            print_nan(dyn_prog, 'dyn_prog 1')
 
         # At any given point in our dynamic program, we will be maintaining
         # a tuple of per-dimension index tensors that we will use to index
@@ -289,6 +305,8 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
                     dyn_prog[tuple(shifted_dyn_indices)] +=\
                         dyn_prog[tuple(masked_cur_dyn_indices)] *\
                             observed_preds_sums
+                    if allow_print:
+                        print_nan(dyn_prog, 'dyn_prog 2')
                 else:
                     # if col_idx is NOT zero, then col_idx - 1 represents
                     # the class which is now being observed, having previously
@@ -307,6 +325,8 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
                     dyn_prog[tuple(shifted_dyn_indices)] +=\
                         dyn_prog[tuple(masked_cur_dyn_indices)] *\
                             present_predictions[box_idx, cls_idx]
+                    if allow_print:
+                        print_nan(dyn_prog, 'dyn_prog 3')
 
                 # Append shifted_dyn_indices to next_indices
                 next_indices.append(shifted_dyn_indices)
@@ -323,13 +343,21 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets):
         # Get P(predictions match count targets) = <the highest-index vertex
         # of the dynamic program>
         prob_match = dyn_prog[tuple(dyn_prog_shape_tensor - 1)]
+        if allow_print:
+            print_nan(dyn_prog, 'dyn_prog 4')
+            print_nan(prob_match, 'prob_match')
 
         # NLL is loss
-        losses.append(-torch.log(prob_match))
+        cur_loss = -torch.log(prob_match)
+        if not torch.isinf(cur_loss):
+            losses.append(cur_loss)
 
     # Compute aggregate loss across images
-    losses = torch.stack(losses, dim=0)
-    loss = losses.mean()
+    if len(losses) > 0:
+        losses = torch.stack(losses, dim=0)
+        loss = losses.mean()
+    else:
+        loss = 0
     return loss
 
 '''
@@ -477,11 +505,16 @@ def multiple_instance_count_cross_entropy(predictions, targets):
         sum_prob = combination_pred_running_product.sum()
 
         ## Compute per-image loss
-        losses.append(-torch.log(sum_prob))
+        cur_loss = -torch.log(sum_prob)
+        if not torch.isinf(cur_loss):
+            losses.append(cur_loss)
 
     ## Aggregate per-image losses and return
-    losses = torch.stack(losses, dim=0)
-    return losses.mean()
+    if len(losses) > 0:
+        losses = torch.stack(losses, dim=0)
+        return losses.mean()
+    else:
+        return 0
 
 
 '''
@@ -607,11 +640,16 @@ def multiple_instance_presence_cross_entropy(predictions, targets):
         prob_conform = prob_all_present * prob_others_absent
 
         ## Compute per-image loss
-        losses.append(-torch.log(prob_conform))
+        cur_loss = -torch.log(prob_conform)
+        if not torch.isinf(cur_loss):
+            losses.append(cur_loss)
 
     ## Aggregate per-image losses and return
-    losses = torch.stack(losses, dim=0)
-    return losses.mean()
+    if len(losses) > 0:
+        losses = torch.stack(losses, dim=0)
+        return losses.mean()
+    else:
+        return 0
 
 
 class Augmentation(Enum):
@@ -668,6 +706,7 @@ class ClassifierTrainer(ABC):
     @abstractmethod
     def train(
             self,
+            backbone,
             species_classifier,
             activity_classifier,
             root_log_dir,
@@ -682,6 +721,7 @@ class ClassifierTrainer(ABC):
     @abstractmethod
     def prepare_for_retraining(
             self,
+            backbone,
             classifier,
             activation_statistical_model):
         return NotImplemented
@@ -903,7 +943,6 @@ class DistributedRandomBoxImageBatchSampler:
 class LogitLayerClassifierTrainer(ClassifierTrainer):
     def __init__(
             self,
-            backbone,
             lr,
             train_feature_file,
             val_feature_file,
@@ -917,7 +956,6 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             feedback_loss_weight=0.5,
             loss_fn=LossFnEnum.cross_entropy,
             class_frequencies=None):
-        self._backbone = backbone
         self._lr = lr
         self._train_feature_file = train_feature_file
         self._val_feature_file = val_feature_file
@@ -1030,7 +1068,8 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         # per-image
         if feedback_box_features is not None and\
                 feedback_species_labels is not None and\
-                feedback_activity_labels is not None:
+                feedback_activity_labels is not None and\
+                self._feedback_loss_weight != 0:
             flattened_feedback_box_features = torch.cat(
                 feedback_box_features,
                 dim=0
@@ -1154,6 +1193,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
     '''
     def train(
             self,
+            backbone,
             species_classifier,
             activity_classifier,
             root_log_dir,
@@ -1221,7 +1261,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 collate_fn=gen_custom_collate()
             )
             # Precompute feedback backbone features
-            self._backbone.eval()
+            backbone.eval()
             feedback_box_features = []
             feedback_species_labels = []
             feedback_activity_labels = []
@@ -1244,7 +1284,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
 
                     # Flatten box images and compute features
                     flattened_box_images = torch.cat(batch_box_images, dim=0)
-                    batch_box_features = self._backbone(flattened_box_images)
+                    batch_box_features = backbone(flattened_box_images)
 
                     # Use batch_box_counts to split the computed features back
                     # to per-image feature tensors and concatenate to
@@ -1370,6 +1410,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
 
     def prepare_for_retraining(
             self,
+            backbone,
             classifier,
             activation_statistical_model):
         classifier.reset()
@@ -1385,7 +1426,6 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
 class EndToEndClassifierTrainer(ClassifierTrainer):
     def __init__(
             self,
-            backbone,
             lr,
             train_dataset,
             val_known_dataset,
@@ -1404,7 +1444,6 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             memory_cache=True,
             load_best_after_training=True,
             val_reduce_fn=None):
-        self._backbone = backbone
         self._lr = lr
         self._train_dataset = train_dataset
         self._val_known_dataset = val_known_dataset
@@ -1426,6 +1465,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
     def _train_batch(
             self,
+            backbone,
             species_classifier,
             activity_classifier,
             optimizer,
@@ -1435,14 +1475,19 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             feedback_species_labels,
             feedback_activity_labels,
             feedback_box_images,
-            device):
+            device,
+            allow_print):
         # Move to device
         species_labels = species_labels.to(device)
         activity_labels = activity_labels.to(device)
         box_images = box_images.to(device)
+        if allow_print:
+            print_nan(box_images, 'box_images')
 
         # Extract box features
-        box_features = self._backbone(box_images)
+        box_features = backbone(box_images)
+        if allow_print:
+            print_nan(box_features, 'box_features')
 
         # Compute logits by passing the features through the appropriate
         # classifiers
@@ -1522,7 +1567,11 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 (activity_loss_all * ex_activity_weights).mean()
 
         non_feedback_loss = species_loss + activity_loss
+        if allow_print:
+            print_nan(non_feedback_loss, 'non_feedback_loss')
 
+        #if feedback_box_images is not None and\
+        #        self._feedback_loss_weight != 0:
         if feedback_box_images is not None:
             feedback_species_labels = feedback_species_labels.to(device)
             feedback_activity_labels = feedback_activity_labels.to(device)
@@ -1530,18 +1579,26 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
             feedback_box_counts = [len(x) for x in feedback_box_images]
             feedback_box_images = torch.cat(feedback_box_images, dim=0)
+            print_nan(feedback_box_images, 'feedback_box_images')
 
-            feedback_box_features = self._backbone(feedback_box_images)
+            feedback_box_features = backbone(feedback_box_images)
+            if allow_print:
+                print_nan(feedback_box_features, 'feedback_box_features')
 
             feedback_species_logits =\
                 species_classifier(feedback_box_features)
             feedback_activity_logits =\
                 activity_classifier(feedback_box_features)
+            if allow_print:
+                print_nan(feedback_activity_logits, 'feedback_activity_logits')
 
             feedback_species_preds =\
                 torch.nn.functional.softmax(feedback_species_logits, dim=1)
             feedback_activity_preds =\
                 torch.nn.functional.softmax(feedback_activity_logits, dim=1)
+
+            if allow_print:
+                print_nan(feedback_activity_preds, 'feedback_activity_preds')
             
             # Re-split feedback predictions for loss computation
             feedback_species_preds = torch.split(
@@ -1559,25 +1616,61 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             feedback_species_loss =\
                 multiple_instance_count_cross_entropy_dyn(
                     feedback_species_preds,
-                    feedback_species_labels
+                    feedback_species_labels,
+                    allow_print=allow_print
                 )
+            if allow_print:
+                print_nan(feedback_species_loss, "feedback_species_loss")
+
             # We have image-level presence feedback labels for activities
             feedback_activity_loss =\
                 multiple_instance_presence_cross_entropy_dyn(
                     feedback_activity_preds,
-                    feedback_activity_labels
+                    feedback_activity_labels,
+                    allow_print=allow_print
                 )
+            if allow_print:
+                print_nan(feedback_activity_loss, "feedback_activity_loss")
 
             feedback_loss = feedback_species_loss + feedback_activity_loss
+            if allow_print:
+                print_nan(feedback_loss, "feedback_loss")
 
             loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
                 self._feedback_loss_weight * feedback_loss
+
+            if allow_print:
+                if torch.any(torch.isnan(loss)):
+                    print('feedback_loss', feedback_loss)
+                    print('non_feedback_loss', non_feedback_loss)
+                    print('loss', loss)
+                print_nan(feedback_loss, 'feedback_loss')
+                print_nan(non_feedback_loss, 'non_feedback_loss')
+                print_nan(loss, 'loss 1')
         else:
             loss = non_feedback_loss
+            if allow_print:
+                print_nan(loss, 'loss 2')
 
         optimizer.zero_grad()
+        if allow_print:
+            print_nan(loss, 'loss 3')
+        #    for param in backbone.module.parameters():
+        #        print_nan(param, 'some parameter')
+
+        #    for param in backbone.module.parameters():
+        #        if param.grad is not None:
+        #            print_nan(param.grad.data, 'some parameter\'s gradient')
+
         loss.backward()
         optimizer.step()
+
+        if allow_print:
+            for param in backbone.module.parameters():
+                print_nan(param, 'some parameter')
+            for param in backbone.module.parameters():
+                if param.grad is not None:
+                    print_nan(param.grad.data, 'some parameter\'s gradient 2')
 
         species_correct = torch.argmax(species_preds, dim=1) == \
             species_labels
@@ -1597,6 +1690,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
     def _train_epoch(
             self,
+            backbone,
             train_loader,
             feedback_loader,
             species_classifier,
@@ -1605,7 +1699,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             device,
             allow_print):
         # Set everything to train mode
-        self._backbone.train()
+        backbone.train()
         species_classifier.train()
         activity_classifier.train()
         
@@ -1621,8 +1715,15 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         feedback_species_labels = None
         feedback_activity_labels = None
         feedback_box_images = None
+        batch_loss = None
         if allow_print:
-            train_loader_progress = tqdm(train_loader, desc='Training batch...')
+            train_loader_progress = tqdm(
+                train_loader,
+                desc=gen_tqdm_description(
+                    'Training batch...',
+                    batch_loss=batch_loss
+                )
+            )
         else:
             train_loader_progress = train_loader
         # TODO remove i and usages (used to clip training batches for debugging)
@@ -1648,6 +1749,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                         _ = next(feedback_iter)
             batch_loss, batch_n_species_correct, batch_n_activity_correct =\
                 self._train_batch(
+                    backbone,
                     species_classifier,
                     activity_classifier,
                     optimizer,
@@ -1657,7 +1759,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     feedback_species_labels,
                     feedback_activity_labels,
                     feedback_box_images,
-                    device
+                    device,
+                    allow_print
                 )
 
             sum_loss += batch_loss
@@ -1665,6 +1768,15 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             n_examples += box_images.shape[0]
             n_species_correct += batch_n_species_correct
             n_activity_correct += batch_n_activity_correct
+            
+            if allow_print:
+                train_loader_progress.set_description(
+                    gen_tqdm_description(
+                        'Training batch...',
+                        batch_loss=batch_loss
+                    )
+                )
+
 
         mean_loss = sum_loss / n_iterations
 
@@ -1677,6 +1789,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
     def _val_batch(
             self,
+            backbone,
             species_classifier,
             activity_classifier,
             species_labels,
@@ -1689,7 +1802,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         box_images = box_images.to(device)
 
         # Extract box features
-        box_features = self._backbone(box_images)
+        box_features = backbone(box_images)
 
         # Compute logits by passing the features through the appropriate
         # classifiers
@@ -1708,12 +1821,13 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
     def _val_epoch(
             self,
+            backbone,
             data_loader,
             species_classifier,
             activity_classifier,
             device):
         with torch.no_grad():
-            self._backbone.eval()
+            backbone.eval()
             species_classifier.eval()
             activity_classifier.eval()
 
@@ -1724,6 +1838,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             for species_labels, activity_labels, box_images in data_loader:
                 batch_n_species_correct, batch_n_activity_correct =\
                     self._val_batch(
+                        backbone,
                         species_classifier,
                         activity_classifier,
                         species_labels,
@@ -1749,6 +1864,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
     def train(
             self,
+            backbone,
             species_classifier,
             activity_classifier,
             root_log_dir,
@@ -1834,7 +1950,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         # Retrain the backbone and classifiers
         # Construct the optimizer
         optimizer = torch.optim.SGD(
-            list(self._backbone.parameters())\
+            list(backbone.parameters())\
                 + list(species_classifier.parameters())\
                 + list(activity_classifier.parameters()),
             self._lr,
@@ -1879,7 +1995,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     training_checkpoint,
                     map_location=device
                 )
-                self._backbone.load_state_dict(sd['backbone'])
+                backbone.load_state_dict(sd['backbone'])
                 species_classifier.load_state_dict(sd['species_classifier'])
                 activity_classifier.load_state_dict(sd['activity_classifier'])
                 optimizer.load_state_dict(sd['optimizer'])
@@ -1946,6 +2062,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
         # Train
         if allow_print:
+            print('lr:', self._lr)
             progress = tqdm(
                 range(start_epoch, self._max_epochs),
                 desc=gen_tqdm_description(
@@ -1973,6 +2090,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
             # Train for one full epoch
             mean_train_loss, mean_train_accuracy = self._train_epoch(
+                backbone,
                 train_loader,
                 feedback_loader,
                 species_classifier,
@@ -1989,7 +2107,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 os.makedirs(checkpoint_dir, exist_ok=True)
 
                 sd = {}
-                sd['backbone'] = self._backbone.state_dict()
+                sd['backbone'] = backbone.state_dict()
                 sd['species_classifier'] = species_classifier.state_dict()
                 sd['activity_classifier'] = activity_classifier.state_dict()
                 sd['optimizer'] = optimizer.state_dict()
@@ -2016,6 +2134,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             # Measure validation accuracy for early stopping / model selection.
             if epoch >= self._min_epochs - 1:
                 mean_val_accuracy = self._val_epoch(
+                    backbone,
                     val_loader,
                     species_classifier,
                     activity_classifier,
@@ -2026,7 +2145,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     epochs_since_improvement = 0
                     best_accuracy = mean_val_accuracy
                     best_accuracy_backbone_state_dict =\
-                        deepcopy(self._backbone.state_dict())
+                        deepcopy(backbone.state_dict())
                     best_accuracy_species_classifier_state_dict =\
                         deepcopy(species_classifier.state_dict())
                     best_accuracy_activity_classifier_state_dict =\
@@ -2078,7 +2197,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         # NOTE To save GPU memory, we could temporarily move the models to the
         # CPU before copying or loading their state dicts.
         if self._load_best_after_training:
-            self._backbone.load_state_dict(best_accuracy_backbone_state_dict)
+            backbone.load_state_dict(best_accuracy_backbone_state_dict)
             species_classifier.load_state_dict(
                 best_accuracy_species_classifier_state_dict
             )
@@ -2088,10 +2207,11 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
     def prepare_for_retraining(
             self,
+            backbone,
             classifier,
             activation_statistical_model):
         classifier.reset()
-        self._backbone.reset()
+        backbone.reset()
         activation_statistical_model.reset()
 
     def fit_activation_statistics(
@@ -2125,7 +2245,6 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 class SideTuningClassifierTrainer(ClassifierTrainer):
     def __init__(
             self,
-            side_tuning_backbone,
             lr,
             train_dataset,
             val_known_dataset,
@@ -2144,7 +2263,6 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             scheduler_type=SchedulerType.none,
             loss_fn=LossFnEnum.cross_entropy,
             class_frequencies=None):
-        self._backbone = side_tuning_backbone
         self._lr = lr
         self._train_dataset = train_dataset
         self._val_known_dataset = val_known_dataset
@@ -2174,6 +2292,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
 
     def _train_batch(
             self,
+            backbone,
             species_classifier,
             activity_classifier,
             optimizer,
@@ -2205,9 +2324,9 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
 
         # Extract side network box features
         train_box_side_features =\
-            self._backbone.compute_side_features(train_box_images)
+            backbone.compute_side_features(train_box_images)
         feedback_box_side_features =\
-            self._backbone.compute_side_features(feedback_box_images)
+            backbone.compute_side_features(feedback_box_images)
 
         # Concatenate backbone and side features
         train_box_features = torch.cat(
@@ -2342,6 +2461,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
 
     def _train_epoch(
             self,
+            backbone,
             data_loader,
             feedback_feature_loader,
             species_classifier,
@@ -2349,7 +2469,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             optimizer,
             device):
         # Set everything to train mode
-        self._backbone.train()
+        backbone.train()
         species_classifier.train()
         activity_classifier.train()
         
@@ -2377,6 +2497,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             # Train on both the feedback and regular training batch
             batch_loss, batch_n_species_correct, batch_n_activity_correct =\
                 self._train_batch(
+                    backbone,
                     species_classifier,
                     activity_classifier,
                     optimizer,
@@ -2408,6 +2529,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
 
     def _val_batch(
             self,
+            backbone,
             species_classifier,
             activity_classifier,
             species_labels,
@@ -2422,7 +2544,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         box_backbone_features = box_backbone_features.to(device)
 
         # Extract side network box features
-        box_side_features = self._backbone.compute_side_features(box_images)
+        box_side_features = backbone.compute_side_features(box_images)
 
         # Concatenate backbone and side features
         box_features = torch.cat(
@@ -2451,12 +2573,13 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
 
     def _val_epoch(
             self,
+            backbone,
             data_loader,
             species_classifier,
             activity_classifier,
             device):
         with torch.no_grad():
-            self._backbone.eval()
+            backbone.eval()
             species_classifier.eval()
             activity_classifier.eval()
 
@@ -2468,6 +2591,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                     box_backbone_features in data_loader:
                 batch_n_species_correct, batch_n_activity_correct =\
                     self._val_batch(
+                        backbone,
                         species_classifier,
                         activity_classifier,
                         species_labels,
@@ -2490,6 +2614,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
 
     def train(
             self,
+            backbone,
             species_classifier,
             activity_classifier,
             root_log_dir,
@@ -2530,7 +2655,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                 collate_fn=gen_custom_collate()
             )
             # Precompute feedback backbone features
-            self._backbone.eval_backbone()
+            backbone.eval_backbone()
             feedback_box_features = []
             with torch.no_grad():
                 for _, _, _, batch_box_images, _ in feedback_loader:
@@ -2543,7 +2668,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
 
                     # Flatten box images and compute features
                     flattened_box_images = torch.cat(batch_box_images, dim=0)
-                    batch_box_features = self._backbone.compute_backbone_features(flattened_box_images)
+                    batch_box_features = backbone.compute_backbone_features(flattened_box_images)
                     batch_box_features = batch_box_features.detach().cpu()
 
                     # Use batch_box_counts to split the computed features back
@@ -2606,7 +2731,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
 
         # Construct the optimizer
         optimizer = torch.optim.SGD(
-            list(self._backbone.retrainable_parameters())\
+            list(backbone.retrainable_parameters())\
                 + list(species_classifier.parameters())\
                 + list(activity_classifier.parameters()),
             self._lr,
@@ -2688,6 +2813,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
 
             # Train for one full epoch
             mean_train_loss, mean_train_accuracy = self._train_epoch(
+                backbone,
                 train_loader,
                 feedback_feature_loader,
                 species_classifier,
@@ -2713,6 +2839,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             if epoch >= self._min_epochs - 1 and\
                     (epoch + 1) % self._val_interval == 0:
                 mean_val_accuracy = self._val_epoch(
+                    backbone,
                     val_loader,
                     species_classifier,
                     activity_classifier,
@@ -2723,7 +2850,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                     epochs_since_improvement = 0
                     best_accuracy = mean_val_accuracy
                     best_accuracy_backbone_state_dict =\
-                        deepcopy(self._backbone.state_dict())
+                        deepcopy(backbone.state_dict())
                     best_accuracy_species_classifier_state_dict =\
                         deepcopy(species_classifier.state_dict())
                     best_accuracy_activity_classifier_state_dict =\
@@ -2757,7 +2884,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         # NOTE we could also make the state dicts here a little more efficient
         # by only saving and loading the state dict of the side network, rather
         # than working with the fixed backbone as well.
-        self._backbone.load_state_dict(best_accuracy_backbone_state_dict)
+        backbone.load_state_dict(best_accuracy_backbone_state_dict)
         species_classifier.load_state_dict(
             best_accuracy_species_classifier_state_dict
         )
@@ -2767,10 +2894,11 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
 
     def prepare_for_retraining(
             self,
+            backbone,
             classifier,
             activation_statistical_model):
         # Reset only the side network's weights
-        self._backbone.reset()
+        backbone.reset()
 
         # Update classifier's bottleneck dim to account for side network's
         # features before resetting
@@ -3034,6 +3162,7 @@ class TuplePredictorTrainer:
     # retraining.
     def prepare_for_retraining(
             self,
+            backbone,
             classifier,
             confidence_calibrator,
             novelty_type_classifier,
@@ -3041,6 +3170,7 @@ class TuplePredictorTrainer:
         # Reset the classifiers (and possibly certain backbone components,
         # depending on the classifier retraining method) if appropriate
         self._classifier_trainer.prepare_for_retraining(
+            backbone,
             classifier,
             activation_statistical_model
         )
@@ -3309,6 +3439,7 @@ class TuplePredictorTrainer:
         if len(self._feedback_data) > 0:
             feedback_dataset = ConcatDataset(self._feedback_data)
         self._classifier_trainer.train(
+            backbone,
             species_classifier,
             activity_classifier,
             root_log_dir,

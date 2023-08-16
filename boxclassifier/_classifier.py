@@ -87,14 +87,16 @@ class ClassifierV2:
                 activity_classifier_state_dict
             )
 
-    def ddp(self, device_ids=None):
+    def ddp(self, device_ids=None, broadcast_buffers=True):
         self.species_classifier = DDP(
             self.species_classifier,
-            device_ids=device_ids
+            device_ids=device_ids,
+            broadcast_buffers=broadcast_buffers
         )
         self.activity_classifier = DDP(
             self.activity_classifier,
-            device_ids=device_ids
+            device_ids=device_ids,
+            broadcast_buffers=broadcast_buffers
         )
 
     def un_ddp(self):
