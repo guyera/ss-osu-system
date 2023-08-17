@@ -3469,6 +3469,7 @@ class TuplePredictorTrainer:
 
         # Retrain the classifier's temperature scaling calibrators
         self.calibrate_temperature_scalers(
+            device,
             backbone,
             species_classifier,
             activity_classifier,
@@ -3479,6 +3480,7 @@ class TuplePredictorTrainer:
 
         # Retrain the logistic regressions
         self.train_novelty_type_logistic_regressions(
+            device,
             backbone,
             species_classifier,
             activity_classifier,

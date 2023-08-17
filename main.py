@@ -235,4 +235,4 @@ if __name__ == "__main__":
     # If distributed, tell the slave processes to skip their next call (which
     # signifies that they should terminate)
     if args.distributed:
-        distributedutils.broadcast_terminate(src=0, device=device)
+        distributedutils.broadcast_skip(src=0, device=device)
