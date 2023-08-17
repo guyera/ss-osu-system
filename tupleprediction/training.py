@@ -29,6 +29,8 @@ from transforms import\
     NoOpTransform
 
 def print_nan(t, name):
+    if not torch.is_tensor(t):
+        return
     if torch.any(torch.isnan(t)):
         print("NaNs present in", name)
         sys.exit(-1)
