@@ -35,6 +35,10 @@ class ImageScorer(ABC):
     def n_scores(self):
         return NotImplemented
 
+    @abstractmethod
+    def to(self, device):
+        return NotImplemented
+
 '''
 Notation:
     M: Total number of boxes in the batch
@@ -77,6 +81,10 @@ class Scorer(ABC):
     def n_scores(self):
         return NotImplemented
 
+    @abstractmethod
+    def to(self, device):
+        return NotImplemented
+
 '''
 Composes multiple ImageScorer objects into one, concatenating their score
 tensors in-order
@@ -96,6 +104,11 @@ class CompositeImageScorer(ImageScorer):
 
     def n_scores(self):
         return self._n_scores
+
+    def to(self, device):
+        for idx, image_scorer in enumerate(self._image_scorers):
+            self._image_scorers[idx] = image_scorer.to(device)
+        return self
 
 '''
 Converts an ImageScorer into a Scorer by splitting the logit tensors by image
@@ -127,6 +140,10 @@ class ScorerFromImageScorer(Scorer):
     def n_scores(self):
         return self._image_scorer.n_scores()
 
+    def to(self, device):
+        self._image_scorer = self._image_scorer.to(device)
+        return self
+
 '''
 Composes multiple Scorer objects into one, concatenating their score tensors
 in-order
@@ -155,3 +172,8 @@ class CompositeScorer(Scorer):
 
     def n_scores(self):
         return self._n_scores
+
+    def to(self, device):
+        for idx, scorer in enumerate(self._scorers):
+            self._scorers[idx] = scorer.to(device)
+        return self

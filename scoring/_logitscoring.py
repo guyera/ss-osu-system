@@ -27,6 +27,9 @@ class AvgMaxSpeciesLogitImageScorer(ImageScorer):
     def n_scores(self):
         return 1
 
+    def to(self, device):
+        return self
+
 class MaxAvgSpeciesLogitImageScorer(ImageScorer):
     def __init__(self, n_known_species_cls):
         self._n_known_species_cls = n_known_species_cls
@@ -38,6 +41,9 @@ class MaxAvgSpeciesLogitImageScorer(ImageScorer):
 
     def n_scores(self):
         return 1
+
+    def to(self, device):
+        return self
 
 class AvgMaxActivityLogitImageScorer(ImageScorer):
     def __init__(self, n_known_activity_cls):
@@ -51,6 +57,9 @@ class AvgMaxActivityLogitImageScorer(ImageScorer):
     def n_scores(self):
         return 1
 
+    def to(self, device):
+        return self
+
 class MaxAvgActivityLogitImageScorer(ImageScorer):
     def __init__(self, n_known_activity_cls):
         self._n_known_activity_cls = n_known_activity_cls
@@ -62,6 +71,9 @@ class MaxAvgActivityLogitImageScorer(ImageScorer):
 
     def n_scores(self):
         return 1
+
+    def to(self, device):
+        return self
 
 def make_logit_scorer(n_known_species_cls, n_known_activity_cls):
     avg_max_species_logit_image_scorer = AvgMaxSpeciesLogitImageScorer(
