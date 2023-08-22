@@ -53,6 +53,7 @@ def gen_retrain_fn(device_id, train_sampler_fn, feedback_batch_sampler_fn, allow
         classifier = classifier.to(device)
         confidence_calibrator = confidence_calibrator.to(device)
         novelty_type_classifier = novelty_type_classifier.to(device)
+        scorer = scorer.to(device)
 
         if distributed:
             # Wrap backbone and classifiers in DDPs
