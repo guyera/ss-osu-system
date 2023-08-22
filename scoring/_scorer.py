@@ -91,7 +91,7 @@ tensors in-order
 '''
 class CompositeImageScorer(ImageScorer):
     def __init__(self, image_scorers):
-        self._image_scorers = image_scorers
+        self._image_scorers = list(image_scorers)
         score_counts = [img_scorer.n_scores() for img_scorer in image_scorers]
         self._n_scores = sum(score_counts)
 
