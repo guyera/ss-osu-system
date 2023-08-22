@@ -150,7 +150,7 @@ in-order
 '''
 class CompositeScorer(Scorer):
     def __init__(self, scorers):
-        self._scorers = scorers
+        self._scorers = list(scorers)
         score_counts = [scorer.n_scores() for scorer in scorers]
         self._n_scores = sum(score_counts)
 
