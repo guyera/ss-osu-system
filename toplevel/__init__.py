@@ -885,7 +885,7 @@ class TopLevelApp:
                 self.retraining_buffer.to_csv(csv_path, index=True)
                 csv_path_temp = os.path.join(self.temp_path, f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
                 # csv_path_temp = './'+ csv_path_temp
-                self.cycleGAN.load_datasets(self.data_root, self.train_csv_path, csv_path_temp, 4) 
+                self.cycleGAN.load_datasets(self.data_root, self.train_csv_path, csv_path_temp, 2) 
                 self.cycleGAN.train(350)
                 self.cycleGAN.delete_models()
                 self.novelty_trainer.add_feedback_data(self.data_root, csv_path_temp)   

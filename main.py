@@ -42,7 +42,7 @@ if __name__ == "__main__":
     p.add_argument('--hintB', default=False)
     p.add_argument('--root-cache-dir', type=str, default='/nfs/hpc/share/sail_on3/.data-cache')
     p.add_argument('--n-known-val', type=int, default=4068)
-    p.add_argument('--classifier-trainer', type=TopLevelApp.ClassifierTrainer, choices=list(TopLevelApp.ClassifierTrainer), default=TopLevelApp.ClassifierTrainer.logit_layer)
+    p.add_argument('--classifier-trainer', type=TopLevelApp.ClassifierTrainer, choices=list(TopLevelApp.ClassifierTrainer), default=TopLevelApp.ClassifierTrainer.end_to_end)
     p.add_argument('--precomputed-feature-dir', type=str, default='./.features/resizepad=224/none/normalized')
     p.add_argument('--retraining-augmentation', type=Augmentation, choices=list(Augmentation), default=Augmentation.none)
     p.add_argument('--retraining-lr', type=float, default=0.005)
@@ -72,7 +72,10 @@ if __name__ == "__main__":
         local_rank = int(os.environ['LOCAL_RANK'])
         world_size = dist.get_world_size()
         device_id = local_rank
-        device = f'cuda:{device_id}'
+        # device = f'cuda:{device_id}'
+        device = torch.device(f'cuda:{device_id}')
+
+
         torch.cuda.set_device(device)
 
         def _model_unwrap_fn(backbone, classifier):

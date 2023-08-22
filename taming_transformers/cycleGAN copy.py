@@ -18,6 +18,9 @@ import torchvision.utils as vutils
 import itertools
 
 from torch.utils.data import Dataset, DataLoader
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.multiprocessing as mp
+import torch.distributed as dist
 from torchvision import transforms
 from PIL import Image
 import pandas as pd
@@ -46,7 +49,7 @@ class ImageDataset(Dataset):
         return image, row
 
 class CycleGAN:
-    def __init__(self, config_path, ckpt_path, num_of_new_generated_img = 60, G_lr=2e-5, D_lr=1e-4, beta1=0.9, beta2=0.999, lambda_cycle= 1.0, device='cuda:0'):
+    def __init__(self, config_path, ckpt_path, num_of_new_generated_img = 60, G_lr=2e-5, D_lr=1e-4, beta1=0.9, beta2=0.999, lambda_cycle= 1.0, device='cuda'):
         self.config_path = config_path
         self.ckpt_path = ckpt_path
         self.G_lr = G_lr
@@ -69,6 +72,8 @@ class CycleGAN:
         self.model_path = None
         self.num_of_new_generated_img = num_of_new_generated_img
 
+        self.local_rank = int(os.environ['LOCAL_RANK'])
+
     
     def load_config(self, config_path, display=False):
         config = OmegaConf.load(config_path)
@@ -88,11 +93,15 @@ class CycleGAN:
 
     def build_models(self):
         config = self.load_config(self.config_path, display=False)
-        vqgan = self.load_vqgan(config, ckpt_path=self.ckpt_path).cuda(device=self.device)
-        self.G_XtoY = vqgan.cuda(device=self.device)
-        self.G_YtoX = vqgan.cuda(device=self.device)
-        self.D_X = vqgan.loss.cuda(device=self.device)
-        self.D_Y = vqgan.loss.cuda(device=self.device)
+        vqgan = self.load_vqgan(config, ckpt_path=self.ckpt_path).to(self.device)
+        self.G_XtoY = vqgan.to(self.device)
+        self.G_YtoX = vqgan.to(self.device)
+        self.D_X = vqgan.loss.to(self.device)
+        self.D_Y = vqgan.loss.to(self.device)
+        self.G_XtoY =  DDP(self.G_XtoY, device_ids=[self.local_rank], broadcast_buffers=False)
+        self.G_YtoX =  DDP(self.G_YtoX, device_ids=[self.local_rank], broadcast_buffers=False)
+        self.D_X =  DDP(self.D_X , device_ids=[self.local_rank], broadcast_buffers=False)
+        self.D_Y =  DDP(self.D_Y, device_ids=[self.local_rank], broadcast_buffers=False)
     
     def delete_models(self):
         del self.G_XtoY, self.G_YtoX, self.D_X, self.D_Y   
@@ -145,8 +154,12 @@ class CycleGAN:
        
         X_dataset = ImageDataset(csv_file= X_csv, root_dir=data_root, transform=transform)
         Y_dataset = ImageDataset(csv_file= Y_csv, root_dir=data_root, transform=transform)
-        self.dataloader_X =  DataLoader(X_dataset, batch_size=batch_size, shuffle=True)
-        self.dataloader_Y =  DataLoader(Y_dataset, batch_size=batch_size, shuffle=False)
+
+        samplerX = torch.utils.data.distributed.DistributedSampler(X_dataset)
+        samplerY = torch.utils.data.distributed.DistributedSampler(Y_dataset)
+    
+        self.dataloader_X =  DataLoader(X_dataset, batch_size=batch_size, shuffle=False, sampler=samplerX)
+        self.dataloader_Y =  DataLoader(Y_dataset, batch_size=batch_size, shuffle=False, sampler=samplerY)
         self.batch_size = batch_size
         self.Y_csv = Y_csv
         self.X_csv = X_csv
@@ -215,10 +228,10 @@ class CycleGAN:
                 print("Done!")
                 break
             real_img_X, row = next(loader_X)
-            real_img_X = real_img_X.cuda(device=self.device)
+            real_img_X = real_img_X.to(self.device)
 
             real_img_Y, row = next(loader_Y)
-            real_img_Y = real_img_Y.cuda(device=self.device)
+            real_img_Y = real_img_Y.to(self.device)
 
             # generate fake images
             fake_img_Y, latent_codes, vq_loss_x  = self.G_XtoY(real_img_X)
@@ -319,10 +332,10 @@ class CycleGAN:
             while gen_count < self.num_of_new_generated_img:
                 # Generate fake images from test data
                 real_img_X, row = next(loader_X)
-                real_img_X = real_img_X.cuda(device=self.device)
+                real_img_X = real_img_X.to(self.device)
                 fake_Y, latent_codes, _ = self.G_XtoY(real_img_X)
                 real_img_Y, _ = next(loader_Y)
-                real_img_Y = real_img_Y.cuda(device=self.device)
+                real_img_Y = real_img_Y.to(self.device)
                 fake_X, latent_codes, _ = self.G_YtoX(real_img_Y)
 
                 reconstructed_img_X, latent_codes, _  = self.G_YtoX(fake_Y)
