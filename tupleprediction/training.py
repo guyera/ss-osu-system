@@ -1657,20 +1657,20 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         optimizer.zero_grad()
         if allow_print:
             print_nan(loss, 'loss 3')
-        #    for param in backbone.module.parameters():
-        #        print_nan(param, 'some parameter')
+            for param in backbone.parameters():
+                print_nan(param, 'some parameter 1')
 
-        #    for param in backbone.module.parameters():
-        #        if param.grad is not None:
-        #            print_nan(param.grad.data, 'some parameter\'s gradient')
+            for param in backbone.parameters():
+                if param.grad is not None:
+                    print_nan(param.grad.data, 'some parameter\'s gradient 1')
 
         loss.backward()
         optimizer.step()
 
         if allow_print:
-            for param in backbone.module.parameters():
-                print_nan(param, 'some parameter')
-            for param in backbone.module.parameters():
+            for param in backbone.parameters():
+                print_nan(param, 'some parameter 2')
+            for param in backbone.parameters():
                 if param.grad is not None:
                     print_nan(param.grad.data, 'some parameter\'s gradient 2')
 

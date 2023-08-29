@@ -127,6 +127,7 @@ class TopLevelApp:
         self.post_red = False
         self.all_p_ni = torch.tensor([])
         self.all_p_ni_raw = np.array([])
+        self.all_queries = torch.tensor([])
         self.all_nc = torch.tensor([])
         self.all_predictions = []
         self.all_p_type = torch.tensor([])
@@ -327,6 +328,7 @@ class TopLevelApp:
         self.unsupervised_aucs = [None, None, None]
         self.supervised_aucs = [None, None, None]
         self.all_p_ni = torch.tensor([])
+        self.all_queries = torch.tensor([])
         self.all_p_ni_raw = np.array([])
         self.all_nc = torch.tensor([], dtype=torch.long)
         self.all_predictions = []
@@ -492,6 +494,7 @@ class TopLevelApp:
             logs['characterization'] = self.characterization_preds
             logs['red_light_scores'] = self.all_red_light_scores
             logs['per_box_predictions'] = self._classifier_debugging_data
+            logs['queries'] = self.all_queries.numpy()
 
             pickle.dump(logs, handle)
         return self.all_p_ni.numpy()
@@ -526,6 +529,8 @@ class TopLevelApp:
         self.batch_context.query_mask = torch.zeros(N, dtype=torch.long)
         self.batch_context.query_mask[query_indices] = 1
         self.batch_context.query_indices = query_indices
+
+        self.all_queries = torch.cat((self.all_queries, self.batch_context.query_mask), dim=0)
 
         return selected_img_paths, bboxes
 
