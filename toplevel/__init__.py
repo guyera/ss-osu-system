@@ -35,7 +35,7 @@ from data.custom import build_species_label_mapping
 
 from taming_transformers.cycleGAN import CycleGAN
 
-def gen_retrain_fn(device_id, train_sampler_fn, feedback_batch_sampler_fn, allow_write, allow_print, distributed=False):
+def gen_retrain_fn(device_id, train_sampler_fn, feedback_batch_sampler_fn, allow_write, allow_print, distributed=False, root_log_dir= './logs'):
     device = f'cuda:{device_id}' if device_id is not None else 'cpu'
     device_ids = [device_id] if device_id is not None else None
     def retrain(
@@ -879,22 +879,19 @@ class TopLevelApp:
     def _retrain_supervised_detectors(self):
         # retrain_cond_1 = self.num_retrains_so_far == 0 and self.novelty_trainer.n_feedback_examples() >= 15
         # retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.novelty_trainer.n_feedback_examples() > 0)
-        print(len(self.retraining_buffer))
-
         retrain_cond_1 = self.num_retrains_so_far == 0 and len(self.retraining_buffer) >= 15
         retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (len(self.retraining_buffer) > 0)
 
-        if retrain_cond_1: #or retrain_cond_2:
-            if self.gan_augment:
-                # import ipdb; ipdb.set_trace()
-                csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
-                self.retraining_buffer.to_csv(csv_path, index=True)
-                csv_path_temp = os.path.join(self.temp_path, f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
-                # csv_path_temp = './'+ csv_path_temp
-                self.cycleGAN.load_datasets(self.data_root, self.train_csv_path, csv_path_temp, 2) 
-                self.cycleGAN.train(350)
+        if retrain_cond_1 or retrain_cond_2:
+            csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
+            self.retraining_buffer.to_csv(csv_path, index=True)
+            csv_path_temp = os.path.join(self.temp_path, f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
+            # self.gan_augment = False
+            if self.gan_augment == True:
+                self.cycleGAN.load_datasets(self.data_root, self.train_csv_path, csv_path_temp, 1) 
+                self.cycleGAN.train(5)
                 self.cycleGAN.delete_models()
-                self.novelty_trainer.add_feedback_data(self.data_root, csv_path_temp)   
+            self.novelty_trainer.add_feedback_data(self.data_root, csv_path_temp)   
 
 
             self.num_retrains_so_far += 1
@@ -914,8 +911,8 @@ class TopLevelApp:
                 self.und_manager.novelty_type_classifier,
                 self.und_manager.activation_statistical_model,
                 self.und_manager.scorer,
-                None,
-                self.model_unwrap_fn
+                self.log_dir,
+                self.model_unwrap_fn,
             )
             self.backbone.eval()
             self.retraining_buffer = self.retraining_buffer.iloc[0:0]

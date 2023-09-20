@@ -57,7 +57,7 @@ if __name__ == "__main__":
     p.add_argument('--detection-threshold', type=float, default=0.5)
     p.add_argument('--retraining-loss-fn', type=LossFnEnum, choices=list(LossFnEnum), default=LossFnEnum.cross_entropy)
     p.add_argument('--class-frequency-file', type=str, default=None)
-    p.add_argument('--gan_augment', default= False)
+    p.add_argument('--gan_augment', type=bool, default= False)
     p.add_argument('--distributed', action='store_true')
     p.add_argument('--device', type=str, default='cuda:0')
 
@@ -115,6 +115,7 @@ if __name__ == "__main__":
                 allow_write,
                 allow_print,
                 distributed=True
+                
             )
             # Run the retrain function in a loop until told to terminate
             # (signified by a skip of the function call, in-turn signified by

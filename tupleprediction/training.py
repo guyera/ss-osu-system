@@ -1714,6 +1714,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
         feedback_iter =\
             iter(feedback_loader) if feedback_loader is not None else None
+        # length = sum(1 for _ in feedback_iter)
+        # print('feedback_iter 1', length)  # Outputs: 5
         feedback_species_labels = None
         feedback_activity_labels = None
         feedback_box_images = None
@@ -1743,7 +1745,12 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                         feedback_box_images,\
                         _ = next(feedback_iter)
                 except:
-                    feedback_iter = iter(feedback_loader)
+                    # feedback_iter = iter(feedback_loader)
+                    feedback_iter =\
+                        iter(feedback_loader) if feedback_loader is not None else None
+                    
+                    length = sum(1 for _ in feedback_iter)
+                    print('feedback_iter 2', length)  # Outputs: 5
                     feedback_species_labels,\
                         feedback_activity_labels,\
                         _,\

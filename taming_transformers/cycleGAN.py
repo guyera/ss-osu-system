@@ -46,7 +46,7 @@ class ImageDataset(Dataset):
         return image, row
 
 class CycleGAN:
-    def __init__(self, config_path, ckpt_path, num_of_new_generated_img = 60, G_lr=2e-5, D_lr=1e-4, beta1=0.9, beta2=0.999, lambda_cycle= 1.0, device='cuda:0'):
+    def __init__(self, config_path, ckpt_path, num_of_new_generated_img = 100, G_lr=2e-5, D_lr=1e-4, beta1=0.9, beta2=0.999, lambda_cycle= 5.0, device='cuda:0'):
         self.config_path = config_path
         self.ckpt_path = ckpt_path
         self.G_lr = G_lr
@@ -291,8 +291,8 @@ class CycleGAN:
             save_dir = self.data_root+'/temp/'            
             # csv_pd = pd.read_csv(os.path.join(self.data_root , self.Y_csv))
             csv_pd = pd.read_csv(self.Y_csv, na_values=[''])
-            # if not os.path.exists(save_dir):
-            #     os.makedirs(save_dir)
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
 
 
             
@@ -309,10 +309,14 @@ class CycleGAN:
             box_dict = {}
             with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train.json', 'r') as f:
                 box_dict_train = json.load(f)
+            
+            # with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/valid.json', 'r') as f:
+            #     box_dict_valid = json.load(f)
 
-            for index, row in csv_pd.iterrows():
-                if not box_dict_train.get(row['filename']):
-                    csv_pd = csv_pd.drop(index)
+            # for index, row in csv_pd.iterrows():
+            #     if not box_dict_valid.get(row['filename']):
+            #         print(row['filename']," Not in Valid Json")
+            #         csv_pd = csv_pd.drop(index)
 
 
 
@@ -378,6 +382,7 @@ class CycleGAN:
                     csv_pd = csv_pd.append(row_dict, ignore_index=True)
              
             # csv_pd.to_csv(os.path.join(self.data_root, self.Y_csv), index=False)
+            # print(self.data_root, self.Y_csv)
             csv_pd.to_csv(self.Y_csv, index=False)
             with open(self.Y_csv[:-4]+'.json', 'w') as file:
                 # Write the dictionary to the file as json
