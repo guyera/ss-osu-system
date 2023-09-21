@@ -310,13 +310,15 @@ class CycleGAN:
             with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train.json', 'r') as f:
                 box_dict_train = json.load(f)
             
-            # with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/valid.json', 'r') as f:
-            #     box_dict_valid = json.load(f)
+            with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/valid.json', 'r') as f:
+                box_dict_valid = json.load(f)
 
-            # for index, row in csv_pd.iterrows():
-            #     if not box_dict_valid.get(row['filename']):
-            #         print(row['filename']," Not in Valid Json")
-            #         csv_pd = csv_pd.drop(index)
+            for index, row in csv_pd.iterrows():
+                if not box_dict_valid.get(row['filename']):
+                    print(row['filename']," Not in Valid Json")
+                    csv_pd = csv_pd.drop(index)
+                else:
+                    box_dict[row['filename']] = box_dict_valid[row['filename']]
 
 
 

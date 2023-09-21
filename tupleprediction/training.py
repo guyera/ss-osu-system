@@ -1714,8 +1714,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
         feedback_iter =\
             iter(feedback_loader) if feedback_loader is not None else None
-        # length = sum(1 for _ in feedback_iter)
-        # print('feedback_iter 1', length)  # Outputs: 5
+        length = sum(1 for _ in feedback_iter)
+        print('feedback_iter 1', length)  # Outputs: 5
         feedback_species_labels = None
         feedback_activity_labels = None
         feedback_box_images = None
@@ -1887,6 +1887,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             train_dataset = FlattenedBoxImageDataset(BoxImageMemoryDataset(self._train_dataset))
         else:
             train_dataset = FlattenedBoxImageDataset(self._train_dataset)
+        
         if train_sampler_fn is not None:
             train_sampler = train_sampler_fn(train_dataset)
             train_loader = DataLoader(

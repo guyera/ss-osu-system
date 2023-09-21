@@ -886,11 +886,27 @@ class TopLevelApp:
             csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
             self.retraining_buffer.to_csv(csv_path, index=True)
             csv_path_temp = os.path.join(self.temp_path, f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
-            # self.gan_augment = False
+            self.gan_augment = False
             if self.gan_augment == True:
                 self.cycleGAN.load_datasets(self.data_root, self.train_csv_path, csv_path_temp, 1) 
                 self.cycleGAN.train(5)
                 self.cycleGAN.delete_models()
+            else:
+                csv_pd = pd.read_csv(csv_path_temp, na_values=[''])
+                box_dict = {}
+                with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/valid.json', 'r') as f:
+                    box_dict_valid = json.load(f)
+                for index, row in csv_pd.iterrows():
+                    if not box_dict_valid.get(row['filename']):
+                        print(row['filename']," Not in Validation Json file")
+                        csv_pd = csv_pd.drop(index)
+                    else:
+                        box_dict[row['filename']] = box_dict_valid[row['filename']]
+                
+                with open(csv_path_temp[:-4]+'.json', 'w') as file:
+                    # Write the dictionary to the file as json
+                    json.dump(box_dict, file)
+
             self.novelty_trainer.add_feedback_data(self.data_root, csv_path_temp)   
 
 
