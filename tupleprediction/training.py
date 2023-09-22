@@ -904,37 +904,34 @@ class DistributedRandomBoxImageBatchSampler:
 
         # Determine the batch organization for each replica
         all_batches = []
-        more_boxes = True
-        img_idx = 0
-        # While there are more boxes to allocate to batches
-        while more_boxes:
-            # For each replica, sample a batch
-            batches = []
-            for cur_rank in range(self._num_replicas):
-                cur_batch = []
+        cur_batches = [[] for _ in range(self._num_replicas)]
+        cur_batch_sizes = [0] * self._num_replicas
+        for img_idx in range(len(box_counts)):
+            # Determine which rank's batch to add this image to---the one with
+            # the smallest current batch size
+            cur_batch_size = min(cur_batch_sizes)
+            cur_rank = cur_batch_sizes.index(cur_batch_size)
+
+            # Determine whether we can add the image to the selected batch.
+            # If not, flush the current batches and resume.
+            if cur_batch_size + box_counts[img_idx] > self._boxes_per_batch \
+                    and cur_batch_size != 0:
+                all_batches.append(cur_batches[self._rank])
+                cur_batches = [[] for _ in range(self._num_replicas)]
+                cur_batch_sizes = [0] * self._num_replicas
+
                 cur_batch_size = 0
-                # Keep adding images to the batch until just before the box
-                # count exceeds the target batch size
-                while img_idx < len(box_counts) and \
-                        cur_batch_size + box_counts[img_idx] <= \
-                            self._boxes_per_batch:
-                    cur_batch.append(indices[img_idx])
-                    cur_batch_size += box_counts[img_idx]
-                    img_idx += 1
+                cur_rank = 0
 
-                # If the sampled batch is non-empty, then append it to the
-                # list of batches. Else, record that there are no more boxes to
-                # be sampled, and break to avoid sampling more empty batches
-                if cur_batch_size > 0:
-                    batches.append(cur_batch)
-                else:
-                    more_boxes = False
-                    break
+            # Append the image to the smallest batch
+            cur_batches[cur_rank].append(img_idx)
+            cur_batch_sizes[cur_rank] += box_counts[img_idx]
 
-            # If a non-empty batch was sampled for each replica, then append
-            # this replica's batch to the list
-            if len(batches) == self._num_replicas:
-                all_batches.append(batches[self._rank])
+        # Finished adding all images to batches. If all current batches are
+        # non-empty, flush them one last time.
+        min_batch_size = min(cur_batch_sizes)
+        if min_batch_size != 0:
+            all_batches.append(cur_batches[self._rank])
 
         # Return an iterator for the batches corresponding to this replica's
         # rank (resting assured that all replicas will receive the same
