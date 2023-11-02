@@ -158,8 +158,10 @@ def write_results_to_log(results_dict, output_path):
                 if i in species_id2name_mapping:
                     species_name = species_id2name_mapping[i]
                 elif i == 0:
-                    # this is an empty images
-                    species_name = species_id2name_mapping['--']
+                    continue
+                    # # this is an empty images
+                    # import ipdb; ipdb.set_trace()
+                    # species_name = species_id2name_mapping['--']
 
                 summary.write(f'      {species_name:15} ({i}): '
                   f'{round(pre_red_per_species_brier_score[i], 2):9}   {round(pre_red_per_species_count_abs_err[i], 2):9}   '

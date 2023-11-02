@@ -156,7 +156,6 @@ class OSUInterface:
         json_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}_feedback_{feedback_uuid}.json')
         with open(json_path, 'w') as f:
             json.dump(bboxes, f)
-        
         self.app.feedback_callback(csv_path)
 
     def end_test(self, test_id):

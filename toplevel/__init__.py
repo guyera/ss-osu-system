@@ -166,7 +166,7 @@ class TopLevelApp:
         self.batch_num = 0 
         self.trial_size = trial_size
         self.trial_batch_size = trial_batch_size
-        self.second_retrain_batch_num = (self.trial_size - 30) // self.trial_batch_size
+        self.second_retrain_batch_num = (self.trial_size - 50) // self.trial_batch_size
         self.disable_retraining = disable_retraining
 
         # Auxiliary debugging data
@@ -886,19 +886,20 @@ class TopLevelApp:
             csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
             self.retraining_buffer.to_csv(csv_path, index=True)
             csv_path_temp = os.path.join(self.temp_path, f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
-            self.gan_augment = False
+            # self.gan_augment = False
             if self.gan_augment == True:
-                self.cycleGAN.load_datasets(self.data_root, self.train_csv_path, csv_path_temp, 1) 
-                self.cycleGAN.train(5)
-                self.cycleGAN.delete_models()
+                self.cycleGAN.load_datasets(self.data_root, self.train_csv_path, csv_path_temp, 4) 
+                self.cycleGAN.train(400)
+                # self.cycleGAN.delete_models()
             else:
                 csv_pd = pd.read_csv(csv_path_temp, na_values=[''])
                 box_dict = {}
-                with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/valid.json', 'r') as f:
+                # with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/valid.json', 'r') as f:
+                with open('/nfs/hpc/share/sail_on3/final/test.json', 'r') as f:
                     box_dict_valid = json.load(f)
                 for index, row in csv_pd.iterrows():
                     if not box_dict_valid.get(row['filename']):
-                        print(row['filename']," Not in Validation Json file")
+                        print(row['filename']," Not in Json file")
                         csv_pd = csv_pd.drop(index)
                     else:
                         box_dict[row['filename']] = box_dict_valid[row['filename']]

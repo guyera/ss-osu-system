@@ -813,16 +813,19 @@ class FlattenedBoxImageDataset(Dataset):
         return len(self._box_to_img_mapping)
 
     def __getitem__(self, idx):
+        
         img_idx = self._box_to_img_mapping[idx]
         local_box_idx = self._box_to_local_box_mapping[idx]
         species_labels, activity_labels, _, box_images, _ =\
             self._dataset[img_idx]
-
         # Flatten / concatenate the box images and repeat the
         # labels per-box
         one_hot_species_label = torch.argmax(species_labels, dim=0)
-        one_hot_activity_label = torch.argmax(activity_labels, dim=0)
+        one_hot_activity_label = torch.argmax(activity_labels.float(), dim=0)
+
+        # print(f"img_idx {img_idx}, idx {idx}, local_box_idx {local_box_idx}, lenght of box images {len(box_images)}, self._box_to_local_box_mapping[idx {self._box_to_local_box_mapping[idx]}")
         box_image = box_images[local_box_idx]
+
 
         return one_hot_species_label, one_hot_activity_label, box_image
 
@@ -1412,7 +1415,8 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             backbone,
             classifier,
             activation_statistical_model):
-        classifier.reset()
+        # classifier.reset()
+        pass
 
     def fit_activation_statistics(
             self,
@@ -1711,8 +1715,9 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
         feedback_iter =\
             iter(feedback_loader) if feedback_loader is not None else None
-        length = sum(1 for _ in feedback_iter)
-        print('feedback_iter 1', length)  # Outputs: 5
+        #length = sum(1 for _ in feedback_iter)
+        #print('feedback_iter 1', length)  # Outputs: 5
+        #print(feedback_iter)
         feedback_species_labels = None
         feedback_activity_labels = None
         feedback_box_images = None
@@ -1742,12 +1747,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                         feedback_box_images,\
                         _ = next(feedback_iter)
                 except:
-                    # feedback_iter = iter(feedback_loader)
-                    feedback_iter =\
-                        iter(feedback_loader) if feedback_loader is not None else None
-                    
-                    length = sum(1 for _ in feedback_iter)
-                    print('feedback_iter 2', length)  # Outputs: 5
+                    feedback_iter = iter(feedback_loader)
                     feedback_species_labels,\
                         feedback_activity_labels,\
                         _,\
@@ -2217,9 +2217,10 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             backbone,
             classifier,
             activation_statistical_model):
-        classifier.reset()
-        backbone.reset()
-        activation_statistical_model.reset()
+        pass
+        # classifier.reset()
+        # backbone.reset()
+        # activation_statistical_model.reset()
 
     def fit_activation_statistics(
             self,
@@ -2904,12 +2905,13 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             backbone,
             classifier,
             activation_statistical_model):
+        pass
         # Reset only the side network's weights
-        backbone.reset()
+        # backbone.reset()
 
         # Update classifier's bottleneck dim to account for side network's
         # features before resetting
-        classifier.reset(bottleneck_dim=512)
+        # classifier.reset(bottleneck_dim=512)
 
     def fit_activation_statistics(
             self,
@@ -3181,12 +3183,12 @@ class TuplePredictorTrainer:
             classifier,
             activation_statistical_model
         )
-        
+        pass
         # Reset the confidence calibrator
-        confidence_calibrator.reset()
+        # confidence_calibrator.reset()
 
         # Reset logistic regressions and statistical model
-        novelty_type_classifier.reset()
+        # novelty_type_classifier.reset()
 
     def calibrate_temperature_scalers(
             self,
@@ -3240,7 +3242,7 @@ class TuplePredictorTrainer:
                         for species_label, box_count in\
                             zip(one_hot_species_labels, box_counts)
                 ])
-                one_hot_activity_labels = torch.argmax(batch_activity_labels, dim=1)
+                one_hot_activity_labels = torch.argmax(batch_activity_labels.float(), dim=1)
                 flattened_activity_labels = torch.cat([
                     torch.full((box_count,), activity_label, device=device)\
                         for activity_label, box_count in\

@@ -29,12 +29,12 @@ def select_queries(budget, P_N, bbox_counts):
     # Assert length of list is nonzero
     if P_N.shape[0] == 0:
         raise ValueError("Must pass in a nonzero number of queries")
-
     sorted_indices = torch.argsort(P_N, descending=True)
     non_empty_mask = bbox_counts > 0
     sorted_non_empty_mask = non_empty_mask[sorted_indices]
     sorted_non_empty_indices = sorted_indices[sorted_non_empty_mask]
     selection = sorted_non_empty_indices[:budget]
+    # selection = sorted_indices[:budget]
     return selection.tolist()
 
 if __name__ == "__main__":

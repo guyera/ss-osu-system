@@ -65,9 +65,12 @@ if __name__ == "__main__":
 
     assert ((not args.distributed) or (args.classifier_trainer == TopLevelApp.ClassifierTrainer.end_to_end)),\
         'Only end-to-end training is supported in distributed mode'
+    
+    from datetime import timedelta
+    DEFAULT_TIMEOUT = timedelta(seconds=1000000)
 
     if args.distributed:
-        dist.init_process_group('nccl')
+        dist.init_process_group('nccl', timeout = DEFAULT_TIMEOUT)
         rank = dist.get_rank()
         local_rank = int(os.environ['LOCAL_RANK'])
         world_size = dist.get_world_size()

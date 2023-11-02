@@ -501,7 +501,7 @@ def score_test_from_boxes(
     nbr_known_species = 11
 
     bboxes_prediction_dict = boxes_pred_dict['per_box_predictions']
-
+    
     species_cols = [x for x in class_lines[0].split(',') if 'species_' in x and '_presence' in x]
     total_nbr_species = len(species_cols)
 
@@ -1008,36 +1008,37 @@ def score_tests(
     }
     for test_id in test_ids:
         # if 'OND' in test_id and '100.000' not in test_id:
-        if 'OND' in test_id:
+        if 'OND' in test_id and '1064' not  in test_id and '1063' not in test_id:
             metadata = json.load(open(test_dir / f'{test_id}_metadata.json', 'r'))
             test_df = pd.read_csv(test_dir / f'{test_id}_single_df.csv')
 
             pkl_fname = os.path.join(bboxes_dir, test_id+'/'+test_id+'.pkl')
+            print(pkl_fname)
             assert os.path.exists(pkl_fname)
             with (open(pkl_fname, "rb")) as pkl_file:
                 boxes_pred_dict = pickle.load(pkl_file)
 
-            test_id = test_id[4:]
+            # test_id = test_id[4:]
 
             detect_lines = []
             class_lines = []
-            for round_ in range(nbr_rounds):
-                if (sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').exists():
-                    detect_lines.append(open(sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').read().splitlines())
-                    class_lines.append(open(sys_output_dir / f'{session_id}.{test_id}_{round_}_classification.csv').read().splitlines())
+            # for round_ in range(nbr_rounds):
+            #     if (sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').exists():
+            #         detect_lines.append(open(sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').read().splitlines())
+            #         class_lines.append(open(sys_output_dir / f'{session_id}.{test_id}_{round_}_classification.csv').read().splitlines())
 
-                else:
-                    print(f'No results found for Test {session_id}.{test_id}_{round_}.')
-            detect_lines = np.concatenate(detect_lines)
+            #     else:
+            #         print(f'No results found for Test {session_id}.{test_id}_{round_}.')
+            # detect_lines = np.concatenate(detect_lines)
 
-            class_lines = np.concatenate(class_lines)
+            # class_lines = np.concatenate(class_lines)
             
-            # if (sys_output_dir / f'{session_id}.{test_id}_detection.csv').exists():
-            #     detect_lines = open(sys_output_dir / f'{session_id}.{test_id}_detection.csv').read().splitlines()
-            #     class_lines = open(sys_output_dir / f'{session_id}.{test_id}_classification.csv').read().splitlines()
+            if (sys_output_dir / f'{session_id}.{test_id}_detection.csv').exists():
+                detect_lines = open(sys_output_dir / f'{session_id}.{test_id}_detection.csv').read().splitlines()
+                class_lines = open(sys_output_dir / f'{session_id}.{test_id}_classification.csv').read().splitlines()
                 
-            # else:
-            #     print(f'No results found for Test {session_id}.{test_id}_.')
+            else:
+                print(f'No results found for Test {session_id}.{test_id}_.')
             
 
             with open(log_dir / f'{test_id}.log', 'w') as log:

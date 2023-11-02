@@ -46,7 +46,7 @@ class ImageDataset(Dataset):
         return image, row
 
 class CycleGAN:
-    def __init__(self, config_path, ckpt_path, num_of_new_generated_img = 100, G_lr=2e-5, D_lr=1e-4, beta1=0.9, beta2=0.999, lambda_cycle= 5.0, device='cuda:0'):
+    def __init__(self, config_path, ckpt_path, num_of_new_generated_img = 1000, G_lr=2e-5, D_lr=1e-4, beta1=0.9, beta2=0.999, lambda_cycle= 5, device='cuda:1'):
         self.config_path = config_path
         self.ckpt_path = ckpt_path
         self.G_lr = G_lr
@@ -95,7 +95,10 @@ class CycleGAN:
         self.D_Y = vqgan.loss.cuda(device=self.device)
     
     def delete_models(self):
-        del self.G_XtoY, self.G_YtoX, self.D_X, self.D_Y   
+        del self.G_XtoY, self.G_YtoX, self.D_X, self.D_Y, self.optimizer_G, self.optimizer_D
+        # torch.cuda.empty_cache() 
+        # import gc
+        # gc.collect()
 
     def build_optimizers(self):
         self.optimizer_G = optim.Adam(itertools.chain(filter(lambda p: p.requires_grad and p is not self.G_XtoY.loss.parameters(), self.G_XtoY.parameters()), 
@@ -284,9 +287,11 @@ class CycleGAN:
         axs[2, 1].plot(cycle_loss_Y_all)
         axs[2, 1].set_title("cycle_loss_Y")
         
+        self.G_XtoY.eval()
+        self.G_YtoX.eval()
+        self.D_X.eval()
+        self.D_Y.eval()
         with torch.set_grad_enabled(False):
-            self.G_XtoY.eval()
-            self.G_YtoX.eval()
 
             save_dir = self.data_root+'/temp/'            
             # csv_pd = pd.read_csv(os.path.join(self.data_root , self.Y_csv))
@@ -310,12 +315,12 @@ class CycleGAN:
             with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train.json', 'r') as f:
                 box_dict_train = json.load(f)
             
-            with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/valid.json', 'r') as f:
+            with open('/nfs/hpc/share/sail_on3/final/test.json', 'r') as f:
                 box_dict_valid = json.load(f)
 
             for index, row in csv_pd.iterrows():
                 if not box_dict_valid.get(row['filename']):
-                    print(row['filename']," Not in Valid Json")
+                    print(row['filename']," Not in Json")
                     csv_pd = csv_pd.drop(index)
                 else:
                     box_dict[row['filename']] = box_dict_valid[row['filename']]
@@ -389,6 +394,38 @@ class CycleGAN:
             with open(self.Y_csv[:-4]+'.json', 'w') as file:
                 # Write the dictionary to the file as json
                 json.dump(box_dict, file)
+            
+            
+            del self.G_XtoY
+            del self.G_YtoX
+            del self.D_X
+            del self.D_Y
+            del self.optimizer_G
+            del self.optimizer_D
+            del real_img_X
+            del real_img_Y
+            del fake_img_Y
+            del fake_img_X
+            del reconstructed_img_X
+            del reconstructed_img_Y
+            del pred_fake_X
+            del pred_fake_Y
+            del pred_real_X
+            del pred_real_Y
+            del D_X_loss
+            del D_Y_loss
+            del loss_G_X
+            del loss_G_Y
+            del cycle_loss_X
+            del cycle_loss_Y
+            del loss_G
+            torch.cuda.empty_cache() 
+
+            import gc   
+            gc.collect()
+
+
+
      
                 
 # cycleGAN = CycleGAN('./taming_transformers/logs/vqgan_imagenet_f16_1024/configs/model.yaml','./taming_transformers/logs/vqgan_imagenet_f16_1024/checkpoints/last.ckpt')
