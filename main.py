@@ -70,16 +70,19 @@ if __name__ == "__main__":
     DEFAULT_TIMEOUT = timedelta(seconds=1000000)
 
     if args.distributed:
+
         dist.init_process_group('nccl', timeout = DEFAULT_TIMEOUT)
         rank = dist.get_rank()
         local_rank = int(os.environ['LOCAL_RANK'])
+        # os.environ["CUDA_VISIBLE_DEVICES"] = str(local_rank)
+
         world_size = dist.get_world_size()
         device_id = local_rank
         # device = f'cuda:{device_id}'
         device = torch.device(f'cuda:{device_id}')
 
 
-        torch.cuda.set_device(device)
+        torch.cuda.set_device(local_rank)
 
         def _model_unwrap_fn(backbone, classifier):
             classifier.un_ddp
@@ -146,18 +149,40 @@ if __name__ == "__main__":
             # can run their respective retraining functions. Each process's
             # retraining function is pre-conditioned on the process-specific
             # retraining arguments (device, samplers, allow_write, allow_print)
-            retrain_fn = distributedutils.gen_broadcast_call(
-                gen_retrain_fn(
+            # retrain_fn = distributedutils.gen_broadcast_call(
+            #     gen_retrain_fn(
+            #         device_id,
+            #         train_sampler_fn,
+            #         feedback_batch_sampler_fn,
+            #         allow_write,
+            #         allow_print,
+            #         distributed=True
+            #     ),
+            #     src=0,
+            #     device=device
+            # )
+            if world_size != 1:
+                retrain_fn = distributedutils.gen_broadcast_call(
+                    gen_retrain_fn(
+                        device_id,
+                        train_sampler_fn,
+                        feedback_batch_sampler_fn,
+                        allow_write,
+                        allow_print,
+                        distributed=True
+                    ),
+                    src=0,
+                    device=device
+                )
+            else:
+                retrain_fn = gen_retrain_fn(
                     device_id,
                     train_sampler_fn,
                     feedback_batch_sampler_fn,
                     allow_write,
                     allow_print,
                     distributed=True
-                ),
-                src=0,
-                device=device
-            )
+                )
     else:
         device = args.device
         if device == 'cpu':

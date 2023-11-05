@@ -46,7 +46,7 @@ class ImageDataset(Dataset):
         return image, row
 
 class CycleGAN:
-    def __init__(self, config_path, ckpt_path, num_of_new_generated_img = 1000, G_lr=2e-5, D_lr=1e-4, beta1=0.9, beta2=0.999, lambda_cycle= 5, device='cuda:1'):
+    def __init__(self, config_path, ckpt_path, num_of_new_generated_img = 1000, G_lr=2e-5, D_lr=1e-4, beta1=0.9, beta2=0.999, lambda_cycle= 5, device='cuda:0'):
         self.config_path = config_path
         self.ckpt_path = ckpt_path
         self.G_lr = G_lr

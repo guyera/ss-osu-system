@@ -1686,7 +1686,6 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         n_activity_correct = int(
             activity_correct.to(torch.int).sum().detach().cpu().item()
         )
-        
         return loss.detach().cpu().item(),\
             n_species_correct,\
             n_activity_correct
@@ -2217,6 +2216,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             backbone,
             classifier,
             activation_statistical_model):
+        # backbone.zero_grad(set_to_none=True)
+        # torch.cuda.empty_cache()
         pass
         # classifier.reset()
         # backbone.reset()
@@ -2248,6 +2249,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 all_features.append(features)
         all_features = torch.cat(all_features, dim=0)
         activation_statistical_model.fit(all_features)
+        
 
 
 class SideTuningClassifierTrainer(ClassifierTrainer):
@@ -2637,12 +2639,14 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         train_box_features, train_species_labels, train_activity_labels =\
             torch.load(
                 self._train_feature_file,
-                map_location='cpu'
+                # map_location='cpu'
+                map_location= device
             )
         val_box_features, val_species_labels, val_activity_labels =\
             torch.load(
                 self._val_feature_file,
-                map_location='cpu'
+                # map_location='cpu'
+                map_location= device
             )
 
         if feedback_dataset is not None:
