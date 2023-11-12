@@ -57,12 +57,12 @@ if __name__ == "__main__":
     p.add_argument('--detection-threshold', type=float, default=0.5)
     p.add_argument('--retraining-loss-fn', type=LossFnEnum, choices=list(LossFnEnum), default=LossFnEnum.cross_entropy)
     p.add_argument('--class-frequency-file', type=str, default=None)
-    p.add_argument('--gan_augment', type=bool, default= False)
+    p.add_argument('--gan_augment', type=bool, default=False)
     p.add_argument('--distributed', action='store_true')
     p.add_argument('--device', type=str, default='cuda:0')
 
     args = p.parse_args()
-
+    torch.autograd.set_detect_anomaly(True)
     assert ((not args.distributed) or (args.classifier_trainer == TopLevelApp.ClassifierTrainer.end_to_end)),\
         'Only end-to-end training is supported in distributed mode'
     

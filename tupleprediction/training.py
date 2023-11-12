@@ -38,6 +38,9 @@ def print_nan(t, name):
         print("Infs present in", name)
         sys.exit(-1)
 
+def contains_nan(tensor):
+    return torch.isnan(tensor).any()
+
 '''
 Dynamic program solution to the multiple instance count problem
 
@@ -307,6 +310,10 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets, allow_pri
                     dyn_prog[tuple(shifted_dyn_indices)] +=\
                         dyn_prog[tuple(masked_cur_dyn_indices)] *\
                             observed_preds_sums
+                    if contains_nan(dyn_prog):
+                        print("Skipping batch due to NaN values in dyn_prog 2")
+                        continue 
+
                     if allow_print:
                         print_nan(dyn_prog, 'dyn_prog 2')
                 else:
@@ -324,9 +331,13 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets, allow_pri
                     # simply P(this box == this class). Compute this probability
                     # and multiply it by the current dyn prog values to get
                     # the contribution to the next dyn prog values.
+                    
                     dyn_prog[tuple(shifted_dyn_indices)] +=\
                         dyn_prog[tuple(masked_cur_dyn_indices)] *\
                             present_predictions[box_idx, cls_idx]
+                    if contains_nan(dyn_prog):
+                        print("Skipping batch due to NaN values in dyn_prog 2")
+                        continue  
                     if allow_print:
                         print_nan(dyn_prog, 'dyn_prog 3')
 
@@ -1258,7 +1269,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             feedback_batch_sampler = DistributedRandomBoxImageBatchSampler(feedback_box_counts, self._feedback_batch_size, 1, 0)
             feedback_loader = DataLoader(
                 feedback_dataset,
-                num_workers=2,
+                num_workers=0,
                 batch_sampler=feedback_batch_sampler,
                 collate_fn=gen_custom_collate()
             )
@@ -1300,6 +1311,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                     # Record labels
                     feedback_species_labels.append(batch_species_labels)
                     feedback_activity_labels.append(batch_activity_labels)
+                    
 
                 # Concatenate labels
                 feedback_species_labels = torch.cat(
@@ -1781,6 +1793,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                         batch_loss=batch_loss
                     )
                 )
+            
 
 
         mean_loss = sum_loss / n_iterations
@@ -1889,7 +1902,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             train_loader = DataLoader(
                 train_dataset,
                 batch_size=self._retraining_batch_size,
-                num_workers=2,
+                num_workers=0,
                 sampler=train_sampler
             )
         else:
@@ -1897,7 +1910,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 train_dataset,
                 batch_size=self._retraining_batch_size,
                 shuffle=True,
-                num_workers=2
+                num_workers=0
             )
 
         if feedback_dataset is not None:
@@ -1918,7 +1931,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 )
             feedback_loader = DataLoader(
                 feedback_dataset,
-                num_workers=2,
+                num_workers=0,
                 batch_sampler=feedback_batch_sampler,
                 collate_fn=gen_custom_collate()
             )
@@ -1942,7 +1955,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             val_loader = DataLoader(
                 val_dataset,
                 batch_size=self._retraining_batch_size,
-                num_workers=2,
+                num_workers=0,
                 sampler=val_sampler
             )
         else:
@@ -1950,7 +1963,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 val_dataset,
                 batch_size=self._retraining_batch_size,
                 shuffle=False,
-                num_workers=2
+                num_workers=0
             )
 
         # Retrain the backbone and classifiers
@@ -2234,7 +2247,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             batch_size = 32,
             shuffle = False,
             collate_fn=gen_custom_collate(),
-            num_workers=2
+            num_workers=0
         )
         backbone.eval()
 
@@ -2639,14 +2652,14 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
         train_box_features, train_species_labels, train_activity_labels =\
             torch.load(
                 self._train_feature_file,
-                # map_location='cpu'
-                map_location= device
+                map_location='cpu'
+                # map_location= device
             )
         val_box_features, val_species_labels, val_activity_labels =\
             torch.load(
                 self._val_feature_file,
-                # map_location='cpu'
-                map_location= device
+                map_location='cpu'
+                # map_location= device
             )
 
         if feedback_dataset is not None:
@@ -2662,7 +2675,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             )
             feedback_loader = DataLoader(
                 feedback_dataset,
-                num_workers=2,
+                num_workers=0,
                 batch_sampler=feedback_batch_sampler,
                 collate_fn=gen_custom_collate()
             )
@@ -2705,7 +2718,7 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                     feedback_dataset,
                     feedback_box_features
                 ),
-                num_workers=2,
+                num_workers=0,
                 batch_sampler=feedback_feature_batch_sampler,
                 collate_fn=gen_custom_collate()
             )
@@ -2731,14 +2744,14 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             train_dataset,
             batch_size=self._retraining_batch_size,
             shuffle=True,
-            num_workers=2
+            num_workers=0
         )
         val_dataset = known_val_dataset
         val_loader = DataLoader(
             val_dataset,
             batch_size=self._retraining_batch_size,
             shuffle=False,
-            num_workers=2
+            num_workers=0
         )
 
         # Construct the optimizer
@@ -3029,7 +3042,7 @@ def compute_features(
         flattened_train_dataset,
         batch_size=retraining_batch_size,
         shuffle=False,
-        num_workers=2
+        num_workers=0
     )
 
     # Construct validation loaders for early stopping / model selection.
@@ -3044,7 +3057,7 @@ def compute_features(
         flattened_val_dataset,
         batch_size=retraining_batch_size,
         shuffle=False,
-        num_workers=2
+        num_workers=0
     )
 
     save_dir = os.path.join(
@@ -3208,7 +3221,7 @@ class TuplePredictorTrainer:
             batch_size=64,
             shuffle=False,
             collate_fn=gen_custom_collate(),
-            num_workers=2
+            num_workers=0
         )
 
         # Set everything to eval mode for calibration, except the calibrators
@@ -3365,7 +3378,7 @@ class TuplePredictorTrainer:
             batch_size = 32,
             shuffle = False,
             collate_fn=gen_custom_collate(),
-            num_workers=2
+            num_workers=0
         )
 
         if allow_print:

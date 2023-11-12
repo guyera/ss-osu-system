@@ -167,7 +167,7 @@ class TopLevelApp:
         self.batch_num = 0 
         self.trial_size = trial_size
         self.trial_batch_size = trial_batch_size
-        self.second_retrain_batch_num = (self.trial_size - 50) // self.trial_batch_size
+        self.second_retrain_batch_num = (self.trial_size - 100) // self.trial_batch_size
         self.disable_retraining = disable_retraining
 
         # Auxiliary debugging data
@@ -604,7 +604,7 @@ class TopLevelApp:
         self.novelty_trainer.add_feedback_data(self.data_root, feedback_csv_path)
 
         if not self.disable_retraining:
-            self._retrain_supervised_detectors()                
+            self._retrain_supervised_detectors(feedback_csv_path)                
 
     def _predict(self, species_probs, activity_probs, batch_p_type):
         return self.und_manager.predict(species_probs, activity_probs, batch_p_type)
@@ -877,59 +877,81 @@ class TopLevelApp:
             classifier_trainer
         )
 
-    def _retrain_supervised_detectors(self):
+    def _retrain_supervised_detectors(self, feedback_csv_path):
         # retrain_cond_1 = self.num_retrains_so_far == 0 and self.novelty_trainer.n_feedback_examples() >= 15
         # retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.novelty_trainer.n_feedback_examples() > 0)
         retrain_cond_1 = self.num_retrains_so_far == 0 and len(self.retraining_buffer) >= 15
         retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (len(self.retraining_buffer) > 0)
-        
+        print('Len of Feedback Buffer : ', len(self.retraining_buffer))
         # if retrain_cond_1 or retrain_cond_2:
-        if retrain_cond_1:
-            # torch.cuda.empty_cache()
-            # import gc   
-            # gc.collect()
+        if retrain_cond_2:
             csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
             self.retraining_buffer.to_csv(csv_path, index=True)
             csv_path_temp = os.path.join(self.temp_path, f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
+            
             self.gan_augment = False
             if self.gan_augment == True:
+                box_dict = {}
                 self.cycleGAN.load_datasets(self.data_root, self.train_csv_path, csv_path_temp, 4) 
                 self.cycleGAN.train(400)
-                # self.cycleGAN.delete_models()
-            else:
-                box_dict = {}
-                csv_pd = pd.read_csv(csv_path_temp, na_values=[''])
-                # with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/valid.json', 'r') as f:
-                with open('/nfs/hpc/share/sail_on3/final/test.json', 'r') as f:
-                    box_dict_valid = json.load(f)
-                for index, row in csv_pd.iterrows():
-                    if not box_dict_valid.get(row['filename']):
-                        print(row['filename']," Not in Json file")
-                        csv_pd = csv_pd.drop(index)
-                    else:
-                        box_dict[row['filename']] = box_dict_valid[row['filename']]
+                self.novelty_trainer.add_feedback_data(self.data_root, csv_path_temp)   
 
-                # if self.retrain_num == 1:
-                #     csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_fog.csv'
-                #     csv_pd = pd.read_csv(csv_path, na_values=['']).head(1000)
-                #     with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_fog.json', 'r') as f:
-                #         box_dict_valid = json.load(f)
-                # if self.retrain_num == 2:
-                #     csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_fog.csv'
-                #     csv_pd = pd.read_csv(csv_path, na_values=['']).tail(1000)
-                #     with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_fog.json', 'r') as f:
-                #         box_dict_valid = json.load(f)
+                # box_dict = {}
+                # csv_pd = pd.read_csv(csv_path_temp, na_values=[''])
+                # # with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/valid.json', 'r') as f:
+                # with open('/nfs/hpc/share/sail_on3/final/test.json', 'r') as f:
+                #     box_dict_valid = json.load(f)
+                # for index, row in csv_pd.iterrows():
+                #     if not box_dict_valid.get(row['filename']):
+                #         print(row['filename']," Not in Json file")
+                #         csv_pd = csv_pd.drop(index)
+                #     else:
+                #         box_dict[row['filename']] = box_dict_valid[row['filename']]
+                # csv_pd.to_csv(csv_path_temp, index=True)
+
+                # with open(csv_path_temp[:-4]+'.json', 'w') as file:
+                #     # Write the dictionary to the file as json
+                #     json.dump(box_dict, file)
+
+
+                # self.cycleGAN.delete_models()
+            # else:
+            #     # self.novelty_trainer.add_feedback_data(self.data_root, feedback_csv_path)   
+
+            #     # box_dict = {}
+            #     # csv_pd = pd.read_csv(csv_path_temp, na_values=[''])
+            #     # # with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/valid.json', 'r') as f:
+            #     # with open('/nfs/hpc/share/sail_on3/final/test.json', 'r') as f:
+            #     #     box_dict_valid = json.load(f)
+            #     # for index, row in csv_pd.iterrows():
+            #     #     if not box_dict_valid.get(row['filename']):
+            #     #         print(row['filename']," Not in Json file")
+            #     #         csv_pd = csv_pd.drop(index)
+            #     #     else:
+            #     #         box_dict[row['filename']] = box_dict_valid[row['filename']]
                 
-                # if self.retrain_num == 3:
+                # box_dict = {}
+            #     if self.retrain_num == 1:
+            #         csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_fog.csv'
+            #         csv_pd = pd.read_csv(csv_path, na_values=['']).head(1000)
+            #         with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_fog.json', 'r') as f:
+            #             box_dict_valid = json.load(f)
+            #     if self.retrain_num == 2:
+            #         csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_fog.csv'
+            #         csv_pd = pd.read_csv(csv_path, na_values=['']).tail(1000)
+            #         with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_fog.json', 'r') as f:
+            #             box_dict_valid = json.load(f)
+                
+                # if self.retrain_num == 1:
                 #     csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_snow.csv'
                 #     csv_pd = pd.read_csv(csv_path, na_values=['']).head(1000)
                 #     with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_snow.json', 'r') as f:
                 #         box_dict_valid = json.load(f)
-                # if self.retrain_num == 4:
-                #     csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_snow.csv'
-                #     csv_pd = pd.read_csv(csv_path, na_values=['']).tail(1000)
-                #     with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_snow.json', 'r') as f:
-                #         box_dict_valid = json.load(f)
+            #     if self.retrain_num == 4:
+            #         csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_snow.csv'
+            #         csv_pd = pd.read_csv(csv_path, na_values=['']).tail(1000)
+            #         with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_snow.json', 'r') as f:
+            #             box_dict_valid = json.load(f)
                 
                 # for index, row in csv_pd.iterrows():
                 #     if not box_dict_valid.get(row['filename']):
@@ -939,14 +961,13 @@ class TopLevelApp:
                 #         box_dict[row['filename']] = box_dict_valid[row['filename']]
                 # csv_pd.to_csv(csv_path_temp, index=True)
 
-                with open(csv_path_temp[:-4]+'.json', 'w') as file:
-                    # Write the dictionary to the file as json
-                    json.dump(box_dict, file)
-                self.retrain_num+=1
-            self.novelty_trainer.add_feedback_data(self.data_root, csv_path_temp)   
+                # with open(csv_path_temp[:-4]+'.json', 'w') as file:
+                #     # Write the dictionary to the file as json
+                #     json.dump(box_dict, file)
+                # self.retrain_num+=1
+                # self.novelty_trainer.add_feedback_data(self.data_root, csv_path_temp)   
 
-            print('Data loaded')
-            self.num_retrains_so_far += 1
+            # self.num_retrains_so_far += 1
             self.novelty_trainer.prepare_for_retraining(
                 self.backbone,
                 self.und_manager.classifier, 
@@ -966,10 +987,11 @@ class TopLevelApp:
                 self.log_dir,
                 self.model_unwrap_fn,
             )
-            self.backbone.eval()
             for param in self.backbone.parameters():
                 param.grad = None
+            
+            self.backbone.eval()
             self.retraining_buffer = self.retraining_buffer.iloc[0:0]
-            torch.cuda.empty_cache()
-            import gc   
-            gc.collect()
+            # torch.cuda.empty_cache()
+            # import gc   
+            # gc.collect()

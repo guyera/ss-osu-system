@@ -33,8 +33,8 @@ def percent_string(num, denom=None):
 
 def species_count_error(grd_trth_vec, pred_vec, metric='MSE'):
     '''
-    Computes the squared error, absolute, mean squared error, mean absolute error or 
-    root mean squared error between the ground truth and the predicion
+    Computes the squared error, absolute error, mean squared error, 
+    mean absolute error or root mean squared error between the ground truth and the predicion
     '''
     assert metric in ('SE', 'AE', 'RMSE', 'MSE', 'MAE')
     assert len(grd_trth_vec) == len(pred_vec)
@@ -47,7 +47,7 @@ def species_count_error(grd_trth_vec, pred_vec, metric='MSE'):
     if metric == 'SE':
         return sum(sqrt_diff)
     elif metric == 'AE':
-        return np.abs(diff)
+        return sum(np.abs(diff))
     elif metric == 'MSE':
         return np.mean(sqrt_diff)
     elif metric == 'MAE':
@@ -57,13 +57,12 @@ def species_count_error(grd_trth_vec, pred_vec, metric='MSE'):
 
 def score_test(
     test_id, metadata, test_df, detect_lines, class_lines, class_file_reader, 
-    log, all_performances, stats, detection_threshold, presence_threshold=0.5, count_metric='MAE'
+    log, all_performances, detection_threshold, spe_presence_threshold=0.5, 
+    act_presence_threshold=0.5
 ):
-    # import ipdb; ipdb.set_trace()
-
     # The metadata file is not currently used.
     # import ipdb; ipdb.set_trace()
-    total_pre_red, total_post_red, total_novel, total = 0, 0, 0, 0
+    total_novel, total = 0, 0
     test_tuples = test_df.itertuples()
     len_test = len(test_df)
     red_button = False
@@ -72,50 +71,51 @@ def score_test(
 
     nbr_known_species = 11
 
-    species_cols = [x for x in class_lines[0].split(',') if 'species_' in x and '_presence' in x]
-    total_nbr_species = len(species_cols)
+    spe_counts_cols = [x for x in class_lines[0].split(',') if 'species_' in x and '_count' in x]
 
-    activity_cols = [x for x in class_lines[0].split(',') if 'activity_' in x]
-    total_nbr_activities = len(activity_cols)
+    spe_presence_cols = [x for x in class_lines[0].split(',') if 'species_' in x and '_presence' in x]
+    total_nbr_species = len(spe_presence_cols)
 
-    pre_red_per_species_brier_score = np.zeros((1, total_nbr_species)).ravel()
-    pre_red_per_species_presence_acc = np.zeros((1, total_nbr_species)).ravel()
-    pre_red_per_species_auc = np.zeros((1, total_nbr_species)).ravel()
+    act_presence_cols = [x for x in class_lines[0].split(',') if 'activity_' in x]
+    total_nbr_activities = len(act_presence_cols)
 
-    pre_red_per_activity_brier_score = np.zeros((1, total_nbr_activities)).ravel()
-    pre_red_per_activity_acc = np.zeros((1, total_nbr_activities)).ravel()
-    pre_red_per_activity_auc = np.zeros((1, total_nbr_activities)).ravel()
+    class_lines = pd.DataFrame([class_line.split(',') for class_line in class_lines[1:]], columns=class_lines[0].split(','))
+    all_pred_spe_counts = class_lines[spe_counts_cols].astype(float).copy(deep=True)
+    all_pred_spe_presence = class_lines[spe_presence_cols].astype(float).copy(deep=True)
+    all_pred_act_presence = class_lines[act_presence_cols].astype(float).copy(deep=True)
 
-    post_red_per_species_brier_score = np.zeros((1, total_nbr_species)).ravel()
-    post_red_per_species_presence_acc = np.zeros((1, total_nbr_species)).ravel()
-    post_red_per_species_auc = np.zeros((1, total_nbr_species)).ravel()
+    all_grd_truth_spe_counts = np.zeros((len_test, total_nbr_species))
+    all_grd_truth_spe_presence = np.zeros((len_test, total_nbr_species))
+    all_grd_truth_act_presence = np.zeros((len_test, total_nbr_activities))
 
-    post_red_per_activity_brier_score = np.zeros((1, total_nbr_activities)).ravel()
-    post_red_per_activity_acc = np.zeros((1, total_nbr_activities)).ravel()
-    post_red_per_activity_auc = np.zeros((1, total_nbr_activities)).ravel()
+    pre_red_per_spe_precision, pre_red_per_spe_recall, pre_red_per_spe_f1, pre_red_per_spe_auc = {}, {}, {}, {}
+    post_red_per_spe_precision, post_red_per_spe_recall, post_red_per_spe_f1, post_red_per_spe_auc = {}, {}, {}, {}
 
-    pre_red_species_count_err1, pre_red_species_count_err2 = 0, 0
-    post_red_species_count_err1, post_red_species_count_err2 = 0, 0
+    pre_red_per_act_precision, pre_red_per_act_recall, pre_red_per_act_f1, pre_red_per_act_auc = {}, {}, {}, {}
+    post_red_per_act_precision, post_red_per_act_recall, post_red_per_act_f1, post_red_per_act_auc = {}, {}, {}, {}
 
     total_pre_red_btn, total_post_red_btn = 0, 0
-
-    all_grd_truth_spe_presence = np.zeros((len_test, total_nbr_species))
-    all_pred_spe_presence = np.zeros((len_test, total_nbr_species))
-
-    all_grd_truth_activity_presence = np.zeros((len_test, total_nbr_activities))
-    all_pred_activity_presence = np.zeros((len_test, total_nbr_activities))
 
     species_id2name_mapping = {}
     activity_id2name_mapping = {}
 
+    pre_red_count_abs_err, post_red_count_abs_err, pre_red_count_rel_err, post_red_count_rel_err = {}, {}, {}, {}
+    for pos, (test_tuple, detect_line) in enumerate(zip(test_tuples, detect_lines[1:])):
+        if pd.isnull(test_tuple.agent1_id):
+            print(f'** Empty image:', test_tuple.image_path)
+            continue
 
-    for pos, (test_tuple, detect_line, class_line) in enumerate(zip(test_tuples, detect_lines[1:], class_lines[1:])):
         if test_tuple.novel:
             red_button = True
             if red_button_pos == -1:
                 red_button_pos = pos
-
             total_novel += 1
+        
+        total += 1
+        if red_button:
+            total_post_red_btn += 1
+        else:
+            total_pre_red_btn += 1
                 
         ans_nov = float(detect_line.split(',')[1]) > detection_threshold
         if sys_declare_pos == -1 and ans_nov:
@@ -124,18 +124,17 @@ def score_test(
         # ground truth vector of species counts
         ground_truth_species_counts = np.zeros((1, total_nbr_species)).ravel()
         ground_truth_species_presence = np.zeros((1, total_nbr_species)).ravel()
-        if not pd.isnull(test_tuple.agent1_id):
-            ground_truth_species_counts[int(test_tuple.agent1_id)] = int(test_tuple.agent1_count)
-            ground_truth_species_presence[int(test_tuple.agent1_id)] = 1
 
-            if int(test_tuple.agent1_id) not in species_id2name_mapping:
-                species_id2name_mapping[int(test_tuple.agent1_id)] = test_tuple.agent1_name
-        else:
-            # # this is an empty image
-            # if '--' not in species_id2name_mapping:
-            #     species_id2name_mapping['--'] = test_tuple.agent1_name
-            if 0 not in species_id2name_mapping:
-                species_id2name_mapping[0] = test_tuple.agent1_name
+        assert not pd.isnull(test_tuple.agent1_id)
+
+        ground_truth_species_counts[int(test_tuple.agent1_id)] = int(test_tuple.agent1_count)
+        ground_truth_species_presence[int(test_tuple.agent1_id)] = 1
+
+        if int(test_tuple.agent1_id) not in species_id2name_mapping:
+            species_id2name_mapping[int(test_tuple.agent1_id)] = test_tuple.agent1_name
+
+        # if 0 not in species_id2name_mapping:
+        #     species_id2name_mapping[0] = 'blank'
 
         if not pd.isnull(test_tuple.agent2_id):
             ground_truth_species_counts[int(test_tuple.agent2_id)] = int(test_tuple.agent2_count)
@@ -152,6 +151,9 @@ def score_test(
                 species_id2name_mapping[int(test_tuple.agent3_id)] = test_tuple.agent3_name
 
         # update array of all ground truth species presence
+        all_grd_truth_spe_counts[pos,:] = ground_truth_species_counts
+        
+        # update array of all ground truth species presence
         all_grd_truth_spe_presence[pos,:] = ground_truth_species_presence
 
         # ground truth boolean vector of activity presence
@@ -166,197 +168,218 @@ def score_test(
             if act_id not in activity_id2name_mapping:
                 activity_id2name_mapping[act_id] = list_activities[idx]
 
-        all_grd_truth_activity_presence[pos, :] = ground_truth_activity_presence
+        all_grd_truth_act_presence[pos, :] = ground_truth_activity_presence
 
-        # vector of predicted species counts
-        pred_species_counts, pred_species_presence, pred_activity_presence = class_file_reader.get_answers(
-            class_line, total_nbr_species, total_nbr_activities
-        )
 
-        # Apply presence threshold to predicted species presence and predicted activity presence
-        pred_species_presence_yn = [
-            1 if pred_species_presence[i] >= presence_threshold else 0 for i in range(len(pred_species_presence)) 
-        ]
-
-        # Index 0 is used for empty images and should not predict presence
-        assert pred_species_presence_yn[0] == 0
-
-        pred_activity_presence_yn = [
-            1 if pred_activity_presence[i] >= presence_threshold else 0 for i in range(len(pred_activity_presence))
-        ]
-
-        # If no species was predicted, consider the image empty and assign prediction to index 0
-        if  sum(pred_species_presence_yn) == 0:
-            # assert sum(pred_activity_presence_yn) == 0
-            if sum(pred_activity_presence_yn) != 0:
-                print(f'\n\ntuple: {test_tuple}')
-            pred_species_presence_yn[0] = 1
-
-        all_pred_spe_presence[pos, :] = pred_species_presence_yn
-        all_pred_activity_presence[pos, :] = pred_activity_presence_yn
-
-        # ground truth specie counts with all novel species count summed
-        grd_trth_sp_cts_known_vs_novel = ground_truth_species_counts[:nbr_known_species].tolist()
-        grd_trth_sp_cts_known_vs_novel.append(
-            sum(ground_truth_species_counts[nbr_known_species:])
-        )
-        # Specie prediction counts with all novel species count summed
-        pred_sp_cts_comb_novel = pred_species_counts[:nbr_known_species]
-        pred_sp_cts_comb_novel.append(
-            sum(pred_species_counts[nbr_known_species:])
-        )
-
-        total += 1
-        if not red_button:
-            total_pre_red_btn += 1
-
-            # ---------->>>  Brier Score and accuracy element for current image (presence/absence error)  <<<----------
-            # Species presence error for current image
-            for i in range(total_nbr_species):
-                pre_red_per_species_brier_score[i] += (ground_truth_species_presence[i] - pred_species_presence[i])**2
-                pre_red_per_species_presence_acc[i] += 1 if ground_truth_species_presence[i] == pred_species_presence_yn[i] else 0
-
-            # Activity presence error for current images
-            for i in range(total_nbr_activities):
-                pre_red_per_activity_brier_score[i] += (ground_truth_activity_presence[i] - pred_activity_presence[i])**2
-                pre_red_per_activity_acc[i] += 1 if ground_truth_activity_presence[i] == pred_activity_presence_yn[i] else 0
-
-            # ------------------->>>  Accuracy counts element for current image  <<<------------------
-            pre_red_species_count_err1 += species_count_error(grd_trth_sp_cts_known_vs_novel, pred_sp_cts_comb_novel, metric=count_metric)
-            pre_red_species_count_err2 += species_count_error(ground_truth_species_counts, pred_species_counts, metric=count_metric)
-
+    # ** new column names
+    new_spe_count_col_names = {}
+    for spe_col in spe_counts_cols:
+        spe_id = int(spe_col.split('_')[1])
+        if spe_id in species_id2name_mapping:
+            new_spe_count_col_names[spe_col] = species_id2name_mapping[spe_id]
         else:
-            total_post_red_btn += 1
-
-            # ---------->>>  Brier Score and accuracy element for current image (presence/absence error)  <<<----------
-            # Species presence error for current image
-            for i in range(total_nbr_species):
-                post_red_per_species_brier_score[i] += (ground_truth_species_presence[i] - pred_species_presence[i])**2
-                post_red_per_species_presence_acc[i] += 1 if ground_truth_species_presence[i] == pred_species_presence_yn[i] else 0
-
-            # Activity presence error for current images
-            for i in range(total_nbr_activities):
-                post_red_per_activity_brier_score[i] += (ground_truth_activity_presence[i] - pred_activity_presence[i])**2
-                post_red_per_activity_acc[i] += 1 if ground_truth_activity_presence[i] == pred_activity_presence_yn[i] else 0
-
-            # ------------------->>>  Accuracy counts element for current image  <<<------------------
-            post_red_species_count_err1 += species_count_error(grd_trth_sp_cts_known_vs_novel, pred_sp_cts_comb_novel, metric=count_metric)
-            post_red_species_count_err2 += species_count_error(ground_truth_species_counts, pred_species_counts, metric=count_metric)
-
-
-    # *****************************  ACTIVITY PERFORMANCE  ********************************
+            new_spe_count_col_names[spe_col] = 'blank' if spe_id == 0 else 'unknown_' + str(spe_id)
     
-    # ---------->>  Activity presence Brier score  <<----------
-    pre_red_per_activity_brier_score = np.divide(pre_red_per_activity_brier_score, total_pre_red_btn)
-    post_red_per_activity_brier_score = np.divide(post_red_per_activity_brier_score, total_post_red_btn)
+    new_spe_presence_col_names = {}
+    for spe_col in spe_presence_cols:
+        spe_id = int(spe_col.split('_')[1])
+        if spe_id in species_id2name_mapping:
+            new_spe_presence_col_names[spe_col] = species_id2name_mapping[spe_id]
+        else:
+            new_spe_presence_col_names[spe_col] = 'blank' if spe_id == 0 else 'unknown_' + str(spe_id)
 
-    pre_red_activity_mean_brier_score = np.mean(pre_red_per_activity_brier_score)
-    post_red_activity_mean_brier_score = np.mean(post_red_per_activity_brier_score)
+    new_act_col_names = {}
+    for act_col in act_presence_cols:
+        act_id = int(act_col.split('_')[1])
+        if act_id in activity_id2name_mapping:
+            new_act_col_names[act_col] = activity_id2name_mapping[act_id]
+        else:
+            new_act_col_names[act_col] = 'unknown_' + str(act_id)
 
-    # --------->>  Activity presence Accuracty  <<----------
-    pre_red_per_activity_acc = np.divide(pre_red_per_activity_acc, total_pre_red_btn)
-    post_red_per_activity_acc = np.divide(post_red_per_activity_acc, total_post_red_btn)
+    # ** renaming columns 
+    all_pred_spe_counts.rename(columns=new_spe_count_col_names, inplace=True)
+    all_pred_spe_presence.rename(columns=new_spe_presence_col_names, inplace=True)
+    all_pred_act_presence.rename(columns=new_act_col_names, inplace=True)
 
-    pre_red_mean_activity_acc = np.mean(pre_red_per_activity_acc)
-    post_red_mean_activity_acc = np.mean(post_red_per_activity_acc)
+    all_grd_truth_spe_counts = pd.DataFrame(all_grd_truth_spe_counts, columns=all_pred_spe_counts.columns)
+    all_grd_truth_spe_presence = pd.DataFrame(all_grd_truth_spe_presence, columns=all_pred_spe_presence.columns)
+    all_grd_truth_act_presence = pd.DataFrame(all_grd_truth_act_presence, columns=all_pred_act_presence.columns)
 
-    # -------->>  Activity presence AUC  <<---------
-    for i in range(all_grd_truth_activity_presence.shape[1]):
+    # ** Drop empty species from ground truth and predicted data
+    for df in [
+        all_pred_spe_counts, all_pred_spe_presence, all_pred_act_presence, 
+        all_grd_truth_spe_counts, all_grd_truth_spe_presence, all_grd_truth_act_presence
+        ]:
+        if 'blank' in df.columns:
+            df.drop(columns='blank', inplace=True)
+
+
+    # *****************************  ACTIVITY PRESENCE PERFORMANCE  ********************************
+
+    for act in all_grd_truth_act_presence.columns:
+        if act not in activity_id2name_mapping.values():
+            pre_red_per_act_auc[act], post_red_per_act_auc[act] = -1, -1
+            pre_red_per_act_precision[act], post_red_per_act_precision[act] = -1, -1
+            pre_red_per_act_recall[act], post_red_per_act_recall[act] = -1, -1
+            pre_red_per_act_f1[act], post_red_per_act_f1[act] = -1, -1
+            continue
+
+        # ---------->>  Activity presence AUC  <<----------
         try:
-            pre_red_per_activity_auc[i] = metrics.roc_auc_score(
-                all_grd_truth_activity_presence[:total_pre_red_btn, i], 
-                all_pred_activity_presence[:total_pre_red_btn, i]
-            )
-            post_red_per_activity_auc[i] = metrics.roc_auc_score(
-                all_grd_truth_activity_presence[total_pre_red_btn:, i], 
-                all_pred_activity_presence[total_pre_red_btn:, i]
-            )
-        except:
-            pre_red_per_activity_auc[i] = -1
-            post_red_per_activity_auc[i] = -1
-
-    pre_red_mean_activity_auc = np.mean(pre_red_per_activity_auc[pre_red_per_activity_auc > 0])
-    post_red_mean_activity_auc = np.mean(post_red_per_activity_auc[post_red_per_activity_auc > 0])
-
-    # -------->>  Activity presence confusion matrix  <<---------
-    pre_red_act_grd_trth = np.argmax(all_grd_truth_activity_presence[:total_pre_red_btn, :], axis=1)
-    pre_red_act_pred = np.argmax(all_pred_activity_presence[:total_pre_red_btn, :], axis=1)
-    pre_red_unique_act = np.unique([pre_red_act_grd_trth, pre_red_act_pred])
-    pre_red_activity_cm = metrics.confusion_matrix(
-        pre_red_act_grd_trth, 
-        pre_red_act_pred,
-        labels=np.sort(pre_red_unique_act)
-    )
-
-    post_red_act_grd_trth = np.argmax(all_grd_truth_activity_presence[total_pre_red_btn:, :], axis=1)
-    post_red_act_pred = np.argmax(all_pred_activity_presence[total_pre_red_btn:, :], axis=1)
-    post_red_unique_act = np.unique([post_red_act_grd_trth, post_red_act_pred])
-    post_red_activity_cm = metrics.confusion_matrix(
-        post_red_act_grd_trth, 
-        post_red_act_pred,
-        labels=np.sort(post_red_unique_act)
-    )
-
-
-    # *****************************  SPECIES PERFORMANCE  ********************************
-
-    # ---------->>  Species presence Brier score  <<----------
-    pre_red_per_species_brier_score = np.divide(pre_red_per_species_brier_score, total_pre_red_btn)
-    post_red_per_species_brier_score = np.divide(post_red_per_species_brier_score, total_post_red_btn)
-
-    pre_red_species_mean_brier_score = np.mean(pre_red_per_species_brier_score)
-    post_red_species_mean_brier_score = np.mean(post_red_per_species_brier_score)
-
-    # --------->>  Species presence Accuracty  <<----------
-    pre_red_per_species_presence_acc = np.divide(pre_red_per_species_presence_acc, total_pre_red_btn)
-    post_red_per_species_presence_acc = np.divide(post_red_per_species_presence_acc, total_post_red_btn)
-
-    pre_red_mean_spe_presence_acc = np.mean(pre_red_per_species_presence_acc)
-    post_red_mean_spe_presence_acc = np.mean(post_red_per_species_presence_acc)
-
-    # -------->>  Species presence AUC  <<---------
-    for i in range(all_grd_truth_spe_presence.shape[1]):
+            pre_red_per_act_auc[act] = metrics.roc_auc_score(
+                    all_grd_truth_act_presence[act].iloc[:total_pre_red_btn], 
+                    all_pred_act_presence[act].iloc[:total_pre_red_btn]
+                )
+            post_red_per_act_auc[act] = metrics.roc_auc_score(
+                    all_grd_truth_act_presence[act].iloc[total_pre_red_btn:], 
+                    all_pred_act_presence[act].iloc[total_pre_red_btn:]
+                )
+        except Exception as ex:
+            print('\n\n**** The following exception happened:', ex, '\n\n')
+            pre_red_per_act_auc[act] = -1
+            post_red_per_act_auc[act] = -1
+        
+        # ---------->>  Activity presence Precision, Recall, F1  <<----------
+        # if act_presence_threshold:
+        all_pred_act_presence_yn = all_pred_act_presence.copy(deep=True)
+        all_pred_act_presence_yn = (all_pred_act_presence_yn >= act_presence_threshold).astype(int)
         try:
-            pre_red_per_species_auc[i] = metrics.roc_auc_score(
-                all_grd_truth_spe_presence[:total_pre_red_btn, i], 
-                all_pred_spe_presence[:total_pre_red_btn, i]
+            pre_red_precision, pre_red_rec, pre_red_f1, _ = metrics.precision_recall_fscore_support(
+                all_grd_truth_act_presence[act].iloc[:total_pre_red_btn], 
+                all_pred_act_presence_yn[act].iloc[:total_pre_red_btn],
+                average='binary'
             )
-            post_red_per_species_auc[i] = metrics.roc_auc_score(
-                all_grd_truth_spe_presence[total_pre_red_btn:, i], 
-                all_pred_spe_presence[total_pre_red_btn:, i]
+            post_red_precision, post_red_rec, post_red_f1, _ = metrics.precision_recall_fscore_support(
+                all_grd_truth_act_presence[act].iloc[total_pre_red_btn:], 
+                all_pred_act_presence_yn[act].iloc[total_pre_red_btn:],
+                average='binary'
             )
+
+            # Precision
+            pre_red_per_act_precision[act] = pre_red_precision
+            post_red_per_act_precision[act] = post_red_precision
+
+            # Recall
+            pre_red_per_act_recall[act] = pre_red_rec
+            post_red_per_act_recall[act] = post_red_rec
+
+            # F1 score
+            pre_red_per_act_f1[act] = pre_red_f1
+            post_red_per_act_f1[act] = post_red_f1
         except:
-            pre_red_per_species_auc[i] = -1
-            post_red_per_species_auc[i] = -1
+            pre_red_per_act_precision[act], post_red_per_act_precision[act] = -1, -1
+            pre_red_per_act_recall[act], post_red_per_act_recall[act] = -1, -1
+            pre_red_per_act_f1[act], post_red_per_act_f1[act] = -1, -1
+            continue
 
-    pre_red_mean_spe_presence_auc = np.mean(pre_red_per_species_auc[pre_red_per_species_auc > 0])
-    post_red_mean_spe_presence_auc = np.mean(post_red_per_species_auc[post_red_per_species_auc > 0])
 
-    # -------->>  Species presence confusion matrix  <<---------
-    pre_red_spe_grd_trth = np.argmax(all_grd_truth_spe_presence[:total_pre_red_btn, :], axis=1)
-    pre_red_spe_pred = np.argmax(all_pred_spe_presence[:total_pre_red_btn, :], axis=1)
-    pre_red_unique_spe = np.unique([pre_red_spe_grd_trth, pre_red_spe_pred])
-    pre_red_species_cm = metrics.confusion_matrix(
-        pre_red_spe_grd_trth, 
-        pre_red_spe_pred,
-        labels=np.sort(pre_red_unique_spe)
-    )
+    # *****************************  SPECIES PRESENCE PERFORMANCE  ********************************
 
-    post_red_spe_grd_trth = np.argmax(all_grd_truth_spe_presence[total_pre_red_btn:, :], axis=1)
-    post_red_spe_pred = np.argmax(all_pred_spe_presence[total_pre_red_btn:, :], axis=1)
-    post_red_unique_spe = np.unique([post_red_spe_grd_trth, post_red_spe_pred])
-    post_red_species_cm = metrics.confusion_matrix(
-        post_red_spe_grd_trth, 
-        post_red_spe_pred,
-        labels=np.sort(post_red_unique_spe)
-    )
+    for spe in all_grd_truth_spe_presence.columns:
 
-    # -------->>  Species count error metric  <<--------
-    pre_red_species_count_err1 = pre_red_species_count_err1 / total_pre_red_btn
-    pre_red_species_count_err2 = pre_red_species_count_err2 / total_pre_red_btn
-    post_red_species_count_err1 = post_red_species_count_err1 / total_post_red_btn
-    post_red_species_count_err2 = post_red_species_count_err2 / total_post_red_btn
-    
+        if spe not in species_id2name_mapping.values():
+            pre_red_per_spe_auc[spe], post_red_per_spe_auc[spe] = -1, -1
+            pre_red_per_spe_precision[spe], post_red_per_spe_precision[spe] = -1, -1
+            pre_red_per_spe_recall[spe], post_red_per_spe_recall[spe] = -1, -1
+            pre_red_per_spe_f1[spe], post_red_per_spe_f1[spe] = -1, -1
+            continue
+
+        # ---------->>  Species presence AUC  <<----------
+        try:
+            pre_red_per_spe_auc[spe] = metrics.roc_auc_score(
+                    all_grd_truth_spe_presence[spe].iloc[:total_pre_red_btn], 
+                    all_pred_spe_presence[spe].iloc[:total_pre_red_btn]
+                )
+            post_red_per_spe_auc[spe] = metrics.roc_auc_score(
+                    all_grd_truth_spe_presence[spe].iloc[total_pre_red_btn:], 
+                    all_pred_spe_presence[spe].iloc[total_pre_red_btn:]
+                )
+        except:
+            pre_red_per_spe_auc[spe] = -1
+            post_red_per_spe_auc[spe] = -1
+        
+        # ---------->>  Activity presence Precision, Recall, F1  <<----------
+        # if spe_presence_threshold:
+        all_pred_spe_presence_yn = all_pred_spe_presence.copy(deep=True)
+        all_pred_spe_presence_yn = (all_pred_spe_presence_yn >= spe_presence_threshold).astype(int)
+
+        try:
+            pre_red_precision, pre_red_rec, pre_red_f1, _ = metrics.precision_recall_fscore_support(
+                all_grd_truth_spe_presence[spe].iloc[:total_pre_red_btn], 
+                all_pred_spe_presence_yn[spe].iloc[:total_pre_red_btn],
+                average='binary'
+            )
+            post_red_precision, post_red_rec, post_red_f1, _ = metrics.precision_recall_fscore_support(
+                all_grd_truth_spe_presence[spe].iloc[total_pre_red_btn:], 
+                all_pred_spe_presence_yn[spe].iloc[total_pre_red_btn:],
+                average='binary'
+            )
+        
+            # Precision
+            pre_red_per_spe_precision[spe] = pre_red_precision
+            post_red_per_spe_precision[spe] = post_red_precision
+
+            # Recall
+            pre_red_per_spe_recall[spe] = pre_red_rec
+            post_red_per_spe_recall[spe] = post_red_rec
+
+            # F1 score
+            pre_red_per_spe_f1[spe] = pre_red_f1
+            post_red_per_spe_f1[spe] = post_red_f1
+        except:
+            pre_red_per_spe_auc[spe], post_red_per_spe_auc[spe] = -1, -1
+            pre_red_per_spe_precision[spe], post_red_per_spe_precision[spe] = -1, -1
+            pre_red_per_spe_recall[spe], post_red_per_spe_recall[spe] = -1, -1
+            pre_red_per_spe_f1[spe], post_red_per_spe_f1[spe] = -1, -1
+
+
+    # *****************************  SPECIES COUNT PERFORMANCE  ********************************
+
+    num_pre_red_img_w_spe = all_grd_truth_spe_counts.iloc[:total_pre_red_btn].astype(bool).sum(axis=0)
+    num_post_red_img_w_spe = all_grd_truth_spe_counts.iloc[total_pre_red_btn:].astype(bool).sum(axis=0)
+    for spe in all_grd_truth_spe_counts.columns:
+        if spe not in species_id2name_mapping.values():
+            pre_red_count_abs_err[spe], post_red_count_abs_err[spe] = -1, -1
+            pre_red_count_rel_err[spe], post_red_count_rel_err[spe] = -1, -1
+            continue
+        
+        # ---------->>  Absolute error  <<----------
+        if num_pre_red_img_w_spe[spe] > 0:
+            pre_red_count_abs_err[spe] = species_count_error(
+                all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn], 
+                all_pred_spe_counts[spe].iloc[:total_pre_red_btn], 
+                metric='AE'
+            ) / num_pre_red_img_w_spe[spe]
+        else:
+            pre_red_count_abs_err[spe] = -1
+
+        if num_post_red_img_w_spe[spe] > 0:
+            post_red_count_abs_err[spe] = species_count_error(
+                all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:], 
+                all_pred_spe_counts[spe].iloc[total_pre_red_btn:], 
+                metric='AE'
+            ) / num_post_red_img_w_spe[spe]
+        else:
+            post_red_count_abs_err[spe] = -1
+        
+        # ---------->>  Relative error  <<----------
+        if all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn].sum() > 0:
+            pre_red_count_rel_err[spe] = species_count_error(
+                all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn], 
+                all_pred_spe_counts[spe].iloc[:total_pre_red_btn], 
+                metric='AE'
+            ) / all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn].sum()
+        else:
+            pre_red_count_rel_err[spe] = -1
+        
+        if all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:].sum() > 0:
+            post_red_count_rel_err[spe] = species_count_error(
+                all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:], 
+                all_pred_spe_counts[spe].iloc[total_pre_red_btn:], 
+                metric='AE'
+            ) / all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:].sum()
+        else:
+            post_red_count_rel_err[spe] = -1
 
     # log.write(f'{" "*86} {total_top_1_score}  {total_top_3_score}\n')
     if sys_declare_pos == -1:
@@ -384,32 +407,53 @@ def score_test(
     # species counts
     counts = {
         'pre_red_btn':{
-            'all_species': round(pre_red_species_count_err2, 3),
-            'combined_novel_species': round(pre_red_species_count_err1, 3)
+            'abs_err': pre_red_count_abs_err,
+            'rel_err': pre_red_count_rel_err
         },
         'post_red_btn':{
-            'all_species': round(post_red_species_count_err2, 3),
-            'combined_novel_species': round(post_red_species_count_err1, 3)
+            'abs_err': post_red_count_abs_err,
+            'rel_err': post_red_count_rel_err
         }
     }
     all_performances['Species_counts'][test_id] = counts
 
+    # Aggregate species counts
+    pre_red_count_abs_err_arr = np.fromiter(pre_red_count_abs_err.values(), dtype=float)
+    post_red_count_abs_err_arr = np.fromiter(post_red_count_abs_err.values(), dtype=float)
+    pre_red_count_rel_err_arr = np.fromiter(pre_red_count_rel_err.values(), dtype=float)
+    post_red_count_rel_err_arr = np.fromiter(post_red_count_rel_err.values(), dtype=float)
+    agg_species_counts = {
+        'pre_red_btn':{
+            'avg_abs_err': round(np.mean(pre_red_count_abs_err_arr[pre_red_count_abs_err_arr >= 0]), 3),
+            'avg_rel_err': round(np.mean(pre_red_count_rel_err_arr[pre_red_count_rel_err_arr >= 0]), 3)
+        },
+        'post_red_btn':{
+            'avg_abs_err': round(np.mean(post_red_count_abs_err_arr[post_red_count_abs_err_arr >= 0]), 3),
+            'avg_rel_err': round(np.mean(post_red_count_rel_err_arr[post_red_count_rel_err_arr >= 0]), 3)
+        }
+    }
+    all_performances['Aggregate_species_counts'][test_id] = agg_species_counts
+
+
     # Per species presence
     species_presence = {
         'pre_red_btn':{
-            'bs': pre_red_per_species_brier_score,
-            'acc': pre_red_per_species_presence_acc,
-            'auc': pre_red_per_species_auc
+            'auc': pre_red_per_spe_auc,
+            'precision': pre_red_per_spe_precision,
+            'recall': pre_red_per_spe_recall,
+            'f1_score': pre_red_per_spe_f1
         },
         'post_red_btn':{
-            'bs': post_red_per_species_brier_score,
-            'acc': post_red_per_species_presence_acc,
-            'auc': post_red_per_species_auc
+            'auc': post_red_per_spe_auc,
+            'precision': post_red_per_spe_precision,
+            'recall': post_red_per_spe_recall,
+            'f1_score': post_red_per_spe_f1
         }
     }
     all_performances['Per_species_presence'][test_id] = species_presence
 
     # Species presence confusion matrix
+    '''
     species_cm = {
         'pre_red_btn': {
             'cm': pre_red_species_cm,
@@ -421,19 +465,31 @@ def score_test(
         }
     }
     all_performances['Species_confusion_matrices'][test_id] = species_cm
-
+    '''
 
     # Aggregate species presence
+    pre_red_per_spe_auc_arr = np.fromiter(pre_red_per_spe_auc.values(), dtype=float)
+    pre_red_per_spe_precision_arr = np.fromiter(pre_red_per_spe_precision.values(), dtype=float)
+    pre_red_per_spe_recall_arr = np.fromiter(pre_red_per_spe_recall.values(), dtype=float)
+    pre_red_per_spe_f1_arr = np.fromiter(pre_red_per_spe_f1.values(), dtype=float)
+
+    post_red_per_spe_auc_arr = np.fromiter(post_red_per_spe_auc.values(), dtype=float)
+    post_red_per_spe_precision_arr = np.fromiter(post_red_per_spe_precision.values(), dtype=float)
+    post_red_per_spe_recall_arr = np.fromiter(post_red_per_spe_recall.values(), dtype=float)
+    post_red_per_spe_f1_arr = np.fromiter(post_red_per_spe_f1.values(), dtype=float)
+
     agg_species_presence = {
         'pre_red_btn':{
-            'mean_bs': round(pre_red_species_mean_brier_score, 2),
-            'mean_acc': percent_string(pre_red_mean_spe_presence_acc),
-            'mean_auc': percent_string(pre_red_mean_spe_presence_auc)
+        'avg_auc': round(np.mean(pre_red_per_spe_auc_arr[pre_red_per_spe_auc_arr >= 0]), 2),
+        'avg_precision': round(np.mean(pre_red_per_spe_precision_arr[pre_red_per_spe_precision_arr >= 0]), 2),
+        'avg_recall': round(np.mean(pre_red_per_spe_recall_arr[pre_red_per_spe_recall_arr >= 0]), 2),
+        'avg_f1_score': round(np.mean(pre_red_per_spe_f1_arr[pre_red_per_spe_f1_arr >= 0]), 2)
         },
         'post_red_btn':{
-            'mean_bs': round(post_red_species_mean_brier_score, 2),
-            'mean_acc': percent_string(post_red_mean_spe_presence_acc),
-            'mean_auc': percent_string(post_red_mean_spe_presence_auc)
+            'avg_auc': round(np.mean(post_red_per_spe_auc_arr[post_red_per_spe_auc_arr >= 0]), 2),
+            'avg_precision': round(np.mean(post_red_per_spe_precision_arr[post_red_per_spe_precision_arr >= 0]), 2),
+            'avg_recall': round(np.mean(post_red_per_spe_recall_arr[post_red_per_spe_recall_arr >= 0]), 2),
+            'avg_f1_score': round(np.mean(post_red_per_spe_f1_arr[post_red_per_spe_f1_arr >= 0]), 2)
         }
     }
     all_performances['Aggregate_species_presence'][test_id] = agg_species_presence
@@ -441,34 +497,48 @@ def score_test(
     # Per activity presence
     activity_presence = {
         'pre_red_btn':{
-            'bs': pre_red_per_activity_brier_score,
-            'acc': pre_red_per_activity_acc,
-            'auc': pre_red_per_activity_auc
+            'auc': pre_red_per_act_auc,
+            'precision': pre_red_per_act_precision,
+            'recall': pre_red_per_act_recall,
+            'f1_score': pre_red_per_act_f1
         },
         'post_red_btn':{
-            'bs': post_red_per_activity_brier_score,
-            'acc': post_red_per_activity_acc,
-            'auc': post_red_per_activity_auc
+            'auc': post_red_per_act_auc,
+            'precision': post_red_per_act_precision,
+            'recall': post_red_per_act_recall,
+            'f1_score': post_red_per_act_f1
         }
     }
     all_performances['Per_activity_presence'][test_id] = activity_presence
 
     # Aggregate activity presence
+    pre_red_per_act_auc_arr = np.fromiter(pre_red_per_act_auc.values(), dtype=float)
+    pre_red_per_act_precision_arr = np.fromiter(pre_red_per_act_precision.values(), dtype=float)
+    pre_red_per_act_recall_arr = np.fromiter(pre_red_per_act_recall.values(), dtype=float)
+    pre_red_per_act_f1_arr = np.fromiter(pre_red_per_act_f1.values(), dtype=float)
+
+    post_red_per_act_auc_arr = np.fromiter(post_red_per_act_auc.values(), dtype=float)
+    post_red_per_act_precision_arr = np.fromiter(post_red_per_act_precision.values(), dtype=float)
+    post_red_per_act_recall_arr = np.fromiter(post_red_per_act_recall.values(), dtype=float)
+    post_red_per_act_f1_arr = np.fromiter(post_red_per_act_f1.values(), dtype=float)
     agg_activity_presence = {
         'pre_red_btn':{
-            'mean_bs': round(pre_red_activity_mean_brier_score, 2),
-            'mean_acc': percent_string(pre_red_mean_activity_acc),
-            'mean_auc': percent_string(pre_red_mean_activity_auc)
+        'avg_auc': round(np.mean(pre_red_per_act_auc_arr[pre_red_per_act_auc_arr >= 0]), 2),
+        'avg_precision': round(np.mean(pre_red_per_act_precision_arr[pre_red_per_act_precision_arr >= 0]), 2),
+        'avg_recall': round(np.mean(pre_red_per_act_recall_arr[pre_red_per_act_recall_arr >= 0]), 2),
+        'avg_f1_score': round(np.mean(pre_red_per_act_f1_arr[pre_red_per_act_f1_arr >= 0]), 2)
         },
         'post_red_btn':{
-            'mean_bs': round(post_red_activity_mean_brier_score, 2),
-            'mean_acc': percent_string(post_red_mean_activity_acc),
-            'mean_auc': percent_string(post_red_mean_activity_auc)
+            'avg_auc': round(np.mean(post_red_per_act_auc_arr[post_red_per_act_auc_arr >= 0]), 2),
+            'avg_precision': round(np.mean(post_red_per_act_precision_arr[post_red_per_act_precision_arr >= 0]), 2),
+            'avg_recall': round(np.mean(post_red_per_act_recall_arr[post_red_per_act_recall_arr >= 0]), 2),
+            'avg_f1_score': round(np.mean(post_red_per_act_f1_arr[post_red_per_act_f1_arr >= 0]), 2)
         }
     }
     all_performances['Aggregate_activity_presence'][test_id] = agg_activity_presence
 
     # Activity presence confusion matrix
+    '''
     activity_cm = {
         'pre_red_btn': {
             'cm': pre_red_activity_cm,
@@ -480,6 +550,7 @@ def score_test(
         }
     }
     all_performances['Activity_confusion_matrices'][test_id] = activity_cm
+    '''
 
 
 
@@ -501,7 +572,7 @@ def score_test_from_boxes(
     nbr_known_species = 11
 
     bboxes_prediction_dict = boxes_pred_dict['per_box_predictions']
-    
+
     species_cols = [x for x in class_lines[0].split(',') if 'species_' in x and '_presence' in x]
     total_nbr_species = len(species_cols)
 
@@ -970,7 +1041,8 @@ def score_test_from_boxes(
 
 def score_tests(
     test_dir, sys_output_dir, bboxes_dir, session_id, class_file_reader, log_dir,
-    save_symlinks, dataset_root, detection_threshold, presence_threshold
+    save_symlinks, dataset_root, detection_threshold, spe_presence_threshold,
+        act_presence_threshold
 ):   
     
     nbr_rounds = 100
@@ -1008,7 +1080,7 @@ def score_tests(
     }
     for test_id in test_ids:
         # if 'OND' in test_id and '100.000' not in test_id:
-        if 'OND' in test_id and '1064' not  in test_id and '1063' not in test_id:
+        if 'OND' in test_id:# and '1061.000' not in test_id and '1062.000' not in test_id:
             metadata = json.load(open(test_dir / f'{test_id}_metadata.json', 'r'))
             test_df = pd.read_csv(test_dir / f'{test_id}_single_df.csv')
 
@@ -1039,21 +1111,20 @@ def score_tests(
                 
             else:
                 print(f'No results found for Test {session_id}.{test_id}_.')
-            
-
+           
             with open(log_dir / f'{test_id}.log', 'w') as log:
-                # score_test(
-                #     test_id, metadata, test_df, detect_lines, class_lines, class_file_reader,
-                #     log, all_performances, stats, detection_threshold, presence_threshold
-                # )
-                score_test_from_boxes(
-                    test_id, metadata, test_df, detect_lines, class_lines, boxes_pred_dict, class_file_reader,
-                    log, all_performances, detection_threshold, presence_threshold
+                score_test(
+                    test_id, metadata, test_df, detect_lines, class_lines, class_file_reader,
+                    log, all_performances, detection_threshold, spe_presence_threshold, act_presence_threshold
                 )
+                # score_test_from_boxes(
+                #     test_id, metadata, test_df, detect_lines, class_lines, boxes_pred_dict, class_file_reader,
+                #     log, all_performances, detection_threshold, presence_threshold
+                # )
         
 
     write_results_to_log(all_performances, output_path=log_dir)
-    print_confusion_matrices(all_performances, log_dir / "confusion.pdf")
+    # print_confusion_matrices(all_performances, log_dir / "confusion.pdf")
 
 
 
@@ -1068,7 +1139,8 @@ def main():
     p.add_argument("--dataset_root", help="path to UMD image dataset, "
                    "required for save_symlinks")
     p.add_argument('--detection_threshold', type=float, default=0.5)
-    p.add_argument('--presence_threshold', type=float, default=0.3)
+    p.add_argument('--activity_presence_threshold', type=float, default=0.4)
+    p.add_argument('--species_presence_threshold', type=float, default=0.4)
     p.add_argument('--box_pred_dir', default='./session/temp/logsDete10',
         help="dir containing the system\'s prediction of each box (predicted species and activity)")
     args = p.parse_args()
@@ -1094,12 +1166,14 @@ def main():
             file.unlink()
 
     detection_threshold = args.detection_threshold
-    presence_threshold = args.presence_threshold
+    species_presence_threshold = args.species_presence_threshold
+    activity_presence_threshold = args.activity_presence_threshold
     bboxes_pred_dir = Path(args.box_pred_dir)
     
     score_tests(
         test_dir, sys_output_dir, bboxes_pred_dir, session_id, ClassFileReader(), log_dir,
-        args.save_symlinks, dataset_root, detection_threshold, presence_threshold
+        args.save_symlinks, dataset_root, detection_threshold, species_presence_threshold,
+        activity_presence_threshold
     )
 
 if __name__ == '__main__':
