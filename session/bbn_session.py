@@ -467,8 +467,7 @@ class BBNSession:
                     'detection_file': open(detection_filename, "r"),
                     'classification_file': open(classification_filename, "r")
                 })
-                        
-            ## Handle classification feedback
+             ## Handle classification feedback
             if self.detection_fb:
                 ## Handle detection feedback
                 if (self.detection_fb or self.given_detection) and red_light_declared:

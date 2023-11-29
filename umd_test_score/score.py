@@ -14,52 +14,38 @@ import json
 import pickle
 import pandas as pd
 from class_file_reader import ClassFileReader
-# from stats import Stats, Instance
 import shutil
 import numpy as np
 import sklearn.metrics as metrics
 import ast
 
 from write_results import write_results_to_log, print_confusion_matrices
-
+from helpers import species_count_error, percent_string
+from boostrap_conf_int import boostrap_conf_interval
+import matplotlib.pyplot as plt
 
 epsilon = 1e-6
-
-def percent_string(num, denom=None):
-    if denom is None:
-        return f'{100 * num:6.2f}%'
-    return f'{100 * num / denom:6.2f}%'
-
-
-def species_count_error(grd_trth_vec, pred_vec, metric='MSE'):
-    '''
-    Computes the squared error, absolute error, mean squared error, 
-    mean absolute error or root mean squared error between the ground truth and the predicion
-    '''
-    assert metric in ('SE', 'AE', 'RMSE', 'MSE', 'MAE')
-    assert len(grd_trth_vec) == len(pred_vec)
-
-    grd_trth_vec = np.array(grd_trth_vec).ravel()
-    pred_vec = np.array(pred_vec).ravel()
-    diff = grd_trth_vec - pred_vec
-    sqrt_diff = np.power(diff, 2)
-
-    if metric == 'SE':
-        return sum(sqrt_diff)
-    elif metric == 'AE':
-        return sum(np.abs(diff))
-    elif metric == 'MSE':
-        return np.mean(sqrt_diff)
-    elif metric == 'MAE':
-        return np.mean(np.abs(diff))
-    return np.sqrt(np.mean(sqrt_diff))
 
 
 def score_test(
     test_id, metadata, test_df, detect_lines, class_lines, class_file_reader, 
     log, all_performances, detection_threshold, spe_presence_threshold=0.5, 
-    act_presence_threshold=0.5
+    act_presence_threshold=0.5, estimate_ci=False, nbr_samples_conf_int=300
 ):
+    """
+    Computes the score of the system for detection and classification tasks
+    Arguments:
+        test_id: id of the novelty type
+        test_df: ground truth test (or validation) dataframe
+        detect_lines: system detection results
+        class_lines: system classification results
+        all_performances: output file (dictionary) where the performance should be saved
+        detection_threshold: threshold used for declaring an entry to be novel
+        spe_presence_threshold: threshold used for declaring a species present based on predicted probability
+        act_presence_threshold: threshold used for declaring an activity present based on predicted probability
+        estimate_ci: boolean value for deciding whether to compute the confidence intervals with prediction
+        nbr_samples_conf_int: number of samples used in estimating the confidence intervals via boostraping
+    """
     # The metadata file is not currently used.
     # import ipdb; ipdb.set_trace()
     total_novel, total = 0, 0
@@ -99,7 +85,7 @@ def score_test(
     species_id2name_mapping = {}
     activity_id2name_mapping = {}
 
-    pre_red_count_abs_err, post_red_count_abs_err, pre_red_count_rel_err, post_red_count_rel_err = {}, {}, {}, {}
+    pre_red_abs_err_count, post_red_abs_err_count, pre_red_rel_err_count, post_red_rel_err_count = {}, {}, {}, {}
     for pos, (test_tuple, detect_line) in enumerate(zip(test_tuples, detect_lines[1:])):
         if pd.isnull(test_tuple.agent1_id):
             print(f'** Empty image:', test_tuple.image_path)
@@ -218,26 +204,54 @@ def score_test(
 
     for act in all_grd_truth_act_presence.columns:
         if act not in activity_id2name_mapping.values():
-            pre_red_per_act_auc[act], post_red_per_act_auc[act] = -1, -1
-            pre_red_per_act_precision[act], post_red_per_act_precision[act] = -1, -1
-            pre_red_per_act_recall[act], post_red_per_act_recall[act] = -1, -1
-            pre_red_per_act_f1[act], post_red_per_act_f1[act] = -1, -1
+            pre_red_per_act_auc[act], post_red_per_act_auc[act] = {'value': -1}, {'value': -1}
+            pre_red_per_act_precision[act], post_red_per_act_precision[act] = {'value': -1}, {'value': -1}
+            pre_red_per_act_recall[act], post_red_per_act_recall[act] = {'value': -1}, {'value': -1}
+            pre_red_per_act_f1[act], post_red_per_act_f1[act] = {'value': -1}, {'value': -1}
             continue
 
         # ---------->>  Activity presence AUC  <<----------
-        try:
-            pre_red_per_act_auc[act] = metrics.roc_auc_score(
+        # check that there's at least one two classes in the ground truth presence label
+        if len(all_grd_truth_act_presence[act].iloc[:total_pre_red_btn].unique()) > 1:
+            pre_red_auc = metrics.roc_auc_score(
                     all_grd_truth_act_presence[act].iloc[:total_pre_red_btn], 
                     all_pred_act_presence[act].iloc[:total_pre_red_btn]
                 )
-            post_red_per_act_auc[act] = metrics.roc_auc_score(
+            
+            if estimate_ci:
+                pre_red_auc_ci = boostrap_conf_interval(
+                    y_true=all_grd_truth_act_presence[act].iloc[:total_pre_red_btn].to_numpy(), 
+                    y_pred=all_pred_act_presence[act].iloc[:total_pre_red_btn].to_numpy(), 
+                    metric_name='auc', 
+                    n_samples=nbr_samples_conf_int
+                )
+            else:
+                pre_red_auc_ci = -1
+
+            pre_red_per_act_auc[act] = {'value': pre_red_auc, 'ci': pre_red_auc_ci}
+        else:
+            pre_red_per_act_auc[act] = {'value': -1}
+
+        # check that there's at least one two classes in the ground truth presence label
+        if len(all_grd_truth_act_presence[act].iloc[total_pre_red_btn:].unique()) > 1:
+            post_red_auc = metrics.roc_auc_score(
                     all_grd_truth_act_presence[act].iloc[total_pre_red_btn:], 
                     all_pred_act_presence[act].iloc[total_pre_red_btn:]
                 )
-        except Exception as ex:
-            print('\n\n**** The following exception happened:', ex, '\n\n')
-            pre_red_per_act_auc[act] = -1
-            post_red_per_act_auc[act] = -1
+            
+            if estimate_ci:
+                post_red_auc_ci = boostrap_conf_interval(
+                    y_true=all_grd_truth_act_presence[act].iloc[:total_pre_red_btn].to_numpy(), 
+                    y_pred=all_pred_act_presence[act].iloc[:total_pre_red_btn].to_numpy(), 
+                    metric_name='auc', 
+                    n_samples=nbr_samples_conf_int
+                )
+            else:
+                post_red_auc_ci = -1
+
+            post_red_per_act_auc[act] = {'value': post_red_auc, 'ci': post_red_auc_ci}
+        else:
+            post_red_per_act_auc[act] = {'value': -1}
         
         # ---------->>  Activity presence Precision, Recall, F1  <<----------
         # if act_presence_threshold:
@@ -247,29 +261,66 @@ def score_test(
             pre_red_precision, pre_red_rec, pre_red_f1, _ = metrics.precision_recall_fscore_support(
                 all_grd_truth_act_presence[act].iloc[:total_pre_red_btn], 
                 all_pred_act_presence_yn[act].iloc[:total_pre_red_btn],
-                average='binary'
+                average='binary',
+                zero_division=0.0
             )
             post_red_precision, post_red_rec, post_red_f1, _ = metrics.precision_recall_fscore_support(
                 all_grd_truth_act_presence[act].iloc[total_pre_red_btn:], 
                 all_pred_act_presence_yn[act].iloc[total_pre_red_btn:],
-                average='binary'
+                average='binary',
+                zero_division=0.0
             )
 
+            if estimate_ci:
+                pre_red_pr_rec_f1_ci = boostrap_conf_interval(
+                    y_true=all_grd_truth_act_presence[act].iloc[:total_pre_red_btn].to_numpy(), 
+                    y_pred=all_pred_act_presence_yn[act].iloc[:total_pre_red_btn].to_numpy(), 
+                    metric_name='pre/rec/f1', 
+                    n_samples=nbr_samples_conf_int
+                )
+                post_red_pr_rec_f1_ci = boostrap_conf_interval(
+                    y_true=all_grd_truth_act_presence[act].iloc[total_pre_red_btn:].to_numpy(), 
+                    y_pred=all_pred_act_presence_yn[act].iloc[total_pre_red_btn:].to_numpy(), 
+                    metric_name='pre/rec/f1', 
+                    n_samples=nbr_samples_conf_int
+                )
+
+                
+
             # Precision
-            pre_red_per_act_precision[act] = pre_red_precision
-            post_red_per_act_precision[act] = post_red_precision
+            pre_red_per_act_precision[act] = {
+                'value': pre_red_precision if pre_red_precision != 0.0 else -1,
+                'ci': pre_red_pr_rec_f1_ci['precision'] if estimate_ci else -1
+            }
+            post_red_per_act_precision[act] = {
+                'value': post_red_precision if post_red_precision != 0.0 else -1,
+                'ci': post_red_pr_rec_f1_ci['precision'] if estimate_ci else -1
+            }
 
             # Recall
-            pre_red_per_act_recall[act] = pre_red_rec
-            post_red_per_act_recall[act] = post_red_rec
+            pre_red_per_act_recall[act] = {
+                'value': pre_red_rec if pre_red_rec != 0.0 else -1,
+                'ci': pre_red_pr_rec_f1_ci['recall'] if estimate_ci else -1
+            }
+            post_red_per_act_recall[act] = {
+                'value': post_red_rec if post_red_rec != 0.0 else -1,
+                'ci': post_red_pr_rec_f1_ci['recall'] if estimate_ci else -1
+            }
 
             # F1 score
-            pre_red_per_act_f1[act] = pre_red_f1
-            post_red_per_act_f1[act] = post_red_f1
-        except:
-            pre_red_per_act_precision[act], post_red_per_act_precision[act] = -1, -1
-            pre_red_per_act_recall[act], post_red_per_act_recall[act] = -1, -1
-            pre_red_per_act_f1[act], post_red_per_act_f1[act] = -1, -1
+            pre_red_per_act_f1[act] = {
+                'value': pre_red_f1 if pre_red_f1 != 0.0 else -1,
+                'ci': pre_red_pr_rec_f1_ci['f1_score'] if estimate_ci else -1
+            }
+            post_red_per_act_f1[act] = {
+                'value': post_red_f1 if post_red_f1 != 0.0 else -1,
+                'ci': post_red_pr_rec_f1_ci['f1_score'] if estimate_ci else -1
+            }
+        except Exception as ex:
+            print('+++ The following exception has occured:', ex)
+            pre_red_per_act_precision[act], post_red_per_act_precision[act] = {'value': -1}, {'value': -1}
+            pre_red_per_act_recall[act], post_red_per_act_recall[act] = {'value': -1}, {'value': -1}
+            pre_red_per_act_f1[act], post_red_per_act_f1[act] = {'value': -1}, {'value': -1}
             continue
 
 
@@ -278,28 +329,54 @@ def score_test(
     for spe in all_grd_truth_spe_presence.columns:
 
         if spe not in species_id2name_mapping.values():
-            pre_red_per_spe_auc[spe], post_red_per_spe_auc[spe] = -1, -1
-            pre_red_per_spe_precision[spe], post_red_per_spe_precision[spe] = -1, -1
-            pre_red_per_spe_recall[spe], post_red_per_spe_recall[spe] = -1, -1
-            pre_red_per_spe_f1[spe], post_red_per_spe_f1[spe] = -1, -1
+            pre_red_per_spe_auc[spe], post_red_per_spe_auc[spe] = {'value': -1}, {'value': -1}
+            pre_red_per_spe_precision[spe], post_red_per_spe_precision[spe] = {'value': -1}, {'value': -1}
+            pre_red_per_spe_recall[spe], post_red_per_spe_recall[spe] = {'value': -1}, {'value': -1}
+            pre_red_per_spe_f1[spe], post_red_per_spe_f1[spe] = {'value': -1}, {'value': -1}
             continue
 
         # ---------->>  Species presence AUC  <<----------
-        try:
-            pre_red_per_spe_auc[spe] = metrics.roc_auc_score(
+        # check that there's at least one two classes in the ground truth presence label
+        if len(all_grd_truth_spe_presence[spe].iloc[:total_pre_red_btn].unique()) > 1:
+            pre_red_auc = metrics.roc_auc_score(
                     all_grd_truth_spe_presence[spe].iloc[:total_pre_red_btn], 
                     all_pred_spe_presence[spe].iloc[:total_pre_red_btn]
                 )
-            post_red_per_spe_auc[spe] = metrics.roc_auc_score(
+            if estimate_ci:
+                pre_red_auc_ci = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_presence[spe].iloc[:total_pre_red_btn].to_numpy(), 
+                    y_pred=all_pred_spe_presence[spe].iloc[:total_pre_red_btn].to_numpy(), 
+                    metric_name='auc', 
+                    n_samples=nbr_samples_conf_int
+                )
+            else:
+                pre_red_auc_ci = -1
+
+            pre_red_per_spe_auc[spe] = {'value': pre_red_auc, 'ci': pre_red_auc_ci}
+        else:
+            pre_red_per_spe_auc[spe] = {'value': -1}
+        
+        # check that there's at least one two classes in the ground truth presence label
+        if len(all_grd_truth_spe_presence[spe].iloc[total_pre_red_btn:].unique()) > 1:
+            post_red_auc = metrics.roc_auc_score(
                     all_grd_truth_spe_presence[spe].iloc[total_pre_red_btn:], 
                     all_pred_spe_presence[spe].iloc[total_pre_red_btn:]
                 )
-        except:
-            pre_red_per_spe_auc[spe] = -1
-            post_red_per_spe_auc[spe] = -1
+            if estimate_ci:
+                post_red_auc_ci = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_presence[spe].iloc[total_pre_red_btn:].to_numpy(), 
+                    y_pred=all_pred_spe_presence[spe].iloc[total_pre_red_btn:].to_numpy(), 
+                    metric_name='auc', 
+                    n_samples=nbr_samples_conf_int
+                )
+            else:
+                post_red_auc_ci = -1
+
+            post_red_per_spe_auc[spe] = {'value': post_red_auc, 'ci': post_red_auc_ci}
+        else:
+            post_red_per_spe_auc[spe] = {'value': -1}
         
-        # ---------->>  Activity presence Precision, Recall, F1  <<----------
-        # if spe_presence_threshold:
+        # ---------->>  Species presence Precision, Recall, F1  <<----------
         all_pred_spe_presence_yn = all_pred_spe_presence.copy(deep=True)
         all_pred_spe_presence_yn = (all_pred_spe_presence_yn >= spe_presence_threshold).astype(int)
 
@@ -307,30 +384,66 @@ def score_test(
             pre_red_precision, pre_red_rec, pre_red_f1, _ = metrics.precision_recall_fscore_support(
                 all_grd_truth_spe_presence[spe].iloc[:total_pre_red_btn], 
                 all_pred_spe_presence_yn[spe].iloc[:total_pre_red_btn],
-                average='binary'
+                average='binary',
+                zero_division=0.0
             )
             post_red_precision, post_red_rec, post_red_f1, _ = metrics.precision_recall_fscore_support(
                 all_grd_truth_spe_presence[spe].iloc[total_pre_red_btn:], 
                 all_pred_spe_presence_yn[spe].iloc[total_pre_red_btn:],
-                average='binary'
+                average='binary',
+                zero_division=0.0
             )
-        
+
+            if estimate_ci:
+                pre_red_pr_rec_f1_ci = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_presence[spe].iloc[:total_pre_red_btn].to_numpy(), 
+                    y_pred=all_pred_spe_presence_yn[spe].iloc[:total_pre_red_btn].to_numpy(), 
+                    metric_name='pre/rec/f1', 
+                    n_samples=nbr_samples_conf_int
+                )
+                post_red_pr_rec_f1_ci = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_presence[spe].iloc[total_pre_red_btn:].to_numpy(), 
+                    y_pred=all_pred_spe_presence_yn[spe].iloc[total_pre_red_btn:].to_numpy(), 
+                    metric_name='pre/rec/f1', 
+                    n_samples=nbr_samples_conf_int
+                )
+                
             # Precision
-            pre_red_per_spe_precision[spe] = pre_red_precision
-            post_red_per_spe_precision[spe] = post_red_precision
+            pre_red_per_spe_precision[spe] = {
+                'value': pre_red_precision if pre_red_precision != 0.0 else -1,
+                'ci': pre_red_pr_rec_f1_ci['precision'] if estimate_ci else -1
+            }
+            post_red_per_spe_precision[spe] = {
+                'value': post_red_precision if post_red_precision != 0.0 else -1,
+                'ci': post_red_pr_rec_f1_ci['precision'] if estimate_ci else -1
+            }
 
             # Recall
-            pre_red_per_spe_recall[spe] = pre_red_rec
-            post_red_per_spe_recall[spe] = post_red_rec
+            pre_red_per_spe_recall[spe] = {
+                'value': pre_red_rec if pre_red_rec != 0.0 else -1,
+                'ci': pre_red_pr_rec_f1_ci['recall'] if estimate_ci else -1
+            }
+            post_red_per_spe_recall[spe] = {
+                'value': post_red_rec if post_red_rec != 0.0 else -1,
+                'ci': post_red_pr_rec_f1_ci['recall'] if estimate_ci else -1
+            }
 
             # F1 score
-            pre_red_per_spe_f1[spe] = pre_red_f1
-            post_red_per_spe_f1[spe] = post_red_f1
-        except:
-            pre_red_per_spe_auc[spe], post_red_per_spe_auc[spe] = -1, -1
-            pre_red_per_spe_precision[spe], post_red_per_spe_precision[spe] = -1, -1
-            pre_red_per_spe_recall[spe], post_red_per_spe_recall[spe] = -1, -1
-            pre_red_per_spe_f1[spe], post_red_per_spe_f1[spe] = -1, -1
+            pre_red_per_spe_f1[spe] = {
+                'value': pre_red_f1 if pre_red_f1 != 0.0 else -1,
+                'ci': pre_red_pr_rec_f1_ci['f1_score'] if estimate_ci else -1
+            }
+            post_red_per_spe_f1[spe] = {
+                'value': post_red_f1 if post_red_f1 != 0.0 else -1,
+                'ci': post_red_pr_rec_f1_ci['f1_score'] if estimate_ci else -1
+            }
+
+        except Exception as ex:
+            print('**** Exception when computing species presence metrics:', ex)
+            pre_red_per_spe_auc[spe], post_red_per_spe_auc[spe] = {'value': -1}, {'value': -1}
+            pre_red_per_spe_precision[spe], post_red_per_spe_precision[spe] = {'value': -1}, {'value': -1}
+            pre_red_per_spe_recall[spe], post_red_per_spe_recall[spe] = {'value': -1}, {'value': -1}
+            pre_red_per_spe_f1[spe], post_red_per_spe_f1[spe] = {'value': -1}, {'value': -1}
 
 
     # *****************************  SPECIES COUNT PERFORMANCE  ********************************
@@ -339,47 +452,103 @@ def score_test(
     num_post_red_img_w_spe = all_grd_truth_spe_counts.iloc[total_pre_red_btn:].astype(bool).sum(axis=0)
     for spe in all_grd_truth_spe_counts.columns:
         if spe not in species_id2name_mapping.values():
-            pre_red_count_abs_err[spe], post_red_count_abs_err[spe] = -1, -1
-            pre_red_count_rel_err[spe], post_red_count_rel_err[spe] = -1, -1
+            pre_red_abs_err_count[spe], post_red_abs_err_count[spe] = {'value': -1}, {'value': -1}
+            pre_red_rel_err_count[spe], post_red_rel_err_count[spe] = {'value': -1}, {'value': -1}
             continue
         
         # ---------->>  Absolute error  <<----------
         if num_pre_red_img_w_spe[spe] > 0:
-            pre_red_count_abs_err[spe] = species_count_error(
+            pre_red_cnt_abs_err = species_count_error(
                 all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn], 
                 all_pred_spe_counts[spe].iloc[:total_pre_red_btn], 
                 metric='AE'
             ) / num_pre_red_img_w_spe[spe]
+
+            if estimate_ci:
+                pre_red_count_ci = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn].to_numpy(), 
+                    y_pred=all_pred_spe_counts[spe].iloc[:total_pre_red_btn].to_numpy(), 
+                    metric_name='count_err', 
+                    n_samples=nbr_samples_conf_int
+                )
+
+            pre_red_abs_err_count[spe] = {
+                'value': pre_red_cnt_abs_err,
+                'ci': pre_red_count_ci if estimate_ci else -1
+            }
         else:
-            pre_red_count_abs_err[spe] = -1
+            pre_red_abs_err_count[spe] = {'value': -1}
 
         if num_post_red_img_w_spe[spe] > 0:
-            post_red_count_abs_err[spe] = species_count_error(
+            post_red_cnt_abs_err = species_count_error(
                 all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:], 
                 all_pred_spe_counts[spe].iloc[total_pre_red_btn:], 
                 metric='AE'
             ) / num_post_red_img_w_spe[spe]
+
+            if estimate_ci:
+                post_red_count_ci = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:].to_numpy(), 
+                    y_pred=all_pred_spe_counts[spe].iloc[total_pre_red_btn:].to_numpy(), 
+                    metric_name='count_err', 
+                    n_samples=nbr_samples_conf_int
+                )
+
+            post_red_abs_err_count[spe] = {
+                'value': post_red_cnt_abs_err,
+                'ci': post_red_count_ci if estimate_ci else -1
+            }
         else:
-            post_red_count_abs_err[spe] = -1
+            post_red_abs_err_count[spe] = {'value': -1}
         
         # ---------->>  Relative error  <<----------
-        if all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn].sum() > 0:
-            pre_red_count_rel_err[spe] = species_count_error(
+        num_pre_red_animals_from_spe = all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn].sum()
+        if num_pre_red_animals_from_spe > 0:
+            pre_red_cnt_rel_err = species_count_error(
                 all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn], 
                 all_pred_spe_counts[spe].iloc[:total_pre_red_btn], 
-                metric='AE'
-            ) / all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn].sum()
+                metric='AE',
+            ) / num_pre_red_animals_from_spe
+
+            if estimate_ci:
+                pre_red_count_ci = boostrap_conf_interval(
+                    y_pred=all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn].to_numpy(), 
+                    y_true=all_pred_spe_counts[spe].iloc[:total_pre_red_btn].to_numpy(), 
+                    metric_name='count_err', 
+                    is_abs_err=False,
+                    n_samples=nbr_samples_conf_int
+                )
+
+            pre_red_rel_err_count[spe] = {
+                'value': pre_red_cnt_rel_err,
+                'ci': pre_red_count_ci if estimate_ci else -1
+            }
         else:
-            pre_red_count_rel_err[spe] = -1
+            pre_red_rel_err_count[spe] = {'value': -1}
         
-        if all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:].sum() > 0:
-            post_red_count_rel_err[spe] = species_count_error(
+        num_post_red_animals_from_spe = all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:].sum()
+        if num_post_red_animals_from_spe > 0:
+            post_red_cnt_rel_err = species_count_error(
                 all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:], 
                 all_pred_spe_counts[spe].iloc[total_pre_red_btn:], 
                 metric='AE'
-            ) / all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:].sum()
+            ) / num_post_red_animals_from_spe
+
+            if estimate_ci:
+                post_red_count_ci = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:].to_numpy(), 
+                    y_pred=all_pred_spe_counts[spe].iloc[total_pre_red_btn:].to_numpy(), 
+                    metric_name='count_err', 
+                    is_abs_err=False,
+                    n_samples=nbr_samples_conf_int
+                )
+
+            post_red_rel_err_count[spe] = {
+                'value': post_red_cnt_rel_err,
+                'ci': post_red_count_ci if estimate_ci else -1
+            }
         else:
-            post_red_count_rel_err[spe] = -1
+            post_red_rel_err_count[spe] = {'value': -1}
 
     # log.write(f'{" "*86} {total_top_1_score}  {total_top_3_score}\n')
     if sys_declare_pos == -1:
@@ -407,29 +576,69 @@ def score_test(
     # species counts
     counts = {
         'pre_red_btn':{
-            'abs_err': pre_red_count_abs_err,
-            'rel_err': pre_red_count_rel_err
+            'abs_err': pre_red_abs_err_count,
+            'rel_err': pre_red_rel_err_count
         },
         'post_red_btn':{
-            'abs_err': post_red_count_abs_err,
-            'rel_err': post_red_count_rel_err
+            'abs_err': post_red_abs_err_count,
+            'rel_err': post_red_rel_err_count
         }
     }
     all_performances['Species_counts'][test_id] = counts
 
     # Aggregate species counts
-    pre_red_count_abs_err_arr = np.fromiter(pre_red_count_abs_err.values(), dtype=float)
-    post_red_count_abs_err_arr = np.fromiter(post_red_count_abs_err.values(), dtype=float)
-    pre_red_count_rel_err_arr = np.fromiter(pre_red_count_rel_err.values(), dtype=float)
-    post_red_count_rel_err_arr = np.fromiter(post_red_count_rel_err.values(), dtype=float)
+    pre_red_abs_err_count_arr = np.array([pre_red_abs_err_count[spe]['value'] for spe in pre_red_abs_err_count])
+    post_red_abs_err_count_arr = np.array([post_red_abs_err_count[spe]['value'] for spe in post_red_abs_err_count])
+    pre_red_rel_err_count_arr = np.array([pre_red_rel_err_count[spe]['value'] for spe in pre_red_rel_err_count])
+    post_red_rel_err_count_arr = np.array([post_red_rel_err_count[spe]['value'] for spe in post_red_rel_err_count])
+
+    pre_red_avg_abs_err_count_ci = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_counts.iloc[:total_pre_red_btn], 
+        y_pred=all_pred_spe_counts.iloc[:total_pre_red_btn], 
+        metric_name='avg_count_err', 
+        n_samples=nbr_samples_conf_int
+    )
+    post_red_avg_abs_err_count_ci = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_counts.iloc[total_pre_red_btn:], 
+        y_pred=all_pred_spe_counts.iloc[total_pre_red_btn:], 
+        metric_name='avg_count_err', 
+        n_samples=nbr_samples_conf_int
+    )
+    pre_red_avg_rel_err_count_ci = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_counts.iloc[:total_pre_red_btn], 
+        y_pred=all_pred_spe_counts.iloc[:total_pre_red_btn], 
+        metric_name='avg_count_err', 
+        is_abs_err=False,
+        n_samples=nbr_samples_conf_int
+    )
+    post_red_avg_rel_err_count_ci = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_counts.iloc[total_pre_red_btn:], 
+        y_pred=all_pred_spe_counts.iloc[total_pre_red_btn:], 
+        metric_name='avg_count_err', 
+        is_abs_err=False,
+        n_samples=nbr_samples_conf_int
+    )
+
     agg_species_counts = {
         'pre_red_btn':{
-            'avg_abs_err': round(np.mean(pre_red_count_abs_err_arr[pre_red_count_abs_err_arr >= 0]), 3),
-            'avg_rel_err': round(np.mean(pre_red_count_rel_err_arr[pre_red_count_rel_err_arr >= 0]), 3)
+            'avg_abs_err': {
+                'value': round(np.mean(pre_red_abs_err_count_arr[pre_red_abs_err_count_arr >= 0]), 3),
+                'ci': pre_red_avg_abs_err_count_ci
+            },
+            'avg_rel_err': {
+                'value': round(np.mean(pre_red_rel_err_count_arr[pre_red_rel_err_count_arr >= 0]), 3),
+                'ci': pre_red_avg_rel_err_count_ci
+            }
         },
         'post_red_btn':{
-            'avg_abs_err': round(np.mean(post_red_count_abs_err_arr[post_red_count_abs_err_arr >= 0]), 3),
-            'avg_rel_err': round(np.mean(post_red_count_rel_err_arr[post_red_count_rel_err_arr >= 0]), 3)
+            'avg_abs_err': {
+                'value': round(np.mean(post_red_abs_err_count_arr[post_red_abs_err_count_arr >= 0]), 3),
+                'ci': post_red_avg_abs_err_count_ci
+            },
+            'avg_rel_err': {
+                'value': round(np.mean(post_red_rel_err_count_arr[post_red_rel_err_count_arr >= 0]), 3),
+                'ci': post_red_avg_rel_err_count_ci
+            }
         }
     }
     all_performances['Aggregate_species_counts'][test_id] = agg_species_counts
@@ -468,28 +677,78 @@ def score_test(
     '''
 
     # Aggregate species presence
-    pre_red_per_spe_auc_arr = np.fromiter(pre_red_per_spe_auc.values(), dtype=float)
-    pre_red_per_spe_precision_arr = np.fromiter(pre_red_per_spe_precision.values(), dtype=float)
-    pre_red_per_spe_recall_arr = np.fromiter(pre_red_per_spe_recall.values(), dtype=float)
-    pre_red_per_spe_f1_arr = np.fromiter(pre_red_per_spe_f1.values(), dtype=float)
+    pre_red_per_spe_auc_arr = np.array([pre_red_per_spe_auc[spe]['value'] for spe in pre_red_per_spe_auc])
+    pre_red_per_spe_precision_arr = np.array([pre_red_per_spe_precision[spe]['value'] for spe in pre_red_per_spe_precision])
+    pre_red_per_spe_recall_arr = np.array([pre_red_per_spe_recall[spe]['value'] for spe in pre_red_per_spe_recall])
+    pre_red_per_spe_f1_arr = np.array([pre_red_per_spe_f1[spe]['value'] for spe in pre_red_per_spe_f1])
 
-    post_red_per_spe_auc_arr = np.fromiter(post_red_per_spe_auc.values(), dtype=float)
-    post_red_per_spe_precision_arr = np.fromiter(post_red_per_spe_precision.values(), dtype=float)
-    post_red_per_spe_recall_arr = np.fromiter(post_red_per_spe_recall.values(), dtype=float)
-    post_red_per_spe_f1_arr = np.fromiter(post_red_per_spe_f1.values(), dtype=float)
+    post_red_per_spe_auc_arr = np.array([post_red_per_spe_auc[spe]['value'] for spe in post_red_per_spe_auc])
+    post_red_per_spe_precision_arr = np.array([post_red_per_spe_precision[spe]['value'] for spe in post_red_per_spe_precision])
+    post_red_per_spe_recall_arr = np.array([post_red_per_spe_recall[spe]['value'] for spe in post_red_per_spe_recall])
+    post_red_per_spe_f1_arr = np.array([post_red_per_spe_f1[spe]['value'] for spe in post_red_per_spe_f1])
+
+    pre_red_spe_avg_auc_ci = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_presence.iloc[:total_pre_red_btn], 
+        y_pred=all_pred_spe_presence.iloc[:total_pre_red_btn], 
+        metric_name='avg_auc', 
+        n_samples=nbr_samples_conf_int
+    )
+    pre_red_spe_avg_pre_rec_f1_ci = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_presence.iloc[:total_pre_red_btn], 
+        y_pred=all_pred_spe_presence_yn.iloc[:total_pre_red_btn], 
+        metric_name='avg_pre/rec/f1', 
+        n_samples=nbr_samples_conf_int
+    )
+
+    post_red_spe_avg_auc_ci = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_presence.iloc[total_pre_red_btn:], 
+        y_pred=all_pred_spe_presence.iloc[total_pre_red_btn:], 
+        metric_name='avg_auc', 
+        n_samples=nbr_samples_conf_int
+    )
+    post_red_spe_avg_pre_rec_f1_ci = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_presence.iloc[total_pre_red_btn:], 
+        y_pred=all_pred_spe_presence_yn.iloc[total_pre_red_btn:], 
+        metric_name='avg_pre/rec/f1', 
+        n_samples=nbr_samples_conf_int
+    )
 
     agg_species_presence = {
         'pre_red_btn':{
-        'avg_auc': round(np.mean(pre_red_per_spe_auc_arr[pre_red_per_spe_auc_arr >= 0]), 2),
-        'avg_precision': round(np.mean(pre_red_per_spe_precision_arr[pre_red_per_spe_precision_arr >= 0]), 2),
-        'avg_recall': round(np.mean(pre_red_per_spe_recall_arr[pre_red_per_spe_recall_arr >= 0]), 2),
-        'avg_f1_score': round(np.mean(pre_red_per_spe_f1_arr[pre_red_per_spe_f1_arr >= 0]), 2)
+            'avg_auc': {
+                'value': round(np.mean(pre_red_per_spe_auc_arr[pre_red_per_spe_auc_arr >= 0]), 2),
+                'ci': pre_red_spe_avg_auc_ci
+            },
+            'avg_precision': {
+                'value': round(np.mean(pre_red_per_spe_precision_arr[pre_red_per_spe_precision_arr >= 0]), 2),
+                'ci': pre_red_spe_avg_pre_rec_f1_ci['avg_precision']
+            },
+            'avg_recall': {
+                'value': round(np.mean(pre_red_per_spe_recall_arr[pre_red_per_spe_recall_arr >= 0]), 2),
+                'ci': pre_red_spe_avg_pre_rec_f1_ci['avg_recall']
+            },
+            'avg_f1_score': {
+                'value': round(np.mean(pre_red_per_spe_f1_arr[pre_red_per_spe_f1_arr >= 0]), 2),
+                'ci': pre_red_spe_avg_pre_rec_f1_ci['avg_f1_score']
+            }
         },
         'post_red_btn':{
-            'avg_auc': round(np.mean(post_red_per_spe_auc_arr[post_red_per_spe_auc_arr >= 0]), 2),
-            'avg_precision': round(np.mean(post_red_per_spe_precision_arr[post_red_per_spe_precision_arr >= 0]), 2),
-            'avg_recall': round(np.mean(post_red_per_spe_recall_arr[post_red_per_spe_recall_arr >= 0]), 2),
-            'avg_f1_score': round(np.mean(post_red_per_spe_f1_arr[post_red_per_spe_f1_arr >= 0]), 2)
+            'avg_auc': {
+                'value': round(np.mean(post_red_per_spe_auc_arr[post_red_per_spe_auc_arr >= 0]), 2),
+                'ci': post_red_spe_avg_auc_ci
+            },
+            'avg_precision': {
+                'value': round(np.mean(post_red_per_spe_precision_arr[post_red_per_spe_precision_arr >= 0]), 2),
+                'ci': post_red_spe_avg_pre_rec_f1_ci['avg_precision']
+            },
+            'avg_recall': {
+                'value': round(np.mean(post_red_per_spe_recall_arr[post_red_per_spe_recall_arr >= 0]), 2),
+                'ci': post_red_spe_avg_pre_rec_f1_ci['avg_recall']
+            },
+            'avg_f1_score': {
+                'value': round(np.mean(post_red_per_spe_f1_arr[post_red_per_spe_f1_arr >= 0]), 2),
+                'ci': post_red_spe_avg_pre_rec_f1_ci['avg_f1_score']
+            }
         }
     }
     all_performances['Aggregate_species_presence'][test_id] = agg_species_presence
@@ -512,27 +771,78 @@ def score_test(
     all_performances['Per_activity_presence'][test_id] = activity_presence
 
     # Aggregate activity presence
-    pre_red_per_act_auc_arr = np.fromiter(pre_red_per_act_auc.values(), dtype=float)
-    pre_red_per_act_precision_arr = np.fromiter(pre_red_per_act_precision.values(), dtype=float)
-    pre_red_per_act_recall_arr = np.fromiter(pre_red_per_act_recall.values(), dtype=float)
-    pre_red_per_act_f1_arr = np.fromiter(pre_red_per_act_f1.values(), dtype=float)
+    pre_red_per_act_auc_arr = np.array([pre_red_per_act_auc[act]['value'] for act in pre_red_per_act_auc])
+    pre_red_per_act_precision_arr = np.array([pre_red_per_act_precision[act]['value'] for act in pre_red_per_act_precision])
+    pre_red_per_act_recall_arr = np.array([pre_red_per_act_recall[act]['value'] for act in pre_red_per_act_recall])
+    pre_red_per_act_f1_arr = np.array([pre_red_per_act_f1[act]['value'] for act in pre_red_per_act_f1])
 
-    post_red_per_act_auc_arr = np.fromiter(post_red_per_act_auc.values(), dtype=float)
-    post_red_per_act_precision_arr = np.fromiter(post_red_per_act_precision.values(), dtype=float)
-    post_red_per_act_recall_arr = np.fromiter(post_red_per_act_recall.values(), dtype=float)
-    post_red_per_act_f1_arr = np.fromiter(post_red_per_act_f1.values(), dtype=float)
+    post_red_per_act_auc_arr = np.array([post_red_per_act_auc[act]['value'] for act in post_red_per_act_auc])
+    post_red_per_act_precision_arr = np.array([post_red_per_act_precision[act]['value'] for act in post_red_per_act_precision])
+    post_red_per_act_recall_arr = np.array([post_red_per_act_recall[act]['value'] for act in post_red_per_act_recall])
+    post_red_per_act_f1_arr = np.array([post_red_per_act_f1[act]['value'] for act in post_red_per_act_f1])
+
+    pre_red_act_avg_auc_ci = boostrap_conf_interval(
+        y_true=all_grd_truth_act_presence.iloc[:total_pre_red_btn], 
+        y_pred=all_pred_act_presence.iloc[:total_pre_red_btn], 
+        metric_name='avg_auc', 
+        n_samples=nbr_samples_conf_int
+    )
+    pre_red_act_avg_pre_rec_f1_ci = boostrap_conf_interval(
+        y_true=all_grd_truth_act_presence.iloc[:total_pre_red_btn], 
+        y_pred=all_pred_act_presence_yn.iloc[:total_pre_red_btn], 
+        metric_name='avg_pre/rec/f1', 
+        n_samples=nbr_samples_conf_int
+    )
+
+    post_red_act_avg_auc_ci = boostrap_conf_interval(
+        y_true=all_grd_truth_act_presence.iloc[total_pre_red_btn:], 
+        y_pred=all_pred_act_presence.iloc[total_pre_red_btn:], 
+        metric_name='avg_auc', 
+        n_samples=nbr_samples_conf_int
+    )
+    post_red_act_avg_pre_rec_f1_ci = boostrap_conf_interval(
+        y_true=all_grd_truth_act_presence.iloc[total_pre_red_btn:], 
+        y_pred=all_pred_act_presence_yn.iloc[total_pre_red_btn:], 
+        metric_name='avg_pre/rec/f1', 
+        n_samples=nbr_samples_conf_int
+    )
+
     agg_activity_presence = {
         'pre_red_btn':{
-        'avg_auc': round(np.mean(pre_red_per_act_auc_arr[pre_red_per_act_auc_arr >= 0]), 2),
-        'avg_precision': round(np.mean(pre_red_per_act_precision_arr[pre_red_per_act_precision_arr >= 0]), 2),
-        'avg_recall': round(np.mean(pre_red_per_act_recall_arr[pre_red_per_act_recall_arr >= 0]), 2),
-        'avg_f1_score': round(np.mean(pre_red_per_act_f1_arr[pre_red_per_act_f1_arr >= 0]), 2)
+            'avg_auc': {
+                'value': round(np.mean(pre_red_per_act_auc_arr[pre_red_per_act_auc_arr >= 0]), 2),
+                'ci': pre_red_act_avg_auc_ci
+            },
+            'avg_precision': {
+                'value': round(np.mean(pre_red_per_act_precision_arr[pre_red_per_act_precision_arr >= 0]), 2),
+                'ci': pre_red_act_avg_pre_rec_f1_ci['avg_precision']
+            },
+            'avg_recall': {
+                'value': round(np.mean(pre_red_per_act_recall_arr[pre_red_per_act_recall_arr >= 0]), 2),
+                'ci': pre_red_act_avg_pre_rec_f1_ci['avg_recall']
+            },
+            'avg_f1_score': {
+                'value': round(np.mean(pre_red_per_act_f1_arr[pre_red_per_act_f1_arr >= 0]), 2),
+                'ci': pre_red_act_avg_pre_rec_f1_ci['avg_f1_score']
+            }
         },
         'post_red_btn':{
-            'avg_auc': round(np.mean(post_red_per_act_auc_arr[post_red_per_act_auc_arr >= 0]), 2),
-            'avg_precision': round(np.mean(post_red_per_act_precision_arr[post_red_per_act_precision_arr >= 0]), 2),
-            'avg_recall': round(np.mean(post_red_per_act_recall_arr[post_red_per_act_recall_arr >= 0]), 2),
-            'avg_f1_score': round(np.mean(post_red_per_act_f1_arr[post_red_per_act_f1_arr >= 0]), 2)
+            'avg_auc': {
+                'value': round(np.mean(post_red_per_act_auc_arr[post_red_per_act_auc_arr >= 0]), 2),
+                'ci': post_red_act_avg_auc_ci
+            },
+            'avg_precision': {
+                'value': round(np.mean(post_red_per_act_precision_arr[post_red_per_act_precision_arr >= 0]), 2),
+                'ci': post_red_act_avg_pre_rec_f1_ci['avg_precision']
+            },
+            'avg_recall': {
+                'value': round(np.mean(post_red_per_act_recall_arr[post_red_per_act_recall_arr >= 0]), 2),
+                'ci': post_red_act_avg_pre_rec_f1_ci['avg_recall']
+            },
+            'avg_f1_score': {
+                'value': round(np.mean(post_red_per_act_f1_arr[post_red_per_act_f1_arr >= 0]), 2),
+                'ci': post_red_act_avg_pre_rec_f1_ci['avg_f1_score']
+            }
         }
     }
     all_performances['Aggregate_activity_presence'][test_id] = agg_activity_presence
@@ -599,11 +909,11 @@ def score_test_from_boxes(
     post_red_per_act_auc = np.zeros((1, total_nbr_activities)).ravel()
 
     # aninal counts variables initialization (absolute error and relative error)
-    pre_red_per_spe_count_abs_err = np.zeros((1, total_nbr_species)).ravel()
-    pre_red_per_spe_count_rel_err = np.zeros((1, total_nbr_species)).ravel()
+    pre_red_per_spe_abs_err_count = np.zeros((1, total_nbr_species)).ravel()
+    pre_red_per_spe_rel_err_count = np.zeros((1, total_nbr_species)).ravel()
     
-    post_red_per_spe_count_abs_err = np.zeros((1, total_nbr_species)).ravel()
-    post_red_per_spe_count_rel_err = np.zeros((1, total_nbr_species)).ravel()
+    post_red_per_spe_abs_err_count = np.zeros((1, total_nbr_species)).ravel()
+    post_red_per_spe_rel_err_count = np.zeros((1, total_nbr_species)).ravel()
 
     pre_red_btn_per_spe_animal_count = np.zeros((1, total_nbr_species)).ravel()
     post_red_btn_per_spe_animal_count = np.zeros((1, total_nbr_species)).ravel()
@@ -696,8 +1006,8 @@ def score_test_from_boxes(
             sum(pred_spe_counts[nbr_known_species:])
         )
 
-        # count_abs_error = species_count_error(grd_trth_sp_cts_known_vs_novel, pred_sp_cts_comb_novel, metric='AE')
-        count_abs_error = species_count_error(ground_truth_spe_counts, pred_spe_counts, metric='AE')
+        # abs_err_countor = species_count_error(grd_trth_sp_cts_known_vs_novel, pred_sp_cts_comb_novel, metric='AE')
+        abs_err_countor = species_count_error(ground_truth_spe_counts, pred_spe_counts, metric='AE')
 
         total += 1
         if not red_button:
@@ -710,7 +1020,7 @@ def score_test_from_boxes(
                 # pre_red_per_spe_presence_acc[i] += 1 if ground_truth_spe_presence[i] == pred_spe_presence_yn[i] else 0
 
                 # ------------------->>>  Accuracy counts element for current image  <<<------------------
-                pre_red_per_spe_count_abs_err[i] += count_abs_error[i]
+                pre_red_per_spe_abs_err_count[i] += abs_err_countor[i]
                 pre_red_btn_per_spe_animal_count[i] += ground_truth_spe_counts[i]
 
             # Activity presence error for current images
@@ -732,7 +1042,7 @@ def score_test_from_boxes(
                 # post_red_per_spe_presence_acc[i] += 1 if ground_truth_spe_presence[i] == pred_spe_presence_yn[i] else 0
 
                 # ------------------->>>  Accuracy counts element for current image  <<<------------------
-                post_red_per_spe_count_abs_err[i] += count_abs_error[i]
+                post_red_per_spe_abs_err_count[i] += abs_err_countor[i]
                 post_red_btn_per_spe_animal_count[i] += ground_truth_spe_counts[i]
 
             # Activity presence error for current images
@@ -863,48 +1173,48 @@ def score_test_from_boxes(
 
     # -------->>  Species count error metric  <<--------
 
-    # pre_red_per_spe_count_rel_err = np.divide(pre_red_per_spe_count_abs_err, pre_red_btn_per_spe_animal_count + epsilon)
-    # post_red_per_spe_count_rel_err = np.divide(post_red_per_spe_count_abs_err, post_red_btn_per_spe_animal_count + epsilon)
-    pre_red_per_spe_count_rel_err = np.array(
-        [pre_red_per_spe_count_abs_err[i]/pre_red_btn_per_spe_animal_count[i] if pre_red_btn_per_spe_animal_count[i] > 0 else -1 \
-            for i in range(len(pre_red_per_spe_count_rel_err))]
+    # pre_red_per_spe_rel_err_count = np.divide(pre_red_per_spe_abs_err_count, pre_red_btn_per_spe_animal_count + epsilon)
+    # post_red_per_spe_rel_err_count = np.divide(post_red_per_spe_abs_err_count, post_red_btn_per_spe_animal_count + epsilon)
+    pre_red_per_spe_rel_err_count = np.array(
+        [pre_red_per_spe_abs_err_count[i]/pre_red_btn_per_spe_animal_count[i] if pre_red_btn_per_spe_animal_count[i] > 0 else -1 \
+            for i in range(len(pre_red_per_spe_rel_err_count))]
         ).ravel()
-    post_red_per_spe_count_rel_err = np.array(
-        [post_red_per_spe_count_abs_err[i]/post_red_btn_per_spe_animal_count[i] if post_red_btn_per_spe_animal_count[i] > 0 else -1 \
-            for i in range(len(post_red_per_spe_count_rel_err))]
+    post_red_per_spe_rel_err_count = np.array(
+        [post_red_per_spe_abs_err_count[i]/post_red_btn_per_spe_animal_count[i] if post_red_btn_per_spe_animal_count[i] > 0 else -1 \
+            for i in range(len(post_red_per_spe_rel_err_count))]
         ).ravel()
     
-    # pre_red_per_spe_count_abs_err = pre_red_per_spe_count_abs_err / total_pre_red_btn
-    # post_red_per_spe_count_abs_err = post_red_per_spe_count_abs_err / total_post_red_btn
+    # pre_red_per_spe_abs_err_count = pre_red_per_spe_abs_err_count / total_pre_red_btn
+    # post_red_per_spe_abs_err_count = post_red_per_spe_abs_err_count / total_post_red_btn
 
-    pre_red_per_spe_count_abs_err = np.array(
-        [pre_red_per_spe_count_abs_err[i]/total_pre_red_btn if pre_red_btn_per_spe_animal_count[i] > 0 else -1 \
-            for i in range(len(pre_red_per_spe_count_abs_err))]
+    pre_red_per_spe_abs_err_count = np.array(
+        [pre_red_per_spe_abs_err_count[i]/total_pre_red_btn if pre_red_btn_per_spe_animal_count[i] > 0 else -1 \
+            for i in range(len(pre_red_per_spe_abs_err_count))]
     ).ravel()
 
-    post_red_per_spe_count_abs_err = np.array(
-        [post_red_per_spe_count_abs_err[i] / total_post_red_btn if post_red_btn_per_spe_animal_count[i] > 0 else -1 \
-            for i in range(len(post_red_per_spe_count_abs_err))]
+    post_red_per_spe_abs_err_count = np.array(
+        [post_red_per_spe_abs_err_count[i] / total_post_red_btn if post_red_btn_per_spe_animal_count[i] > 0 else -1 \
+            for i in range(len(post_red_per_spe_abs_err_count))]
     ).ravel()
 
     '''
     # **** flag absolute and relative errors of species not present in the trial ****
-    pre_red_per_spe_count_abs_err = [
-        pre_red_per_spe_count_abs_err[i] if pre_red_btn_per_spe_animal_count[i] > 0 else -1 \
-        for i in range(len(pre_red_per_spe_count_abs_err))
+    pre_red_per_spe_abs_err_count = [
+        pre_red_per_spe_abs_err_count[i] if pre_red_btn_per_spe_animal_count[i] > 0 else -1 \
+        for i in range(len(pre_red_per_spe_abs_err_count))
     ]
-    post_red_per_spe_count_abs_err = [
-        post_red_per_spe_count_abs_err[i] if post_red_btn_per_spe_animal_count[i] > 0 else -1 \
-        for i in range(len(post_red_per_spe_count_abs_err))
+    post_red_per_spe_abs_err_count = [
+        post_red_per_spe_abs_err_count[i] if post_red_btn_per_spe_animal_count[i] > 0 else -1 \
+        for i in range(len(post_red_per_spe_abs_err_count))
     ]
 
-    pre_red_per_spe_count_rel_err = [
-        pre_red_per_spe_count_rel_err[i] if pre_red_btn_per_spe_animal_count[i] > 0 else -1 \
-        for i in range(len(pre_red_per_spe_count_rel_err))
+    pre_red_per_spe_rel_err_count = [
+        pre_red_per_spe_rel_err_count[i] if pre_red_btn_per_spe_animal_count[i] > 0 else -1 \
+        for i in range(len(pre_red_per_spe_rel_err_count))
     ]
-    post_red_per_spe_count_rel_err = [
-        post_red_per_spe_count_rel_err[i] if post_red_btn_per_spe_animal_count[i] > 0 else -1 \
-        for i in range(len(post_red_per_spe_count_rel_err))
+    post_red_per_spe_rel_err_count = [
+        post_red_per_spe_rel_err_count[i] if post_red_btn_per_spe_animal_count[i] > 0 else -1 \
+        for i in range(len(post_red_per_spe_rel_err_count))
     ]
     '''
 
@@ -917,11 +1227,11 @@ def score_test_from_boxes(
     post_red_act_mean_brier_score = np.mean([x for x in post_red_per_act_bs if x > 0])
 
     # Aggregate species counts
-    pre_red_mean_spe_count_abs_err = np.mean([x for x in pre_red_per_spe_count_abs_err if x > 0])
-    post_red_mean_spe_count_abs_err = np.mean([x for x in post_red_per_spe_count_abs_err if x > 0])
+    pre_red_mean_spe_abs_err_count = np.mean([x for x in pre_red_per_spe_abs_err_count if x > 0])
+    post_red_mean_spe_abs_err_count = np.mean([x for x in post_red_per_spe_abs_err_count if x > 0])
 
-    pre_red_mean_spe_count_rel_err = np.mean([x for x in pre_red_per_spe_count_rel_err if x > 0]) 
-    post_red_mean_spe_count_rel_err = np.mean([x for x in post_red_per_spe_count_rel_err if x > 0])
+    pre_red_mean_spe_rel_err_count = np.mean([x for x in pre_red_per_spe_rel_err_count if x > 0]) 
+    post_red_mean_spe_rel_err_count = np.mean([x for x in post_red_per_spe_rel_err_count if x > 0])
 
     # log.write(f'{" "*86} {total_top_1_score}  {total_top_3_score}\n')
     if sys_declare_pos == -1:
@@ -953,12 +1263,12 @@ def score_test_from_boxes(
     # species counts
     counts = {
         'pre_red_btn':{
-            'absolute_error': pre_red_per_spe_count_abs_err,
-            'relative_error': pre_red_per_spe_count_rel_err
+            'absolute_error': pre_red_per_spe_abs_err_count,
+            'relative_error': pre_red_per_spe_rel_err_count
         },
         'post_red_btn':{
-            'absolute_error': post_red_per_spe_count_abs_err,
-            'relative_error': post_red_per_spe_count_rel_err
+            'absolute_error': post_red_per_spe_abs_err_count,
+            'relative_error': post_red_per_spe_rel_err_count
         }
     }
     all_performances['Species_counts'][test_id] = counts
@@ -1006,12 +1316,12 @@ def score_test_from_boxes(
     # Aggregate species counts
     agg_species_counts = {
         'pre_red_btn':{
-            'avg_abs_err': round(pre_red_mean_spe_count_abs_err, 3),
-            'avg_rel_err': round(pre_red_mean_spe_count_rel_err, 3)
+            'avg_abs_err': round(pre_red_mean_spe_abs_err_count, 3),
+            'avg_rel_err': round(pre_red_mean_spe_rel_err_count, 3)
         },
         'post_red_btn':{
-            'avg_abs_err': round(post_red_mean_spe_count_abs_err, 3),
-            'avg_rel_err': round(post_red_mean_spe_count_rel_err, 3)
+            'avg_abs_err': round(post_red_mean_spe_abs_err_count, 3),
+            'avg_rel_err': round(post_red_mean_spe_rel_err_count, 3)
         }
     }
     all_performances['Aggregate_species_counts'][test_id] = agg_species_counts
@@ -1080,7 +1390,7 @@ def score_tests(
     }
     for test_id in test_ids:
         # if 'OND' in test_id and '100.000' not in test_id:
-        if 'OND' in test_id:# and '1061.000' not in test_id and '1062.000' not in test_id:
+        if 'OND' in test_id  and '100.000' not in test_id:
             metadata = json.load(open(test_dir / f'{test_id}_metadata.json', 'r'))
             test_df = pd.read_csv(test_dir / f'{test_id}_single_df.csv')
 
@@ -1092,8 +1402,8 @@ def score_tests(
 
             # test_id = test_id[4:]
 
-            detect_lines = []
-            class_lines = []
+            # detect_lines = []
+            # class_lines = []
             # for round_ in range(nbr_rounds):
             #     if (sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').exists():
             #         detect_lines.append(open(sys_output_dir / f'{session_id}.{test_id}_{round_}_detection.csv').read().splitlines())
@@ -1115,7 +1425,8 @@ def score_tests(
             with open(log_dir / f'{test_id}.log', 'w') as log:
                 score_test(
                     test_id, metadata, test_df, detect_lines, class_lines, class_file_reader,
-                    log, all_performances, detection_threshold, spe_presence_threshold, act_presence_threshold
+                    log, all_performances, detection_threshold, spe_presence_threshold, 
+                    act_presence_threshold, estimate_ci=True, nbr_samples_conf_int=300
                 )
                 # score_test_from_boxes(
                 #     test_id, metadata, test_df, detect_lines, class_lines, boxes_pred_dict, class_file_reader,
@@ -1125,6 +1436,7 @@ def score_tests(
 
     write_results_to_log(all_performances, output_path=log_dir)
     # print_confusion_matrices(all_performances, log_dir / "confusion.pdf")
+    return all_performances
 
 
 
@@ -1170,11 +1482,195 @@ def main():
     activity_presence_threshold = args.activity_presence_threshold
     bboxes_pred_dir = Path(args.box_pred_dir)
     
-    score_tests(
-        test_dir, sys_output_dir, bboxes_pred_dir, session_id, ClassFileReader(), log_dir,
-        args.save_symlinks, dataset_root, detection_threshold, species_presence_threshold,
-        activity_presence_threshold
-    )
+    
+    thresholds = np.linspace(0.01, 1, 20)
+    thresholds = [0.4]
+    
+    all_threshold_results = {}
+    for thresh in thresholds:
+        all_performances = score_tests(
+            test_dir, sys_output_dir, bboxes_pred_dir, session_id, ClassFileReader(), log_dir,
+            args.save_symlinks, dataset_root, detection_threshold, thresh,
+            thresh
+        )
+
+        all_threshold_results[thresh] = {
+            'Aggretate_species_presence': all_performances['Aggregate_species_presence'].copy(),
+            'Aggretate_activity_presence': all_performances['Aggregate_activity_presence'].copy()
+        }
+    
+    # import ipdb; ipdb.set_trace()
+
+    # Assuming 'all_threshold_results' is your main dictionary
+    novelties = ['OND.102.000', 'OND.103.000', 'OND.104.000', 'OND.105.000', 
+                'OND.1061.000', 'OND.1062.000', 'OND.1063.000', 'OND.1064.000']
+
+    # novelties = ['OND.102.000', 'OND.103.000', 'OND.104.000', 'OND.105.000', 
+    #             'OND.1061.000', 'OND.1063.000', 'OND.1064.000']
+    metrics = ['avg_auc', 'avg_precision', 'avg_recall', 'avg_f1_score']
+    categories = ['Aggretate_species_presence', 'Aggretate_activity_presence']
+    conditions = ['pre_red_btn', 'post_red_btn']
+    trails_type = 'Validation_Data_With_Feedback_Retraning'
+    # for novelty in novelties:
+    #     for category in categories:
+    #         for metric in metrics:
+    #             plt.figure(figsize=(15, 6))
+
+    #             for condition in ['pre_red_btn', 'post_red_btn']:
+    #                 values = []
+    #                 thresholds = []
+
+    #                 for threshold, results in all_threshold_results.items():
+    #                     if novelty in results[category]:
+    #                         thresholds.append(threshold)
+    #                         values.append(results[category][novelty][condition][metric])
+
+    #                 # Plotting
+    #                 plt.subplot(1, 2, 1 if condition == 'pre_red_btn' else 2)
+    #                 plt.plot(thresholds, values, marker='o', label=f'{condition}')
+    #                 plt.title(f'{novelty} - {category} - {metric}')
+    #                 plt.xlabel('Threshold')
+    #                 plt.ylabel(metric)
+    #                 plt.legend()
+
+    #             plt.suptitle(f'{novelty} - {category} - {metric}')
+    #             plt.tight_layout()
+
+    #             # Save the figure
+    #             filename = f'{trails_type}\{novelty}_{category}_{metric}.png'
+    #             plt.savefig(filename)
+
+    #             # Close the figure to free memory
+    #             plt.close()
+
+
+
+    # Assuming all_threshold_results is structured with threshold values as keys
+    thresholds = list(all_threshold_results.keys())
+
+    
+    for metric in metrics:
+        for category in categories:
+            plt.figure(figsize=(15, 6))
+
+            for i, condition in enumerate(conditions, 1):
+                plt.subplot(1, 2, i)
+
+                for novelty in novelties:
+                    values = []
+                    for threshold in thresholds:
+                        if novelty in all_threshold_results[threshold][category]:
+                            values.append(all_threshold_results[threshold][category][novelty][condition][metric])
+                        else:
+                            values.append(np.nan)  # Use NaN for missing data
+
+                    # Plotting
+                    label = f'{novelty}'
+                    plt.plot(thresholds, values, marker='o', label=label)
+
+                plt.title(f'{metric} ({condition})')
+                plt.xlabel('Threshold')
+                plt.ylabel(metric)
+                plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+
+            plt.suptitle(f'{category} - {metric}')
+            plt.tight_layout()
+
+            # Save the figure
+            filename = f'{trails_type}_{category}_{metric}_subplots.png'
+            # plt.savefig(filename, bbox_inches='tight')
+            plt.close()
+
+
+    
+    
+    for category in categories:
+        plt.figure(figsize=(15, 6))
+
+        for i, condition in enumerate(conditions, 1):
+            plt.subplot(1, 2, i)
+
+            for novelty in novelties:
+                precision_values = []
+                recall_values = []
+
+                for threshold in thresholds:
+                    if novelty in all_threshold_results[threshold][category]:
+                        precision = all_threshold_results[threshold][category][novelty][condition]['avg_precision']
+                        recall = all_threshold_results[threshold][category][novelty][condition]['avg_recall']
+                        precision_values.append(precision)
+                        recall_values.append(recall)
+
+                plt.plot(recall_values, precision_values, marker='o', label=novelty)
+
+            plt.title(f'{category} - {condition} - Precision vs Recall')
+            plt.xlabel('Recall')
+            plt.ylabel('Precision')
+            plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            plt.grid(True)
+
+        plt.suptitle(f'Precision vs Recall Curves - {category}')
+        plt.tight_layout()
+
+        # Save the figure
+        filename = f'{trails_type}_{category}_Precision_vs_Recall_subplots.png'
+        # plt.savefig(filename, bbox_inches='tight')
+        plt.close()
+
+    
+
+    
+    categories = ['Aggretate_species_presence', 'Aggretate_activity_presence']
+    metrics = ['avg_auc', 'avg_precision', 'avg_recall', 'avg_f1_score']
+    conditions = ['pre_red_btn', 'post_red_btn']
+
+    # Check if the dictionary is not empty
+    if not all_threshold_results:
+        print("The dictionary all_threshold_results is empty. No CSV files created.")
+        exit()
+
+    # Extract the thresholds
+    thresholds = list(all_threshold_results.keys())
+
+    for category in categories:
+        csv_data = []
+        headers = ['Novelty'] + [f'{metric}_{condition.split("_")[0]}' for metric in metrics for condition in conditions]
+
+        for threshold in thresholds:
+            if category in all_threshold_results[threshold]:
+                novelties = list(all_threshold_results[threshold][category].keys())
+                csv_data.append({'Novelty': threshold, **{key: '' for key in headers if key != 'Novelty'}})
+                for novelty in novelties:
+                    row = {'Novelty': novelty}
+                    for condition in conditions:
+                        for metric in metrics:
+                            key = f'{metric}_{condition.split("_")[0]}'
+                            if novelty in all_threshold_results[threshold][category]:
+                                row[key] = all_threshold_results[threshold][category][novelty][condition][metric]
+                            else:
+                                row[key] = None  # or a placeholder value like 'N/A'
+                    csv_data.append(row)
+
+                # Add an empty row after each threshold
+                csv_data.append({key: '' for key in headers})
+
+        # Write to CSV
+        csv_filename = f'{trails_type}_{category}.csv'
+        with open(csv_filename, mode='w', newline='', encoding='utf-8') as file:
+            writer = csv.DictWriter(file, fieldnames=headers)
+            writer.writeheader()
+            writer.writerows(csv_data)
+
+        print(f"CSV file '{csv_filename}' for {category} written successfully.")
+
+
+
+    # score_tests(
+    #     test_dir, sys_output_dir, bboxes_pred_dir, session_id, ClassFileReader(), log_dir,
+    #     args.save_symlinks, dataset_root, detection_threshold, species_presence_threshold,
+    #     activity_presence_threshold
+    # )
+    # write_results_to_log(all_performances, output_path=log_dir)
 
 if __name__ == '__main__':
     main()

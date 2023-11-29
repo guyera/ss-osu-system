@@ -62,13 +62,13 @@ if __name__ == "__main__":
     p.add_argument('--device', type=str, default='cuda:0')
 
     args = p.parse_args()
-    torch.autograd.set_detect_anomaly(True)
+    # torch.autograd.set_detect_anomaly(True)
     assert ((not args.distributed) or (args.classifier_trainer == TopLevelApp.ClassifierTrainer.end_to_end)),\
         'Only end-to-end training is supported in distributed mode'
     
     from datetime import timedelta
     DEFAULT_TIMEOUT = timedelta(seconds=1000000)
-
+    torch.set_default_tensor_type(torch.DoubleTensor)
     if args.distributed:
 
         dist.init_process_group('nccl', timeout = DEFAULT_TIMEOUT)

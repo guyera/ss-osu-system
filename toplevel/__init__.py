@@ -169,7 +169,6 @@ class TopLevelApp:
         self.trial_batch_size = trial_batch_size
         self.second_retrain_batch_num = (self.trial_size - 100) // self.trial_batch_size
         self.disable_retraining = disable_retraining
-
         # Auxiliary debugging data
         self._classifier_debugging_data = {}
 
@@ -588,7 +587,7 @@ class TopLevelApp:
                     # Remove NaNs by setting them to the normalized override
                     # mask compliment
                     self.batch_context.p_type[normalizer == 0] =\
-                        (~p_type_override_mask[:]).to(torch.float)
+                        (~p_type_override_mask[:]).to(torch.double)
                     self.batch_context.p_type = self.batch_context.p_type /\
                         self.batch_context.p_type.sum(dim=1, keepdim=True)
 
@@ -600,7 +599,7 @@ class TopLevelApp:
             self.batch_context.p_type)
 
         self.retraining_buffer = pd.concat([self.retraining_buffer, df[df['novel'] == 1]])
-
+        
         self.novelty_trainer.add_feedback_data(self.data_root, feedback_csv_path)
 
         if not self.disable_retraining:
@@ -643,7 +642,7 @@ class TopLevelApp:
          
         if self.given_detection and not self.post_red and not self.red_light_this_batch:
             red_light_scores = np.zeros_like(red_light_scores)
-         
+        
         if self.given_detection and self.red_light_this_batch:
             self.red_light_this_batch = False
             self.post_red = True
@@ -882,7 +881,6 @@ class TopLevelApp:
         # retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.novelty_trainer.n_feedback_examples() > 0)
         retrain_cond_1 = self.num_retrains_so_far == 0 and len(self.retraining_buffer) >= 15
         retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (len(self.retraining_buffer) > 0)
-        print('Len of Feedback Buffer : ', len(self.retraining_buffer))
         # if retrain_cond_1 or retrain_cond_2:
         if retrain_cond_2:
             csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
@@ -967,7 +965,7 @@ class TopLevelApp:
                 # self.retrain_num+=1
                 # self.novelty_trainer.add_feedback_data(self.data_root, csv_path_temp)   
 
-            # self.num_retrains_so_far += 1
+            ## self.num_retrains_so_far += 1
             self.novelty_trainer.prepare_for_retraining(
                 self.backbone,
                 self.und_manager.classifier, 
@@ -987,11 +985,9 @@ class TopLevelApp:
                 self.log_dir,
                 self.model_unwrap_fn,
             )
-            for param in self.backbone.parameters():
-                param.grad = None
-            
-            self.backbone.eval()
-            self.retraining_buffer = self.retraining_buffer.iloc[0:0]
-            # torch.cuda.empty_cache()
+
+            # self.backbone.eval()
+            # self.retraining_buffer = self.retraining_buffer.iloc[0:0]
+            ## torch.cuda.empty_cache()
             # import gc   
             # gc.collect()

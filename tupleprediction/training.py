@@ -39,7 +39,7 @@ def print_nan(t, name):
         sys.exit(-1)
 
 def contains_nan(tensor):
-    return torch.isnan(tensor).any()
+    return torch.isnan(tensor).any() 
 
 '''
 Dynamic program solution to the multiple instance count problem
@@ -307,12 +307,13 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets, allow_pri
                     # dynamic program value. Multiply these probabilities by
                     # the corresponding current dynamic program values to get
                     # the next ones
+                    if contains_nan(dyn_prog):
+                        print("Skipping batch due to NaN values in dyn_prog 2")
+                        continue
                     dyn_prog[tuple(shifted_dyn_indices)] +=\
                         dyn_prog[tuple(masked_cur_dyn_indices)] *\
                             observed_preds_sums
-                    if contains_nan(dyn_prog):
-                        print("Skipping batch due to NaN values in dyn_prog 2")
-                        continue 
+                    
 
                     if allow_print:
                         print_nan(dyn_prog, 'dyn_prog 2')
@@ -331,13 +332,13 @@ def multiple_instance_presence_cross_entropy_dyn(predictions, targets, allow_pri
                     # simply P(this box == this class). Compute this probability
                     # and multiply it by the current dyn prog values to get
                     # the contribution to the next dyn prog values.
-                    
-                    dyn_prog[tuple(shifted_dyn_indices)] +=\
-                        dyn_prog[tuple(masked_cur_dyn_indices)] *\
-                            present_predictions[box_idx, cls_idx]
                     if contains_nan(dyn_prog):
                         print("Skipping batch due to NaN values in dyn_prog 2")
                         continue  
+                    dyn_prog[tuple(shifted_dyn_indices)] +=\
+                        dyn_prog[tuple(masked_cur_dyn_indices)] *\
+                            present_predictions[box_idx, cls_idx]
+                    
                     if allow_print:
                         print_nan(dyn_prog, 'dyn_prog 3')
 
@@ -1641,8 +1642,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             feedback_activity_loss =\
                 multiple_instance_presence_cross_entropy_dyn(
                     feedback_activity_preds,
-                    feedback_activity_labels,
-                    allow_print=allow_print
+                    feedback_activity_labels
                 )
             if allow_print:
                 print_nan(feedback_activity_loss, "feedback_activity_loss")
@@ -1676,8 +1676,25 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             for param in backbone.parameters():
                 if param.grad is not None:
                     print_nan(param.grad.data, 'some parameter\'s gradient 1')
-
+        # print(loss)
         loss.backward()
+
+        # for param in backbone.parameters():
+        #     if param.grad is not None and \
+        #     (torch.any(torch.isnan(param.grad.data)) or \
+        #         torch.any(torch.isinf(param.grad.data))):
+        #         # Found some NaNs in the gradients. "Skip" this batch by
+        #         # zeroing the gradients. This should work in distributed
+        #         # mode as well
+        #         optimizer.zero_grad()
+        #         break
+        
+        # Gradient clipping
+        # torch.nn.utils.clip_grad_norm_(backbone.parameters(), max_norm=1.0)
+        # torch.nn.utils.clip_grad_norm_(activity_classifier.parameters(), max_norm=1.0)
+        # total_grad_norm = torch.nn.utils.clip_grad_norm_(backbone.parameters(), max_norm=float('inf'))
+        # print(f"Total gradient norm: {total_grad_norm}")
+
         optimizer.step()
 
         if allow_print:

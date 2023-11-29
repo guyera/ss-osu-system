@@ -4,7 +4,7 @@ import pathlib
 import os
 import pandas as pd
 from toplevel import TopLevelApp
-
+import csv
 
 class OSUInterface:
     def __init__(self, scg_ensemble, data_root, pretrained_models_dir, backbone_architecture,
@@ -49,7 +49,9 @@ class OSUInterface:
             val_reduce_fn=val_reduce_fn,
             model_unwrap_fn=model_unwrap_fn
         )
-
+        self.num_queries = 0
+        self.num_of_queries = []
+        self.log_dir =log_dir
         self.temp_path = pathlib.Path('./session/temp/')
 
     def start_session(self, session_id, detection_feedback, given_detection):
@@ -67,6 +69,8 @@ class OSUInterface:
         :return: None
         """
         self.app.reset()
+        self.num_queries = 0
+
 
         print(f'==> OSU got start test {test_id}')
 
@@ -150,6 +154,13 @@ class OSUInterface:
         print(f'  ==> OSU got detection feedback results for round {round_id}')
 
         feedback_uuid = uuid.uuid4()
+        
+        # Count the number of rows in feedback_csv_content
+        # Each line in CSV is separated by a newline character
+        num_rows = feedback_csv_content.count('\n')  # Counts the number of newlines
+        if round_id < 90:
+            self.num_queries += num_rows
+        print(self.num_queries)
         csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}_feedback_{feedback_uuid}.csv')
         with open(csv_path, 'w') as f:
             f.write(feedback_csv_content)
@@ -160,7 +171,7 @@ class OSUInterface:
 
     def end_test(self, test_id):
         print(f'==> OSU got end test {test_id}')
-
+        self.num_of_queries.append([test_id, self.num_queries])
         returned_pni = self.app.test_completed_callback(test_id)
         # import numpy as np
         # np.savetxt(test_id+'.csv', returned_pni, delimiter=',', header='p_ni')
@@ -169,5 +180,13 @@ class OSUInterface:
         
 
     def end_session(self, session_id):
+        # Write to CSV
+
+        csv_pathh = self.log_dir+ '/' +session_id +'_Number_of_Feedback_Queries.csv'
+        with open(csv_pathh, 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['Test ID', 'Number of Queries'])  # Writing header
+            writer.writerows(self.num_of_queries)
+
         print(f'==> OSU got end session {session_id}')
 
