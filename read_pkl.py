@@ -1,7 +1,7 @@
 import pickle
 import matplotlib.pyplot as plt
 # Replace 'yourfile.pkl' with the path to the actual .pkl file you want to read
-file_path = '/nfs/hpc/share/sail_on3/TestsForPaper/Nov2023_SingleTraining/resultsJustFeedback/logs/resizepad=224/none/normalized/end-to-end-trainer/lr=0.001/label_smoothing=0.00//training.pkl'
+file_path = '/nfs/hpc/share/sail_on3/TestsForPaper/Dec2023_End_to_End/resultsJustFeedback102/logs/resizepad=224/none/normalized/end-to-end-trainer/lr=0.001/label_smoothing=0.00/training.pkl'
 # file_path = '/nfs/hpc/share/sail_on3/TestsForPaper/Nov2023/resultsGANAug/logs/resizepad=224/none/normalized/end-to-end-trainer/lr=0.001/label_smoothing=0.00/validation.pkl'
 
 # Open the file in binary read mode
@@ -37,7 +37,7 @@ plt.ylabel('Accuracy')
 plt.tight_layout()
 
 # Save the figures
-plt.savefig('/nfs/hpc/share/sail_on3/TestsForPaper/Nov2023_SingleTraining/resultsJustFeedback/logs/resizepad=224/none/normalized/end-to-end-trainer/lr=0.001/label_smoothing=0.00/training_curves.png', dpi=300)  # Save as a PNG file with 300 dpi
+plt.savefig('/nfs/hpc/share/sail_on3/TestsForPaper/Dec2023_End_to_End/resultsJustFeedback102/logs/resizepad=224/none/normalized/end-to-end-trainer/lr=0.001/label_smoothing=0.00/training_curves.png', dpi=300)  # Save as a PNG file with 300 dpi
 # If you want to save them separately, you can create and save individual plots
 
 # Separate figures

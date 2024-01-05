@@ -1428,8 +1428,8 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             backbone,
             classifier,
             activation_statistical_model):
-        # classifier.reset()
-        pass
+        classifier.reset()
+        # pass
 
     def fit_activation_statistics(
             self,
@@ -2248,10 +2248,10 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             activation_statistical_model):
         # backbone.zero_grad(set_to_none=True)
         # torch.cuda.empty_cache()
-        pass
-        # classifier.reset()
-        # backbone.reset()
-        # activation_statistical_model.reset()
+        # pass
+        classifier.reset()
+        backbone.reset()
+        activation_statistical_model.reset()
 
     def fit_activation_statistics(
             self,
@@ -2939,13 +2939,13 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             backbone,
             classifier,
             activation_statistical_model):
-        pass
+        # pass
         # Reset only the side network's weights
-        # backbone.reset()
+        backbone.reset()
 
         # Update classifier's bottleneck dim to account for side network's
         # features before resetting
-        # classifier.reset(bottleneck_dim=512)
+        classifier.reset(bottleneck_dim=512)
 
     def fit_activation_statistics(
             self,
@@ -3217,12 +3217,12 @@ class TuplePredictorTrainer:
             classifier,
             activation_statistical_model
         )
-        pass
+        # pass
         # Reset the confidence calibrator
-        # confidence_calibrator.reset()
+        confidence_calibrator.reset()
 
         # Reset logistic regressions and statistical model
-        # novelty_type_classifier.reset()
+        novelty_type_classifier.reset()
 
     def calibrate_temperature_scalers(
             self,
