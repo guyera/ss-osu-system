@@ -7,6 +7,7 @@ from enum import Enum
 import pickle as pkl
 from abc import ABC, abstractmethod
 import sys
+from tupleprediction.ewc import EWC
 
 from tqdm import tqdm
 from torch.utils.data import\
@@ -1431,6 +1432,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         classifier.reset()
         # pass
 
+
     def fit_activation_statistics(
             self,
             backbone,
@@ -1485,109 +1487,12 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             species_classifier,
             activity_classifier,
             optimizer,
-            species_labels,
-            activity_labels,
-            box_images,
             feedback_species_labels,
             feedback_activity_labels,
             feedback_box_images,
             device,
             allow_print):
         # Move to device
-        species_labels = species_labels.to(device)
-        activity_labels = activity_labels.to(device)
-        box_images = box_images.to(device)
-        if allow_print:
-            print_nan(box_images, 'box_images')
-
-        # Extract box features
-        box_features = backbone(box_images)
-        if allow_print:
-            print_nan(box_features, 'box_features')
-
-        # Compute logits by passing the features through the appropriate
-        # classifiers
-        species_preds = species_classifier(box_features)
-        activity_preds = activity_classifier(box_features)
-
-        # Compute losses
-        species_weights = None
-        activity_weights = None
-        if self._class_frequencies is not None:
-            species_frequencies, activity_frequencies = self._class_frequencies
-            species_frequencies = species_frequencies.to(device)
-            activity_frequencies = activity_frequencies.to(device)
-
-            species_proportions = species_frequencies /\
-                species_frequencies.sum()
-            unnormalized_species_weights =\
-                torch.pow(1.0 / species_proportions, 1.0 / 3.0)
-            unnormalized_species_weights[species_proportions == 0.0] = 0.0
-            proportional_species_sum =\
-                (species_proportions * unnormalized_species_weights).sum()
-            species_weights =\
-                unnormalized_species_weights / proportional_species_sum
-
-            activity_proportions = activity_frequencies /\
-                activity_frequencies.sum()
-            unnormalized_activity_weights =\
-                torch.pow(1.0 / activity_proportions, 1.0 / 3.0)
-            unnormalized_activity_weights[activity_proportions == 0.0] = 0.0
-            proportional_activity_sum =\
-                (activity_proportions * unnormalized_activity_weights).sum()
-            activity_weights =\
-                unnormalized_activity_weights / proportional_activity_sum
-
-        if self._loss_fn == LossFnEnum.cross_entropy:
-            species_loss = torch.nn.functional.cross_entropy(
-                species_preds,
-                species_labels,
-                weight=species_weights,
-                label_smoothing=self._label_smoothing
-            )
-            activity_loss = torch.nn.functional.cross_entropy(
-                activity_preds,
-                activity_labels,
-                weight=activity_weights,
-                label_smoothing=self._label_smoothing
-            )
-        else:
-            focal_loss = torch.hub.load(
-                'adeelh/pytorch-multi-class-focal-loss',
-                model='FocalLoss',
-                alpha=None,
-                gamma=2,
-                reduction='none',
-                force_reload=False
-            )
-            if species_weights is not None:
-                ex_species_weights = species_weights[species_labels]
-            else:
-                ex_species_weights = 1
-            species_loss_all = focal_loss(
-                species_preds,
-                species_labels
-            )
-            species_loss =\
-                (species_loss_all * ex_species_weights).mean()
-            
-            if activity_weights is not None:
-                ex_activity_weights = activity_weights[activity_labels]
-            else:
-                ex_activity_weights = 1
-            activity_loss_all = focal_loss(
-                activity_preds,
-                activity_labels
-            )
-            activity_loss =\
-                (activity_loss_all * ex_activity_weights).mean()
-
-        non_feedback_loss = species_loss + activity_loss
-        if allow_print:
-            print_nan(non_feedback_loss, 'non_feedback_loss')
-
-        #if feedback_box_images is not None and\
-        #        self._feedback_loss_weight != 0:
         if feedback_box_images is not None:
             feedback_species_labels = feedback_species_labels.to(device)
             feedback_activity_labels = feedback_activity_labels.to(device)
@@ -1612,7 +1517,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 torch.nn.functional.softmax(feedback_species_logits, dim=1)
             feedback_activity_preds =\
                 torch.nn.functional.softmax(feedback_activity_logits, dim=1)
-
+            feedback_species_preds_ = feedback_species_preds
+            feedback_activity_preds_ = feedback_activity_preds
             if allow_print:
                 print_nan(feedback_activity_preds, 'feedback_activity_preds')
             
@@ -1650,6 +1556,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             feedback_loss = feedback_species_loss + feedback_activity_loss
             if allow_print:
                 print_nan(feedback_loss, "feedback_loss")
+            
+            non_feedback_loss = self.ewc_calculation.penalty(backbone, species_classifier, activity_classifier)
 
             loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
                 self._feedback_loss_weight * feedback_loss
@@ -1679,21 +1587,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         # print(loss)
         loss.backward()
 
-        # for param in backbone.parameters():
-        #     if param.grad is not None and \
-        #     (torch.any(torch.isnan(param.grad.data)) or \
-        #         torch.any(torch.isinf(param.grad.data))):
-        #         # Found some NaNs in the gradients. "Skip" this batch by
-        #         # zeroing the gradients. This should work in distributed
-        #         # mode as well
-        #         optimizer.zero_grad()
-        #         break
-        
-        # Gradient clipping
-        # torch.nn.utils.clip_grad_norm_(backbone.parameters(), max_norm=1.0)
-        # torch.nn.utils.clip_grad_norm_(activity_classifier.parameters(), max_norm=1.0)
-        # total_grad_norm = torch.nn.utils.clip_grad_norm_(backbone.parameters(), max_norm=float('inf'))
-        # print(f"Total gradient norm: {total_grad_norm}")
+   
 
         optimizer.step()
 
@@ -1704,17 +1598,19 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 if param.grad is not None:
                     print_nan(param.grad.data, 'some parameter\'s gradient 2')
 
-        species_correct = torch.argmax(species_preds, dim=1) == \
-            species_labels
-        n_species_correct = int(
-            species_correct.to(torch.int).sum().detach().cpu().item()
-        )
+        # species_correct = torch.argmax(feedback_species_preds_, dim=1) == \
+        #     feedback_species_labels
+        # n_species_correct = int(
+        #     species_correct.to(torch.int).sum().detach().cpu().item()
+        # )
 
-        activity_correct = torch.argmax(activity_preds, dim=1) == \
-            activity_labels
-        n_activity_correct = int(
-            activity_correct.to(torch.int).sum().detach().cpu().item()
-        )
+        # activity_correct = torch.argmax(feedback_activity_preds_, dim=1) == \
+        #     feedback_activity_labels
+        # n_activity_correct = int(
+        #     activity_correct.to(torch.int).sum().detach().cpu().item()
+        # )
+        n_species_correct = 0
+        n_activity_correct = 0
         return loss.detach().cpu().item(),\
             n_species_correct,\
             n_activity_correct
@@ -1722,7 +1618,6 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
     def _train_epoch(
             self,
             backbone,
-            train_loader,
             feedback_loader,
             species_classifier,
             activity_classifier,
@@ -1750,23 +1645,20 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         feedback_activity_labels = None
         feedback_box_images = None
         batch_loss = None
+        
+        # TODO remove i and usages (used to clip training batches for debugging)
+        i = 0
         if allow_print:
-            train_loader_progress = tqdm(
-                train_loader,
+            train_feedback_loader_progress = tqdm(
+                feedback_loader,
                 desc=gen_tqdm_description(
                     'Training batch...',
                     batch_loss=batch_loss
                 )
             )
         else:
-            train_loader_progress = train_loader
-        # TODO remove i and usages (used to clip training batches for debugging)
-        i = 0
-        for species_labels, activity_labels, box_images in train_loader_progress:
-            if i >= 10:
-                #break
-                pass
-            i += 1
+            train_feedback_loader_progress = feedback_loader
+        for i in train_feedback_loader_progress:
             if feedback_iter is not None:
                 try:
                     feedback_species_labels,\
@@ -1787,9 +1679,6 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     species_classifier,
                     activity_classifier,
                     optimizer,
-                    species_labels,
-                    activity_labels,
-                    box_images,
                     feedback_species_labels,
                     feedback_activity_labels,
                     feedback_box_images,
@@ -1799,12 +1688,12 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
             sum_loss += batch_loss
             n_iterations += 1
-            n_examples += box_images.shape[0]
+            n_examples += len(feedback_box_images)
             n_species_correct += batch_n_species_correct
             n_activity_correct += batch_n_activity_correct
             
             if allow_print:
-                train_loader_progress.set_description(
+                train_feedback_loader_progress.set_description(
                     gen_tqdm_description(
                         'Training batch...',
                         batch_loss=batch_loss
@@ -2097,6 +1986,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     validation_accuracy_curve = pkl.load(f)
 
         # Train
+        self.ewc_calculation = EWC(backbone, species_classifier, activity_classifier, train_loader, self._class_frequencies, self._loss_fn, self._label_smoothing, device)
+
         if allow_print:
             print('lr:', self._lr)
             progress = tqdm(
@@ -2119,15 +2010,14 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 # training.
                 break
 
-            if train_loader.sampler is not None:
-                # Set the sampler epoch for shuffling when running in
-                # distributed mode
-                train_loader.sampler.set_epoch(epoch)
+            # if train_loader.sampler is not None:
+            #     # Set the sampler epoch for shuffling when running in
+            #     # distributed mode
+            #     train_loader.sampler.set_epoch(epoch)
 
             # Train for one full epoch
             mean_train_loss, mean_train_accuracy = self._train_epoch(
                 backbone,
-                train_loader,
                 feedback_loader,
                 species_classifier,
                 activity_classifier,
@@ -2249,8 +2139,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         # backbone.zero_grad(set_to_none=True)
         # torch.cuda.empty_cache()
         # pass
-        classifier.reset()
-        backbone.reset()
+        # classifier.reset()
+        # backbone.reset()
         activation_statistical_model.reset()
 
     def fit_activation_statistics(
@@ -2939,13 +2829,13 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             backbone,
             classifier,
             activation_statistical_model):
-        # pass
+        pass
         # Reset only the side network's weights
-        backbone.reset()
+        # backbone.reset()
 
         # Update classifier's bottleneck dim to account for side network's
         # features before resetting
-        classifier.reset(bottleneck_dim=512)
+        # classifier.reset(bottleneck_dim=512)
 
     def fit_activation_statistics(
             self,

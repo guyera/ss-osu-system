@@ -167,7 +167,7 @@ class TopLevelApp:
         self.batch_num = 0 
         self.trial_size = trial_size
         self.trial_batch_size = trial_batch_size
-        self.second_retrain_batch_num = (self.trial_size - 100) // self.trial_batch_size
+        self.second_retrain_batch_num = (self.trial_size - 1000) // self.trial_batch_size
         self.disable_retraining = disable_retraining
         # Auxiliary debugging data
         self._classifier_debugging_data = {}
@@ -587,7 +587,7 @@ class TopLevelApp:
                     # Remove NaNs by setting them to the normalized override
                     # mask compliment
                     self.batch_context.p_type[normalizer == 0] =\
-                        (~p_type_override_mask[:]).to(torch.double)
+                        (~p_type_override_mask[:]).to(torch.float)
                     self.batch_context.p_type = self.batch_context.p_type /\
                         self.batch_context.p_type.sum(dim=1, keepdim=True)
 
