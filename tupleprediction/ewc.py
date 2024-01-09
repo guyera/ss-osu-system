@@ -72,7 +72,6 @@ class EWC(object):
             activity_labels = activity_labels.to(self.device)
 
             box_images = box_images.to(self.device)
-
             box_features = self.backbone(box_images)
 
             species_preds = self.species_classifier(box_features)

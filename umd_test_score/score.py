@@ -1390,7 +1390,7 @@ def score_tests(
     }
     for test_id in test_ids:
         # if 'OND' in test_id and '100.000' not in test_id:
-        if 'OND' in test_id  and '100.000' not in test_id and '102' in test_id:
+        if 'OND' in test_id  and '100.000' not in test_id and '103' not in test_id:
             metadata = json.load(open(test_dir / f'{test_id}_metadata.json', 'r'))
             test_df = pd.read_csv(test_dir / f'{test_id}_single_df.csv')
 
@@ -1545,123 +1545,123 @@ def main():
 
 
 
-    # Assuming all_threshold_results is structured with threshold values as keys
-    thresholds = list(all_threshold_results.keys())
+    # # Assuming all_threshold_results is structured with threshold values as keys
+    # thresholds = list(all_threshold_results.keys())
 
     
-    for metric in metrics:
-        for category in categories:
-            plt.figure(figsize=(15, 6))
+    # for metric in metrics:
+    #     for category in categories:
+    #         plt.figure(figsize=(15, 6))
 
-            for i, condition in enumerate(conditions, 1):
-                plt.subplot(1, 2, i)
+    #         for i, condition in enumerate(conditions, 1):
+    #             plt.subplot(1, 2, i)
 
-                for novelty in novelties:
-                    values = []
-                    for threshold in thresholds:
-                        if novelty in all_threshold_results[threshold][category]:
-                            values.append(all_threshold_results[threshold][category][novelty][condition][metric])
-                        else:
-                            values.append(np.nan)  # Use NaN for missing data
+    #             for novelty in novelties:
+    #                 values = []
+    #                 for threshold in thresholds:
+    #                     if novelty in all_threshold_results[threshold][category]:
+    #                         values.append(all_threshold_results[threshold][category][novelty][condition][metric])
+    #                     else:
+    #                         values.append(np.nan)  # Use NaN for missing data
 
-                    # Plotting
-                    label = f'{novelty}'
-                    plt.plot(thresholds, values, marker='o', label=label)
+    #                 # Plotting
+    #                 label = f'{novelty}'
+    #                 plt.plot(thresholds, values, marker='o', label=label)
 
-                plt.title(f'{metric} ({condition})')
-                plt.xlabel('Threshold')
-                plt.ylabel(metric)
-                plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    #             plt.title(f'{metric} ({condition})')
+    #             plt.xlabel('Threshold')
+    #             plt.ylabel(metric)
+    #             plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 
-            plt.suptitle(f'{category} - {metric}')
-            plt.tight_layout()
+    #         plt.suptitle(f'{category} - {metric}')
+    #         plt.tight_layout()
 
-            # Save the figure
-            filename = f'{trails_type}_{category}_{metric}_subplots.png'
-            # plt.savefig(filename, bbox_inches='tight')
-            plt.close()
+    #         # Save the figure
+    #         filename = f'{trails_type}_{category}_{metric}_subplots.png'
+    #         # plt.savefig(filename, bbox_inches='tight')
+    #         plt.close()
 
-
-    
-    
-    for category in categories:
-        plt.figure(figsize=(15, 6))
-
-        for i, condition in enumerate(conditions, 1):
-            plt.subplot(1, 2, i)
-
-            for novelty in novelties:
-                precision_values = []
-                recall_values = []
-
-                for threshold in thresholds:
-                    if novelty in all_threshold_results[threshold][category]:
-                        precision = all_threshold_results[threshold][category][novelty][condition]['avg_precision']
-                        recall = all_threshold_results[threshold][category][novelty][condition]['avg_recall']
-                        precision_values.append(precision)
-                        recall_values.append(recall)
-
-                plt.plot(recall_values, precision_values, marker='o', label=novelty)
-
-            plt.title(f'{category} - {condition} - Precision vs Recall')
-            plt.xlabel('Recall')
-            plt.ylabel('Precision')
-            plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-            plt.grid(True)
-
-        plt.suptitle(f'Precision vs Recall Curves - {category}')
-        plt.tight_layout()
-
-        # Save the figure
-        filename = f'{trails_type}_{category}_Precision_vs_Recall_subplots.png'
-        # plt.savefig(filename, bbox_inches='tight')
-        plt.close()
 
     
+    
+    # for category in categories:
+    #     plt.figure(figsize=(15, 6))
+
+    #     for i, condition in enumerate(conditions, 1):
+    #         plt.subplot(1, 2, i)
+
+    #         for novelty in novelties:
+    #             precision_values = []
+    #             recall_values = []
+
+    #             for threshold in thresholds:
+    #                 if novelty in all_threshold_results[threshold][category]:
+    #                     precision = all_threshold_results[threshold][category][novelty][condition]['avg_precision']
+    #                     recall = all_threshold_results[threshold][category][novelty][condition]['avg_recall']
+    #                     precision_values.append(precision)
+    #                     recall_values.append(recall)
+
+    #             plt.plot(recall_values, precision_values, marker='o', label=novelty)
+
+    #         plt.title(f'{category} - {condition} - Precision vs Recall')
+    #         plt.xlabel('Recall')
+    #         plt.ylabel('Precision')
+    #         plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    #         plt.grid(True)
+
+    #     plt.suptitle(f'Precision vs Recall Curves - {category}')
+    #     plt.tight_layout()
+
+    #     # Save the figure
+    #     filename = f'{trails_type}_{category}_Precision_vs_Recall_subplots.png'
+    #     # plt.savefig(filename, bbox_inches='tight')
+    #     plt.close()
 
     
-    categories = ['Aggretate_species_presence', 'Aggretate_activity_presence']
-    metrics = ['avg_auc', 'avg_precision', 'avg_recall', 'avg_f1_score']
-    conditions = ['pre_red_btn', 'post_red_btn']
 
-    # Check if the dictionary is not empty
-    if not all_threshold_results:
-        print("The dictionary all_threshold_results is empty. No CSV files created.")
-        exit()
+    
+    # categories = ['Aggretate_species_presence', 'Aggretate_activity_presence']
+    # metrics = ['avg_auc', 'avg_precision', 'avg_recall', 'avg_f1_score']
+    # conditions = ['pre_red_btn', 'post_red_btn']
 
-    # Extract the thresholds
-    thresholds = list(all_threshold_results.keys())
+    # # Check if the dictionary is not empty
+    # if not all_threshold_results:
+    #     print("The dictionary all_threshold_results is empty. No CSV files created.")
+    #     exit()
 
-    for category in categories:
-        csv_data = []
-        headers = ['Novelty'] + [f'{metric}_{condition.split("_")[0]}' for metric in metrics for condition in conditions]
+    # # Extract the thresholds
+    # thresholds = list(all_threshold_results.keys())
 
-        for threshold in thresholds:
-            if category in all_threshold_results[threshold]:
-                novelties = list(all_threshold_results[threshold][category].keys())
-                csv_data.append({'Novelty': threshold, **{key: '' for key in headers if key != 'Novelty'}})
-                for novelty in novelties:
-                    row = {'Novelty': novelty}
-                    for condition in conditions:
-                        for metric in metrics:
-                            key = f'{metric}_{condition.split("_")[0]}'
-                            if novelty in all_threshold_results[threshold][category]:
-                                row[key] = all_threshold_results[threshold][category][novelty][condition][metric]
-                            else:
-                                row[key] = None  # or a placeholder value like 'N/A'
-                    csv_data.append(row)
+    # for category in categories:
+    #     csv_data = []
+    #     headers = ['Novelty'] + [f'{metric}_{condition.split("_")[0]}' for metric in metrics for condition in conditions]
 
-                # Add an empty row after each threshold
-                csv_data.append({key: '' for key in headers})
+    #     for threshold in thresholds:
+    #         if category in all_threshold_results[threshold]:
+    #             novelties = list(all_threshold_results[threshold][category].keys())
+    #             csv_data.append({'Novelty': threshold, **{key: '' for key in headers if key != 'Novelty'}})
+    #             for novelty in novelties:
+    #                 row = {'Novelty': novelty}
+    #                 for condition in conditions:
+    #                     for metric in metrics:
+    #                         key = f'{metric}_{condition.split("_")[0]}'
+    #                         if novelty in all_threshold_results[threshold][category]:
+    #                             row[key] = all_threshold_results[threshold][category][novelty][condition][metric]
+    #                         else:
+    #                             row[key] = None  # or a placeholder value like 'N/A'
+    #                 csv_data.append(row)
 
-        # Write to CSV
-        csv_filename = f'{trails_type}_{category}.csv'
-        with open(csv_filename, mode='w', newline='', encoding='utf-8') as file:
-            writer = csv.DictWriter(file, fieldnames=headers)
-            writer.writeheader()
-            writer.writerows(csv_data)
+    #             # Add an empty row after each threshold
+    #             csv_data.append({key: '' for key in headers})
 
-        print(f"CSV file '{csv_filename}' for {category} written successfully.")
+    #     # Write to CSV
+    #     csv_filename = f'{trails_type}_{category}.csv'
+    #     with open(csv_filename, mode='w', newline='', encoding='utf-8') as file:
+    #         writer = csv.DictWriter(file, fieldnames=headers)
+    #         writer.writeheader()
+    #         writer.writerows(csv_data)
+
+    #     print(f"CSV file '{csv_filename}' for {category} written successfully.")
 
 
 

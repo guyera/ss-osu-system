@@ -200,6 +200,8 @@ Parameters:
 '''
 def multiple_instance_presence_cross_entropy_dyn(predictions, targets, allow_print=False):
     losses = []
+    predictions = tuple(pred.double() for pred in predictions)
+    targets = targets.double()
     for img_predictions, img_targets in zip(predictions, targets):
         present_classes = img_targets != 0
         present_predictions = img_predictions[:, present_classes]
@@ -1481,6 +1483,9 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         self._load_best_after_training = load_best_after_training
         self._val_reduce_fn = val_reduce_fn
 
+        self.just_finetune = False 
+        self.ewc = True
+
     def _train_batch(
             self,
             backbone,
@@ -1557,11 +1562,13 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             if allow_print:
                 print_nan(feedback_loss, "feedback_loss")
             
-            non_feedback_loss = self.ewc_calculation.penalty(backbone, species_classifier, activity_classifier)
+            if self.just_finetune == False and self.ewc == True:
+                non_feedback_loss = self.ewc_calculation.penalty(backbone, species_classifier, activity_classifier)
+            else:
+                non_feedback_loss = 0
 
-            loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
-                self._feedback_loss_weight * feedback_loss
-
+            loss =  feedback_loss + 100 * non_feedback_loss 
+     
             if allow_print:
                 if torch.any(torch.isnan(loss)):
                     print('feedback_loss', feedback_loss)
@@ -1986,7 +1993,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     validation_accuracy_curve = pkl.load(f)
 
         # Train
-        self.ewc_calculation = EWC(backbone, species_classifier, activity_classifier, train_loader, self._class_frequencies, self._loss_fn, self._label_smoothing, device)
+        if self.just_finetune == False and self.ewc == True:
+            self.ewc_calculation = EWC(backbone, species_classifier, activity_classifier, train_loader, self._class_frequencies, self._loss_fn, self._label_smoothing, device)
 
         if allow_print:
             print('lr:', self._lr)
