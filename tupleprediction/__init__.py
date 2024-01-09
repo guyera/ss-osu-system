@@ -21,23 +21,9 @@ class NoveltyTypeClassifier(torch.nn.Module):
 
     def reset(self):
         self.fc = torch.nn.Linear(self.n_signals, 6).to(self.device)
-        self.mean = torch.nn.Parameter(
-            torch.zeros(self.n_signals, device=self.device),
-            requires_grad=False
-        )
-        self.std = torch.nn.Parameter(
-            torch.ones(self.n_signals, device=self.device),
-            requires_grad=False
-        )
 
     def forward(self, x):
-        normalized = (x - self.mean) / self.std
-        normalized[torch.isnan(normalized)] = 0
-        return self.fc(normalized)
-
-    def fit_standardization_statistics(self, scores):
-        self.mean[:] = scores.mean(dim=0).detach()
-        self.std[:] = scores.std(dim=0).detach()
+        return self.fc(x)
 
     def to(self, device):
         super().to(device)

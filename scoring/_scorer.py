@@ -11,21 +11,9 @@ Notation:
     A: Number of unique activity classes
     L: Number of scores produced for a given image
 '''
-class ImageScorer(ABC):
-    '''
-    Produces novelty scores for a single image
-
-    Parameters:
-        species_logits: Tensor of shape NxS
-        activity_logits: Tensor of shape NxA
-
-    Returns:
-        scores: Tensor of shape L
-            Scores for the given image
-    '''
-    @abstractmethod
-    def score(self, species_logits, activity_logits):
-        return NotImplemented
+class Scorer(torch.nn.Module, ABC):
+    def __init__(self):
+        super().__init__()
 
     '''
     Returns:
@@ -33,10 +21,6 @@ class ImageScorer(ABC):
     '''
     @abstractmethod
     def n_scores(self):
-        return NotImplemented
-
-    @abstractmethod
-    def to(self, device):
         return NotImplemented
 
 '''
@@ -48,30 +32,9 @@ Notation:
     D: Number of whole-image features produced for each image
     L: Number of scores produced for each image
 '''
-class Scorer(ABC):
-    '''
-    Produces novelty signals in the form of scalar scores for each image,
-    given the box classifier's logit predictions.
-
-    Parameters:
-        species_logits: Tensor of shape MxS
-        activity_logits: Tensor of shape MxA
-        whole_image_features: Tensor of shape NxD
-        box_counts: List[int] of length N
-            box_counts[i] specifies the number of boxes in image i
-
-    Returns:
-        Tensor of shape NxL, where L is the number of scores produced for
-            each image.
-    '''
-    @abstractmethod
-    def score(
-            self,
-            species_logits,
-            activity_logits,
-            whole_image_features,
-            box_counts):
-        return NotImplemented
+class BatchScorer(torch.nn.Module, ABC):
+    def __init__(self):
+        super().__init__()
 
     '''
     Returns:
@@ -81,55 +44,47 @@ class Scorer(ABC):
     def n_scores(self):
         return NotImplemented
 
-    @abstractmethod
-    def to(self, device):
-        return NotImplemented
-
 '''
-Composes multiple ImageScorer objects into one, concatenating their score
+Composes multiple Scorer objects into one, concatenating their score
 tensors in-order
 '''
-class CompositeImageScorer(ImageScorer):
-    def __init__(self, image_scorers):
-        self._image_scorers = list(image_scorers)
-        score_counts = [img_scorer.n_scores() for img_scorer in image_scorers]
+class CompositeScorer(Scorer):
+    def __init__(self, scorers):
+        super().__init__()
+        self.scorers = torch.nn.ModuleList(scorers)
+        score_counts = [cur_scorer.n_scores() for cur_scorer in scorers]
         self._n_scores = sum(score_counts)
 
-    def score(self, species_logits, activity_logits):
-        img_scores = [
-            img_scorer.score(species_logits, activity_logits)\
-                for img_scorer in self._image_scorers
+    def forward(self, species_logits, activity_logits):
+        scores = [
+            cur_scorer.score(species_logits, activity_logits)\
+                for cur_scorer in self.scorers
         ]
-        return torch.cat(img_scores, dim=0)
+        return torch.cat(scores, dim=0)
 
     def n_scores(self):
         return self._n_scores
 
-    def to(self, device):
-        for idx, image_scorer in enumerate(self._image_scorers):
-            self._image_scorers[idx] = image_scorer.to(device)
-        return self
-
 '''
-Converts an ImageScorer into a Scorer by splitting the logit tensors by image
+Converts an Scorer into a BatchScorer by splitting the logit tensors by image
 and concatenating image score tensors in image-order
 '''
-class ScorerFromImageScorer(Scorer):
-    def __init__(self, image_scorer):
-        self._image_scorer = image_scorer
+class BatchScorerFromScorer(BatchScorer):
+    def __init__(self, scorer):
+        super().__init__()
+        self.scorer = scorer
 
     def score(
             self,
             species_logits,
             activity_logits,
-            whole_image_features,
             box_counts):
         scores = []
         split_species_logits = torch.split(species_logits, box_counts, dim=0)
         split_activity_logits = torch.split(activity_logits, box_counts, dim=0)
         for img_species_logits, img_activity_logits in\
                 zip(split_species_logits, split_activity_logits):
-            img_scores = self._image_scorer.score(
+            img_scores = self.scorer.score(
                 img_species_logits,
                 img_activity_logits
             )
@@ -138,19 +93,16 @@ class ScorerFromImageScorer(Scorer):
         return scores
 
     def n_scores(self):
-        return self._image_scorer.n_scores()
-
-    def to(self, device):
-        self._image_scorer = self._image_scorer.to(device)
-        return self
+        return self.scorer.n_scores()
 
 '''
-Composes multiple Scorer objects into one, concatenating their score tensors
+Composes multiple BatchScorer objects into one, concatenating their score tensors
 in-order
 '''
-class CompositeScorer(Scorer):
+class CompositeBatchScorer(BatchScorer):
     def __init__(self, scorers):
-        self._scorers = list(scorers)
+        super().__init__()
+        self.scorers = torch.nn.ModuleList(scorers)
         score_counts = [scorer.n_scores() for scorer in scorers]
         self._n_scores = sum(score_counts)
 
@@ -158,22 +110,15 @@ class CompositeScorer(Scorer):
             self,
             species_logits,
             activity_logits,
-            whole_image_features,
             box_counts):
         scores = [
             scorer.score(
                 species_logits,
                 activity_logits,
-                whole_image_features,
                 box_counts
-            ) for scorer in self._scorers
+            ) for scorer in self.scorers
         ]
         return torch.cat(scores, dim=1)
 
     def n_scores(self):
         return self._n_scores
-
-    def to(self, device):
-        for idx, scorer in enumerate(self._scorers):
-            self._scorers[idx] = scorer.to(device)
-        return self

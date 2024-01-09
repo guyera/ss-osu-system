@@ -94,13 +94,11 @@ class UnsupervisedNoveltyDetectionManager:
         self.activation_statistical_model.load_state_dict(
             tuple_prediction_state_dict['activation_statistical_model']
         )
-        logit_scorer =\
-            make_logit_scorer(n_known_species_cls, n_known_activity_cls)
         self.scorer =\
-            CompositeScorer((self.activation_statistical_model, logit_scorer))
+            make_logit_scorer(n_known_species_cls, n_known_activity_cls)
 
         self.novelty_type_classifier = NoveltyTypeClassifier(
-            self.scorer.n_scores()
+            self.scorer.n_scores() + 1 # + 1 for activation statistics
         ).to(device)
         self.novelty_type_classifier.load_state_dict(
             tuple_prediction_state_dict['novelty_type_classifier']
@@ -134,6 +132,10 @@ class UnsupervisedNoveltyDetectionManager:
                         backbone,
                         whole_images[None]
                     )
+                env_scores =\
+                    self.activation_statistical_model.score(
+                        whole_image_features
+                    ).squeeze(0)
 
                 cur_species_logits, cur_activity_logits =\
                     self.classifier.predict(box_features)
@@ -145,12 +147,12 @@ class UnsupervisedNoveltyDetectionManager:
                 species_probs.append(cur_species_probs)
                 activity_probs.append(cur_activity_probs)
 
-                cur_scores = self.scorer.score(
+                logit_scores = self.scorer.score(
                     cur_species_logits,
                     cur_activity_logits,
-                    whole_image_features,
                     [cur_species_logits.shape[0]]
                 ).squeeze(0)
+                cur_scores = torch.cat((logit_scores, env_scores), dim=0)
                 scores.append(cur_scores)
 
             results = {}

@@ -233,11 +233,10 @@ tuple_predictor = tupleprediction.TuplePredictor(
 activation_statistical_model = ActivationStatisticalModel(
     architecture
 ).to(device)
-logit_scorer = make_logit_scorer(n_known_species_cls, n_known_activity_cls)
-scorer = CompositeScorer((activation_statistical_model, logit_scorer))
+scorer = make_logit_scorer(n_known_species_cls, n_known_activity_cls)
 
 novelty_type_classifier = tupleprediction.NoveltyTypeClassifier(
-    scorer.n_scores()
+    scorer.n_scores() + 1 # + 1 for activation statistics
 ).to(device)
 
 label_mapping = build_species_label_mapping(args.train_csv_path)

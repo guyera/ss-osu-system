@@ -3230,17 +3230,21 @@ class TuplePredictorTrainer:
     def fit_logistic_regression(
             self,
             logistic_regression,
-            scores,
+            scorer,
+            box_counts,
+            species_logits,
+            activity_logits,
+            env_scores,
             labels,
             epochs,
             allow_print):
         criterion = torch.nn.CrossEntropyLoss()
+        module_list = torch.nn.ModuleList((logistic_regression, scorer))
         optimizer = torch.optim.SGD(
             logistic_regression.parameters(),
             lr = 0.01,
             momentum = 0.9
         )
-        logistic_regression.fit_standardization_statistics(scores)
 
         loss_item = None
         if allow_print:
@@ -3255,6 +3259,9 @@ class TuplePredictorTrainer:
             progress = range(epochs)
         for epoch in progress:
             optimizer.zero_grad()
+            
+            logit_scores = scorer(species_logits, activity_logits, box_counts)
+            scores = torch.cat((logit_scores, env_scores), dim=1)
             logits = logistic_regression(scores)
             loss = criterion(logits, labels)
             loss.backward()
@@ -3301,12 +3308,17 @@ class TuplePredictorTrainer:
         start = time.time()
         with torch.no_grad():
             # Extract novelty scores and labels
-            scores = []
+            box_counts = []
+            species_logits = []
+            activity_logits = []
+            env_scores = []
             labels = []
             for _, _, batch_labels, box_images, whole_images in val_loader:
+                cur_box_counts = [x.shape[0] for x in box_images]
+                box_counts += cur_box_counts
+
                 # Flatten the boxes across images and extract per-image box
                 # counts.
-                box_counts = [x.shape[0] for x in box_images]
                 flattened_box_images = torch.cat(box_images, dim=0)
 
                 # Move to device
@@ -3318,34 +3330,41 @@ class TuplePredictorTrainer:
                 box_features = backbone(flattened_box_images)
 
                 # Compute logits
-                species_logits = species_classifier(box_features)
-                activity_logits = activity_classifier(box_features)
+                cur_species_logits = species_classifier(box_features)
+                cur_activity_logits = activity_classifier(box_features)
 
-                # Compute whole-image features activation statistic scores
+                species_logits.append(cur_species_logits)
+                activity_logits.append(cur_activity_logits)
+
+                # Compute whole-image features
                 whole_image_features =\
                     activation_statistical_model.compute_features(
                         backbone,
                         whole_images
                     )
 
-                # Compute novelty scores
-                batch_scores = scorer.score(
-                    species_logits,
-                    activity_logits,
-                    whole_image_features,
-                    box_counts
+                # Compute environmental novelty scores from activation
+                # statistical model
+                cur_env_scores = activation_statistical_model.score(
+                    whole_image_features
                 )
+                env_scores.append(cur_env_scores)
 
-                scores.append(batch_scores)
                 labels.append(batch_labels)
             
-            scores = torch.cat(scores, dim = 0)
+            species_logits = torch.cat(species_logits, dim=0)
+            activity_logits = torch.cat(activity_logits, dim=0)
+            env_scores = torch.cat(env_scores, dim = 0)
             labels = torch.cat(labels, dim = 0)
 
         # Fit the logistic regression
         self.fit_logistic_regression(
             novelty_type_classifier,
-            scores,
+            scorer,
+            box_counts,
+            species_logits,
+            activity_logits,
+            env_scores,
             labels,
             3000,
             allow_print

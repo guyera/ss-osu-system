@@ -3,9 +3,9 @@ import torch
 from sklearn.neighbors import KernelDensity
 
 from backbone import Backbone
-from scoring._scorer import Scorer
+from scoring._scorer import BatchScorer
 
-class ActivationStatisticalModel(Scorer):
+class ActivationStatisticalModel:
     _bandwidths = {
         Backbone.Architecture.swin_t: 50,
         Backbone.Architecture.resnet50: 5
@@ -41,10 +41,7 @@ class ActivationStatisticalModel(Scorer):
 
     def score(
             self,
-            species_logits,
-            activity_logits,
-            whole_image_features,
-            box_counts):
+            whole_image_features):
         # Compute and return negative log likelihood under self._kde
         self._v = self._v.double()
         whole_image_features = whole_image_features.double()
