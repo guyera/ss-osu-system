@@ -62,7 +62,7 @@ class MaxAvgSpeciesLogitScorer(Scorer):
     def to(self, device):
         return self
 
-class ContinuousPresenceCountSpeciesLogitScorer(torch.nn.Module, Scorer):
+class ContinuousPresenceCountSpeciesLogitScorer(Scorer):
     def __init__(self, n_known_species_cls, temperature):
         super().__init__()
         self._n_known_species_cls = n_known_species_cls
@@ -100,7 +100,7 @@ class AvgMaxActivityLogitScorer(Scorer):
         return self
 
 
-class ContinuousPresenceCountActivityLogitScorer(torch.nn.Module, Scorer):
+class ContinuousPresenceCountActivityLogitScorer(Scorer):
     def __init__(self, n_known_activity_cls, temperature):
         super().__init__()
         self._n_known_activity_cls = n_known_activity_cls

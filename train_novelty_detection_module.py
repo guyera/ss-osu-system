@@ -188,6 +188,12 @@ parser.add_argument(
     dest='load_best_after_training'
 )
 
+parser.add_argument(
+    '--no-train-classifiers',
+    action='store_false',
+    dest='train_classifiers'
+)
+
 
 args = parser.parse_args()
 
@@ -282,53 +288,55 @@ def feedback_batch_sampler_fn(box_counts):
         rank
     )
 
-if args.classifier_trainer == ClassifierTrainer.end_to_end:
-    classifier_trainer = EndToEndClassifierTrainer(
-        backbone,
-        args.lr,
-        train_dataset,
-        val_known_dataset,
-        box_transform,
-        post_cache_train_transform,
-        retraining_batch_size=args.batch_size,
-        root_checkpoint_dir=args.root_checkpoint_dir,
-        patience=None,
-        min_epochs=0,
-        max_epochs=args.max_epochs,
-        label_smoothing=args.label_smoothing,
-        feedback_loss_weight=0.5,
-        scheduler_type=args.scheduler_type,
-        loss_fn=args.loss_fn,
-        class_frequencies=class_frequencies,
-        memory_cache=args.memory_cache,
-        load_best_after_training=args.load_best_after_training,
-        val_reduce_fn=val_reduce_fn
-    )
-else:
-    train_feature_file = os.path.join(
-        args.precomputed_feature_dir,
-        'training.pth'
-    )
-    val_feature_file = os.path.join(
-        args.precomputed_feature_dir,
-        'validation.pth'
-    )
-    classifier_trainer = LogitLayerClassifierTrainer(
-        backbone,
-        args.lr,
-        train_feature_file,
-        val_feature_file,
-        box_transform,
-        post_cache_train_transform,
-        feedback_batch_size=32,
-        patience=None,
-        min_epochs=0,
-        max_epochs=args.max_epochs,
-        label_smoothing=args.label_smoothing,
-        feedback_loss_weight=0.5,
-        loss_fn=args.loss_fn,
-        class_frequencies=class_frequencies
-    )
+classifier_trainer = None
+if args.train_classifiers:
+    if args.classifier_trainer == ClassifierTrainer.end_to_end:
+        classifier_trainer = EndToEndClassifierTrainer(
+            backbone,
+            args.lr,
+            train_dataset,
+            val_known_dataset,
+            box_transform,
+            post_cache_train_transform,
+            retraining_batch_size=args.batch_size,
+            root_checkpoint_dir=args.root_checkpoint_dir,
+            patience=None,
+            min_epochs=0,
+            max_epochs=args.max_epochs,
+            label_smoothing=args.label_smoothing,
+            feedback_loss_weight=0.5,
+            scheduler_type=args.scheduler_type,
+            loss_fn=args.loss_fn,
+            class_frequencies=class_frequencies,
+            memory_cache=args.memory_cache,
+            load_best_after_training=args.load_best_after_training,
+            val_reduce_fn=val_reduce_fn
+        )
+    else:
+        train_feature_file = os.path.join(
+            args.precomputed_feature_dir,
+            'training.pth'
+        )
+        val_feature_file = os.path.join(
+            args.precomputed_feature_dir,
+            'validation.pth'
+        )
+        classifier_trainer = LogitLayerClassifierTrainer(
+            backbone,
+            args.lr,
+            train_feature_file,
+            val_feature_file,
+            box_transform,
+            post_cache_train_transform,
+            feedback_batch_size=32,
+            patience=None,
+            min_epochs=0,
+            max_epochs=args.max_epochs,
+            label_smoothing=args.label_smoothing,
+            feedback_loss_weight=0.5,
+            loss_fn=args.loss_fn,
+            class_frequencies=class_frequencies
+        )
 
 trainer = TuplePredictorTrainer(
     train_dataset,
@@ -342,25 +350,26 @@ trainer = TuplePredictorTrainer(
     classifier_trainer
 )
 
-start_time = time.time()
-
 species_classifier = classifier.species_classifier
 activity_classifier = classifier.activity_classifier
 species_calibrator = confidence_calibrator.species_calibrator
 activity_calibrator = confidence_calibrator.activity_calibrator
 
-# Retrain the backbone and classifiers
-classifier_trainer.train(
-    species_classifier,
-    activity_classifier,
-    args.root_log_dir,
-    None,
-    device,
-    train_sampler_fn,
-    feedback_batch_sampler_fn,
-    rank==0,
-    local_rank==0
-)
+start_time = time.time()
+
+if args.train_classifiers:
+    # Retrain the backbone and classifiers
+    classifier_trainer.train(
+        species_classifier,
+        activity_classifier,
+        args.root_log_dir,
+        None,
+        device,
+        train_sampler_fn,
+        feedback_batch_sampler_fn,
+        rank==0,
+        local_rank==0
+    )
 
 if rank == 0:
     # Refit activation statistics. Do it manually since the classifier trainer
@@ -423,14 +432,15 @@ if rank == 0:
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    torch.save(
-        backbone.state_dict(),
-        os.path.join(save_dir, 'backbone.pth')
-    )
-    torch.save(
-        classifier.state_dict(),
-        os.path.join(save_dir, 'classifier.pth')
-    )
+    if args.train_classifier:
+        torch.save(
+            backbone.state_dict(),
+            os.path.join(save_dir, 'backbone.pth')
+        )
+        torch.save(
+            classifier.state_dict(),
+            os.path.join(save_dir, 'classifier.pth')
+        )
     torch.save(
         confidence_calibrator.state_dict(),
         os.path.join(save_dir, 'confidence-calibrator.pth')

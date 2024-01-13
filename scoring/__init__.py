@@ -1,15 +1,15 @@
 from scoring._scorer import\
     BatchScorer,\
-    ImageScorer,\
+    Scorer,\
     CompositeBatchScorer,\
-    CompositeImageScorer,\
-    BatchScorerFromImageScorer
+    CompositeScorer,\
+    BatchScorerFromScorer
 from scoring._logitscoring import\
-    AvgMaxSpeciesLogitImageScorer,\
-    MaxAvgSpeciesLogitImageScorer,\
+    AvgMaxSpeciesLogitScorer,\
+    MaxAvgSpeciesLogitScorer,\
     ContinuousPresenceCountSpeciesLogitScorer,\
-    AvgMaxActivityLogitImageScorer,\
-    MaxAvgActivityLogitImageScorer,\
+    AvgMaxActivityLogitScorer,\
+    MaxAvgActivityLogitScorer,\
     ContinuousPresenceCountActivityLogitScorer,\
     make_logit_scorer
 from scoring._activationstatisticalmodel import ActivationStatisticalModel
