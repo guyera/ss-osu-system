@@ -113,7 +113,6 @@ class UnsupervisedNoveltyDetectionManager:
         )
 
     def score(self, backbone, dataset):
-        # TODO tensorize / batch with dataloader
         scores = []
         species_probs = []
         activity_probs = []
@@ -148,7 +147,7 @@ class UnsupervisedNoveltyDetectionManager:
                 species_probs.append(cur_species_probs)
                 activity_probs.append(cur_activity_probs)
 
-                logit_scores = self.scorer.score(
+                logit_scores = self.scorer(
                     cur_species_logits,
                     cur_activity_logits,
                     [cur_species_logits.shape[0]]

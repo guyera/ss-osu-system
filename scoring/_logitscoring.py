@@ -24,7 +24,7 @@ def _continuous_presence_count(logits, sigmoid_slope, threshold, temperature):
     # continuously, and we use sigmoid with a learned slope and bias to
     # approximate the thresholding continuously.
     scaled_logits = logits / temperature
-    scaled_softmax = torch.nn.functional.softmax(scaled_logits)
+    scaled_softmax = torch.nn.functional.softmax(scaled_logits, dim=1)
     boltzmann = (scaled_softmax * logits).sum(dim=0)
     threshold_exceedances = \
         torch.nn.functional.sigmoid(sigmoid_slope * (boltzmann - threshold))
