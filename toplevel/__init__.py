@@ -75,6 +75,7 @@ def gen_retrain_fn(device_id, train_sampler_fn, feedback_batch_sampler_fn, allow
             root_log_dir=root_log_dir,
             model_unwrap_fn=model_unwrap_fn
         )
+        novelty_type_classifier.eval()
 
     return retrain
 

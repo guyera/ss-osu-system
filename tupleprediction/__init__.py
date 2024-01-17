@@ -20,10 +20,11 @@ class NoveltyTypeClassifier(torch.nn.Module):
         self.reset()
 
     def reset(self):
+        self.bn = torch.nn.BatchNorm1d(self.n_signals)
         self.fc = torch.nn.Linear(self.n_signals, 6).to(self.device)
 
     def forward(self, x):
-        return self.fc(x)
+        return self.fc(self.bn(x))
 
     def to(self, device):
         super().to(device)

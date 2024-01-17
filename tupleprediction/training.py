@@ -3045,6 +3045,62 @@ def compute_features(
     )
 
 
+def novelty_type_collate(batch):
+    res_list = [[], [], [], [], []]
+    for data_tuple in batch:
+        species_logits = data_tuple[0]
+        activity_logits = data_tuple[1]
+        env_scores = data_tuple[2]
+        labels = data_tuple[3]
+        box_counts = data_tuple[4]
+        res_list[0].append(species_logits)
+        res_list[1].append(activity_logits)
+        res_list[2].append(env_scores)
+        res_list[3].append(labels)
+        res_list[4].append(box_counts)
+
+    # Concatenate and stack list components appropriately. Logits should be
+    # concatenated into big tensor with size()[0] matching the total number of
+    # boxes in the batch, meaning concatenation. Scores and labels should be
+    # tensors with size()[0] matching the number of images in the batch,
+    # meaning stacked. Box counts should be left as-is: a list of integers
+    # with size matching the number of images in the batch.
+    res_list[0] = torch.cat(res_list[0], dim=0)
+    res_list[1] = torch.cat(res_list[1], dim=0)
+    res_list[2] = torch.stack(res_list[2], dim=0)
+    res_list[3] = torch.stack(res_list[3], dim=0)
+
+    # Convert res_list to tuple and return
+    return tuple(res_list)
+
+
+class NoveltyTypeDataset(torch.utils.data.Dataset):
+    def __init__(
+            self,
+            species_logits,
+            activity_logits,
+            env_scores,
+            labels,
+            box_counts):
+        self._species_logits = species_logits
+        self._activity_logits = activity_logits
+        self._env_scores = env_scores
+        self._labels = labels
+        self._box_counts = box_counts
+
+    def __len__(self):
+        return len(self._box_counts)
+
+    def __getitem__(self, idx):
+        if idx >= len(self):
+            raise StopIteration
+        return self._species_logits[idx],\
+            self._activity_logits[idx],\
+            self._env_scores[idx],\
+            self._labels[idx],\
+            self._box_counts[idx]
+
+
 class TuplePredictorTrainer:
     def __init__(
             self,
@@ -3231,15 +3287,13 @@ class TuplePredictorTrainer:
             self,
             logistic_regression,
             scorer,
-            box_counts,
-            species_logits,
-            activity_logits,
-            env_scores,
-            labels,
+            dataloader,
             epochs,
             allow_print):
+        logistic_regression.train()
         criterion = torch.nn.CrossEntropyLoss()
         module_list = torch.nn.ModuleList((logistic_regression, scorer))
+        # TODO Change back to use module_list.parameters()
         optimizer = torch.optim.SGD(
             logistic_regression.parameters(),
             lr = 0.01,
@@ -3252,29 +3306,44 @@ class TuplePredictorTrainer:
                 range(epochs),
                 desc=gen_tqdm_description(
                     'Fitting logistic regression...',
-                    loss=loss_item
                 )
             )
         else:
             progress = range(epochs)
         for epoch in progress:
-            optimizer.zero_grad()
-            
-            logit_scores = scorer(species_logits, activity_logits, box_counts)
-            scores = torch.cat((logit_scores, env_scores), dim=1)
-            logits = logistic_regression(scores)
-            loss = criterion(logits, labels)
-            loss.backward()
-            optimizer.step()
-
-            loss_item = loss.detach().cpu().item()
             if allow_print:
-                progress.set_description(
-                    gen_tqdm_description(
-                        'Fitting logistic regression...',
-                        loss=loss_item
-                    )
+                epoch_progress = tqdm(
+                    dataloader,
+                    desc=gen_tqdm_description(
+                        'Fitting batches...',
+                        batch_loss=loss_item
+                    ),
+                    leave=False
                 )
+            else:
+                epoch_progress = dataloader
+            for data in epoch_progress:
+                species_logits, activity_logits, env_scores, labels, box_counts =\
+                    data
+                optimizer.zero_grad()
+                
+                logit_scores = scorer(species_logits, activity_logits, box_counts)
+                scores = torch.cat((logit_scores, env_scores), dim=1)
+                logits = logistic_regression(scores)
+                loss = criterion(logits, labels)
+                loss.backward()
+                optimizer.step()
+
+                loss_item = loss.detach().cpu().item()
+                if allow_print:
+                    epoch_progress.set_description(
+                        gen_tqdm_description(
+                            'Fitting batches...',
+                            batch_loss=loss_item
+                        )
+                    )
+            if allow_print:
+                epoch_progress.close()
         if allow_print:
             progress.close()
 
@@ -3357,16 +3426,29 @@ class TuplePredictorTrainer:
             env_scores = torch.cat(env_scores, dim = 0)
             labels = torch.cat(labels, dim = 0)
 
-        # Fit the logistic regression
-        self.fit_logistic_regression(
-            novelty_type_classifier,
-            scorer,
-            box_counts,
+            # Logits are currently flattened. Split them by image.
+            species_logits = torch.split(species_logits, box_counts, dim=0)
+            activity_logits = torch.split(activity_logits, box_counts, dim=0)
+
+        logistic_regression_dataset = NoveltyTypeDataset(
             species_logits,
             activity_logits,
             env_scores,
             labels,
-            3000,
+            box_counts
+        )
+        logistic_regression_loader = torch.utils.data.DataLoader(
+            logistic_regression_dataset,
+            shuffle=True,
+            batch_size=256,
+            collate_fn=novelty_type_collate
+        )
+        # Fit the logistic regression
+        self.fit_logistic_regression(
+            novelty_type_classifier,
+            scorer,
+            logistic_regression_loader,
+            100,
             allow_print
         )
         end = time.time()

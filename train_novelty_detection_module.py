@@ -417,6 +417,7 @@ if rank == 0:
         scorer,
         True
     )
+    novelty_type_classifier.eval()
 
     end_time = time.time()
     print(f'Time: {end_time - start_time}')
@@ -432,7 +433,7 @@ if rank == 0:
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    if args.train_classifier:
+    if args.train_classifiers:
         torch.save(
             backbone.state_dict(),
             os.path.join(save_dir, 'backbone.pth')

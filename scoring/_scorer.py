@@ -57,7 +57,7 @@ class CompositeScorer(Scorer):
 
     def forward(self, species_logits, activity_logits):
         scores = [
-            cur_scorer.score(species_logits, activity_logits)\
+            cur_scorer(species_logits, activity_logits)\
                 for cur_scorer in self.scorers
         ]
         return torch.cat(scores, dim=0)
@@ -74,7 +74,7 @@ class BatchScorerFromScorer(BatchScorer):
         super().__init__()
         self.scorer = scorer
 
-    def score(
+    def forward(
             self,
             species_logits,
             activity_logits,
@@ -84,7 +84,7 @@ class BatchScorerFromScorer(BatchScorer):
         split_activity_logits = torch.split(activity_logits, box_counts, dim=0)
         for img_species_logits, img_activity_logits in\
                 zip(split_species_logits, split_activity_logits):
-            img_scores = self.scorer.score(
+            img_scores = self.scorer(
                 img_species_logits,
                 img_activity_logits
             )
@@ -106,13 +106,13 @@ class CompositeBatchScorer(BatchScorer):
         score_counts = [scorer.n_scores() for scorer in scorers]
         self._n_scores = sum(score_counts)
 
-    def score(
+    def forward(
             self,
             species_logits,
             activity_logits,
             box_counts):
         scores = [
-            scorer.score(
+            scorer(
                 species_logits,
                 activity_logits,
                 box_counts

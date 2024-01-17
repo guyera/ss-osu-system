@@ -103,6 +103,7 @@ class UnsupervisedNoveltyDetectionManager:
         self.novelty_type_classifier.load_state_dict(
             tuple_prediction_state_dict['novelty_type_classifier']
         )
+        self.novelty_type_classifier.eval()
 
     def predict(self, species_probs, activity_probs, p_type):
         return self.tuple_predictor.predict(

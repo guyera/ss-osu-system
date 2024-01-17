@@ -34,9 +34,10 @@ def _continuous_presence_count(logits, sigmoid_slope, threshold, temperature):
 
 class AvgMaxSpeciesLogitScorer(Scorer):
     def __init__(self, n_known_species_cls):
+        super().__init__()
         self._n_known_species_cls = n_known_species_cls
 
-    def score(self, species_logits, activity_logits):
+    def forward(self, species_logits, activity_logits):
         return _avg_max_logit_image_score(
             species_logits[:, :self._n_known_species_cls]
         )
@@ -49,9 +50,10 @@ class AvgMaxSpeciesLogitScorer(Scorer):
 
 class MaxAvgSpeciesLogitScorer(Scorer):
     def __init__(self, n_known_species_cls):
+        super().__init__()
         self._n_known_species_cls = n_known_species_cls
 
-    def score(self, species_logits, activity_logits):
+    def forward(self, species_logits, activity_logits):
         return _max_avg_logit_image_score(
             species_logits[:, :self._n_known_species_cls]
         )
@@ -70,7 +72,7 @@ class ContinuousPresenceCountSpeciesLogitScorer(Scorer):
         self.sigmoid_slope = torch.nn.Parameter(torch.tensor(1.0))
         self.threshold = torch.nn.Parameter(torch.tensor(0.0))
 
-    def score(self, species_logits, activity_logits):
+    def forward(self, species_logits, activity_logits):
         return _continuous_presence_count(
             species_logits[:, :self._n_known_species_cls],
             self.sigmoid_slope,
@@ -86,9 +88,10 @@ class ContinuousPresenceCountSpeciesLogitScorer(Scorer):
 
 class AvgMaxActivityLogitScorer(Scorer):
     def __init__(self, n_known_activity_cls):
+        super().__init__()
         self._n_known_activity_cls = n_known_activity_cls
 
-    def score(self, species_logits, activity_logits):
+    def forward(self, species_logits, activity_logits):
         return _avg_max_logit_image_score(
             activity_logits[:, :self._n_known_activity_cls]
         )
@@ -108,7 +111,7 @@ class ContinuousPresenceCountActivityLogitScorer(Scorer):
         self.sigmoid_slope = torch.nn.Parameter(torch.tensor(1.0))
         self.threshold = torch.nn.Parameter(torch.tensor(0.0))
 
-    def score(self, species_logits, activity_logits):
+    def forward(self, species_logits, activity_logits):
         return _continuous_presence_count(
             activity_logits[:, :self._n_known_activity_cls],
             self.sigmoid_slope,
@@ -124,9 +127,10 @@ class ContinuousPresenceCountActivityLogitScorer(Scorer):
 
 class MaxAvgActivityLogitScorer(Scorer):
     def __init__(self, n_known_activity_cls):
+        super().__init__()
         self._n_known_activity_cls = n_known_activity_cls
 
-    def score(self, species_logits, activity_logits):
+    def forward(self, species_logits, activity_logits):
         return _max_avg_logit_image_score(
             activity_logits[:, :self._n_known_activity_cls]
         )
