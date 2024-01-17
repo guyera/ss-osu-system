@@ -423,6 +423,7 @@ if rank == 0:
     print(f'Time: {end_time - start_time}')
 
     tuple_prediction_state_dicts = {}
+    tuple_prediction_state_dicts['scorer'] = scorer.state_dict()
     tuple_prediction_state_dicts['novelty_type_classifier'] = novelty_type_classifier.state_dict()
     tuple_prediction_state_dicts['activation_statistical_model'] = activation_statistical_model.state_dict()
 
