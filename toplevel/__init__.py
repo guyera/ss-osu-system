@@ -30,7 +30,9 @@ from tupleprediction.training import\
     TuplePredictorTrainer,\
     LogitLayerClassifierTrainer,\
     SideTuningClassifierTrainer,\
-    EndToEndClassifierTrainer
+    EndToEndClassifierTrainer, \
+    TransformingBoxImageDataset
+
 from data.custom import build_species_label_mapping
 
 from taming_transformers.cycleGAN import CycleGAN
@@ -218,7 +220,7 @@ class TopLevelApp:
 
         self.box_transform,\
             post_cache_train_transform,\
-            post_cache_val_transform =\
+            self.post_cache_val_transform =\
                 get_transforms(self.retraining_augmentation)
 
         label_mapping = build_species_label_mapping(self.train_csv_path)
@@ -237,10 +239,11 @@ class TopLevelApp:
                     self.dynamic_label_mapper,
                     self.box_transform,
                     post_cache_train_transform,
-                    post_cache_val_transform,
+                    self.post_cache_val_transform,
                     root_cache_dir=self.root_cache_dir,
                     n_known_val=self.n_known_val
                 )
+
 
         train_feature_file = os.path.join(
             self.precomputed_feature_dir,
@@ -726,6 +729,12 @@ class TopLevelApp:
             write_cache=False
         )
 
+        # TODO Verify this is right...
+        novelty_dataset = TransformingBoxImageDataset(
+            novelty_dataset,
+            self.post_cache_val_transform
+        )
+
         N = len(novelty_dataset)
         
         df = pd.read_csv(csv_path, index_col=0)
@@ -776,7 +785,7 @@ class TopLevelApp:
 
         self.box_transform,\
             post_cache_train_transform,\
-            post_cache_val_transform =\
+            self.post_cache_val_transform =\
                 get_transforms(self.retraining_augmentation)
 
         label_mapping = build_species_label_mapping(self.train_csv_path)
@@ -795,7 +804,7 @@ class TopLevelApp:
                     self.dynamic_label_mapper,
                     self.box_transform,
                     post_cache_train_transform,
-                    post_cache_val_transform,
+                    self.post_cache_val_transform,
                     root_cache_dir=self.root_cache_dir,
                     n_known_val=self.n_known_val
                 )
