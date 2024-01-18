@@ -880,7 +880,8 @@ class TransformingBoxImageDataset(Dataset):
             box_images,\
             whole_image =\
                 self._dataset[idx]
-        box_images = self._transform(box_images)
+        if len(box_images) > 0:
+            box_images = self._transform(box_images)
         whole_image = self._transform(whole_image)
 
         return species_labels,\
@@ -3291,11 +3292,11 @@ class TuplePredictorTrainer:
             epochs,
             allow_print):
         logistic_regression.train()
+        scorer.train()
         criterion = torch.nn.CrossEntropyLoss()
         module_list = torch.nn.ModuleList((logistic_regression, scorer))
-        # TODO Change back to use module_list.parameters()
         optimizer = torch.optim.SGD(
-            logistic_regression.parameters(),
+            module_list.parameters(),
             lr = 0.01,
             momentum = 0.9
         )

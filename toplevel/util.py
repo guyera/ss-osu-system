@@ -96,6 +96,9 @@ class UnsupervisedNoveltyDetectionManager:
         )
         self.scorer =\
             make_logit_scorer(n_known_species_cls, n_known_activity_cls)
+        self.scorer.load_state_dict(
+            tuple_prediction_state_dict['scorer']
+        )
 
         self.novelty_type_classifier = NoveltyTypeClassifier(
             self.scorer.n_scores() + 1 # + 1 for activation statistics

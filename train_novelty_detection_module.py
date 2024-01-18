@@ -167,7 +167,7 @@ parser.add_argument(
 parser.add_argument(
     '--precomputed-feature-dir',
     type=str,
-    default='./.features/resizepad=224/none/normalized'
+    required=True
 )
 
 parser.add_argument(
@@ -423,6 +423,7 @@ if rank == 0:
     print(f'Time: {end_time - start_time}')
 
     tuple_prediction_state_dicts = {}
+    tuple_prediction_state_dicts['scorer'] = scorer.state_dict()
     tuple_prediction_state_dicts['novelty_type_classifier'] = novelty_type_classifier.state_dict()
     tuple_prediction_state_dicts['activation_statistical_model'] = activation_statistical_model.state_dict()
 
