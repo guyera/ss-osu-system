@@ -30,7 +30,8 @@ from tupleprediction.training import\
     TuplePredictorTrainer,\
     LogitLayerClassifierTrainer,\
     SideTuningClassifierTrainer,\
-    EndToEndClassifierTrainer
+    EndToEndClassifierTrainer,\
+    TransformingBoxImageDataset
 from data.custom import build_species_label_mapping
 
 from taming_transformers.cycleGAN import CycleGAN
@@ -75,7 +76,11 @@ def gen_retrain_fn(device_id, train_sampler_fn, feedback_batch_sampler_fn, allow
             root_log_dir=root_log_dir,
             model_unwrap_fn=model_unwrap_fn
         )
+        backbone.eval()
+        classifier.eval()
+        confidence_calibrator.eval()
         novelty_type_classifier.eval()
+        scorer.eval()
 
     return retrain
 
@@ -141,7 +146,7 @@ class TopLevelApp:
         self.post_red_base = None
         self.batch_context = BatchContext()
         self.feedback_enabled = feedback_enabled
-        self.p_val_cuttoff =  0.035808 #0.002215 #0.08803683 #   0.0085542  #0.01042724
+        self.p_val_cuttoff =  0.00164537
         self.windows_size = 40
                 
         a = np.array([[self.p_val_cuttoff, 1], [1, 1]])
@@ -219,7 +224,7 @@ class TopLevelApp:
 
         self.box_transform,\
             post_cache_train_transform,\
-            post_cache_val_transform =\
+            self.post_cache_val_transform =\
                 get_transforms(self.retraining_augmentation)
 
         label_mapping = build_species_label_mapping(self.train_csv_path)
@@ -238,7 +243,7 @@ class TopLevelApp:
                     self.dynamic_label_mapper,
                     self.box_transform,
                     post_cache_train_transform,
-                    post_cache_val_transform,
+                    self.post_cache_val_transform,
                     root_cache_dir=self.root_cache_dir,
                     n_known_val=self.n_known_val
                 )
@@ -726,6 +731,11 @@ class TopLevelApp:
             image_filter=None,
             write_cache=False
         )
+        # TODO Verify this is right...
+        novelty_dataset = TransformingBoxImageDataset(
+            novelty_dataset,
+            self.post_cache_val_transform
+        )
 
         N = len(novelty_dataset)
         
@@ -777,7 +787,7 @@ class TopLevelApp:
 
         self.box_transform,\
             post_cache_train_transform,\
-            post_cache_val_transform =\
+            self.post_cache_val_transform =\
                 get_transforms(self.retraining_augmentation)
 
         label_mapping = build_species_label_mapping(self.train_csv_path)
@@ -796,7 +806,7 @@ class TopLevelApp:
                     self.dynamic_label_mapper,
                     self.box_transform,
                     post_cache_train_transform,
-                    post_cache_val_transform,
+                    self.post_cache_val_transform,
                     root_cache_dir=self.root_cache_dir,
                     n_known_val=self.n_known_val
                 )

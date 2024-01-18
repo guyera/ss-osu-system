@@ -1,5 +1,6 @@
 import numpy as np
 import sys
+import pickle as pkl
 
 from tqdm import tqdm
 import pandas
@@ -32,9 +33,10 @@ def permutation_trial(n_itr, prefix_size, window_size, p_ni_vals):
         min_pvals.append(min_pval)
     return np.array(min_pvals)
 
-df = pandas.read_csv('OND.100.000.csv')
+with open('OND.100.000.pkl', 'rb') as f:
+    log = pkl.load(f)
+p_ni_vals = log['p_ni_raw']
 
-p_ni_vals = df['p_ni'].to_numpy()
 prefix_size = 60
 
 window_sizes = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]

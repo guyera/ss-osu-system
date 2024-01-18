@@ -167,7 +167,7 @@ parser.add_argument(
 parser.add_argument(
     '--precomputed-feature-dir',
     type=str,
-    default='./.features/resizepad=224/none/normalized'
+    required=True
 )
 
 parser.add_argument(
