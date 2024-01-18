@@ -3293,9 +3293,8 @@ class TuplePredictorTrainer:
         logistic_regression.train()
         criterion = torch.nn.CrossEntropyLoss()
         module_list = torch.nn.ModuleList((logistic_regression, scorer))
-        # TODO Change back to use module_list.parameters()
         optimizer = torch.optim.SGD(
-            logistic_regression.parameters(),
+            module_list.parameters(),
             lr = 0.01,
             momentum = 0.9
         )
