@@ -32,7 +32,10 @@ def permutation_trial(n_itr, prefix_size, window_size, p_ni_vals):
         min_pvals.append(min_pval)
     return np.array(min_pvals)
 
-df = pandas.read_csv('OND.100.000.csv')
+# df = pandas.read_csv('OND.100.000.csv')
+df = pandas.read_pickle('/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_boltzmann/Validation/logs/OND.100.000/OND.100.000.pkl')
+
+import ipdb; ipdb.set_trace()
 
 p_ni_vals = df['p_ni'].to_numpy()
 prefix_size = 60
