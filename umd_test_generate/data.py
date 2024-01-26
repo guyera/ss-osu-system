@@ -48,18 +48,18 @@ class Data:
                 item.debug_print(log)
 
 
-    def load_val(self, csv_file, log):
-        self.val_invalid = []
+    def load_test(self, csv_file, log):
+        self.test_invalid = []
         self.bins = {novelty_type: [] for novelty_type in NoveltyType}
         for sub_nov in EnvironmentType:
             self.bins[sub_nov] = []
-        df = pd.read_csv(csv_file, quotechar='"', skipinitialspace=True)
-        self.val_count = len(df)
-        log.write(f'Found {self.val_count} total val items.\n')
+        df = pd.read_csv(csv_file, quotechar='"', skipinitialspace=True, low_memory=False)
+        self.test_count = len(df)
+        log.write(f'Found {self.test_count} total test items.\n')
         for _tuple in df.itertuples():
             item = Item(_tuple, val=True)
             if not item.valid:
-                self.val_invalid.append(item)
+                self.test_invalid.append(item)
                 continue
 
             self.bins[item.novelty_type].append(item)
@@ -70,15 +70,15 @@ class Data:
         # for kb in self.bins:
         #     print('////////// bins:', kb, '******', 'size', len(self.bins[kb]))
             
-        if self.val_invalid:
-            log.write(f'Skipping {len(self.val_invalid)} invalid val items:\n')
-            for item in self.val_invalid:
+        if self.test_invalid:
+            log.write(f'Skipping {len(self.test_invalid)} invalid test items:\n')
+            for item in self.test_invalid:
                 log.write(f'Skipping invalid item: ')
                 item.debug_print(log)
             log.write('\n')
 
-    def print_val_counts(self, log):
-        log.write(f'\nCount of all valid val items: {self.val_count}\n')
+    def print_test_counts(self, log):
+        log.write(f'\nCount of all valid test items: {self.test_count}\n')
         bins_total = 0
         for novelty_type in NoveltyType:
             bins_total += len(self.bins[novelty_type])
@@ -108,30 +108,4 @@ class Data:
             for item in self.bins[env_subnov]:
                 item.debug_print(log)
 
-    '''
-    def print_known_combos_buggy(self, combos, log):
-        first_combo = combos[0]
-        s_val = first_combo[0]
-        for combo in combos:
-            if combo[0] > s_val:
-                log.write('\n')
-                s_val = combos[0]
-            log.write(f' {combo}')
-        log.write('\n')
-
-    def print_known_combos(self, combos, log):
-        log.write('\n')
-        for combo in combos:
-            log.write(f'  {combo}\n')
-
-    def debug_print_known(self, log):
-        log.write(f'Known SVO combinations:')
-        triples = sorted(self.known_svo)
-        if triples:
-            self.print_known_combos(triples, log)
-        log.write(f'Known SV combinations:')
-        duples = sorted(self.known_sv)
-        if duples:
-            self.print_known_combos(duples, log)
-    '''
 
