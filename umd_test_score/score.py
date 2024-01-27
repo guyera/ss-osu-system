@@ -979,6 +979,9 @@ def score_test_from_boxes(
         ground_truth_species_counts[int(test_tuple.agent1_id)] = int(test_tuple.agent1_count)
         ground_truth_species_presence[int(test_tuple.agent1_id)] = 1
 
+        if int(test_tuple.agent1_id) not in species_id2name_mapping:
+            species_id2name_mapping[int(test_tuple.agent1_id)] = test_tuple.agent1_name
+
         # if 0 not in species_id2name_mapping:
         #     species_id2name_mapping[0] = 'blank'
 
