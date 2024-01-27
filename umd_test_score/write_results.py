@@ -558,7 +558,13 @@ def print_confusion_matrices(results_dict, out_file):
 
                 activity_id2name_mapping = results_dict['Activity_id2name'][test_id]
 
-                activity_names = [activity_id2name_mapping[j] for j in sorted(activity_ids)]
+                # activity_names = [activity_id2name_mapping[j] for j in sorted(activity_ids)]
+                activity_names = []
+                for j in sorted(activity_ids):
+                    if j in activity_id2name_mapping.keys():
+                        activity_names.append(activity_id2name_mapping[j])
+                    else:
+                        activity_names.append('activity '+str(j))
 
                 # Print count version
                 

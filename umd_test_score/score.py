@@ -979,9 +979,6 @@ def score_test_from_boxes(
         ground_truth_species_counts[int(test_tuple.agent1_id)] = int(test_tuple.agent1_count)
         ground_truth_species_presence[int(test_tuple.agent1_id)] = 1
 
-        if int(test_tuple.agent1_id) not in species_id2name_mapping:
-            species_id2name_mapping[int(test_tuple.agent1_id)] = test_tuple.agent1_name
-
         # if 0 not in species_id2name_mapping:
         #     species_id2name_mapping[0] = 'blank'
 
@@ -998,7 +995,8 @@ def score_test_from_boxes(
 
             nbr_imgs_w_single_spe += 1
             
-            pred_spe_in_boxes = np.argmax(bboxes_prediction_dict[test_tuple.image_path]['species_probs'], axis=1)
+            spe_boxes_pred = bboxes_prediction_dict[test_tuple.image_path]['species_probs']
+            pred_spe_in_boxes = np.argmax(spe_boxes_pred, axis=1)
             for id_spe_pred in pred_spe_in_boxes:
                 onehot_pred_spe = [0] * total_nbr_species
                 onehot_pred_spe[id_spe_pred] = 1
@@ -1010,6 +1008,10 @@ def score_test_from_boxes(
                     # This is prenovelty image
                     pre_red_pred_spe_in_box.append(onehot_pred_spe)
                     pre_red_grd_truth_spe_in_box.append(onehot_grd_trth)
+
+                    # if test_tuple.agent1_name not in pre_red_pred_prob_spe_in_box.keys():
+                    #     pre_red_pred_prob_spe_in_box[test_tuple.agent1_name] = [spe_boxes_pred[id_spe_pred]]
+
                 elif pos < start_test_phase:
                     # This is post-novelty image
                     post_red_pred_spe_in_box.append(onehot_pred_spe)
