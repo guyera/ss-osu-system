@@ -19,7 +19,7 @@ import numpy as np
 import sklearn.metrics as metrics
 import ast
 
-from write_results import write_results_to_log, print_confusion_matrices
+from write_results import write_results_to_log, print_confusion_matrices, print_reliability_diagrams
 from helpers import species_count_error, percent_string
 from boostrap_conf_int import boostrap_conf_interval
 
@@ -867,7 +867,7 @@ def score_test_from_boxes(
     test_id, metadata, test_df, detect_lines, class_lines, boxes_pred_dict, class_file_reader, 
     log, all_performances, detection_threshold, spe_presence_threshold=0.5, 
     act_presence_threshold=0.5, estimate_ci=False, nbr_samples_conf_int=300,
-    len_test_phase=1000
+    len_test_phase=1000, output_dir=None
 ):
     """
     Computes the score of the system for detection and classification tasks
@@ -1497,6 +1497,15 @@ def score_test_from_boxes(
     num_post_red_img_w_spe = all_grd_truth_spe_counts.iloc[total_pre_red_btn:start_test_phase].astype(bool).sum(axis=0)
     num_test_post_red_img_w_spe = all_grd_truth_spe_counts.iloc[start_test_phase:].astype(bool).sum(axis=0)
 
+    # Save predicted counts and ground truth for debugging
+    if output_dir is not None:
+        tmp_dir = os.path.join(output_dir, 'temp_csv_files')
+        if not os.path.exists(tmp_dir):
+            os.makedirs(tmp_dir, exist_ok=True)
+
+        all_pred_spe_counts.to_csv(os.path.join(tmp_dir, f'{test_id}_pred_spe_count.csv'))
+        all_grd_truth_spe_counts.to_csv(os.path.join(tmp_dir, f'{test_id}_grd_trth_spe_count.csv'))
+
     for spe in all_grd_truth_spe_counts.columns:
         if spe not in species_id2name_mapping.values():
             pre_red_abs_err_count[spe] = {'value': -1}
@@ -1882,6 +1891,28 @@ def score_test_from_boxes(
     }
     all_performances['Confusion_matrices'][test_id] = {
         'species': species_cm
+    }
+
+    # Species predicted class, ground truth and confidence (use for reliability diagram)
+    species_conf = {
+        'pre_red_btn': {
+            'ground_true': pre_red_spe_grd_trth,
+            'pred_class': pre_red_spe_pred,
+            'confidence': np.max(pre_red_pred_spe_in_box, axis=1)
+        },
+        'post_red_btn': {
+            'ground_true': post_red_spe_grd_trth if len(post_red_pred_spe_in_box) > 0 else None,
+            'pred_class': post_red_spe_pred if len(post_red_pred_spe_in_box) > 0 else None,
+            'confidence': np.max(post_red_pred_spe_in_box, axis=1) if len(post_red_pred_spe_in_box) > 0 else None
+        },
+        'test_post_red_btn': {
+            'ground_true': test_post_red_spe_grd_trth if len(test_post_red_pred_spe_in_box) > 0 else None,
+            'pred_class': test_post_red_spe_pred if len(test_post_red_pred_spe_in_box) > 0 else None,
+            'confidence': np.max(test_post_red_pred_spe_in_box, axis=1) if len(test_post_red_pred_spe_in_box) > 0 else None
+        }
+    }
+    all_performances['Prediction_confidence'][test_id] = {
+        'species': species_conf
     }
     
 
@@ -2278,6 +2309,26 @@ def score_test_from_boxes(
 
     all_performances['Confusion_matrices'][test_id]['activity'] = activity_cm
 
+    # Activity predicted class, ground truth and confidence (use for reliability diagram)
+    actvity_conf = {
+        'pre_red_btn': {
+            'ground_true': pre_red_act_grd_trth,
+            'pred_class': pre_red_act_pred,
+            'confidence': np.max(pre_red_pred_act_in_box, axis=1)
+        },
+        'post_red_btn': {
+            'ground_true': post_red_act_grd_trth if len(post_red_pred_act_in_box) > 0 else None,
+            'pred_class': post_red_act_pred if len(post_red_pred_act_in_box) > 0 else None,
+            'confidence': np.max(post_red_pred_act_in_box, axis=1) if len(post_red_pred_act_in_box) > 0 else None
+        },
+        'test_post_red_btn': {
+            'ground_true': test_post_red_act_grd_trth if len(test_post_red_pred_act_in_box) > 0 else None,
+            'pred_class': test_post_red_act_pred if len(test_post_red_pred_act_in_box) > 0 else None,
+            'confidence': np.max(test_post_red_pred_act_in_box, axis=1) if len(test_post_red_pred_act_in_box) > 0 else None
+        }
+    }
+    all_performances['Prediction_confidence'][test_id]['activity'] = actvity_conf
+
 
 def score_tests(
     test_dir, sys_output_dir, bboxes_dir, session_id, class_file_reader, log_dir,
@@ -2316,6 +2367,7 @@ def score_tests(
         'Aggregate_activity_presence': {},
         'Species_counts': {},
         'Confusion_matrices': {},
+        'Prediction_confidence': {},
         'Species_id2name': {},
         'Activity_id2name': {}
     }
@@ -2362,13 +2414,13 @@ def score_tests(
                     test_id, metadata, test_df, detect_lines, class_lines, boxes_pred_dict, class_file_reader,
                     log, all_performances, detection_threshold, spe_presence_threshold, 
                     act_presence_threshold, estimate_ci=True, nbr_samples_conf_int=300, 
-                    len_test_phase=size_test_phase
+                    len_test_phase=size_test_phase, output_dir=log_dir
                 )
         
 
     write_results_to_log(all_performances, output_path=log_dir)
     print_confusion_matrices(all_performances, log_dir / "confusion.pdf")
-
+    print_reliability_diagrams(all_performances, log_dir / "reliability_diagrams.pdf")
 
 
 def main():

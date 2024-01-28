@@ -6,6 +6,8 @@ from collections import defaultdict
 from pathlib import Path
 import seaborn as sns
 
+from reliability_diagrams import *
+
 
 def percent_string(num, denom=None):
     if num < 0:
@@ -580,6 +582,48 @@ def print_confusion_matrices(results_dict, out_file):
                 ax.set_ylabel("True label")
                 ax.tick_params(axis='x', which='major', labelbottom=False, bottom=False, top=True, labeltop=True)
                 ax.set_title(f"{test_id}: {phases_abrv[i]} activities CM")
+                fig.tight_layout()
+                pdf_pages.savefig()
+                plt.close()
+
+
+def print_reliability_diagrams(results_dict, out_file):
+    test_ids = sorted(list(results_dict['Red_button'].keys()))
+    phases = ['pre_red_btn', 'post_red_btn', 'test_post_red_btn']
+    phases_abrv = ['pre_rb', 'pos_rb', 'test']
+    with PdfPages(out_file) as pdf_pages:
+        # plot confusion matrix of species
+        for test_id in test_ids:
+            for i, phase in enumerate(phases):
+                y_true = results_dict['Prediction_confidence'][test_id]['species'][phase]['ground_true']
+                y_pred = results_dict['Prediction_confidence'][test_id]['species'][phase]['pred_class']
+                y_conf = results_dict['Prediction_confidence'][test_id]['species'][phase]['confidence']
+
+                if y_true is None or y_pred is None:
+                    continue
+
+                fig = reliability_diagram(y_true, y_pred, y_conf, num_bins=10, draw_ece=True,
+                          draw_bin_importance="alpha", draw_averages=True,
+                          title=f"{test_id}: {phases_abrv[i]} species", figsize=(6, 6), dpi=100, 
+                          return_fig=True)
+                fig.tight_layout()
+                pdf_pages.savefig()
+                plt.close()
+
+        # plot confusion matrix of activities
+        for test_id in test_ids:
+            for i, phase in enumerate(phases):
+                y_true = results_dict['Prediction_confidence'][test_id]['activity'][phase]['ground_true']
+                y_pred = results_dict['Prediction_confidence'][test_id]['activity'][phase]['pred_class']
+                y_conf = results_dict['Prediction_confidence'][test_id]['activity'][phase]['confidence']
+
+                if y_true is None or y_pred is None:
+                    continue
+
+                fig = reliability_diagram(y_true, y_pred, y_conf, num_bins=10, draw_ece=True,
+                          draw_bin_importance="alpha", draw_averages=True,
+                          title=f"{test_id}: {phases_abrv[i]} activities", figsize=(6, 6), dpi=100, 
+                          return_fig=True)
                 fig.tight_layout()
                 pdf_pages.savefig()
                 plt.close()
