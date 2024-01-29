@@ -548,6 +548,7 @@ class TopLevelApp:
         )
         if self.oracle_training:
             # selected_img_paths = self.round_paths_sorted[:feedback_max_ids]
+            print(Collecting Oracle feedback )
             selected_img_paths = self.round_paths_sorted[:3] + self.round_paths_sorted[-2:]
 
             query_indices = []
@@ -740,7 +741,7 @@ class TopLevelApp:
         log_p_type_5 = self._infer_log_p_type(prior, filtered[:, 5])
 
         round_characterization_logits = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4, log_p_type_5])
-        round_characterization_preds = torch.nn.functional.softmax(round_characterization_logits, dim=0).float()
+        round_characterization_preds = torch.nn.functional.softmax(round_characterization_logits, dim=0).double()
 
         self.characterization_preds.append(round_characterization_preds.numpy())
 
@@ -951,7 +952,7 @@ class TopLevelApp:
         # retrain_cond_1 = self.num_retrains_so_far == 0 and self.novelty_trainer.n_feedback_examples() >= 15
         # retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.novelty_trainer.n_feedback_examples() > 0)
         retrain_cond_1 = self.num_retrains_so_far == 0 and len(self.retraining_buffer) >= 15
-        retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (len(self.retraining_buffer) > 0)
+        retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) 
         # if retrain_cond_1 or retrain_cond_2:
         if retrain_cond_2:
             csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
