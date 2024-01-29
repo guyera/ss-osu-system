@@ -130,6 +130,17 @@ class OSUInterface:
 
         return (novelty_preds, predictions)
 
+    # def select_oracle(test_id, round_id, image_paths, feedback_max_ids):
+    #     api_test_folder = '/nfs/hpc/share/sail_on3/final/test_trials/api_tests/OND/image_classification/'
+    #     csv_path = api_test_folder +'/'+ test_id+'_single_df.csv'
+    #     with open(csv_path, "r") as f:
+    #         csv_reader = csv.reader(f, delimiter=",", quotechar='"', skipinitialspace=True)
+    #         rows = [x for x in csv_reader][round_id*10:round_id+10]
+    #     sort these rows according to novelty column
+    #     select top 5
+
+
+
     def choose_detection_feedback_ids(self, test_id, round_id, image_paths, feedback_max_ids):
         """
         :param test_id:
@@ -139,6 +150,7 @@ class OSUInterface:
         :return: list of selected image_paths
         """
         queries, bboxes = self.app.select_queries(feedback_max_ids)
+        # queries, bboxes = select_oracle(test_id, round_id, image_paths, feedback_max_ids)
         return queries, bboxes
     
     def characterize_round(self, red_light_dec):

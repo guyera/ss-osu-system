@@ -63,12 +63,15 @@ if __name__ == "__main__":
 
     args = p.parse_args()
     # torch.autograd.set_detect_anomaly(True)
-    assert ((not args.distributed) or (args.classifier_trainer == TopLevelApp.ClassifierTrainer.end_to_end)),\
-        'Only end-to-end training is supported in distributed mode'
-    
+    # assert ((not args.distributed) or (args.classifier_trainer == TopLevelApp.ClassifierTrainer.end_to_end)),\
+    #     'Only end-to-end training is supported in distributed mode'
+    assert ((not args.distributed) or 
+        (args.classifier_trainer in [TopLevelApp.ClassifierTrainer.end_to_end, TopLevelApp.ClassifierTrainer.ewc_train])),\
+        'Only end-to-end and ewc_train training are supported in distributed mode'
+
     from datetime import timedelta
     DEFAULT_TIMEOUT = timedelta(seconds=1000000)
-    # torch.set_default_tensor_type(torch.DoubleTensor)
+    torch.set_default_tensor_type(torch.DoubleTensor)
     if args.distributed:
 
         dist.init_process_group('nccl', timeout = DEFAULT_TIMEOUT)

@@ -28,6 +28,7 @@ Last30*
 SVO_*
 .data-cache
 *.sh
-pretrained-models
-.log
-.checkpoint
+pretrained-models*
+.log*
+.checkpoint*
+roc_curve*

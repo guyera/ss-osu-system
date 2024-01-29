@@ -98,9 +98,11 @@ class BoxImageDataset(torch.utils.data.Dataset):
         )
 
         if image_mean is None:
-            image_mean = [0.485, 0.456, 0.406]
+            image_mean = [0.0, 0.0, 0.0]
+            # image_mean = [0.485, 0.456, 0.406]
         if image_std is None:
-            image_std = [0.229, 0.224, 0.225]
+            # image_std = [0.229, 0.224, 0.225]
+            image_std = [1.0, 1.0, 1.0]
 
         self._i_transform = HOINetworkTransform(
             min_size,

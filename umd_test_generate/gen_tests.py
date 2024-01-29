@@ -3,7 +3,7 @@
 #########################################################################
 
 from pathlib import Path
-import shutil
+import shutil, os
 import numpy as np
 import pandas as pd
 from argparse import ArgumentParser
@@ -126,17 +126,22 @@ def gen_api_tests(test_source_data, out_dir, test_configs):
         for test_name in test_names:
             handle.write(f'{test_name}\n')
 
-def gen_api_single_novelty_tests(test_source_data, out_dir, test_configs, novelty_type=None, subnovelty=None):
+def gen_api_single_novelty_tests(test_source_data, out_dir, test_configs, novelty_type=None, subnovelty=None, random_state=1000):
+    random.seed(random_state)
     if not out_dir.exists():
-        out_dir.mkdir()
+        out_dir.mkdir(exist_ok=True)
+    
     api_dir = out_dir / 'api_tests'
-    if api_dir.exists():
-        shutil.rmtree(api_dir)
-    api_dir.mkdir()
+    # if api_dir.exists():
+    #     shutil.rmtree(api_dir)
+    api_dir.mkdir(exist_ok=True)
     ond_dir = api_dir / 'OND'
-    ond_dir.mkdir()
-    test_dir = ond_dir / 'image_classification'
-    test_dir.mkdir()
+    ond_dir.mkdir(exist_ok=True)
+    test_dir_all = ond_dir / 'image_classification'
+    test_dir_all.mkdir(exist_ok=True)
+    test_dir = test_dir_all / f'seed_{random_state}'
+    test_dir.mkdir(exist_ok=True)
+    
     test_names = []
 
     # check if the prenovelty validation set is available otherwise select prenovelty images for the trial in the training set
@@ -228,6 +233,7 @@ def main():
     p.add_argument('--novelty_type', default=None)
     # p.add_argument('--subnovelty', nargs='?', default='environmnet', const='environmnet')
     p.add_argument('--subnovelty', default=None)
+    p.add_argument('--random_state', type=int, default=1000)
     # p.add_argument('--test_len', type=int, default=400)
     # p.add_argument('--red_button', type=int, default=70)
     # p.add_argument('--alpha', type=float, default='0.25')
@@ -237,6 +243,7 @@ def main():
     pickle_file = Path(args.test_source_data)
     config_file = Path(args.test_config_file)
     out_dir = Path(args.out_dir)
+    random_state = args.random_state
     with open(pickle_file, 'rb') as handle:
         test_source_data = pickle.load(handle)
     with open(config_file, 'r') as handle:
@@ -276,7 +283,14 @@ def main():
     else:
         novel_type = None
     
-    gen_api_single_novelty_tests(test_source_data, out_dir, test_configs, novelty_type=novel_type, subnovelty=sub_novelty)
+    gen_api_single_novelty_tests(
+        test_source_data, 
+        out_dir, 
+        test_configs, 
+        novelty_type=novel_type, 
+        subnovelty=sub_novelty, 
+        random_state=random_state
+    )
 
 
 if __name__ == '__main__':

@@ -31,8 +31,8 @@ from tupleprediction.training import\
     LogitLayerClassifierTrainer,\
     SideTuningClassifierTrainer,\
     EndToEndClassifierTrainer, \
-    TransformingBoxImageDataset
-
+    TransformingBoxImageDataset, \
+    EWCClassifierTrainer
 from data.custom import build_species_label_mapping
 
 from taming_transformers.cycleGAN import CycleGAN
@@ -85,6 +85,7 @@ class TopLevelApp:
         logit_layer = 'logit-layer'
         side_tuning = 'side-tuning'
         end_to_end = 'end-to-end'
+        ewc_train = 'ewc-train'
 
         def __str__(self):
             return self.value
@@ -142,7 +143,7 @@ class TopLevelApp:
         self.post_red_base = None
         self.batch_context = BatchContext()
         self.feedback_enabled = feedback_enabled
-        self.p_val_cuttoff =  0.035808 #0.002215 #0.08803683 #   0.0085542  #0.01042724
+        self.p_val_cuttoff =  0.00221498
         self.windows_size = 40
                 
         a = np.array([[self.p_val_cuttoff, 1], [1, 1]])
@@ -244,7 +245,6 @@ class TopLevelApp:
                     n_known_val=self.n_known_val
                 )
 
-
         train_feature_file = os.path.join(
             self.precomputed_feature_dir,
             'training.pth'
@@ -309,6 +309,24 @@ class TopLevelApp:
                 memory_cache=False,
                 val_reduce_fn=self._val_reduce_fn
             )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.ewc_train:
+            classifier_trainer = EWCClassifierTrainer(
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                self.box_transform,
+                post_cache_train_transform,
+                retraining_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                memory_cache=False,
+                val_reduce_fn=self._val_reduce_fn
+            )
 
         self.novelty_trainer = TuplePredictorTrainer(
             train_dataset,
@@ -347,7 +365,8 @@ class TopLevelApp:
         self.t_tn = None
         self.batch_num = 0 
         self.num_retrains_so_far = 0
-        self.retraining_buffer = self.retraining_buffer.iloc[0:0]  
+        self.retraining_buffer = self.retraining_buffer.iloc[0:0] 
+        self.oracle_training = False 
 
         # Auxiliary debugging data
         self._classifier_debugging_data = {}
@@ -357,6 +376,18 @@ class TopLevelApp:
     def process_batch(self, csv_path, test_id, round_id, img_paths, hint_typeA_data, hint_typeB_data):
         if csv_path is None:
             raise Exception('path to csv was None')
+
+
+        path_to_all_data = f'/nfs/hpc/share/sail_on3/final/test_trials/api_tests/OND/image_classification/{test_id}_single_df.csv'
+        csv_pd = pd.read_csv(path_to_all_data).iloc[round_id*10:round_id*10+10]
+
+        # Check if 'novel' column exists and is numeric
+        if 'novel' in csv_pd.columns and pd.api.types.is_numeric_dtype(csv_pd['novel']):
+            sorted_csv = csv_pd.sort_values(by='novel', ascending=False)
+            self.round_paths_sorted = sorted_csv['image_path'].head(10).tolist()
+            # print(sorted_csv)
+        else:
+            print("Error: 'novel' column is missing or not numeric")
 
         self.batch_num += 1
         self.batch_context.reset()
@@ -408,7 +439,7 @@ class TopLevelApp:
                 hint_b=hint_typeB_data
             )
         
-        p_ni = p_ni.cpu().float()
+        p_ni = p_ni.cpu().double()
         self.per_image_p_type = torch.cat([self.per_image_p_type, batch_p_type.cpu()])
 
         # Update batch p type based on given detection hints
@@ -515,14 +546,28 @@ class TopLevelApp:
             bbox_counts,
             dtype=torch.long
         )
-        query_indices = select_queries(
-            feedback_max_ids,
-            self.batch_context.p_ni,
-            bbox_counts
-        )
+        if self.oracle_training:
+            # selected_img_paths = self.round_paths_sorted[:feedback_max_ids]
+            selected_img_paths = self.round_paths_sorted[:3] + self.round_paths_sorted[-2:]
 
-        selected_img_paths =\
-            [self.batch_context.image_paths[i] for i in query_indices]
+            query_indices = []
+            for path in selected_img_paths:
+                try:
+                    index = self.batch_context.image_paths.index(path)
+                    query_indices.append(index)
+                except ValueError:
+                    print(f"Path {path} not found in batch context image paths.")
+            selected_img_paths2 =\
+                [self.batch_context.image_paths[i] for i in query_indices]
+        else:
+            query_indices = select_queries(
+                feedback_max_ids,
+                self.batch_context.p_ni,
+                bbox_counts
+            )
+            selected_img_paths =\
+                [self.batch_context.image_paths[i] for i in query_indices]
+            
         bboxes = {}
         for img_path in selected_img_paths:
             img_name = os.path.basename(img_path)
@@ -590,7 +635,7 @@ class TopLevelApp:
                     # Remove NaNs by setting them to the normalized override
                     # mask compliment
                     self.batch_context.p_type[normalizer == 0] =\
-                        (~p_type_override_mask[:]).to(torch.float)
+                        (~p_type_override_mask[:]).to(torch.double)
                     self.batch_context.p_type = self.batch_context.p_type /\
                         self.batch_context.p_type.sum(dim=1, keepdim=True)
 
@@ -872,7 +917,24 @@ class TopLevelApp:
                 memory_cache=False,
                 val_reduce_fn=self._val_reduce_fn
             )
-
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.ewc_train:
+            classifier_trainer = EWCClassifierTrainer(
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                self.box_transform,
+                post_cache_train_transform,
+                retraining_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                memory_cache=False,
+                val_reduce_fn=self._val_reduce_fn
+            )
         self.novelty_trainer = TuplePredictorTrainer(
             train_dataset,
             val_known_dataset,

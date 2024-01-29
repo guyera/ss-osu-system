@@ -88,11 +88,11 @@ def boostrap_conf_interval(y_true, y_pred, metric_name, is_abs_err=True, n_sampl
                 raise ValueError(f'metric_name "{metric_name}" unknown!')
 
         if isinstance(sample_score, list):
-            return np.percentile(sample_score, (alpha*100/2, (1-alpha)*100/2)) if len(sample_score) > 0 else -1
+            return np.percentile(sample_score, (alpha*100/2, (1-alpha/2)*100)) if len(sample_score) > 0 else -1
         return {
-            'precision': np.percentile(sample_score['precision'], (alpha*100/2, (1-alpha)*100/2)) if len(sample_score['precision']) > 0 else -1,
-            'recall': np.percentile(sample_score['recall'], (alpha*100/2, (1-alpha)*100/2)) if len(sample_score['recall']) > 0 else -1,
-            'f1_score': np.percentile(sample_score['f1_score'], (alpha*100/2, (1-alpha)*100/2)) if len(sample_score['f1_score']) > 0 else -1
+            'precision': np.percentile(sample_score['precision'], (alpha*100/2, (1-alpha/2)*100)) if len(sample_score['precision']) > 0 else -1,
+            'recall': np.percentile(sample_score['recall'], (alpha*100/2, (1-alpha/2)*100)) if len(sample_score['recall']) > 0 else -1,
+            'f1_score': np.percentile(sample_score['f1_score'], (alpha*100/2, (1-alpha/2)*100)) if len(sample_score['f1_score']) > 0 else -1
         }
 
     # ** computing the confidence interval for the average of the metric over all species or activities
@@ -165,12 +165,17 @@ def boostrap_conf_interval(y_true, y_pred, metric_name, is_abs_err=True, n_sampl
             sample_score['avg_recall'].append(np.mean(col_scores['recall']))
             sample_score['avg_f1_score'].append(np.mean(col_scores['f1_score']))
         else:
-            sample_score.append(np.mean(col_scores))
+            try:
+                sample_score.append(np.mean(col_scores))
+            except Exception as ex:
+                continue
+                print(col_scores)
+                print('\n The following exception happened in boostrap_conf_int():', ex)
 
     if isinstance(sample_score, list):
-        return np.percentile(sample_score, (alpha*100/2, (1-alpha)*100/2)) if len(sample_score) > 0 else -1
+        return np.percentile(sample_score, (alpha*100/2, (1-alpha/2)*100)) if len(sample_score) > 0 else -1
     return {
-        'avg_precision': np.percentile(sample_score['avg_precision'], (alpha*100/2, (1-alpha)*100/2)) if len(sample_score['avg_precision']) > 0 else -1,
-        'avg_recall': np.percentile(sample_score['avg_recall'], (alpha*100/2, (1-alpha)*100/2)) if len(sample_score['avg_recall']) > 0 else -1,
-        'avg_f1_score': np.percentile(sample_score['avg_f1_score'], (alpha*100/2, (1-alpha)*100/2)) if len(sample_score['avg_f1_score']) > 0 else -1
+        'avg_precision': np.percentile(sample_score['avg_precision'], (alpha*100/2, (1-alpha/2)*100)) if len(sample_score['avg_precision']) > 0 else -1,
+        'avg_recall': np.percentile(sample_score['avg_recall'], (alpha*100/2, (1-alpha/2)*100)) if len(sample_score['avg_recall']) > 0 else -1,
+        'avg_f1_score': np.percentile(sample_score['avg_f1_score'], (alpha*100/2, (1-alpha/2)*100)) if len(sample_score['avg_f1_score']) > 0 else -1
     }

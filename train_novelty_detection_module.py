@@ -191,6 +191,11 @@ parser.add_argument(
 
 args = parser.parse_args()
 
+
+from datetime import timedelta
+DEFAULT_TIMEOUT = timedelta(seconds=1000000)
+
+# dist.init_process_group('nccl', timeout = DEFAULT_TIMEOUT)
 dist.init_process_group('nccl')
 rank = dist.get_rank()
 local_rank = int(os.environ['LOCAL_RANK'])
@@ -285,7 +290,7 @@ def feedback_batch_sampler_fn(box_counts):
 
 if args.classifier_trainer == ClassifierTrainer.end_to_end:
     classifier_trainer = EndToEndClassifierTrainer(
-        backbone,
+        # backbone,
         args.lr,
         train_dataset,
         val_known_dataset,
@@ -352,6 +357,7 @@ activity_calibrator = confidence_calibrator.activity_calibrator
 
 # Retrain the backbone and classifiers
 classifier_trainer.train(
+    backbone,
     species_classifier,
     activity_classifier,
     args.root_log_dir,
@@ -359,8 +365,9 @@ classifier_trainer.train(
     device,
     train_sampler_fn,
     feedback_batch_sampler_fn,
-    rank==0,
-    local_rank==0
+    allow_write = True,
+    allow_print = True
+    
 )
 
 if rank == 0:
@@ -372,7 +379,7 @@ if rank == 0:
         batch_size = 32,
         shuffle = False,
         collate_fn=gen_custom_collate(),
-        num_workers=2
+        num_workers=0
     )
     backbone.eval()
     all_features = []

@@ -51,10 +51,64 @@ def write_results_to_log(results_dict, output_path):
         summary.write('\n\n')
 
 
+        # # Aggregate species presence
+        # summary.write(f'               ****************************************************  Aggreate species presence and counts  ***************************************************************   \n')
+        # summary.write(f'               ---------------------------  Pre  ---------------------------------         |       ---------------------------------  Post  ------------------------------   \n')
+        # summary.write(f'               Avg_AUC            Avg_F1            Avg_abs_err            Avg_rel         |          Avg_AUC            Avg_F1            Avg_abs_err            Avg_rel    \n')
+
         # Aggregate species presence
-        summary.write(f'               ****************************************************  Aggreate species presence and counts  ***************************************************************   \n')
-        summary.write(f'               ---------------------------  Pre  ---------------------------------         |       ---------------------------------  Post  ------------------------------   \n')
-        summary.write(f'               Avg_AUC            Avg_F1            Avg_abs_err            Avg_rel         |          Avg_AUC            Avg_F1            Avg_abs_err            Avg_rel    \n')
+        summary.write(f'              **********************************************************  Average species counts  ***************************************************************      \n')
+        summary.write(f'               ------------------  Pre  ---------------    |     -------------------  Post  -----------------    |    -------------------  Test  ----------------   \n')
+        summary.write(f'                     Avg_abs_err            Avg_rel        |           Avg_abs_err            Avg_rel            |          Avg_abs_err            Avg_rel          \n')
+
+        for test_id in test_ids:
+            # pre red button
+            pre_red_avg_spe_abs_err = results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_abs_err']['value']
+            if 'ci' in results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_abs_err']:
+                pre_red_avg_spe_abs_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_abs_err']['ci'])
+
+            pre_red_avg_spe_rel_err = results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_rel_err']['value']
+            if 'ci' in results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_rel_err']:
+                pre_red_avg_spe_rel_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_rel_err']['ci'])
+
+            # post red button
+            post_red_avg_spe_abs_err = results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']['value']
+            if 'ci' in results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']:
+                post_red_avg_spe_abs_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']['ci'])
+
+            post_red_avg_spe_rel_err = results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']['value']
+            if 'ci' in results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']:
+                post_red_avg_spe_rel_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']['ci'])
+
+            # post red button test phase
+            test_post_red_avg_spe_abs_err = results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_abs_err']['value']
+            if 'ci' in results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_abs_err']:
+                test_post_red_avg_spe_abs_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_abs_err']['ci'])
+
+            test_post_red_avg_spe_rel_err = results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_rel_err']['value']
+            if 'ci' in results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_rel_err']:
+                test_post_red_avg_spe_rel_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_rel_err']['ci'])
+
+            """
+            summary.write(f'{test_id}: '
+                  f'{pre_red_species_avg_auc:4} ({pre_red_species_avg_auc_ci:8})   {pre_red_species_avg_f1:4} ({pre_red_species_avg_f1_ci:8})   '
+                  f'{pre_red_avg_spe_abs_err:4} ({pre_red_avg_spe_abs_err_ci:8})   {pre_red_avg_spe_rel_err:4} ({pre_red_avg_spe_rel_err_ci:8})   ' 
+                  f'{post_red_species_avg_auc:4} ({post_red_species_avg_auc_ci:8})   {post_red_species_avg_f1:4} ({post_red_species_avg_f1_ci:8})   '
+                  f'{post_red_avg_spe_abs_err:4} ({post_red_avg_spe_abs_err_ci:8})   {post_red_avg_spe_rel_err:4} ({post_red_avg_spe_rel_err_ci:8}) \n')
+            """
+            
+            summary.write(f'{test_id}:     '
+                  f'{pre_red_avg_spe_abs_err:4} {pre_red_avg_spe_abs_err_ci:12}   {pre_red_avg_spe_rel_err:4} {pre_red_avg_spe_rel_err_ci:12}         ' 
+                  f'{post_red_avg_spe_abs_err:4} {post_red_avg_spe_abs_err_ci:12}   {post_red_avg_spe_rel_err:4} {post_red_avg_spe_rel_err_ci:12}         '
+                  f'{test_post_red_avg_spe_abs_err:4} {test_post_red_avg_spe_abs_err_ci:12}   {test_post_red_avg_spe_rel_err:4} {test_post_red_avg_spe_rel_err_ci:12} \n')
+        
+        summary.write('\n\n')
+
+
+        # Aggregate activity presence
+        summary.write(f'              ***************************************************  Average species presence  ***************************************************   \n')
+        summary.write(f'               ---------------  Pre  -------------    |   ----------------  Post  ---------------    |   ----------------  Test  ---------------   \n')
+        summary.write(f'                      Avg_AUC            Avg_F1       |           avg_AUC            Avg_F1          |           avg_AUC            Avg_F1         \n')
 
         for test_id in test_ids:
             # pre red button
@@ -71,13 +125,6 @@ def write_results_to_log(results_dict, output_path):
             if 'ci' in results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_f1_score']:
                 pre_red_species_avg_f1_ci = ci_string(results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_f1_score']['ci'])
 
-            pre_red_avg_spe_abs_err = results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_abs_err']['value']
-            if 'ci' in results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_abs_err']:
-                pre_red_avg_spe_abs_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_abs_err']['ci'])
-
-            pre_red_avg_spe_rel_err = results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_rel_err']['value']
-            if 'ci' in results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_rel_err']:
-                pre_red_avg_spe_rel_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_rel_err']['ci'])
 
             # post red button
             post_red_species_avg_auc_ci, post_red_species_avg_f1_ci, post_red_avg_spe_abs_err_ci, post_red_avg_spe_rel_err_ci = '--', '--', '--', '--'
@@ -93,34 +140,29 @@ def write_results_to_log(results_dict, output_path):
             if 'ci' in results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_f1_score']:
                 post_red_species_avg_f1_ci = ci_string(results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_f1_score']['ci'])
 
-            post_red_avg_spe_abs_err = results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']['value']
-            if 'ci' in results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']:
-                post_red_avg_spe_abs_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']['ci'])
+            # post red button test phase
+            test_post_red_species_avg_auc_ci, test_post_red_species_avg_f1_ci, test_post_red_avg_spe_abs_err_ci, test_post_red_avg_spe_rel_err_ci = '--', '--', '--', '--'
 
-            post_red_avg_spe_rel_err = results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']['value']
-            if 'ci' in results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']:
-                post_red_avg_spe_rel_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']['ci'])
+            test_post_red_species_avg_auc = results_dict['Aggregate_species_presence'][test_id]['test_post_red_btn']['avg_auc']['value']
+            if 'ci' in results_dict['Aggregate_species_presence'][test_id]['test_post_red_btn']['avg_auc']:
+                test_post_red_species_avg_auc_ci = ci_string(results_dict['Aggregate_species_presence'][test_id]['test_post_red_btn']['avg_auc']['ci'])
 
-            """
-            summary.write(f'{test_id}: '
-                  f'{pre_red_species_avg_auc:4} ({pre_red_species_avg_auc_ci:8})   {pre_red_species_avg_f1:4} ({pre_red_species_avg_f1_ci:8})   '
-                  f'{pre_red_avg_spe_abs_err:4} ({pre_red_avg_spe_abs_err_ci:8})   {pre_red_avg_spe_rel_err:4} ({pre_red_avg_spe_rel_err_ci:8})   ' 
-                  f'{post_red_species_avg_auc:4} ({post_red_species_avg_auc_ci:8})   {post_red_species_avg_f1:4} ({post_red_species_avg_f1_ci:8})   '
-                  f'{post_red_avg_spe_abs_err:4} ({post_red_avg_spe_abs_err_ci:8})   {post_red_avg_spe_rel_err:4} ({post_red_avg_spe_rel_err_ci:8}) \n')
-            """
+            test_post_red_species_avg_f1 = results_dict['Aggregate_species_presence'][test_id]['test_post_red_btn']['avg_f1_score']['value']
+            if 'ci' in results_dict['Aggregate_species_presence'][test_id]['test_post_red_btn']['avg_f1_score']:
+                test_post_red_species_avg_f1_ci = ci_string(results_dict['Aggregate_species_presence'][test_id]['test_post_red_btn']['avg_f1_score']['ci'])
             
             summary.write(f'{test_id}:   '
-                  f'{pre_red_species_avg_auc:4} {pre_red_species_avg_auc_ci:12}   {pre_red_species_avg_f1:4} {pre_red_species_avg_f1_ci:12}   '
-                  f'{pre_red_avg_spe_abs_err:4} {pre_red_avg_spe_abs_err_ci:12}   {pre_red_avg_spe_rel_err:4} {pre_red_avg_spe_rel_err_ci:12}   ' 
-                  f'{post_red_species_avg_auc:4} {post_red_species_avg_auc_ci:12}   {post_red_species_avg_f1:4} {post_red_species_avg_f1_ci:12}   '
-                  f'{post_red_avg_spe_abs_err:4} {post_red_avg_spe_abs_err_ci:12}   {post_red_avg_spe_rel_err:4} {post_red_avg_spe_rel_err_ci:12} \n')
+                  f'{pre_red_species_avg_auc:4} {pre_red_species_avg_auc_ci:12}   {pre_red_species_avg_f1:4} {pre_red_species_avg_f1_ci:12}         '
+                  f'{post_red_species_avg_auc:4} {post_red_species_avg_auc_ci:12}   {post_red_species_avg_f1:4} {post_red_species_avg_f1_ci:12}         '
+                  f'{test_post_red_species_avg_auc:4} {test_post_red_species_avg_auc_ci:12}   {test_post_red_species_avg_f1:4} {test_post_red_species_avg_f1_ci:12}  \n')
         
         summary.write('\n\n')
 
+
         # Aggregate activity presence
-        summary.write(f'              *******************  Aggregate activity presence  *******************   \n')
-        summary.write(f'               ---------------  Pre  -------------    |   ---------------  Post  --------   \n')
-        summary.write(f'                      Avg_AUC            Avg_F1       |           avg_AUC            Avg_F1         \n')
+        summary.write(f'              ***************************************************  Average activity presence  **************************************************   \n')
+        summary.write(f'               ---------------  Pre  -------------    |   ----------------  Post  ---------------    |   ----------------  Test  ---------------   \n')
+        summary.write(f'                      Avg_AUC            Avg_F1       |           avg_AUC            Avg_F1          |           avg_AUC            Avg_F1         \n')
         
 
         # ** print average activity presence metrics
@@ -153,20 +195,30 @@ def write_results_to_log(results_dict, output_path):
             if 'ci' in results_dict['Aggregate_activity_presence'][test_id]['post_red_btn']['avg_f1_score']:
                 post_red_activity_avg_f1_ci = ci_string(results_dict['Aggregate_activity_presence'][test_id]['post_red_btn']['avg_f1_score']['ci'])
 
-            """
-            summary.write(f'{test_id}:            '
-                    f'{pre_red_activity_avg_auc:5} ({pre_red_activity_avg_auc_ci:8})  {pre_red_activity_avg_f1:5} ({pre_red_activity_avg_f1_ci:8})         '
-                    f'{post_red_activity_avg_auc:5} ({post_red_activity_avg_auc_ci:8})    {post_red_activity_avg_f1:5} ({post_red_activity_avg_f1_ci:8}) \n')
-            """
+            # -- post red button test phase
+            test_post_red_activity_avg_auc_ci, test_post_red_activity_avg_f1_ci = '--', '--'
+
+            test_post_red_activity_avg_auc = results_dict['Aggregate_activity_presence'][test_id]['test_post_red_btn']['avg_auc']['value']
+            if 'ci' in results_dict['Aggregate_activity_presence'][test_id]['test_post_red_btn']['avg_auc']:
+                test_post_red_activity_avg_auc_ci = ci_string(results_dict['Aggregate_activity_presence'][test_id]['test_post_red_btn']['avg_auc']['ci'])
+
+            test_post_red_activity_avg_precision = results_dict['Aggregate_activity_presence'][test_id]['test_post_red_btn']['avg_precision']
+            test_post_red_activity_avg_recall = results_dict['Aggregate_activity_presence'][test_id]['test_post_red_btn']['avg_recall']
+
+            test_post_red_activity_avg_f1 = results_dict['Aggregate_activity_presence'][test_id]['test_post_red_btn']['avg_f1_score']['value']
+            if 'ci' in results_dict['Aggregate_activity_presence'][test_id]['test_post_red_btn']['avg_f1_score']:
+                test_post_red_activity_avg_f1_ci = ci_string(results_dict['Aggregate_activity_presence'][test_id]['test_post_red_btn']['avg_f1_score']['ci'])
 
             summary.write(f'{test_id}:      '
                     f'{pre_red_activity_avg_auc:5} {pre_red_activity_avg_auc_ci:12}  {pre_red_activity_avg_f1:5} {pre_red_activity_avg_f1_ci:12}         '
-                    f'{post_red_activity_avg_auc:5} {post_red_activity_avg_auc_ci:12}    {post_red_activity_avg_f1:5} {post_red_activity_avg_f1_ci:12} \n')
+                    f'{post_red_activity_avg_auc:5} {post_red_activity_avg_auc_ci:12}    {post_red_activity_avg_f1:5} {post_red_activity_avg_f1_ci:12}         '
+                    f'{test_post_red_activity_avg_auc:5} {test_post_red_activity_avg_auc_ci:12}    {test_post_red_activity_avg_f1:5} {test_post_red_activity_avg_f1_ci:12} \n')
+                    
 
         summary.write(f"\n\n{'_'*150}\n\n")
 
-        # Per species presence
-        summary.write(f'                             *********  Per species count and presence  *********  \n')
+        # Per species count errors
+        summary.write(f'                             *********  Per species count errors  *********  \n')
 
         for test_id in test_ids:
             # species counts
@@ -176,25 +228,18 @@ def write_results_to_log(results_dict, output_path):
             post_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['post_red_btn']['abs_err']
             post_red_per_species_count_rel_err = results_dict['Species_counts'][test_id]['post_red_btn']['rel_err']
 
-            # species present
-            pre_red_per_species_auc = results_dict['Per_species_presence'][test_id]['pre_red_btn']['auc']
-            pre_red_per_species_precision = results_dict['Per_species_presence'][test_id]['pre_red_btn']['precision']
-            pre_red_per_species_recall = results_dict['Per_species_presence'][test_id]['pre_red_btn']['recall']
-            pre_red_per_species_f1_score = results_dict['Per_species_presence'][test_id]['pre_red_btn']['f1_score']
+            test_post_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['test_post_red_btn']['abs_err']
+            test_post_red_per_species_count_rel_err = results_dict['Species_counts'][test_id]['test_post_red_btn']['rel_err']
 
-            post_red_per_species_auc = results_dict['Per_species_presence'][test_id]['post_red_btn']['auc']
-            post_red_per_species_precision = results_dict['Per_species_presence'][test_id]['post_red_btn']['precision']
-            post_red_per_species_recall = results_dict['Per_species_presence'][test_id]['post_red_btn']['recall']
-            post_red_per_species_f1_score = results_dict['Per_species_presence'][test_id]['post_red_btn']['f1_score']
 
             species_id2name_mapping = results_dict['Species_id2name'][test_id]
             species_name2id_mapping = dict((v,k) for k,v in species_id2name_mapping.items())
 
-            summary.write(f'\n                              --------------------------------------  Pre  --------------------------------------      |     --------------------------------------  Post  --------------------------------------    \n')
-            summary.write(f'                                 AUC                   F1                   Abs_err                   Rel_err            |           AUC                   F1                   Abs_err                   Rel_err    \n')
+            summary.write(f'\n                              ---------------  Pre  ------------------   |     ---------------  Post  ------------------     |    ----------------  Test  ------------------------------    \n')
+            summary.write(f'                                 Abs_err                   Rel_err         |        Abs_err                   Rel_err          |           Abs_err                   Rel_err                \n')
             summary.write(f'{test_id}: \n')
 
-            species_present = list(set(list(pre_red_per_species_auc.keys()) + list(post_red_per_species_auc.keys())))
+            species_present = list(set(list(pre_red_per_species_count_abs_err.keys()) + list(pre_red_per_species_count_abs_err.keys())))
             species_present_ids = [int(x.split('_')[-1]) if 'unknown' in x else species_name2id_mapping[x] for x in species_present]
             idx_sort_spe_present = np.argsort(species_present_ids)
 
@@ -209,17 +254,7 @@ def write_results_to_log(results_dict, output_path):
                     spe_id = species_name2id_mapping[spe_name]
                 
                 # pre red button
-                pre_red_per_spe_auc_ci, pre_red_per_spe_f1_ci = '--', '--'
                 pre_red_per_spe_cnt_abs_err_ci, pre_red_per_spe_cnt_rel_err_ci = '--', '--'
-
-                pre_red_per_spe_auc = round(pre_red_per_species_auc[spe_name]['value'], 2)
-                if 'ci' in pre_red_per_species_auc[spe_name]:
-                    pre_red_per_spe_auc_ci = ci_string(pre_red_per_species_auc[spe_name]['ci'])
-
-                pre_red_per_spe_f1 = round(pre_red_per_species_f1_score[spe_name]['value'], 2)
-                if 'ci' in pre_red_per_species_f1_score[spe_name]:
-                    pre_red_per_spe_f1_ci = ci_string(pre_red_per_species_f1_score[spe_name]['ci'])
-
                 pre_red_per_spe_cnt_abs_err = round(pre_red_per_species_count_abs_err[spe_name]['value'], 2)
                 if 'ci' in pre_red_per_species_count_abs_err[spe_name]:
                     pre_red_per_spe_cnt_abs_err_ci = ci_string(pre_red_per_species_count_abs_err[spe_name]['ci'])
@@ -229,16 +264,7 @@ def write_results_to_log(results_dict, output_path):
                     pre_red_per_spe_cnt_rel_err_ci = ci_string(pre_red_per_species_count_rel_err[spe_name]['ci'])
 
                 # post red button
-                post_red_per_spe_auc_ci, post_red_per_spe_f1_ci = '--', '--'
                 post_red_per_spe_cnt_abs_err_ci, post_red_per_spe_cnt_rel_err_ci = '--', '--'
-
-                post_red_per_spe_auc = round(post_red_per_species_auc[spe_name]['value'], 2)
-                if 'ci' in post_red_per_species_auc[spe_name]:
-                    post_red_per_spe_auc_ci = ci_string(post_red_per_species_auc[spe_name]['ci'])
-
-                post_red_per_spe_f1 = round(post_red_per_species_f1_score[spe_name]['value'], 2)
-                if 'ci' in post_red_per_species_f1_score[spe_name]:
-                    post_red_per_spe_f1_ci = ci_string(post_red_per_species_f1_score[spe_name]['ci'])
 
                 post_red_per_spe_cnt_abs_err = round(post_red_per_species_count_abs_err[spe_name]['value'], 2)
                 if 'ci' in post_red_per_species_count_abs_err[spe_name]:
@@ -248,14 +274,117 @@ def write_results_to_log(results_dict, output_path):
                 if 'ci' in post_red_per_species_count_rel_err[spe_name]:
                     post_red_per_spe_cnt_rel_err_ci = ci_string(post_red_per_species_count_rel_err[spe_name]['ci'])
 
+                # post red button test phase
+                test_post_red_per_spe_cnt_abs_err_ci, test_post_red_per_spe_cnt_rel_err_ci = '--', '--'
+
+                test_post_red_per_spe_cnt_abs_err = round(test_post_red_per_species_count_abs_err[spe_name]['value'], 2)
+                if 'ci' in test_post_red_per_species_count_abs_err[spe_name]:
+                    test_post_red_per_spe_cnt_abs_err_ci = ci_string(test_post_red_per_species_count_abs_err[spe_name]['ci'])
+
+                test_post_red_per_spe_cnt_rel_err = round(test_post_red_per_species_count_rel_err[spe_name]['value'], 2)
+                if 'ci' in test_post_red_per_species_count_rel_err[spe_name]:
+                    test_post_red_per_spe_cnt_rel_err_ci = ci_string(test_post_red_per_species_count_rel_err[spe_name]['ci'])
+
                 summary.write(f'      {species_name:15} ({spe_id}):   '
-                  f'{pre_red_per_spe_auc:5} {pre_red_per_spe_auc_ci:12}   {pre_red_per_spe_f1:5} {pre_red_per_spe_f1_ci:12}   '
-                  f'{pre_red_per_spe_cnt_abs_err:5} {pre_red_per_spe_cnt_abs_err_ci:12}   {pre_red_per_spe_cnt_rel_err:5} '
-                  f'{pre_red_per_spe_cnt_rel_err_ci:12}      {post_red_per_spe_auc:5} {post_red_per_spe_auc_ci:12}   {post_red_per_spe_f1:5} '
-                  f'{post_red_per_spe_f1_ci:12}   {post_red_per_spe_cnt_abs_err:5} {post_red_per_spe_cnt_abs_err_ci:12}   '
-                  f'{post_red_per_spe_cnt_rel_err:5} {post_red_per_spe_cnt_rel_err_ci:12} \n')
+                  f'{pre_red_per_spe_cnt_abs_err:5} {pre_red_per_spe_cnt_abs_err_ci:12}   {pre_red_per_spe_cnt_rel_err:5} {pre_red_per_spe_cnt_rel_err_ci:12}         '
+                  f'{post_red_per_spe_cnt_abs_err:5} {post_red_per_spe_cnt_abs_err_ci:12}   {post_red_per_spe_cnt_rel_err:5} {post_red_per_spe_cnt_rel_err_ci:12}         '
+                  f'{test_post_red_per_spe_cnt_abs_err:5} {test_post_red_per_spe_cnt_abs_err_ci:12}   {test_post_red_per_spe_cnt_rel_err:5} {test_post_red_per_spe_cnt_rel_err_ci:12} \n')
                 
             summary.write(f"{'-'*100}\n")
+
+        # ****
+        # Per species presence
+        summary.write(f'                             *********  Per species presence  *********  \n')
+
+        for test_id in test_ids:
+            # species present
+            pre_red_per_species_auc = results_dict['Per_species_presence'][test_id]['pre_red_btn']['auc']
+            pre_red_per_species_precision = results_dict['Per_species_presence'][test_id]['pre_red_btn']['precision']
+            pre_red_per_species_recall = results_dict['Per_species_presence'][test_id]['pre_red_btn']['recall']
+            pre_red_per_species_f1_score = results_dict['Per_species_presence'][test_id]['pre_red_btn']['f1_score']
+
+            post_red_per_species_auc = results_dict['Per_species_presence'][test_id]['post_red_btn']['auc']
+            post_red_per_species_precision = results_dict['Per_species_presence'][test_id]['post_red_btn']['precision']
+            post_red_per_species_recall = results_dict['Per_species_presence'][test_id]['post_red_btn']['recall']
+            post_red_per_species_f1_score = results_dict['Per_species_presence'][test_id]['post_red_btn']['f1_score']
+
+            test_post_red_per_species_auc = results_dict['Per_species_presence'][test_id]['test_post_red_btn']['auc']
+            test_post_red_per_species_precision = results_dict['Per_species_presence'][test_id]['test_post_red_btn']['precision']
+            test_post_red_per_species_recall = results_dict['Per_species_presence'][test_id]['test_post_red_btn']['recall']
+            test_post_red_per_species_f1_score = results_dict['Per_species_presence'][test_id]['test_post_red_btn']['f1_score']
+
+            species_id2name_mapping = results_dict['Species_id2name'][test_id]
+            species_name2id_mapping = dict((v,k) for k,v in species_id2name_mapping.items())
+
+            summary.write(f'\n                              ---------------  Pre  ------------------   |     ---------------  Post  ------------------    |    ----------------  Test  ------------------------    \n')
+            summary.write(f'                                    AUC                      F1            |         AUC                        F1            |        AUC                        F1                  \n')
+            summary.write(f'{test_id}: \n')
+
+            species_present = list(set(
+                list(pre_red_per_species_auc.keys()) + 
+                list(post_red_per_species_auc.keys()) + 
+                list(test_post_red_per_species_auc.keys())
+                ))
+            species_present_ids = [int(x.split('_')[-1]) if 'unknown' in x else species_name2id_mapping[x] for x in species_present]
+            idx_sort_spe_present = np.argsort(species_present_ids)
+
+            for i in idx_sort_spe_present:
+                spe_name = species_present[i]
+                if 'unknown' in spe_name:
+                    species_name = 'unknown'
+                    spe_id = int(spe_name.split('_')[-1])
+                else:
+                    # this is an empty images
+                    species_name = spe_name
+                    spe_id = species_name2id_mapping[spe_name]
+                
+                # pre red button
+                pre_red_per_spe_auc, pre_red_per_spe_f1 = -1, -1
+                pre_red_per_spe_auc_ci, pre_red_per_spe_f1_ci = '--', '--'
+                
+                if spe_name in pre_red_per_species_auc.keys():
+                    pre_red_per_spe_auc = round(pre_red_per_species_auc[spe_name]['value'], 2)
+                    if 'ci' in pre_red_per_species_auc[spe_name]:
+                        pre_red_per_spe_auc_ci = ci_string(pre_red_per_species_auc[spe_name]['ci'])
+
+                    pre_red_per_spe_f1 = round(pre_red_per_species_f1_score[spe_name]['value'], 2)
+                    if 'ci' in pre_red_per_species_f1_score[spe_name]:
+                        pre_red_per_spe_f1_ci = ci_string(pre_red_per_species_f1_score[spe_name]['ci'])
+
+                # post red button
+                post_red_per_spe_auc, post_red_per_spe_f1 = -1, -1
+                post_red_per_spe_auc_ci, post_red_per_spe_f1_ci = '--', '--'
+                
+                if spe_name in post_red_per_species_auc.keys():
+                    post_red_per_spe_auc = round(post_red_per_species_auc[spe_name]['value'], 2)
+                    if 'ci' in post_red_per_species_auc[spe_name]:
+                        post_red_per_spe_auc_ci = ci_string(post_red_per_species_auc[spe_name]['ci'])
+
+                    post_red_per_spe_f1 = round(post_red_per_species_f1_score[spe_name]['value'], 2)
+                    if 'ci' in post_red_per_species_f1_score[spe_name]:
+                        post_red_per_spe_f1_ci = ci_string(post_red_per_species_f1_score[spe_name]['ci'])
+
+                # post red button test phase
+                test_post_red_per_spe_auc, test_post_red_per_spe_f1 = -1, -1
+                test_post_red_per_spe_auc_ci, test_post_red_per_spe_f1_ci = '--', '--'
+                
+                if spe_name in test_post_red_per_species_auc.keys():
+                    test_post_red_per_spe_auc = round(test_post_red_per_species_auc[spe_name]['value'], 2)
+                    if 'ci' in test_post_red_per_species_auc[spe_name]:
+                        test_post_red_per_spe_auc_ci = ci_string(test_post_red_per_species_auc[spe_name]['ci'])
+
+                    test_post_red_per_spe_f1 = round(test_post_red_per_species_f1_score[spe_name]['value'], 2)
+                    if 'ci' in test_post_red_per_species_f1_score[spe_name]:
+                        test_post_red_per_spe_f1_ci = ci_string(test_post_red_per_species_f1_score[spe_name]['ci'])
+
+
+                summary.write(f'      {species_name:15} ({spe_id}):   '
+                  f'{pre_red_per_spe_auc:5} {pre_red_per_spe_auc_ci:12}   {pre_red_per_spe_f1:5} {pre_red_per_spe_f1_ci:12}         '
+                  f'{post_red_per_spe_auc:5} {post_red_per_spe_auc_ci:12}   {post_red_per_spe_f1:5} {post_red_per_spe_f1_ci:12}         '
+                  f'{test_post_red_per_spe_auc:5} {test_post_red_per_spe_auc_ci:12}   {test_post_red_per_spe_f1:5} {test_post_red_per_spe_f1_ci:12}      \n')
+                
+            summary.write(f"{'-'*100}\n")
+        # ****
         
         summary.write(f"{'_'*150}\n\n")
 
@@ -273,15 +402,24 @@ def write_results_to_log(results_dict, output_path):
             post_red_per_activity_recall = results_dict['Per_activity_presence'][test_id]['post_red_btn']['recall']
             post_red_per_activity_f1_score = results_dict['Per_activity_presence'][test_id]['post_red_btn']['f1_score']
 
+            test_post_red_per_activity_auc = results_dict['Per_activity_presence'][test_id]['test_post_red_btn']['auc']
+            test_post_red_per_activity_precision = results_dict['Per_activity_presence'][test_id]['test_post_red_btn']['precision']
+            test_post_red_per_activity_recall = results_dict['Per_activity_presence'][test_id]['test_post_red_btn']['recall']
+            test_post_red_per_activity_f1_score = results_dict['Per_activity_presence'][test_id]['test_post_red_btn']['f1_score']
+
             activity_id2name_mapping = results_dict['Activity_id2name'][test_id]
             activity_name2id_mapping = dict((v,k) for k,v in activity_id2name_mapping.items())
 
 
-            summary.write(f'                        ---------------  Pre  ---------------    |    ----------------  Post  -------------   \n')
-            summary.write(f'                            AUC                     F1           |           AUC                     F1     \n')
+            summary.write(f'\n                              ---------------  Pre  ------------------  |    ---------------  Post  ----------------    |       -------------  Test  ------------------------    \n')
+            summary.write(f'                                    AUC                      F1           |        AUC                        F1          |         AUC                        F1                  \n')
             summary.write(f'{test_id}: \n')
 
-            present_activities = list(set(list(pre_red_per_activity_auc.keys()) + list(post_red_per_activity_auc.keys())))
+            present_activities = list(set(
+                list(pre_red_per_activity_auc.keys()) + 
+                list(post_red_per_activity_auc.keys()) + 
+                list(test_post_red_per_activity_auc.keys())
+                ))
             activities_present_ids = [int(x.split('_')[-1]) if 'unknown' in x else activity_name2id_mapping[x] for x in present_activities]
             idx_sort_act_present = np.argsort(activities_present_ids)
 
@@ -295,123 +433,154 @@ def write_results_to_log(results_dict, output_path):
                     act_id = activity_name2id_mapping[act_name]
 
                 # pre red button
+                pre_red_per_act_auc, pre_red_per_act_f1 = -1, -1
                 pre_red_per_act_auc_ci, pre_red_per_act_f1_ci = '--', '--'
 
-                pre_red_per_act_auc = round(pre_red_per_activity_auc[act_name]['value'], 2)
-                if 'ci' in pre_red_per_activity_auc[act_name]:
-                    pre_red_per_act_auc_ci = ci_string(pre_red_per_activity_auc[act_name]['ci'])
+                if act_name in pre_red_per_activity_auc.keys():
+                    pre_red_per_act_auc = round(pre_red_per_activity_auc[act_name]['value'], 2)
+                    if 'ci' in pre_red_per_activity_auc[act_name]:
+                        pre_red_per_act_auc_ci = ci_string(pre_red_per_activity_auc[act_name]['ci'])
 
-                pre_red_per_act_f1 = round(pre_red_per_activity_f1_score[act_name]['value'], 2)
-                if 'ci' in pre_red_per_activity_f1_score[act_name]:
-                    pre_red_per_act_f1_ci = ci_string(pre_red_per_activity_f1_score[act_name]['ci'])
+                    pre_red_per_act_f1 = round(pre_red_per_activity_f1_score[act_name]['value'], 2)
+                    if 'ci' in pre_red_per_activity_f1_score[act_name]:
+                        pre_red_per_act_f1_ci = ci_string(pre_red_per_activity_f1_score[act_name]['ci'])
 
                 # post red button
+                post_red_per_act_auc, post_red_per_act_f1 = -1, -1
                 post_red_per_act_auc_ci, post_red_per_act_f1_ci = '--', '--'
 
-                post_red_per_act_auc = round(post_red_per_activity_auc[act_name]['value'], 2)
-                if 'ci' in post_red_per_activity_auc[act_name]:
-                    post_red_per_act_auc_ci = ci_string(post_red_per_activity_auc[act_name]['ci'])
+                if act_name in post_red_per_activity_auc.keys():
+                    post_red_per_act_auc = round(post_red_per_activity_auc[act_name]['value'], 2)
+                    if 'ci' in post_red_per_activity_auc[act_name]:
+                        post_red_per_act_auc_ci = ci_string(post_red_per_activity_auc[act_name]['ci'])
 
-                post_red_per_act_f1 = round(post_red_per_activity_f1_score[act_name]['value'], 2)
-                if 'ci' in post_red_per_activity_f1_score[act_name]:
-                    post_red_per_act_f1_ci = ci_string(post_red_per_activity_f1_score[act_name]['ci'])
+                    post_red_per_act_f1 = round(post_red_per_activity_f1_score[act_name]['value'], 2)
+                    if 'ci' in post_red_per_activity_f1_score[act_name]:
+                        post_red_per_act_f1_ci = ci_string(post_red_per_activity_f1_score[act_name]['ci'])
+
+                # post red button test phase
+                test_post_red_per_act_auc, test_post_red_per_act_f1 = -1, -1
+                test_post_red_per_act_auc_ci, test_post_red_per_act_f1_ci = '--', '--'
+
+                if act_name in test_post_red_per_activity_auc.keys():
+                    test_post_red_per_act_auc = round(test_post_red_per_activity_auc[act_name]['value'], 2)
+                    if 'ci' in test_post_red_per_activity_auc[act_name]:
+                        test_post_red_per_act_auc_ci = ci_string(test_post_red_per_activity_auc[act_name]['ci'])
+
+                    test_post_red_per_act_f1 = round(test_post_red_per_activity_f1_score[act_name]['value'], 2)
+                    if 'ci' in test_post_red_per_activity_f1_score[act_name]:
+                        test_post_red_per_act_f1_ci = ci_string(test_post_red_per_activity_f1_score[act_name]['ci'])
 
                 summary.write(f'       {activity_name:10} ({act_id}): '
-                  f'{pre_red_per_act_auc:5} {pre_red_per_act_auc_ci:12}   {pre_red_per_act_f1:5} {pre_red_per_act_f1_ci:12}       '
-                  f'{post_red_per_act_auc:5}  {post_red_per_act_auc_ci:12}   {post_red_per_act_f1:5} {post_red_per_act_f1_ci:12} \n')
+                  f'{pre_red_per_act_auc:5} {pre_red_per_act_auc_ci:12}   {pre_red_per_act_f1:5} {pre_red_per_act_f1_ci:12}         '
+                  f'{post_red_per_act_auc:5}  {post_red_per_act_auc_ci:12}   {post_red_per_act_f1:5} {post_red_per_act_f1_ci:12}         '
+                  f'{test_post_red_per_act_auc:5}  {test_post_red_per_act_auc_ci:12}   {test_post_red_per_act_f1:5} {test_post_red_per_act_f1_ci:12}       \n')
                 
             summary.write(f"{'-'*60}\n")
 
 
 def print_confusion_matrices(results_dict, out_file):
     test_ids = sorted(list(results_dict['Red_button'].keys()))
-
+    phases = ['pre_red_btn', 'post_red_btn', 'test_post_red_btn']
+    phases_abrv = ['pre_rb', 'pos_rb', 'test']
     with PdfPages(out_file) as pdf_pages:
         # plot confusion matrix of species
         for test_id in test_ids:
-            species_ids = results_dict['Confusion_matrices'][test_id]['species']['species_ids']
-            species_cm = results_dict['Confusion_matrices'][test_id]['species']['cm']
+            for i, phase in enumerate(phases):
+                species_cm = results_dict['Confusion_matrices'][test_id]['species'][phase]['cm']
+                species_ids = results_dict['Confusion_matrices'][test_id]['species'][phase]['species_ids']
 
-            species_id2name_mapping = results_dict['Species_id2name'][test_id]
+                if species_cm is None or species_ids is None:
+                    continue
 
-            species_names = [species_id2name_mapping[i] for i in sorted(species_ids)]
+                species_id2name_mapping = results_dict['Species_id2name'][test_id]
+
+                species_names = [species_id2name_mapping[j] for j in sorted(species_ids)]
 
 
-            # Print count version
-            
-            fig = plt.figure('', figsize=[11, 8])
-            # ax = plt.axes()
-            ax = fig.add_subplot(111)
-            sns.heatmap(species_cm,
-                        annot=True,
-                        fmt="d",
-                        cmap='Blues',)
-            ax.xaxis.set_ticklabels(species_names, fontsize=8, rotation=45)
-            ax.yaxis.set_ticklabels(species_names, fontsize=8,  rotation='horizontal')
-            ax.set_ylabel("True label")
-            ax.tick_params(axis='x', which='major', labelbottom=False, bottom=False, top=True, labeltop=True)
-            ax.set_title(f"{test_id}: species confusion matrix")
-            fig.tight_layout()
-            pdf_pages.savefig()
-            plt.close()
-            '''
+                # Print count version
+                
+                fig = plt.figure('', figsize=[11, 8])
+                # ax = plt.axes()
+                ax = fig.add_subplot(111)
+                sns.heatmap(species_cm,
+                            annot=True,
+                            fmt="d",
+                            cmap='Blues',)
+                ax.xaxis.set_ticklabels(species_names, fontsize=8, rotation=45)
+                ax.yaxis.set_ticklabels(species_names, fontsize=8,  rotation='horizontal')
+                ax.set_ylabel("True label")
+                ax.tick_params(axis='x', which='major', labelbottom=False, bottom=False, top=True, labeltop=True)
+                ax.set_title(f"{test_id}: {phases_abrv[i]} species CM")
+                fig.tight_layout()
+                pdf_pages.savefig()
+                plt.close()
+                '''
 
-            fig = plt.figure('pre red button', figsize=[11, 8])
-            # ax = plt.axes()
-            ax = fig.add_subplot(211)
-            sns.heatmap(pre_red_species_cm,
-                        annot=True,
-                        fmt="d",
-                        cmap='Blues',)
-            ax.xaxis.set_ticklabels(pre_red_species_names, fontsize=8, rotation=45)
-            ax.yaxis.set_ticklabels(pre_red_species_names, fontsize=8,  rotation='horizontal')
-            ax.set_ylabel("True label")
-            ax.set_title(f"{test_id}: pre red btn species confusion matrix")
-            ax.tick_params(axis='x', which='major', labelbottom=False, bottom=False, top=True, labeltop=True)
+                fig = plt.figure('pre red button', figsize=[11, 8])
+                # ax = plt.axes()
+                ax = fig.add_subplot(211)
+                sns.heatmap(pre_red_species_cm,
+                            annot=True,
+                            fmt="d",
+                            cmap='Blues',)
+                ax.xaxis.set_ticklabels(pre_red_species_names, fontsize=8, rotation=45)
+                ax.yaxis.set_ticklabels(pre_red_species_names, fontsize=8,  rotation='horizontal')
+                ax.set_ylabel("True label")
+                ax.set_title(f"{test_id}: pre red btn species confusion matrix")
+                ax.tick_params(axis='x', which='major', labelbottom=False, bottom=False, top=True, labeltop=True)
 
-            # fig = plt.figure('post red button', figsize=[11, 8])
-            # ax = plt.axes()
-            ax = fig.add_subplot(212)
-            sns.heatmap(post_red_species_cm,
-                        annot=True,
-                        fmt="d",
-                        cmap='Blues',)
-            ax.xaxis.set_ticklabels(post_red_species_names, fontsize=8, rotation=45)
-            ax.yaxis.set_ticklabels(post_red_species_names, fontsize=8, rotation='horizontal')
-            ax.set_ylabel("True label")
-            ax.set_title(f"{test_id}: post red btn species confusion matrix")
-            ax.tick_params(axis='x', which='major', labelbottom=False, bottom=False, top=True, labeltop=True)
-            fig.tight_layout()
-            pdf_pages.savefig()
-            plt.close()
-            '''
+                # fig = plt.figure('post red button', figsize=[11, 8])
+                # ax = plt.axes()
+                ax = fig.add_subplot(212)
+                sns.heatmap(post_red_species_cm,
+                            annot=True,
+                            fmt="d",
+                            cmap='Blues',)
+                ax.xaxis.set_ticklabels(post_red_species_names, fontsize=8, rotation=45)
+                ax.yaxis.set_ticklabels(post_red_species_names, fontsize=8, rotation='horizontal')
+                ax.set_ylabel("True label")
+                ax.set_title(f"{test_id}: post red btn species confusion matrix")
+                ax.tick_params(axis='x', which='major', labelbottom=False, bottom=False, top=True, labeltop=True)
+                fig.tight_layout()
+                pdf_pages.savefig()
+                plt.close()
+                '''
 
         # plot confusion matrix of activities
         for test_id in test_ids:
-            activity_ids = results_dict['Confusion_matrices'][test_id]['activity']['activity_ids']
-            activity_cm = results_dict['Confusion_matrices'][test_id]['activity']['cm']
+            for i, phase in enumerate(phases):
+                activity_cm = results_dict['Confusion_matrices'][test_id]['activity'][phase]['cm']
+                activity_ids = results_dict['Confusion_matrices'][test_id]['activity'][phase]['activity_ids']
 
-            activity_id2name_mapping = results_dict['Activity_id2name'][test_id]
+                if activity_cm is None or activity_ids is None:
+                    continue
 
-            activity_names = [activity_id2name_mapping[i] for i in sorted(activity_ids)]
+                activity_id2name_mapping = results_dict['Activity_id2name'][test_id]
 
+                # activity_names = [activity_id2name_mapping[j] for j in sorted(activity_ids)]
+                activity_names = []
+                for j in sorted(activity_ids):
+                    if j in activity_id2name_mapping.keys():
+                        activity_names.append(activity_id2name_mapping[j])
+                    else:
+                        activity_names.append('activity '+str(j))
 
-            # Print count version
-            
-            fig = plt.figure('', figsize=[11, 8])
-            # ax = plt.axes()
-            ax = fig.add_subplot(111)
-            sns.heatmap(activity_cm,
-                        annot=True,
-                        fmt="d",
-                        cmap='Blues',)
-            ax.xaxis.set_ticklabels(activity_names, fontsize=8, rotation=45)
-            ax.yaxis.set_ticklabels(activity_names, fontsize=8,  rotation='horizontal')
-            ax.set_ylabel("True label")
-            ax.tick_params(axis='x', which='major', labelbottom=False, bottom=False, top=True, labeltop=True)
-            ax.set_title(f"{test_id}: activities confusion matrix")
-            fig.tight_layout()
-            pdf_pages.savefig()
-            plt.close()
-
+                # Print count version
+                
+                fig = plt.figure('', figsize=[11, 8])
+                # ax = plt.axes()
+                ax = fig.add_subplot(111)
+                sns.heatmap(activity_cm,
+                            annot=True,
+                            fmt="d",
+                            cmap='Blues',)
+                ax.xaxis.set_ticklabels(activity_names, fontsize=8, rotation=45)
+                ax.yaxis.set_ticklabels(activity_names, fontsize=8,  rotation='horizontal')
+                ax.set_ylabel("True label")
+                ax.tick_params(axis='x', which='major', labelbottom=False, bottom=False, top=True, labeltop=True)
+                ax.set_title(f"{test_id}: {phases_abrv[i]} activities CM")
+                fig.tight_layout()
+                pdf_pages.savefig()
+                plt.close()
 
