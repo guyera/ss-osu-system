@@ -6,7 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 import seaborn as sns
 
-from reliability_diagrams import *
+from sklearn.calibration import calibration_curve
 
 
 def percent_string(num, denom=None):
@@ -588,6 +588,78 @@ def print_confusion_matrices(results_dict, out_file):
 
 
 def print_reliability_diagrams(results_dict, out_file):
+    test_ids = sorted(list(results_dict['Red_button'].keys()))
+    phases = ['pre_red_btn', 'post_red_btn', 'test_post_red_btn']
+    phases_abrv = ['pre_rb', 'pos_rb', 'test']
+    num_bins = 40
+    with PdfPages(out_file) as pdf_pages:
+        # plot confusion matrix of species
+        for test_id in test_ids:
+            for i, phase in enumerate(phases):
+                y_true = results_dict['Prediction_confidence'][test_id]['species'][phase]['ground_true']
+                pred_prob = results_dict['Prediction_confidence'][test_id]['species'][phase]['confidence']
+
+                if y_true is None or pred_prob is None:
+                    continue
+                
+                fig = plt.figure('', figsize=[10, 10])
+                # ax = plt.axes()
+                # ax = fig.add_subplot(111)
+                ax1 = plt.subplot2grid((3, 1), (0, 0), rowspan=2)
+                ax2 = plt.subplot2grid((3, 1), (2, 0))
+
+                prob_true, prob_pred = calibration_curve(y_true, pred_prob, n_bins=num_bins)
+                ax1.plot(prob_pred, prob_true, "s-")
+                ax1.axline([0, 0], [1, 1], color='gray', ls='--')
+
+                ax2.hist(pred_prob, range=(0, 1), bins=num_bins, histtype="step", lw=2)
+
+                ax1.set_ylabel("Fraction of positives")
+                ax1.set_xlabel("Mean predicted value")
+                ax1.set_title(f"{test_id}: {phases_abrv[i]} species (Reliability Curve)")
+
+                ax2.set_xlabel("Mean predicted value")
+                ax2.set_ylabel("Count")
+                # ax2.legend(loc="upper center", ncol=2)
+
+                fig.tight_layout()
+                pdf_pages.savefig()
+                plt.close()
+
+        # plot confusion matrix of activities
+        for test_id in test_ids:
+            for i, phase in enumerate(phases):
+                y_true = results_dict['Prediction_confidence'][test_id]['activity'][phase]['ground_true']
+                pred_prob = results_dict['Prediction_confidence'][test_id]['activity'][phase]['confidence']
+
+                if y_true is None or pred_prob is None:
+                    continue
+                
+                fig = plt.figure('', figsize=[10, 10])
+                # ax = plt.axes()
+                ax1 = plt.subplot2grid((3, 1), (0, 0), rowspan=2)
+                ax2 = plt.subplot2grid((3, 1), (2, 0))
+
+                prob_true, prob_pred = calibration_curve(y_true, pred_prob, n_bins=num_bins)
+                ax1.plot(prob_pred, prob_true, "s-")
+                ax1.axline([0, 0], [1, 1], color='gray', ls='--')
+
+                ax2.hist(pred_prob, range=(0, 1), bins=num_bins, histtype="step", lw=2)
+                
+                ax1.set_ylabel("Fraction of positives")
+                ax1.set_xlabel("Mean predicted value")
+                ax1.set_title(f"{test_id}: {phases_abrv[i]} activities (Reliability Curve)")
+
+                ax2.set_xlabel("Mean predicted value")
+                ax2.set_ylabel("Count")
+                # ax2.legend(loc="upper center", ncol=2)
+
+                fig.tight_layout()
+                pdf_pages.savefig()
+                plt.close()
+
+
+def __print_reliability_diagrams(results_dict, out_file):
     test_ids = sorted(list(results_dict['Red_button'].keys()))
     phases = ['pre_red_btn', 'post_red_btn', 'test_post_red_btn']
     phases_abrv = ['pre_rb', 'pos_rb', 'test']

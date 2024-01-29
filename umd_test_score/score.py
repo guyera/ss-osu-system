@@ -946,6 +946,26 @@ def score_test_from_boxes(
     species_id2name_mapping = {}
     activity_id2name_mapping = {}
 
+    # *** this set of variables are used to computed the per species expected calibration error ****
+    # list of predicted probability for species presence in bounding boxes
+    pre_red_pred_prob_spe_in_box = []  # list of predicted probabilities for species in bbox
+    post_red_pred_prob_spe_in_box = []
+    test_post_red_pred_prob_spe_in_box = []
+
+    pre_red_grd_truth_spe_in_box_yn = []
+    post_red_grd_truth_spe_in_box_yn = []
+    test_post_red_grd_truth_spe_in_box_yn = []
+
+    # list of predicted probability for activity presence in bounding boxes
+    pre_red_pred_prob_act_in_box = []
+    post_red_pred_prob_act_in_box = []
+    test_post_red_pred_prob_act_in_box = []
+
+    pre_red_grd_truth_act_in_box_yn = []
+    post_red_grd_truth_act_in_box_yn = []
+    test_post_red_grd_truth_act_in_box_yn = []
+    # ********
+
     pre_red_abs_err_count, pre_red_rel_err_count = {}, {}
     post_red_abs_err_count, post_red_rel_err_count = {}, {}
     test_post_red_abs_err_count, test_post_red_rel_err_count = {}, {}
@@ -1000,7 +1020,7 @@ def score_test_from_boxes(
             
             spe_boxes_pred = bboxes_prediction_dict[test_tuple.image_path]['species_probs']
             pred_spe_in_boxes = np.argmax(spe_boxes_pred, axis=1)
-            for id_spe_pred in pred_spe_in_boxes:
+            for ii, id_spe_pred in enumerate(pred_spe_in_boxes):
                 onehot_pred_spe = [0] * total_nbr_species
                 onehot_pred_spe[id_spe_pred] = 1
 
@@ -1012,17 +1032,26 @@ def score_test_from_boxes(
                     pre_red_pred_spe_in_box.append(onehot_pred_spe)
                     pre_red_grd_truth_spe_in_box.append(onehot_grd_trth)
 
-                    # if test_tuple.agent1_name not in pre_red_pred_prob_spe_in_box.keys():
-                    #     pre_red_pred_prob_spe_in_box[test_tuple.agent1_name] = [spe_boxes_pred[id_spe_pred]]
+                    # get presence prob for all species to compute the calibration curve
+                    pre_red_pred_prob_spe_in_box += list(spe_boxes_pred[ii, :])
+                    pre_red_grd_truth_spe_in_box_yn += onehot_grd_trth
 
                 elif pos < start_test_phase:
                     # This is post-novelty image
                     post_red_pred_spe_in_box.append(onehot_pred_spe)
                     post_red_grd_truth_spe_in_box.append(onehot_grd_trth)
+
+                    # get presence prob for all species to compute the calibration curve
+                    post_red_pred_prob_spe_in_box += list(spe_boxes_pred[ii, :])
+                    post_red_grd_truth_spe_in_box_yn += onehot_grd_trth
                 else:
                     # This is a test image
                     test_post_red_pred_spe_in_box.append(onehot_pred_spe)
                     test_post_red_grd_truth_spe_in_box.append(onehot_grd_trth)
+
+                    # get presence prob for all species to compute the calibration curve
+                    test_post_red_pred_prob_spe_in_box += list(spe_boxes_pred[ii, :])
+                    test_post_red_grd_truth_spe_in_box_yn += onehot_grd_trth
 
                 
         if not pd.isnull(test_tuple.agent3_id):
@@ -1060,8 +1089,9 @@ def score_test_from_boxes(
 
             nbr_imgs_w_single_act += 1
 
-            pred_act_in_boxes = np.argmax(bboxes_prediction_dict[test_tuple.image_path]['activity_probs'], axis=1)
-            for id_act_pred in pred_act_in_boxes:
+            act_boxes_pred = bboxes_prediction_dict[test_tuple.image_path]['activity_probs']
+            pred_act_in_boxes = np.argmax(act_boxes_pred, axis=1)
+            for ii, id_act_pred in enumerate(pred_act_in_boxes):
                 onehot_pred_act = [0] * total_nbr_activities
                 onehot_pred_act[id_act_pred] = 1
 
@@ -1072,14 +1102,25 @@ def score_test_from_boxes(
                     # This is prenovelty image
                     pre_red_pred_act_in_box.append(onehot_pred_act)
                     pre_red_grd_truth_act_in_box.append(onehot_grd_trth_act)
+
+                    # get presence prob for all activities to compute the calibration curve
+                    pre_red_pred_prob_act_in_box += list(act_boxes_pred[ii, :])
+                    pre_red_grd_truth_act_in_box_yn += onehot_grd_trth_act
                 elif pos < start_test_phase:
                     # This is post-novelty image
                     post_red_pred_act_in_box.append(onehot_pred_act)
                     post_red_grd_truth_act_in_box.append(onehot_grd_trth_act)
+
+                    # get presence prob for all activities to compute the calibration curve
+                    post_red_pred_prob_act_in_box += list(act_boxes_pred[ii, :])
+                    post_red_grd_truth_act_in_box_yn += onehot_grd_trth_act
                 else:
                     # This is a test image
                     test_post_red_pred_act_in_box.append(onehot_pred_act)
                     test_post_red_grd_truth_act_in_box.append(onehot_grd_trth_act)
+
+                    test_post_red_pred_prob_act_in_box += list(act_boxes_pred[ii, :])
+                    test_post_red_grd_truth_act_in_box_yn += onehot_grd_trth_act
         # *********************************
 
     # ** new column names
@@ -1493,10 +1534,6 @@ def score_test_from_boxes(
 
     # *****************************  SPECIES COUNT PERFORMANCE  ********************************
 
-    num_pre_red_img_w_spe = all_grd_truth_spe_counts.iloc[:total_pre_red_btn].astype(bool).sum(axis=0)
-    num_post_red_img_w_spe = all_grd_truth_spe_counts.iloc[total_pre_red_btn:start_test_phase].astype(bool).sum(axis=0)
-    num_test_post_red_img_w_spe = all_grd_truth_spe_counts.iloc[start_test_phase:].astype(bool).sum(axis=0)
-
     # Save predicted counts and ground truth for debugging
     if output_dir is not None:
         tmp_dir = os.path.join(output_dir, 'temp_csv_files')
@@ -1505,6 +1542,10 @@ def score_test_from_boxes(
 
         all_pred_spe_counts.to_csv(os.path.join(tmp_dir, f'{test_id}_pred_spe_count.csv'))
         all_grd_truth_spe_counts.to_csv(os.path.join(tmp_dir, f'{test_id}_grd_trth_spe_count.csv'))
+
+    num_pre_red_img_w_spe = all_grd_truth_spe_counts.iloc[:total_pre_red_btn].astype(bool).sum(axis=0)
+    num_post_red_img_w_spe = all_grd_truth_spe_counts.iloc[total_pre_red_btn:start_test_phase].astype(bool).sum(axis=0)
+    num_test_post_red_img_w_spe = all_grd_truth_spe_counts.iloc[start_test_phase:].astype(bool).sum(axis=0)
 
     for spe in all_grd_truth_spe_counts.columns:
         if spe not in species_id2name_mapping.values():
@@ -1896,19 +1937,16 @@ def score_test_from_boxes(
     # Species predicted class, ground truth and confidence (use for reliability diagram)
     species_conf = {
         'pre_red_btn': {
-            'ground_true': pre_red_spe_grd_trth,
-            'pred_class': pre_red_spe_pred,
-            'confidence': np.max(pre_red_pred_spe_in_box, axis=1)
+            'ground_true': np.array(pre_red_grd_truth_spe_in_box_yn).ravel(),
+            'confidence': np.array(pre_red_pred_prob_spe_in_box).ravel()
         },
         'post_red_btn': {
-            'ground_true': post_red_spe_grd_trth if len(post_red_pred_spe_in_box) > 0 else None,
-            'pred_class': post_red_spe_pred if len(post_red_pred_spe_in_box) > 0 else None,
-            'confidence': np.max(post_red_pred_spe_in_box, axis=1) if len(post_red_pred_spe_in_box) > 0 else None
+            'ground_true': np.array(post_red_grd_truth_spe_in_box_yn).ravel() if len(post_red_pred_spe_in_box) > 0 else None,
+            'confidence': np.array(post_red_pred_prob_spe_in_box).ravel() if len(post_red_pred_spe_in_box) > 0 else None
         },
         'test_post_red_btn': {
-            'ground_true': test_post_red_spe_grd_trth if len(test_post_red_pred_spe_in_box) > 0 else None,
-            'pred_class': test_post_red_spe_pred if len(test_post_red_pred_spe_in_box) > 0 else None,
-            'confidence': np.max(test_post_red_pred_spe_in_box, axis=1) if len(test_post_red_pred_spe_in_box) > 0 else None
+            'ground_true': np.array(test_post_red_grd_truth_spe_in_box_yn).ravel() if len(post_red_pred_spe_in_box) > 0 else None,
+            'confidence': np.array(test_post_red_pred_prob_spe_in_box).ravel() if len(post_red_pred_spe_in_box) > 0 else None
         }
     }
     all_performances['Prediction_confidence'][test_id] = {
@@ -2312,19 +2350,16 @@ def score_test_from_boxes(
     # Activity predicted class, ground truth and confidence (use for reliability diagram)
     actvity_conf = {
         'pre_red_btn': {
-            'ground_true': pre_red_act_grd_trth,
-            'pred_class': pre_red_act_pred,
-            'confidence': np.max(pre_red_pred_act_in_box, axis=1)
+            'ground_true': np.array(pre_red_grd_truth_act_in_box_yn).ravel(),
+            'confidence': np.array(pre_red_pred_prob_act_in_box).ravel()
         },
         'post_red_btn': {
-            'ground_true': post_red_act_grd_trth if len(post_red_pred_act_in_box) > 0 else None,
-            'pred_class': post_red_act_pred if len(post_red_pred_act_in_box) > 0 else None,
-            'confidence': np.max(post_red_pred_act_in_box, axis=1) if len(post_red_pred_act_in_box) > 0 else None
+            'ground_true': np.array(post_red_grd_truth_act_in_box_yn).ravel() if len(post_red_pred_spe_in_box) > 0 else None,
+            'confidence': np.array(post_red_pred_prob_act_in_box).ravel() if len(post_red_pred_spe_in_box) > 0 else None
         },
         'test_post_red_btn': {
-            'ground_true': test_post_red_act_grd_trth if len(test_post_red_pred_act_in_box) > 0 else None,
-            'pred_class': test_post_red_act_pred if len(test_post_red_pred_act_in_box) > 0 else None,
-            'confidence': np.max(test_post_red_pred_act_in_box, axis=1) if len(test_post_red_pred_act_in_box) > 0 else None
+            'ground_true': np.array(test_post_red_grd_truth_act_in_box_yn).ravel() if len(post_red_pred_spe_in_box) > 0 else None,
+            'confidence': np.array(test_post_red_pred_prob_act_in_box).ravel() if len(post_red_pred_spe_in_box) > 0 else None
         }
     }
     all_performances['Prediction_confidence'][test_id]['activity'] = actvity_conf
