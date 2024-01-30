@@ -19,8 +19,8 @@ import numpy as np
 import sklearn.metrics as metrics
 import ast
 
-from write_results import write_results_to_csv, write_results_to_log, \
-    print_confusion_matrices, print_reliability_diagrams
+from write_results import write_results_to_log, print_confusion_matrices, print_reliability_diagrams
+from write_results_known_vs_novel import write_results_to_csv
 from helpers import species_count_error, percent_string
 from boostrap_conf_int import boostrap_conf_interval
 
@@ -902,6 +902,18 @@ def score_test_from_boxes(
     # index where test phase starts in the trial
     start_test_phase = len_test - len_test_phase  
 
+    # indices novel images
+    print('\n\ntest_df head:', test_df.head())
+    print('\n\ntest_df columns:', test_df.columns)
+    idx_novel = test_df.loc[test_df['novel'] == 1].index
+    idx_novel_test_post_red = [x for x in idx_novel if x >= start_test_phase]
+    idx_novel_post_red = [x for x in idx_novel if x not in idx_novel_test_post_red]
+
+    # indices novel images
+    idx_known = test_df.loc[test_df['novel'] == 0].index
+    idx_known_test_post_red = [x for x in idx_known if x >= start_test_phase]
+    idx_known_post_red = [x for x in idx_known if x not in idx_known_test_post_red]
+
     spe_counts_cols = [x for x in class_lines[0].split(',') if 'species_' in x and '_count' in x]
 
     spe_presence_cols = [x for x in class_lines[0].split(',') if 'species_' in x and '_presence' in x]
@@ -1171,10 +1183,39 @@ def score_test_from_boxes(
 
     for act in all_grd_truth_act_presence.columns:
         if act not in activity_id2name_mapping.values():
-            pre_red_per_act_auc[act], post_red_per_act_auc[act] = {'value': -1}, {'value': -1}
-            pre_red_per_act_precision[act], post_red_per_act_precision[act] = {'value': -1}, {'value': -1}
-            pre_red_per_act_recall[act], post_red_per_act_recall[act] = {'value': -1}, {'value': -1}
-            pre_red_per_act_f1[act], post_red_per_act_f1[act] = {'value': -1}, {'value': -1}
+            pre_red_per_act_auc[act] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            pre_red_per_act_precision[act] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            pre_red_per_act_recall[act] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            pre_red_per_act_f1[act] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+
+            post_red_per_act_auc[act] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            post_red_per_act_precision[act] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            post_red_per_act_recall[act] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            post_red_per_act_f1[act] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
             continue
 
         # ---------->>  Activity presence AUC  <<----------
@@ -1195,57 +1236,117 @@ def score_test_from_boxes(
             else:
                 pre_red_auc_ci = -1
 
-            pre_red_per_act_auc[act] = {'value': pre_red_auc, 'ci': pre_red_auc_ci}
+            pre_red_per_act_auc[act] = {
+                'known': {'value': pre_red_auc, 'ci': pre_red_auc_ci},
+                'novel': {'value': -1}
+                }
         else:
-            pre_red_per_act_auc[act] = {'value': -1}
+            pre_red_per_act_auc[act] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+                }
+            
 
         # ** post red button AUC
         # check that there's at least two classes in the ground truth presence label
-        if len(all_grd_truth_act_presence[act].iloc[total_pre_red_btn:start_test_phase].unique()) > 1:
-            post_red_auc = metrics.roc_auc_score(
-                    all_grd_truth_act_presence[act].iloc[total_pre_red_btn:start_test_phase], 
-                    all_pred_act_presence[act].iloc[total_pre_red_btn:start_test_phase]
+        # +++ known
+        if len(all_grd_truth_act_presence[act].iloc[idx_known_post_red].unique()) > 1:
+            post_red_auc_known = metrics.roc_auc_score(
+                    all_grd_truth_act_presence[act].iloc[idx_known_post_red], 
+                    all_pred_act_presence[act].iloc[idx_known_post_red]
                 )
             
             if estimate_ci:
-                post_red_auc_ci = boostrap_conf_interval(
-                    y_true=all_grd_truth_act_presence[act].iloc[total_pre_red_btn:start_test_phase].to_numpy(), 
-                    y_pred=all_pred_act_presence[act].iloc[total_pre_red_btn:start_test_phase].to_numpy(), 
+                post_red_auc_ci_known = boostrap_conf_interval(
+                    y_true=all_grd_truth_act_presence[act].iloc[idx_known_post_red].to_numpy(), 
+                    y_pred=all_pred_act_presence[act].iloc[idx_known_post_red].to_numpy(), 
                     metric_name='auc', 
                     n_samples=nbr_samples_conf_int
                 )
             else:
-                post_red_auc_ci = -1
+                post_red_auc_ci_known = -1
 
-            post_red_per_act_auc[act] = {'value': post_red_auc, 'ci': post_red_auc_ci}
+            post_red_per_act_auc[act] = {
+                'known': {'value': post_red_auc_known, 'ci': post_red_auc_ci_known}
+            }
         else:
-            post_red_per_act_auc[act] = {'value': -1}
+            post_red_per_act_auc[act] = {
+                'known': {'value': -1}
+            }
+
+        # novel
+        if len(all_grd_truth_act_presence[act].iloc[idx_novel_post_red].unique()) > 1:
+            post_red_auc_novel = metrics.roc_auc_score(
+                    all_grd_truth_act_presence[act].iloc[idx_novel_post_red], 
+                    all_pred_act_presence[act].iloc[idx_novel_post_red]
+                )
+            
+            if estimate_ci:
+                post_red_auc_ci_novel = boostrap_conf_interval(
+                    y_true=all_grd_truth_act_presence[act].iloc[idx_novel_post_red].to_numpy(), 
+                    y_pred=all_pred_act_presence[act].iloc[idx_novel_post_red].to_numpy(), 
+                    metric_name='auc', 
+                    n_samples=nbr_samples_conf_int
+                )
+            else:
+                post_red_auc_ci_novel = -1
+
+            post_red_per_act_auc[act]['novel'] = {'value': post_red_auc_novel, 'ci': post_red_auc_ci_novel}
+        else:
+            post_red_per_act_auc[act]['novel'] = {'value': -1}
 
         # ** post red button test phase AUC
         # check that there's at least two classes in the ground truth presence label
-        if len(all_grd_truth_act_presence[act].iloc[start_test_phase:].unique()) > 1:
-            test_post_red_auc = metrics.roc_auc_score(
-                    all_grd_truth_act_presence[act].iloc[start_test_phase:], 
-                    all_pred_act_presence[act].iloc[start_test_phase:]
+        # ++++ Known
+        if len(all_grd_truth_act_presence[act].iloc[idx_known_test_post_red].unique()) > 1:
+            test_post_red_auc_known = metrics.roc_auc_score(
+                    all_grd_truth_act_presence[act].iloc[idx_known_test_post_red], 
+                    all_pred_act_presence[act].iloc[idx_known_test_post_red]
                 )
             
             if estimate_ci:
-                test_post_red_auc_ci = boostrap_conf_interval(
-                    y_true=all_grd_truth_act_presence[act].iloc[start_test_phase:].to_numpy(), 
-                    y_pred=all_pred_act_presence[act].iloc[start_test_phase:].to_numpy(), 
+                test_post_red_auc_ci_known = boostrap_conf_interval(
+                    y_true=all_grd_truth_act_presence[act].iloc[idx_known_test_post_red].to_numpy(), 
+                    y_pred=all_pred_act_presence[act].iloc[idx_known_test_post_red].to_numpy(), 
                     metric_name='auc', 
                     n_samples=nbr_samples_conf_int
                 )
             else:
-                test_post_red_auc_ci = -1
+                test_post_red_auc_ci_known = -1
 
-            test_post_red_per_act_auc[act] = {'value': test_post_red_auc, 'ci': test_post_red_auc_ci}
+            test_post_red_per_act_auc[act] = {
+                'known': {'value': test_post_red_auc_known, 'ci': test_post_red_auc_ci_known}
+                }
         else:
-            test_post_red_per_act_auc[act] = {'value': -1}
+            test_post_red_per_act_auc[act] = {
+                'known': {'value': -1}
+                }
+
+        # check that there's at least two classes in the ground truth presence label
+        # +++ Novel
+        if len(all_grd_truth_act_presence[act].iloc[idx_novel_test_post_red].unique()) > 1:
+            test_post_red_auc_novel = metrics.roc_auc_score(
+                    all_grd_truth_act_presence[act].iloc[idx_novel_test_post_red], 
+                    all_pred_act_presence[act].iloc[idx_novel_test_post_red]
+                )
+            
+            if estimate_ci:
+                test_post_red_auc_ci_novel = boostrap_conf_interval(
+                    y_true=all_grd_truth_act_presence[act].iloc[idx_novel_test_post_red].to_numpy(), 
+                    y_pred=all_pred_act_presence[act].iloc[idx_novel_test_post_red].to_numpy(), 
+                    metric_name='auc', 
+                    n_samples=nbr_samples_conf_int
+                )
+            else:
+                test_post_red_auc_ci_novel = -1
+
+            test_post_red_per_act_auc[act]['novel'] = {'value': test_post_red_auc_novel, 'ci': test_post_red_auc_ci_novel}
+        else:
+            test_post_red_per_act_auc[act]['novel'] = {'value': -1}
 
 
         # ---------->>  Activity presence Precision, Recall, F1  <<----------
-        # if act_presence_threshold:
+        # ++++ Known
         all_pred_act_presence_yn = all_pred_act_presence.copy(deep=True)
         all_pred_act_presence_yn = (all_pred_act_presence_yn >= act_presence_threshold).astype(int)
         try:
@@ -1255,15 +1356,15 @@ def score_test_from_boxes(
                 average='binary',
                 zero_division=0.0
             )
-            post_red_precision, post_red_rec, post_red_f1, _ = metrics.precision_recall_fscore_support(
-                all_grd_truth_act_presence[act].iloc[total_pre_red_btn:start_test_phase], 
-                all_pred_act_presence_yn[act].iloc[total_pre_red_btn:start_test_phase],
+            post_red_precision_known, post_red_rec_known, post_red_f1_known, _ = metrics.precision_recall_fscore_support(
+                all_grd_truth_act_presence[act].iloc[idx_known_post_red], 
+                all_pred_act_presence_yn[act].iloc[idx_known_post_red],
                 average='binary',
                 zero_division=0.0
             )
-            test_post_red_precision, test_post_red_rec, test_post_red_f1, _ = metrics.precision_recall_fscore_support(
-                all_grd_truth_act_presence[act].iloc[start_test_phase:], 
-                all_pred_act_presence_yn[act].iloc[start_test_phase:],
+            test_post_red_precision_known, test_post_red_rec_known, test_post_red_f1_known, _ = metrics.precision_recall_fscore_support(
+                all_grd_truth_act_presence[act].iloc[idx_known_test_post_red], 
+                all_pred_act_presence_yn[act].iloc[idx_known_test_post_red],
                 average='binary',
                 zero_division=0.0
             )
@@ -1275,15 +1376,15 @@ def score_test_from_boxes(
                     metric_name='pre/rec/f1', 
                     n_samples=nbr_samples_conf_int
                 )
-                post_red_pr_rec_f1_ci = boostrap_conf_interval(
-                    y_true=all_grd_truth_act_presence[act].iloc[total_pre_red_btn:start_test_phase].to_numpy(), 
-                    y_pred=all_pred_act_presence_yn[act].iloc[total_pre_red_btn:start_test_phase].to_numpy(), 
+                post_red_pr_rec_f1_ci_known = boostrap_conf_interval(
+                    y_true=all_grd_truth_act_presence[act].iloc[idx_known_post_red].to_numpy(), 
+                    y_pred=all_pred_act_presence_yn[act].iloc[idx_known_post_red].to_numpy(), 
                     metric_name='pre/rec/f1', 
                     n_samples=nbr_samples_conf_int
                 )
-                test_post_red_pr_rec_f1_ci = boostrap_conf_interval(
-                    y_true=all_grd_truth_act_presence[act].iloc[start_test_phase:].to_numpy(), 
-                    y_pred=all_pred_act_presence_yn[act].iloc[start_test_phase:].to_numpy(), 
+                test_post_red_pr_rec_f1_ci_known = boostrap_conf_interval(
+                    y_true=all_grd_truth_act_presence[act].iloc[idx_known_test_post_red].to_numpy(), 
+                    y_pred=all_pred_act_presence_yn[act].iloc[idx_known_test_post_red].to_numpy(), 
                     metric_name='pre/rec/f1', 
                     n_samples=nbr_samples_conf_int
                 )
@@ -1291,78 +1392,227 @@ def score_test_from_boxes(
 
             # Precision
             pre_red_per_act_precision[act] = {
-                'value': pre_red_precision if pre_red_precision != 0.0 else -1,
-                'ci': pre_red_pr_rec_f1_ci['precision'] if estimate_ci else -1
+                'known':{
+                    'value': pre_red_precision if pre_red_precision != 0.0 else -1,
+                    'ci': pre_red_pr_rec_f1_ci['precision'] if estimate_ci else -1
+                }
             }
             post_red_per_act_precision[act] = {
-                'value': post_red_precision if post_red_precision != 0.0 else -1,
-                'ci': post_red_pr_rec_f1_ci['precision'] if estimate_ci else -1
+                'known':{
+                    'value': post_red_precision_known if post_red_precision_known != 0.0 else -1,
+                    'ci': post_red_pr_rec_f1_ci_known['precision'] if estimate_ci else -1
+                }
             }
             test_post_red_per_act_precision[act] = {
-                'value': test_post_red_precision if test_post_red_precision != 0.0 else -1,
-                'ci': test_post_red_pr_rec_f1_ci['precision'] if estimate_ci else -1
+                'known':{
+                    'value': test_post_red_precision_known if test_post_red_precision_known != 0.0 else -1,
+                    'ci': test_post_red_pr_rec_f1_ci_known['precision'] if estimate_ci else -1
+                }
             }
 
             # Recall
             pre_red_per_act_recall[act] = {
-                'value': pre_red_rec if pre_red_rec != 0.0 else -1,
-                'ci': pre_red_pr_rec_f1_ci['recall'] if estimate_ci else -1
+                'known':{
+                    'value': pre_red_rec if pre_red_rec != 0.0 else -1,
+                    'ci': pre_red_pr_rec_f1_ci['recall'] if estimate_ci else -1
+                }
             }
             post_red_per_act_recall[act] = {
-                'value': post_red_rec if post_red_rec != 0.0 else -1,
-                'ci': post_red_pr_rec_f1_ci['recall'] if estimate_ci else -1
+                'known':{
+                    'value': post_red_rec_known if post_red_rec_known != 0.0 else -1,
+                    'ci': post_red_pr_rec_f1_ci_known['recall'] if estimate_ci else -1
+                }
             }
             test_post_red_per_act_recall[act] = {
-                'value': test_post_red_rec if test_post_red_rec != 0.0 else -1,
-                'ci': test_post_red_pr_rec_f1_ci['recall'] if estimate_ci else -1
+                'known':{
+                    'value': test_post_red_rec_known if test_post_red_rec_known != 0.0 else -1,
+                    'ci': test_post_red_pr_rec_f1_ci_known['recall'] if estimate_ci else -1
+                }
             }
 
             # F1 score
             pre_red_per_act_f1[act] = {
+                'known':{
+                    'value': pre_red_f1 if pre_red_f1 != 0.0 else -1,
+                    'ci': pre_red_pr_rec_f1_ci['f1_score'] if estimate_ci else -1
+                }
+            }
+            post_red_per_act_f1[act] = {
+                'known':{
+                    'value': post_red_f1_known if post_red_f1_known != 0.0 else -1,
+                    'ci': post_red_pr_rec_f1_ci_known['f1_score'] if estimate_ci else -1
+                }
+            }
+            test_post_red_per_act_f1[act] = {
+                'known':{
+                    'value': test_post_red_f1_known if test_post_red_f1_known != 0.0 else -1,
+                    'ci': test_post_red_pr_rec_f1_ci_known['f1_score'] if estimate_ci else -1
+                }
+            }
+        except Exception as ex:
+            print('+++ The following exception has occured:', ex)
+            pre_red_per_act_precision[act] = {'known':{'value': -1}}
+            pre_red_per_act_recall[act] = {'known':{'value': -1}}
+            pre_red_per_act_f1[act] = {'known':{'value': -1}}
+            post_red_per_act_precision[act] = {'known':{'value': -1}}
+            post_red_per_act_recall[act] = {'known':{'value': -1}}
+            post_red_per_act_f1[act] = {'known':{'value': -1}}
+            test_post_red_per_act_precision[act] = {'known':{'value': -1}}
+            test_post_red_per_act_recall[act] = {'known':{'value': -1}}
+            test_post_red_per_act_f1[act] = {'known':{'value': -1}}
+            continue
+
+        # ++++ Novel
+        try:
+            pre_red_precision, pre_red_rec, pre_red_f1, _ = metrics.precision_recall_fscore_support(
+                all_grd_truth_act_presence[act].iloc[:total_pre_red_btn], 
+                all_pred_act_presence_yn[act].iloc[:total_pre_red_btn],
+                average='binary',
+                zero_division=0.0
+            )
+            post_red_precision_novel, post_red_rec_novel, post_red_f1_novel, _ = metrics.precision_recall_fscore_support(
+                all_grd_truth_act_presence[act].iloc[idx_novel_post_red], 
+                all_pred_act_presence_yn[act].iloc[idx_novel_post_red],
+                average='binary',
+                zero_division=0.0
+            )
+            test_post_red_precision_novel, test_post_red_rec_novel, test_post_red_f1_novel, _ = metrics.precision_recall_fscore_support(
+                all_grd_truth_act_presence[act].iloc[idx_novel_test_post_red], 
+                all_pred_act_presence_yn[act].iloc[idx_novel_test_post_red],
+                average='binary',
+                zero_division=0.0
+            )
+
+            if estimate_ci:
+                pre_red_pr_rec_f1_ci = boostrap_conf_interval(
+                    y_true=all_grd_truth_act_presence[act].iloc[:total_pre_red_btn].to_numpy(), 
+                    y_pred=all_pred_act_presence_yn[act].iloc[:total_pre_red_btn].to_numpy(), 
+                    metric_name='pre/rec/f1', 
+                    n_samples=nbr_samples_conf_int
+                )
+                post_red_pr_rec_f1_ci_novel = boostrap_conf_interval(
+                    y_true=all_grd_truth_act_presence[act].iloc[idx_novel_post_red].to_numpy(), 
+                    y_pred=all_pred_act_presence_yn[act].iloc[idx_novel_post_red].to_numpy(), 
+                    metric_name='pre/rec/f1', 
+                    n_samples=nbr_samples_conf_int
+                )
+                test_post_red_pr_rec_f1_ci_novel = boostrap_conf_interval(
+                    y_true=all_grd_truth_act_presence[act].iloc[idx_novel_test_post_red].to_numpy(), 
+                    y_pred=all_pred_act_presence_yn[act].iloc[idx_novel_test_post_red].to_numpy(), 
+                    metric_name='pre/rec/f1', 
+                    n_samples=nbr_samples_conf_int
+                )
+                
+
+            # Precision
+            pre_red_per_act_precision[act]['novel'] = {
+                'value': pre_red_precision if pre_red_precision != 0.0 else -1,
+                'ci': pre_red_pr_rec_f1_ci['precision'] if estimate_ci else -1
+            }
+            post_red_per_act_precision[act]['novel'] = {
+                'value': post_red_precision_novel if post_red_precision_novel != 0.0 else -1,
+                'ci': post_red_pr_rec_f1_ci_novel['precision'] if estimate_ci else -1
+            }
+            test_post_red_per_act_precision[act]['novel'] = {
+                'value': test_post_red_precision_novel if test_post_red_precision_novel != 0.0 else -1,
+                'ci': test_post_red_pr_rec_f1_ci_novel['precision'] if estimate_ci else -1
+            }
+
+            # Recall
+            pre_red_per_act_recall[act]['novel'] = {
+                'value': pre_red_rec if pre_red_rec != 0.0 else -1,
+                'ci': pre_red_pr_rec_f1_ci['recall'] if estimate_ci else -1
+            }
+            post_red_per_act_recall[act]['novel'] = {
+                'value': post_red_rec_novel if post_red_rec_novel != 0.0 else -1,
+                'ci': post_red_pr_rec_f1_ci_novel['recall'] if estimate_ci else -1
+            }
+            test_post_red_per_act_recall[act]['novel'] = {
+                'value': test_post_red_rec_novel if test_post_red_rec_novel != 0.0 else -1,
+                'ci': test_post_red_pr_rec_f1_ci_novel['recall'] if estimate_ci else -1
+            }
+
+            # F1 score
+            pre_red_per_act_f1[act]['novel'] = {
                 'value': pre_red_f1 if pre_red_f1 != 0.0 else -1,
                 'ci': pre_red_pr_rec_f1_ci['f1_score'] if estimate_ci else -1
             }
-            post_red_per_act_f1[act] = {
-                'value': post_red_f1 if post_red_f1 != 0.0 else -1,
-                'ci': post_red_pr_rec_f1_ci['f1_score'] if estimate_ci else -1
+            post_red_per_act_f1[act]['novel'] = {
+                'value': post_red_f1_novel if post_red_f1_novel != 0.0 else -1,
+                'ci': post_red_pr_rec_f1_ci_novel['f1_score'] if estimate_ci else -1
             }
-            test_post_red_per_act_f1[act] = {
-                'value': test_post_red_f1 if test_post_red_f1 != 0.0 else -1,
-                'ci': test_post_red_pr_rec_f1_ci['f1_score'] if estimate_ci else -1
+            test_post_red_per_act_f1[act]['novel'] = {
+                'value': test_post_red_f1_novel if test_post_red_f1_novel != 0.0 else -1,
+                'ci': test_post_red_pr_rec_f1_ci_novel['f1_score'] if estimate_ci else -1
             }
         except Exception as ex:
             print('+++ The following exception has occured:', ex)
             pre_red_per_act_precision[act] = {'value': -1}
-            pre_red_per_act_recall[act] = {'value': -1}
-            pre_red_per_act_f1[act] = {'value': -1}
-            post_red_per_act_precision[act] = {'value': -1}
-            post_red_per_act_recall[act] = {'value': -1}
-            post_red_per_act_f1[act] = {'value': -1}
-            test_post_red_per_act_precision[act] = {'value': -1}
-            test_post_red_per_act_recall[act] = {'value': -1}
-            test_post_red_per_act_f1[act] = {'value': -1}
+            pre_red_per_act_recall[act]['novel'] = {'value': -1}
+            pre_red_per_act_f1[act]['novel'] = {'value': -1}
+            post_red_per_act_precision[act]['novel'] = {'value': -1}
+            post_red_per_act_recall[act]['novel'] = {'value': -1}
+            post_red_per_act_f1[act]['novel'] = {'value': -1}
+            test_post_red_per_act_precision[act]['novel'] = {'value': -1}
+            test_post_red_per_act_recall[act]['novel'] = {'value': -1}
+            test_post_red_per_act_f1[act]['novel'] = {'value': -1}
             continue
 
 
     # *****************************  SPECIES PRESENCE PERFORMANCE  ********************************
 
     for spe in all_grd_truth_spe_presence.columns:
-
         if spe not in species_id2name_mapping.values():
-            pre_red_per_spe_auc[spe] = {'value': -1}
-            pre_red_per_spe_precision[spe] = {'value': -1}
-            pre_red_per_spe_recall[spe] = {'value': -1}
-            pre_red_per_spe_f1[spe] = {'value': -1}
+            pre_red_per_spe_auc[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            pre_red_per_spe_precision[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            pre_red_per_spe_recall[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            pre_red_per_spe_f1[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
 
-            post_red_per_spe_auc[spe] = {'value': -1}
-            post_red_per_spe_precision[spe] = {'value': -1}
-            post_red_per_spe_recall[spe] = {'value': -1}
-            post_red_per_spe_f1[spe] = {'value': -1}
+            post_red_per_spe_auc[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            post_red_per_spe_precision[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            post_red_per_spe_recall[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            post_red_per_spe_f1[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
 
-            test_post_red_per_spe_auc[spe] = {'value': -1}
-            test_post_red_per_spe_precision[spe] = {'value': -1}
-            test_post_red_per_spe_recall[spe] = {'value': -1}
-            test_post_red_per_spe_f1[spe] = {'value': -1}
+            test_post_red_per_spe_auc[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            test_post_red_per_spe_precision[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            test_post_red_per_spe_recall[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            test_post_red_per_spe_f1[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
             continue
 
         # ---------->>  Species presence AUC  <<----------
@@ -1382,57 +1632,121 @@ def score_test_from_boxes(
             else:
                 pre_red_auc_ci = -1
 
-            pre_red_per_spe_auc[spe] = {'value': pre_red_auc, 'ci': pre_red_auc_ci}
+            pre_red_per_spe_auc[spe] = {
+                'known': {'value': pre_red_auc, 'ci': pre_red_auc_ci},
+                'novel': {'value': -1}
+            }
         else:
-            pre_red_per_spe_auc[spe] = {'value': -1}
+            pre_red_per_spe_auc[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
         
         # ** post red button AUC
         # check that there's at least one two classes in the ground truth presence label
-        if len(all_grd_truth_spe_presence[spe].iloc[total_pre_red_btn:start_test_phase].unique()) > 1:
-            post_red_auc = metrics.roc_auc_score(
-                    all_grd_truth_spe_presence[spe].iloc[total_pre_red_btn:start_test_phase], 
-                    all_pred_spe_presence[spe].iloc[total_pre_red_btn:start_test_phase]
+
+        # *** Known
+        if len(all_grd_truth_spe_presence[spe].iloc[idx_known_post_red].unique()) > 1:
+            post_red_auc_known = metrics.roc_auc_score(
+                    all_grd_truth_spe_presence[spe].iloc[idx_known_post_red], 
+                    all_pred_spe_presence[spe].iloc[idx_known_post_red]
                 )
             if estimate_ci:
-                post_red_auc_ci = boostrap_conf_interval(
-                    y_true=all_grd_truth_spe_presence[spe].iloc[total_pre_red_btn:start_test_phase].to_numpy(), 
-                    y_pred=all_pred_spe_presence[spe].iloc[total_pre_red_btn:start_test_phase].to_numpy(), 
+                post_red_auc_ci_known = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_presence[spe].iloc[idx_known_post_red].to_numpy(), 
+                    y_pred=all_pred_spe_presence[spe].iloc[idx_known_post_red].to_numpy(), 
                     metric_name='auc', 
                     n_samples=nbr_samples_conf_int
                 )
             else:
-                post_red_auc_ci = -1
+                post_red_auc_ci_known = -1
 
-            post_red_per_spe_auc[spe] = {'value': post_red_auc, 'ci': post_red_auc_ci}
+            post_red_per_spe_auc[spe] = {
+                'known': {'value': post_red_auc_known, 'ci': post_red_auc_ci_known}
+            }
         else:
-            post_red_per_spe_auc[spe] = {'value': -1}
+            post_red_per_spe_auc[spe] = {
+                'known': {'value': -1}
+            }
 
         # ** post red button test AUC
         # check that there's at least one two classes in the ground truth presence label
-        if len(all_grd_truth_spe_presence[spe].iloc[start_test_phase:].unique()) > 1:
-            test_post_red_auc = metrics.roc_auc_score(
-                    all_grd_truth_spe_presence[spe].iloc[start_test_phase:], 
-                    all_pred_spe_presence[spe].iloc[start_test_phase:]
+        if len(all_grd_truth_spe_presence[spe].iloc[idx_known_test_post_red].unique()) > 1:
+            test_post_red_auc_known = metrics.roc_auc_score(
+                    all_grd_truth_spe_presence[spe].iloc[idx_known_test_post_red], 
+                    all_pred_spe_presence[spe].iloc[idx_known_test_post_red]
                 )
             if estimate_ci:
-                test_post_red_auc_ci = boostrap_conf_interval(
-                    y_true=all_grd_truth_spe_presence[spe].iloc[start_test_phase:].to_numpy(), 
-                    y_pred=all_pred_spe_presence[spe].iloc[start_test_phase:].to_numpy(), 
+                test_post_red_auc_ci_known = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_presence[spe].iloc[idx_known_test_post_red].to_numpy(), 
+                    y_pred=all_pred_spe_presence[spe].iloc[idx_known_test_post_red].to_numpy(), 
                     metric_name='auc', 
                     n_samples=nbr_samples_conf_int
                 )
             else:
-                test_post_red_auc_ci = -1
+                test_post_red_auc_ci_known = -1
 
-            test_post_red_per_spe_auc[spe] = {'value': test_post_red_auc, 'ci': test_post_red_auc_ci}
+            test_post_red_per_spe_auc[spe] = {
+                'known': {'value': test_post_red_auc_known, 'ci': test_post_red_auc_ci_known}
+            }
         else:
-            test_post_red_per_spe_auc[spe] = {'value': -1}
+            test_post_red_per_spe_auc[spe] = {
+                'known': {'value': -1}
+            }
+
+        # *** Novel
+        if len(all_grd_truth_spe_presence[spe].iloc[idx_novel_post_red].unique()) > 1:
+            post_red_auc_novel = metrics.roc_auc_score(
+                    all_grd_truth_spe_presence[spe].iloc[idx_novel_post_red], 
+                    all_pred_spe_presence[spe].iloc[idx_novel_post_red]
+                )
+            if estimate_ci:
+                post_red_auc_ci_novel = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_presence[spe].iloc[idx_novel_post_red].to_numpy(), 
+                    y_pred=all_pred_spe_presence[spe].iloc[idx_novel_post_red].to_numpy(), 
+                    metric_name='auc', 
+                    n_samples=nbr_samples_conf_int
+                )
+            else:
+                post_red_auc_ci_novel = -1
+
+            post_red_per_spe_auc[spe]['novel'] = {
+                'value': post_red_auc_novel, 
+                'ci': post_red_auc_ci_novel
+            }
+        else:
+            post_red_per_spe_auc[spe]['novel'] = {'value': -1}
+
+        # ** post red button test AUC
+        # check that there's at least one two classes in the ground truth presence label
+        if len(all_grd_truth_spe_presence[spe].iloc[idx_novel_test_post_red].unique()) > 1:
+            test_post_red_auc_novel = metrics.roc_auc_score(
+                    all_grd_truth_spe_presence[spe].iloc[idx_novel_test_post_red], 
+                    all_pred_spe_presence[spe].iloc[idx_novel_test_post_red]
+                )
+            if estimate_ci:
+                test_post_red_auc_ci_novel = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_presence[spe].iloc[idx_novel_test_post_red].to_numpy(), 
+                    y_pred=all_pred_spe_presence[spe].iloc[idx_novel_test_post_red].to_numpy(), 
+                    metric_name='auc', 
+                    n_samples=nbr_samples_conf_int
+                )
+            else:
+                test_post_red_auc_ci_novel = -1
+
+            test_post_red_per_spe_auc[spe]['novel'] = {
+                'value': test_post_red_auc_novel, 
+                'ci': test_post_red_auc_ci_novel
+            }
+        else:
+            test_post_red_per_spe_auc[spe]['novel'] = {'value': -1}
         
 
         # ---------->>  Species presence Precision, Recall, F1  <<----------
         all_pred_spe_presence_yn = all_pred_spe_presence.copy(deep=True)
         all_pred_spe_presence_yn = (all_pred_spe_presence_yn >= spe_presence_threshold).astype(int)
 
+        # *** Known
         try:
             pre_red_precision, pre_red_rec, pre_red_f1, _ = metrics.precision_recall_fscore_support(
                 all_grd_truth_spe_presence[spe].iloc[:total_pre_red_btn], 
@@ -1440,15 +1754,15 @@ def score_test_from_boxes(
                 average='binary',
                 zero_division=0.0
             )
-            post_red_precision, post_red_rec, post_red_f1, _ = metrics.precision_recall_fscore_support(
-                all_grd_truth_spe_presence[spe].iloc[total_pre_red_btn:start_test_phase], 
-                all_pred_spe_presence_yn[spe].iloc[total_pre_red_btn:start_test_phase],
+            post_red_precision_known, post_red_rec_known, post_red_f1_known, _ = metrics.precision_recall_fscore_support(
+                all_grd_truth_spe_presence[spe].iloc[idx_known_post_red], 
+                all_pred_spe_presence_yn[spe].iloc[idx_known_post_red],
                 average='binary',
                 zero_division=0.0
             )
-            test_post_red_precision, test_post_red_rec, test_post_red_f1, _ = metrics.precision_recall_fscore_support(
-                all_grd_truth_spe_presence[spe].iloc[start_test_phase:], 
-                all_pred_spe_presence_yn[spe].iloc[start_test_phase:],
+            test_post_red_precision_known, test_post_red_rec_known, test_post_red_f1_known, _ = metrics.precision_recall_fscore_support(
+                all_grd_truth_spe_presence[spe].iloc[idx_known_test_post_red], 
+                all_pred_spe_presence_yn[spe].iloc[idx_known_test_post_red],
                 average='binary',
                 zero_division=0.0
             )
@@ -1460,77 +1774,107 @@ def score_test_from_boxes(
                     metric_name='pre/rec/f1', 
                     n_samples=nbr_samples_conf_int
                 )
-                post_red_pr_rec_f1_ci = boostrap_conf_interval(
-                    y_true=all_grd_truth_spe_presence[spe].iloc[total_pre_red_btn:start_test_phase].to_numpy(), 
-                    y_pred=all_pred_spe_presence_yn[spe].iloc[total_pre_red_btn:start_test_phase].to_numpy(), 
+                post_red_pr_rec_f1_ci_known = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_presence[spe].iloc[idx_known_post_red].to_numpy(), 
+                    y_pred=all_pred_spe_presence_yn[spe].iloc[idx_known_post_red].to_numpy(), 
                     metric_name='pre/rec/f1', 
                     n_samples=nbr_samples_conf_int
                 )
-                test_post_red_pr_rec_f1_ci = boostrap_conf_interval(
-                    y_true=all_grd_truth_spe_presence[spe].iloc[start_test_phase:].to_numpy(), 
-                    y_pred=all_pred_spe_presence_yn[spe].iloc[start_test_phase:].to_numpy(), 
+                test_post_red_pr_rec_f1_ci_known = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_presence[spe].iloc[idx_known_test_post_red].to_numpy(), 
+                    y_pred=all_pred_spe_presence_yn[spe].iloc[idx_known_test_post_red].to_numpy(), 
                     metric_name='pre/rec/f1', 
                     n_samples=nbr_samples_conf_int
                 )
                 
             # Precision
             pre_red_per_spe_precision[spe] = {
-                'value': pre_red_precision if pre_red_precision != 0.0 else -1,
-                'ci': pre_red_pr_rec_f1_ci['precision'] if estimate_ci else -1
+                'known': {
+                    'value': pre_red_precision if pre_red_precision != 0.0 else -1,
+                    'ci': pre_red_pr_rec_f1_ci['precision'] if estimate_ci else -1
+                }
             }
             post_red_per_spe_precision[spe] = {
-                'value': post_red_precision if post_red_precision != 0.0 else -1,
-                'ci': post_red_pr_rec_f1_ci['precision'] if estimate_ci else -1
+                'known': {
+                    'value': post_red_precision_known if post_red_precision_known != 0.0 else -1,
+                    'ci': post_red_pr_rec_f1_ci_known['precision'] if estimate_ci else -1
+                }
             }
             test_post_red_per_spe_precision[spe] = {
-                'value': test_post_red_precision if test_post_red_precision != 0.0 else -1,
-                'ci': test_post_red_pr_rec_f1_ci['precision'] if estimate_ci else -1
+                'known': {
+                    'value': test_post_red_precision_known if test_post_red_precision_known != 0.0 else -1,
+                    'ci': test_post_red_pr_rec_f1_ci_known['precision'] if estimate_ci else -1
+                }
             }
 
             # Recall
             pre_red_per_spe_recall[spe] = {
-                'value': pre_red_rec if pre_red_rec != 0.0 else -1,
-                'ci': pre_red_pr_rec_f1_ci['recall'] if estimate_ci else -1
+                'known': {
+                    'value': pre_red_rec if pre_red_rec != 0.0 else -1,
+                    'ci': pre_red_pr_rec_f1_ci['recall'] if estimate_ci else -1
+                }
             }
             post_red_per_spe_recall[spe] = {
-                'value': post_red_rec if post_red_rec != 0.0 else -1,
-                'ci': post_red_pr_rec_f1_ci['recall'] if estimate_ci else -1
+                'known': {
+                    'value': post_red_rec_known if post_red_rec_known != 0.0 else -1,
+                    'ci': post_red_pr_rec_f1_ci_known['recall'] if estimate_ci else -1
+                }
             }
             test_post_red_per_spe_recall[spe] = {
-                'value': test_post_red_rec if test_post_red_rec != 0.0 else -1,
-                'ci': test_post_red_pr_rec_f1_ci['recall'] if estimate_ci else -1
+                'known': {
+                    'value': test_post_red_rec_known if test_post_red_rec_known != 0.0 else -1,
+                    'ci': test_post_red_pr_rec_f1_ci_known['recall'] if estimate_ci else -1
+                }
             }
 
             # F1 score
             pre_red_per_spe_f1[spe] = {
-                'value': pre_red_f1 if pre_red_f1 != 0.0 else -1,
-                'ci': pre_red_pr_rec_f1_ci['f1_score'] if estimate_ci else -1
+                'known': {
+                    'value': pre_red_f1 if pre_red_f1 != 0.0 else -1,
+                    'ci': pre_red_pr_rec_f1_ci['f1_score'] if estimate_ci else -1
+                }
             }
             post_red_per_spe_f1[spe] = {
-                'value': post_red_f1 if post_red_f1 != 0.0 else -1,
-                'ci': post_red_pr_rec_f1_ci['f1_score'] if estimate_ci else -1
+                'known': {
+                    'value': post_red_f1_known if post_red_f1_known != 0.0 else -1,
+                    'ci': post_red_pr_rec_f1_ci_known['f1_score'] if estimate_ci else -1
+                }
             }
             test_post_red_per_spe_f1[spe] = {
-                'value': test_post_red_f1 if test_post_red_f1 != 0.0 else -1,
-                'ci': test_post_red_pr_rec_f1_ci['f1_score'] if estimate_ci else -1
+                'known': {
+                    'value': test_post_red_f1_known if test_post_red_f1_known != 0.0 else -1,
+                    'ci': test_post_red_pr_rec_f1_ci_known['f1_score'] if estimate_ci else -1
+                }
             }
 
         except Exception as ex:
             print('**** Exception when computing species presence metrics:', ex)
-            pre_red_per_spe_auc[spe] = {'value': -1}
-            pre_red_per_spe_precision[spe] = {'value': -1}
-            pre_red_per_spe_recall[spe] = {'value': -1}
-            pre_red_per_spe_f1[spe] = {'value': -1}
+            pre_red_per_spe_auc[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            pre_red_per_spe_precision[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            pre_red_per_spe_recall[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            pre_red_per_spe_f1[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
 
-            post_red_per_spe_auc[spe] = {'value': -1}
-            post_red_per_spe_precision[spe] = {'value': -1}
-            post_red_per_spe_recall[spe] = {'value': -1}
-            post_red_per_spe_f1[spe] = {'value': -1}
+            post_red_per_spe_auc[spe] = {'known': {'value': -1}}
+            post_red_per_spe_precision[spe] = {'known': {'value': -1}}
+            post_red_per_spe_recall[spe] = {'known': {'value': -1}}
+            post_red_per_spe_f1[spe] = {'known': {'value': -1}}
 
-            test_post_red_per_spe_auc[spe] = {'value': -1}
-            test_post_red_per_spe_precision[spe] = {'value': -1}
-            test_post_red_per_spe_recall[spe] = {'value': -1}
-            test_post_red_per_spe_f1[spe] = {'value': -1}
+            test_post_red_per_spe_auc[spe] = {'known': {'value': -1}}
+            test_post_red_per_spe_precision[spe] = {'known': {'value': -1}}
+            test_post_red_per_spe_recall[spe] = {'known': {'value': -1}}
+            test_post_red_per_spe_f1[spe] = {'known': {'value': -1}}
 
 
     # *****************************  SPECIES COUNT PERFORMANCE  ********************************
@@ -1544,20 +1888,27 @@ def score_test_from_boxes(
         all_pred_spe_counts.to_csv(os.path.join(tmp_dir, f'{test_id}_pred_spe_count.csv'))
         all_grd_truth_spe_counts.to_csv(os.path.join(tmp_dir, f'{test_id}_grd_trth_spe_count.csv'))
 
+    # *** Known
     num_pre_red_img_w_spe = all_grd_truth_spe_counts.iloc[:total_pre_red_btn].astype(bool).sum(axis=0)
-    num_post_red_img_w_spe = all_grd_truth_spe_counts.iloc[total_pre_red_btn:start_test_phase].astype(bool).sum(axis=0)
-    num_test_post_red_img_w_spe = all_grd_truth_spe_counts.iloc[start_test_phase:].astype(bool).sum(axis=0)
+    num_post_red_img_w_spe_known = all_grd_truth_spe_counts.iloc[idx_known_post_red].astype(bool).sum(axis=0)
+    num_test_post_red_img_w_spe_known = all_grd_truth_spe_counts.iloc[idx_known_test_post_red].astype(bool).sum(axis=0)
 
     for spe in all_grd_truth_spe_counts.columns:
         if spe not in species_id2name_mapping.values():
-            pre_red_abs_err_count[spe] = {'value': -1}
-            pre_red_rel_err_count[spe] = {'value': -1}
+            pre_red_abs_err_count[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
+            pre_red_rel_err_count[spe] = {
+                'known': {'value': -1},
+                'novel': {'value': -1}
+            }
 
-            post_red_abs_err_count[spe] = {'value': -1}
-            post_red_rel_err_count[spe] = {'value': -1}
+            post_red_abs_err_count[spe] = {'known': {'value': -1}}
+            post_red_rel_err_count[spe] = {'known': {'value': -1}}
 
-            test_post_red_abs_err_count[spe] = {'value': -1}
-            test_post_red_rel_err_count[spe] = {'value': -1}
+            test_post_red_abs_err_count[spe] = {'known': {'value': -1}}
+            test_post_red_rel_err_count[spe] = {'known': {'value': -1}}
             continue
         
         # ---------->>  Absolute error  <<----------
@@ -1577,45 +1928,53 @@ def score_test_from_boxes(
                 )
 
             pre_red_abs_err_count[spe] = {
-                'value': pre_red_cnt_abs_err,
-                'ci': pre_red_count_ci if estimate_ci else -1
+                'known': {
+                    'value': pre_red_cnt_abs_err,
+                    'ci': pre_red_count_ci if estimate_ci else -1
+                }
             }
         else:
-            pre_red_abs_err_count[spe] = {'value': -1}
+            pre_red_abs_err_count[spe] = {
+                'known': {'value': -1}
+            }
 
         # ** post red button absolute count error
-        if num_post_red_img_w_spe[spe] > 0:
-            post_red_cnt_abs_err = species_count_error(
-                all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:start_test_phase], 
-                all_pred_spe_counts[spe].iloc[total_pre_red_btn:start_test_phase], 
+        if num_post_red_img_w_spe_known[spe] > 0:
+            post_red_cnt_abs_err_known = species_count_error(
+                all_grd_truth_spe_counts[spe].iloc[idx_known_post_red], 
+                all_pred_spe_counts[spe].iloc[idx_known_post_red], 
                 metric='AE'
-            ) / num_post_red_img_w_spe[spe]
+            ) / num_post_red_img_w_spe_known[spe]
 
             if estimate_ci:
-                post_red_count_ci = boostrap_conf_interval(
-                    y_true=all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:start_test_phase].to_numpy(), 
-                    y_pred=all_pred_spe_counts[spe].iloc[total_pre_red_btn:start_test_phase].to_numpy(), 
+                post_red_count_ci_known = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_counts[spe].iloc[idx_known_post_red].to_numpy(), 
+                    y_pred=all_pred_spe_counts[spe].iloc[idx_known_post_red].to_numpy(), 
                     metric_name='count_err', 
                     n_samples=nbr_samples_conf_int
                 )
 
             post_red_abs_err_count[spe] = {
-                'value': post_red_cnt_abs_err,
-                'ci': post_red_count_ci if estimate_ci else -1
+                'known': {
+                    'value': post_red_cnt_abs_err_known,
+                    'ci': post_red_count_ci_known if estimate_ci else -1
+                }
             }
         else:
-            post_red_abs_err_count[spe] = {'value': -1}
+            post_red_abs_err_count[spe] = {
+                'known': {'value': -1}
+            }
 
         # ** post red button test absolute count error
-        if num_test_post_red_img_w_spe[spe] > 0:
-            test_post_red_cnt_abs_err = species_count_error(
+        if num_test_post_red_img_w_spe_known[spe] > 0:
+            test_post_red_cnt_abs_err_known = species_count_error(
                 all_grd_truth_spe_counts[spe].iloc[start_test_phase:], 
                 all_pred_spe_counts[spe].iloc[start_test_phase:], 
                 metric='AE'
-            ) / num_test_post_red_img_w_spe[spe]
+            ) / num_test_post_red_img_w_spe_known[spe]
 
             if estimate_ci:
-                test_post_red_count_ci = boostrap_conf_interval(
+                test_post_red_count_ci_known = boostrap_conf_interval(
                     y_true=all_grd_truth_spe_counts[spe].iloc[start_test_phase:].to_numpy(), 
                     y_pred=all_pred_spe_counts[spe].iloc[start_test_phase:].to_numpy(), 
                     metric_name='count_err', 
@@ -1623,11 +1982,15 @@ def score_test_from_boxes(
                 )
 
             test_post_red_abs_err_count[spe] = {
-                'value': test_post_red_cnt_abs_err,
-                'ci': test_post_red_count_ci if estimate_ci else -1
+                'known': {
+                    'value': test_post_red_cnt_abs_err_known,
+                    'ci': test_post_red_count_ci_known if estimate_ci else -1
+                }
             }
         else:
-            test_post_red_abs_err_count[spe] = {'value': -1}
+            test_post_red_abs_err_count[spe] = {
+                'known': {'value': -1}
+            }
         
         # ---------->>  Relative error  <<----------
         num_pre_red_animals_from_spe = all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn].sum()
@@ -1648,61 +2011,191 @@ def score_test_from_boxes(
                 )
 
             pre_red_rel_err_count[spe] = {
-                'value': pre_red_cnt_rel_err,
-                'ci': pre_red_count_ci if estimate_ci else -1
+                'known': {
+                    'value': pre_red_cnt_rel_err,
+                    'ci': pre_red_count_ci if estimate_ci else -1
+                }
             }
         else:
-            pre_red_rel_err_count[spe] = {'value': -1}
+            pre_red_rel_err_count[spe] = {
+                'known': {'value': -1}
+            }
         
         # ** post red button relative count error
-        num_post_red_animals_from_spe = all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:start_test_phase].sum()
-        if num_post_red_animals_from_spe > 0:
-            post_red_cnt_rel_err = species_count_error(
-                all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:start_test_phase], 
-                all_pred_spe_counts[spe].iloc[total_pre_red_btn:start_test_phase], 
+        num_post_red_animals_from_spe_known = all_grd_truth_spe_counts[spe].iloc[idx_known_post_red].sum()
+        if num_post_red_animals_from_spe_known > 0:
+            post_red_cnt_rel_err_known = species_count_error(
+                all_grd_truth_spe_counts[spe].iloc[idx_known_post_red], 
+                all_pred_spe_counts[spe].iloc[idx_known_post_red], 
                 metric='AE'
-            ) / num_post_red_animals_from_spe
+            ) / num_post_red_animals_from_spe_known
 
             if estimate_ci:
-                post_red_count_ci = boostrap_conf_interval(
-                    y_true=all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:start_test_phase].to_numpy(), 
-                    y_pred=all_pred_spe_counts[spe].iloc[total_pre_red_btn:start_test_phase].to_numpy(), 
+                post_red_count_ci_known = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_counts[spe].iloc[idx_known_post_red].to_numpy(), 
+                    y_pred=all_pred_spe_counts[spe].iloc[idx_known_post_red].to_numpy(), 
                     metric_name='count_err', 
                     is_abs_err=False,
                     n_samples=nbr_samples_conf_int
                 )
 
             post_red_rel_err_count[spe] = {
-                'value': post_red_cnt_rel_err,
-                'ci': post_red_count_ci if estimate_ci else -1
+                'known': {
+                    'value': post_red_cnt_rel_err_known,
+                    'ci': post_red_count_ci_known if estimate_ci else -1
+                }
             }
         else:
-            post_red_rel_err_count[spe] = {'value': -1}
+            post_red_rel_err_count[spe] = {
+                'known': {'value': -1}
+            }
 
         # ** post red button test relative count error
-        num_test_post_red_animals_from_spe = all_grd_truth_spe_counts[spe].iloc[start_test_phase:].sum()
-        if num_test_post_red_animals_from_spe > 0:
-            test_post_red_cnt_rel_err = species_count_error(
-                all_grd_truth_spe_counts[spe].iloc[start_test_phase:], 
-                all_pred_spe_counts[spe].iloc[start_test_phase:], 
+        num_test_post_red_animals_from_spe_known = all_grd_truth_spe_counts[spe].iloc[idx_known_test_post_red].sum()
+        if num_test_post_red_animals_from_spe_known > 0:
+            test_post_red_cnt_rel_err_known = species_count_error(
+                all_grd_truth_spe_counts[spe].iloc[idx_known_test_post_red], 
+                all_pred_spe_counts[spe].iloc[idx_known_test_post_red], 
                 metric='AE'
-            ) / num_test_post_red_animals_from_spe
+            ) / num_test_post_red_animals_from_spe_known
 
             if estimate_ci:
-                test_post_red_count_ci = boostrap_conf_interval(
-                    y_true=all_grd_truth_spe_counts[spe].iloc[start_test_phase:].to_numpy(), 
-                    y_pred=all_pred_spe_counts[spe].iloc[start_test_phase:].to_numpy(), 
+                test_post_red_count_ci_known = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_counts[spe].iloc[idx_known_test_post_red].to_numpy(), 
+                    y_pred=all_pred_spe_counts[spe].iloc[idx_known_test_post_red].to_numpy(), 
                     metric_name='count_err', 
                     is_abs_err=False,
                     n_samples=nbr_samples_conf_int
                 )
 
             test_post_red_rel_err_count[spe] = {
-                'value': test_post_red_cnt_rel_err,
-                'ci': test_post_red_count_ci if estimate_ci else -1
+                'known': {
+                    'value': test_post_red_cnt_rel_err_known,
+                    'ci': test_post_red_count_ci_known if estimate_ci else -1
+                }
             }
         else:
-            test_post_red_rel_err_count[spe] = {'value': -1}
+            test_post_red_rel_err_count[spe] = {
+                'known': {'value': -1}
+            }
+
+    # *** Novel
+    # num_pre_red_img_w_spe = all_grd_truth_spe_counts.iloc[:total_pre_red_btn].astype(bool).sum(axis=0)
+    num_post_red_img_w_spe_novel = all_grd_truth_spe_counts.iloc[idx_novel_post_red].astype(bool).sum(axis=0)
+    num_test_post_red_img_w_spe_novel = all_grd_truth_spe_counts.iloc[idx_novel_test_post_red].astype(bool).sum(axis=0)
+
+    for spe in all_grd_truth_spe_counts.columns:
+        if spe not in species_id2name_mapping.values():
+            post_red_abs_err_count[spe]['novel'] = {'value': -1}
+            post_red_rel_err_count[spe]['novel'] = {'value': -1}
+
+            test_post_red_abs_err_count[spe]['novel'] = {'value': -1}
+            test_post_red_rel_err_count[spe]['novel'] = {'value': -1}
+            continue
+        
+        # ---------->>  Absolute error  <<----------
+        pre_red_abs_err_count[spe]['novel'] = {'value': -1}
+
+        # ** post red button absolute count error
+        if num_post_red_img_w_spe_novel[spe] > 0:
+            post_red_cnt_abs_err_novel = species_count_error(
+                all_grd_truth_spe_counts[spe].iloc[idx_novel_post_red], 
+                all_pred_spe_counts[spe].iloc[idx_novel_post_red], 
+                metric='AE'
+            ) / num_post_red_img_w_spe_novel[spe]
+
+            if estimate_ci:
+                post_red_count_ci_novel = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_counts[spe].iloc[idx_novel_post_red].to_numpy(), 
+                    y_pred=all_pred_spe_counts[spe].iloc[idx_novel_post_red].to_numpy(), 
+                    metric_name='count_err', 
+                    n_samples=nbr_samples_conf_int
+                )
+
+            post_red_abs_err_count[spe]['novel'] = {
+                'value': post_red_cnt_abs_err_novel,
+                'ci': post_red_count_ci_novel if estimate_ci else -1
+            }
+        else:
+            post_red_abs_err_count[spe]['novel'] = {'value': -1}
+
+        # ** post red button test absolute count error
+        if num_test_post_red_img_w_spe_novel[spe] > 0:
+            test_post_red_cnt_abs_err_novel = species_count_error(
+                all_grd_truth_spe_counts[spe].iloc[start_test_phase:], 
+                all_pred_spe_counts[spe].iloc[start_test_phase:], 
+                metric='AE'
+            ) / num_test_post_red_img_w_spe_novel[spe]
+
+            if estimate_ci:
+                test_post_red_count_ci_novel = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_counts[spe].iloc[start_test_phase:].to_numpy(), 
+                    y_pred=all_pred_spe_counts[spe].iloc[start_test_phase:].to_numpy(), 
+                    metric_name='count_err', 
+                    n_samples=nbr_samples_conf_int
+                )
+
+            test_post_red_abs_err_count[spe]['novel'] = {
+                'value': test_post_red_cnt_abs_err_novel,
+                'ci': test_post_red_count_ci_novel if estimate_ci else -1
+            }
+        else:
+            test_post_red_abs_err_count[spe]['novel'] = {'value': -1}
+        
+        # ---------->>  Relative error  <<----------
+        # num_pre_red_animals_from_spe = all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn].sum()
+        pre_red_rel_err_count[spe]['novel'] = {'value': -1}
+        
+        # ** post red button relative count error
+        num_post_red_animals_from_spe_novel = all_grd_truth_spe_counts[spe].iloc[idx_novel_post_red].sum()
+        if num_post_red_animals_from_spe_novel > 0:
+            post_red_cnt_rel_err_novel = species_count_error(
+                all_grd_truth_spe_counts[spe].iloc[idx_novel_post_red], 
+                all_pred_spe_counts[spe].iloc[idx_novel_post_red], 
+                metric='AE'
+            ) / num_post_red_animals_from_spe_novel
+
+            if estimate_ci:
+                post_red_count_ci = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_counts[spe].iloc[idx_novel_post_red].to_numpy(), 
+                    y_pred=all_pred_spe_counts[spe].iloc[idx_novel_post_red].to_numpy(), 
+                    metric_name='count_err', 
+                    is_abs_err=False,
+                    n_samples=nbr_samples_conf_int
+                )
+
+            post_red_rel_err_count[spe]['novel'] = {
+                'value': post_red_cnt_rel_err_novel,
+                'ci': post_red_count_ci if estimate_ci else -1
+            }
+        else:
+            post_red_rel_err_count[spe]['novel'] = {'value': -1}
+
+        # ** post red button test relative count error
+        num_test_post_red_animals_from_spe_novel = all_grd_truth_spe_counts[spe].iloc[idx_novel_test_post_red].sum()
+        if num_test_post_red_animals_from_spe_novel > 0:
+            test_post_red_cnt_rel_err_novel = species_count_error(
+                all_grd_truth_spe_counts[spe].iloc[idx_novel_test_post_red], 
+                all_pred_spe_counts[spe].iloc[idx_novel_test_post_red], 
+                metric='AE'
+            ) / num_test_post_red_animals_from_spe_novel
+
+            if estimate_ci:
+                test_post_red_count_ci_novel = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_counts[spe].iloc[idx_novel_test_post_red].to_numpy(), 
+                    y_pred=all_pred_spe_counts[spe].iloc[idx_novel_test_post_red].to_numpy(), 
+                    metric_name='count_err', 
+                    is_abs_err=False,
+                    n_samples=nbr_samples_conf_int
+                )
+
+            test_post_red_rel_err_count[spe]['novel'] = {
+                'value': test_post_red_cnt_rel_err_novel,
+                'ci': test_post_red_count_ci_novel if estimate_ci else -1
+            }
+        else:
+            test_post_red_rel_err_count[spe]['novel'] = {'value': -1}
+
 
     # log.write(f'{" "*86} {total_top_1_score}  {total_top_3_score}\n')
     if sys_declare_pos == -1:
@@ -1745,13 +2238,15 @@ def score_test_from_boxes(
     all_performances['Species_counts'][test_id] = counts
 
     # Aggregate species counts
-    pre_red_abs_err_count_arr = np.array([pre_red_abs_err_count[spe]['value'] for spe in pre_red_abs_err_count])
-    post_red_abs_err_count_arr = np.array([post_red_abs_err_count[spe]['value'] for spe in post_red_abs_err_count])
-    test_post_red_abs_err_count_arr = np.array([test_post_red_abs_err_count[spe]['value'] for spe in test_post_red_abs_err_count])
+    # -------------
+    # ** Known
+    pre_red_abs_err_count_arr = np.array([pre_red_abs_err_count[spe]['known']['value'] for spe in pre_red_abs_err_count])
+    post_red_abs_err_count_arr_known = np.array([post_red_abs_err_count[spe]['known']['value'] for spe in post_red_abs_err_count])
+    test_post_red_abs_err_count_arr_known = np.array([test_post_red_abs_err_count[spe]['known']['value'] for spe in test_post_red_abs_err_count])
 
-    pre_red_rel_err_count_arr = np.array([pre_red_rel_err_count[spe]['value'] for spe in pre_red_rel_err_count])
-    post_red_rel_err_count_arr = np.array([post_red_rel_err_count[spe]['value'] for spe in post_red_rel_err_count])
-    test_post_red_rel_err_count_arr = np.array([test_post_red_rel_err_count[spe]['value'] for spe in test_post_red_rel_err_count])
+    pre_red_rel_err_count_arr = np.array([pre_red_rel_err_count[spe]['known']['value'] for spe in pre_red_rel_err_count])
+    post_red_rel_err_count_arr_known = np.array([post_red_rel_err_count[spe]['known']['value'] for spe in post_red_rel_err_count])
+    test_post_red_rel_err_count_arr_known = np.array([test_post_red_rel_err_count[spe]['known']['value'] for spe in test_post_red_rel_err_count])
 
     pre_red_avg_abs_err_count_ci = boostrap_conf_interval(
         y_true=all_grd_truth_spe_counts.iloc[:total_pre_red_btn], 
@@ -1759,15 +2254,15 @@ def score_test_from_boxes(
         metric_name='avg_count_err', 
         n_samples=nbr_samples_conf_int
     )
-    post_red_avg_abs_err_count_ci = boostrap_conf_interval(
-        y_true=all_grd_truth_spe_counts.iloc[total_pre_red_btn:start_test_phase], 
-        y_pred=all_pred_spe_counts.iloc[total_pre_red_btn:start_test_phase], 
+    post_red_avg_abs_err_count_ci_known = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_counts.iloc[idx_known_post_red], 
+        y_pred=all_pred_spe_counts.iloc[idx_known_post_red], 
         metric_name='avg_count_err', 
         n_samples=nbr_samples_conf_int
     )
-    test_post_red_avg_abs_err_count_ci = boostrap_conf_interval(
-        y_true=all_grd_truth_spe_counts.iloc[start_test_phase:], 
-        y_pred=all_pred_spe_counts.iloc[start_test_phase:], 
+    test_post_red_avg_abs_err_count_ci_known = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_counts.iloc[idx_known_test_post_red], 
+        y_pred=all_pred_spe_counts.iloc[idx_known_test_post_red], 
         metric_name='avg_count_err', 
         n_samples=nbr_samples_conf_int
     )
@@ -1778,16 +2273,16 @@ def score_test_from_boxes(
         is_abs_err=False,
         n_samples=nbr_samples_conf_int
     )
-    post_red_avg_rel_err_count_ci = boostrap_conf_interval(
-        y_true=all_grd_truth_spe_counts.iloc[total_pre_red_btn:start_test_phase], 
-        y_pred=all_pred_spe_counts.iloc[total_pre_red_btn:start_test_phase], 
+    post_red_avg_rel_err_count_ci_known = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_counts.iloc[idx_known_post_red], 
+        y_pred=all_pred_spe_counts.iloc[idx_known_post_red], 
         metric_name='avg_count_err', 
         is_abs_err=False,
         n_samples=nbr_samples_conf_int
     )
-    test_post_red_avg_rel_err_count_ci = boostrap_conf_interval(
-        y_true=all_grd_truth_spe_counts.iloc[start_test_phase:], 
-        y_pred=all_pred_spe_counts.iloc[start_test_phase:], 
+    test_post_red_avg_rel_err_count_ci_known = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_counts.iloc[idx_known_test_post_red], 
+        y_pred=all_pred_spe_counts.iloc[idx_known_test_post_red], 
         metric_name='avg_count_err', 
         is_abs_err=False,
         n_samples=nbr_samples_conf_int
@@ -1801,51 +2296,153 @@ def score_test_from_boxes(
     if any(pre_red_rel_err_count_arr >= 0): 
         pre_red_avg_rel_err = round(np.mean(pre_red_rel_err_count_arr[pre_red_rel_err_count_arr >= 0]), 3)
 
-    post_red_avg_abs_err = -1 
-    if any(post_red_abs_err_count_arr >= 0): 
-        post_red_avg_abs_err = round(np.mean(post_red_abs_err_count_arr[post_red_abs_err_count_arr >= 0]), 3)
+    post_red_avg_abs_err_known = -1 
+    if any(post_red_abs_err_count_arr_known >= 0): 
+        post_red_avg_abs_err_known = round(np.mean(post_red_abs_err_count_arr_known[post_red_abs_err_count_arr_known >= 0]), 3)
 
-    post_red_avg_rel_err = -1 
-    if any(post_red_rel_err_count_arr >= 0): 
-        post_red_avg_rel_err = round(np.mean(post_red_rel_err_count_arr[post_red_rel_err_count_arr >= 0]), 3)
+    post_red_avg_rel_err_known = -1 
+    if any(post_red_rel_err_count_arr_known >= 0): 
+        post_red_avg_rel_err_known = round(np.mean(post_red_rel_err_count_arr_known[post_red_rel_err_count_arr_known >= 0]), 3)
 
-    test_post_red_avg_abs_err = -1 
-    if any(test_post_red_abs_err_count_arr >= 0): 
-        test_post_red_avg_abs_err = round(np.mean(test_post_red_abs_err_count_arr[test_post_red_abs_err_count_arr >= 0]), 3)
+    test_post_red_avg_abs_err_known = -1 
+    if any(test_post_red_abs_err_count_arr_known >= 0): 
+        test_post_red_avg_abs_err_known = round(np.mean(test_post_red_abs_err_count_arr_known[test_post_red_abs_err_count_arr_known >= 0]), 3)
 
-    test_post_red_avg_rel_err = -1 
-    if any(test_post_red_rel_err_count_arr >= 0): 
-        test_post_red_avg_rel_err = round(np.mean(test_post_red_rel_err_count_arr[test_post_red_rel_err_count_arr >= 0]), 3)
+    test_post_red_avg_rel_err_known = -1 
+    if any(test_post_red_rel_err_count_arr_known >= 0): 
+        test_post_red_avg_rel_err_known = round(np.mean(test_post_red_rel_err_count_arr_known[test_post_red_rel_err_count_arr_known >= 0]), 3)
+    # ***
+
+    # -------------
+    # ** novel
+    pre_red_abs_err_count_arr = np.array([pre_red_abs_err_count[spe]['novel']['value'] for spe in pre_red_abs_err_count])
+    post_red_abs_err_count_arr_novel = np.array([post_red_abs_err_count[spe]['novel']['value'] for spe in post_red_abs_err_count])
+    test_post_red_abs_err_count_arr_novel = np.array([test_post_red_abs_err_count[spe]['novel']['value'] for spe in test_post_red_abs_err_count])
+
+    pre_red_rel_err_count_arr = np.array([pre_red_rel_err_count[spe]['novel']['value'] for spe in pre_red_rel_err_count])
+    post_red_rel_err_count_arr_novel = np.array([post_red_rel_err_count[spe]['novel']['value'] for spe in post_red_rel_err_count])
+    test_post_red_rel_err_count_arr_novel = np.array([test_post_red_rel_err_count[spe]['novel']['value'] for spe in test_post_red_rel_err_count])
+
+    pre_red_avg_abs_err_count_ci = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_counts.iloc[:total_pre_red_btn], 
+        y_pred=all_pred_spe_counts.iloc[:total_pre_red_btn], 
+        metric_name='avg_count_err', 
+        n_samples=nbr_samples_conf_int
+    )
+    post_red_avg_abs_err_count_ci_novel = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_counts.iloc[idx_novel_post_red], 
+        y_pred=all_pred_spe_counts.iloc[idx_novel_post_red], 
+        metric_name='avg_count_err', 
+        n_samples=nbr_samples_conf_int
+    )
+    test_post_red_avg_abs_err_count_ci_novel = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_counts.iloc[idx_novel_test_post_red], 
+        y_pred=all_pred_spe_counts.iloc[idx_novel_test_post_red], 
+        metric_name='avg_count_err', 
+        n_samples=nbr_samples_conf_int
+    )
+    pre_red_avg_rel_err_count_ci = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_counts.iloc[:total_pre_red_btn], 
+        y_pred=all_pred_spe_counts.iloc[:total_pre_red_btn], 
+        metric_name='avg_count_err', 
+        is_abs_err=False,
+        n_samples=nbr_samples_conf_int
+    )
+    post_red_avg_rel_err_count_ci_novel = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_counts.iloc[idx_novel_post_red], 
+        y_pred=all_pred_spe_counts.iloc[idx_novel_post_red], 
+        metric_name='avg_count_err', 
+        is_abs_err=False,
+        n_samples=nbr_samples_conf_int
+    )
+    test_post_red_avg_rel_err_count_ci_novel = boostrap_conf_interval(
+        y_true=all_grd_truth_spe_counts.iloc[idx_novel_test_post_red], 
+        y_pred=all_pred_spe_counts.iloc[idx_novel_test_post_red], 
+        metric_name='avg_count_err', 
+        is_abs_err=False,
+        n_samples=nbr_samples_conf_int
+    )
+
+    post_red_avg_abs_err_novel = -1 
+    if any(post_red_abs_err_count_arr_novel >= 0): 
+        post_red_avg_abs_err_novel = round(np.mean(post_red_abs_err_count_arr_novel[post_red_abs_err_count_arr_novel >= 0]), 3)
+
+    post_red_avg_rel_err_novel = -1 
+    if any(post_red_rel_err_count_arr_novel >= 0): 
+        post_red_avg_rel_err_novel = round(np.mean(post_red_rel_err_count_arr_novel[post_red_rel_err_count_arr_novel >= 0]), 3)
+
+    test_post_red_avg_abs_err_novel = -1 
+    if any(test_post_red_abs_err_count_arr_novel >= 0): 
+        test_post_red_avg_abs_err_novel = round(np.mean(test_post_red_abs_err_count_arr_novel[test_post_red_abs_err_count_arr_novel >= 0]), 3)
+
+    test_post_red_avg_rel_err_novel = -1 
+    if any(test_post_red_rel_err_count_arr_novel >= 0): 
+        test_post_red_avg_rel_err_novel = round(np.mean(test_post_red_rel_err_count_arr_novel[test_post_red_rel_err_count_arr_novel >= 0]), 3)
+    # ***
 
     agg_species_counts = {
         'pre_red_btn':{
             'avg_abs_err': {
-                'value': pre_red_avg_abs_err,
-                'ci': pre_red_avg_abs_err_count_ci
+                'known': {
+                    'value': pre_red_avg_abs_err,
+                    'ci': pre_red_avg_abs_err_count_ci
+                },
+                'novel': {
+                    'value': -1
+                }
             },
             'avg_rel_err': {
-                'value': pre_red_avg_rel_err,
-                'ci': pre_red_avg_rel_err_count_ci
+                'known': {
+                    'value': pre_red_avg_rel_err,
+                    'ci': pre_red_avg_rel_err_count_ci
+                },
+                'novel': {
+                    'value': -1
+                }
             }
         },
         'post_red_btn':{
             'avg_abs_err': {
-                'value': post_red_avg_abs_err,
-                'ci': post_red_avg_abs_err_count_ci
+                'known': {
+                    'value': post_red_avg_abs_err_known,
+                    'ci': post_red_avg_abs_err_count_ci_known
+                },
+                'novel': {
+                    'value': post_red_avg_abs_err_novel,
+                    'ci': post_red_avg_abs_err_count_ci_novel
+                }
             },
             'avg_rel_err': {
-                'value': post_red_avg_rel_err,
-                'ci': post_red_avg_rel_err_count_ci
+                'known': {
+                    'value': post_red_avg_rel_err_known,
+                    'ci': post_red_avg_rel_err_count_ci_known
+                },
+                'novel': {
+                    'value': post_red_avg_rel_err_novel,
+                    'ci': post_red_avg_rel_err_count_ci_novel
+                }
             }
         },
         'test_post_red_btn':{
             'avg_abs_err': {
-                'value': test_post_red_avg_abs_err,
-                'ci': test_post_red_avg_abs_err_count_ci
+                'known': {
+                    'value': test_post_red_avg_abs_err_known,
+                    'ci': test_post_red_avg_abs_err_count_ci_known
+                },
+                'novel': {
+                    'value': test_post_red_avg_abs_err_novel,
+                    'ci': test_post_red_avg_abs_err_count_ci_novel
+                }
             },
             'avg_rel_err': {
-                'value': test_post_red_avg_rel_err,
-                'ci': test_post_red_avg_rel_err_count_ci
+                'known': {
+                    'value': test_post_red_avg_rel_err_known,
+                    'ci': test_post_red_avg_rel_err_count_ci_known
+                },
+                'novel': {
+                    'value': test_post_red_avg_rel_err_novel,
+                    'ci': test_post_red_avg_rel_err_count_ci_novel
+                }
             }
         }
     }
@@ -1956,10 +2553,10 @@ def score_test_from_boxes(
     
 
     # Aggregate species presence
-    pre_red_per_spe_auc_arr = np.array([pre_red_per_spe_auc[spe]['value'] for spe in pre_red_per_spe_auc])
-    pre_red_per_spe_precision_arr = np.array([pre_red_per_spe_precision[spe]['value'] for spe in pre_red_per_spe_precision])
-    pre_red_per_spe_recall_arr = np.array([pre_red_per_spe_recall[spe]['value'] for spe in pre_red_per_spe_recall])
-    pre_red_per_spe_f1_arr = np.array([pre_red_per_spe_f1[spe]['value'] for spe in pre_red_per_spe_f1])
+    pre_red_per_spe_auc_arr = np.array([pre_red_per_spe_auc[spe]['known']['value'] for spe in pre_red_per_spe_auc])
+    pre_red_per_spe_precision_arr = np.array([pre_red_per_spe_precision[spe]['known']['value'] for spe in pre_red_per_spe_precision])
+    pre_red_per_spe_recall_arr = np.array([pre_red_per_spe_recall[spe]['known']['value'] for spe in pre_red_per_spe_recall])
+    pre_red_per_spe_f1_arr = np.array([pre_red_per_spe_f1[spe]['known']['value'] for spe in pre_red_per_spe_f1])
 
     pre_red_spe_avg_auc = round(np.mean(pre_red_per_spe_auc_arr[pre_red_per_spe_auc_arr >= 0]), 2)
     pre_red_spe_avg_pre = round(np.mean(pre_red_per_spe_precision_arr[pre_red_per_spe_precision_arr >= 0]), 2)
@@ -1980,72 +2577,147 @@ def score_test_from_boxes(
     )
 
     if total_pre_red_btn < start_test_phase:
-        post_red_per_spe_auc_arr = np.array([post_red_per_spe_auc[spe]['value'] for spe in post_red_per_spe_auc])
-        post_red_per_spe_precision_arr = np.array([post_red_per_spe_precision[spe]['value'] for spe in post_red_per_spe_precision])
-        post_red_per_spe_recall_arr = np.array([post_red_per_spe_recall[spe]['value'] for spe in post_red_per_spe_recall])
-        post_red_per_spe_f1_arr = np.array([post_red_per_spe_f1[spe]['value'] for spe in post_red_per_spe_f1])
+        # *** Known ***
+        post_red_per_spe_auc_arr_known = np.array([post_red_per_spe_auc[spe]['known']['value'] for spe in post_red_per_spe_auc])
+        post_red_per_spe_precision_arr_known = np.array([post_red_per_spe_precision[spe]['known']['value'] for spe in post_red_per_spe_precision])
+        post_red_per_spe_recall_arr_known = np.array([post_red_per_spe_recall[spe]['known']['value'] for spe in post_red_per_spe_recall])
+        post_red_per_spe_f1_arr_known = np.array([post_red_per_spe_f1[spe]['known']['value'] for spe in post_red_per_spe_f1])
         
-        post_red_spe_avg_auc = round(np.mean(post_red_per_spe_auc_arr[post_red_per_spe_auc_arr >= 0]), 2)
-        post_red_spe_avg_pre = round(np.mean(post_red_per_spe_precision_arr[post_red_per_spe_precision_arr >= 0]), 2)
-        post_red_spe_avg_rec = round(np.mean(post_red_per_spe_recall_arr[post_red_per_spe_recall_arr >= 0]), 2)
-        post_red_spe_avg_f1 = round(np.mean(post_red_per_spe_f1_arr[post_red_per_spe_f1_arr >= 0]), 2)
+        post_red_spe_avg_auc_known = round(np.mean(post_red_per_spe_auc_arr_known[post_red_per_spe_auc_arr_known >= 0]), 2)
+        post_red_spe_avg_pre_known = round(np.mean(post_red_per_spe_precision_arr_known[post_red_per_spe_precision_arr_known >= 0]), 2)
+        post_red_spe_avg_rec_known = round(np.mean(post_red_per_spe_recall_arr_known[post_red_per_spe_recall_arr_known >= 0]), 2)
+        post_red_spe_avg_f1_known = round(np.mean(post_red_per_spe_f1_arr_known[post_red_per_spe_f1_arr_known >= 0]), 2)
 
-        post_red_spe_avg_auc_ci = boostrap_conf_interval(
-            y_true=all_grd_truth_spe_presence.iloc[total_pre_red_btn:start_test_phase], 
-            y_pred=all_pred_spe_presence.iloc[total_pre_red_btn:start_test_phase], 
+        post_red_spe_avg_auc_ci_known = boostrap_conf_interval(
+            y_true=all_grd_truth_spe_presence.iloc[idx_known_post_red], 
+            y_pred=all_pred_spe_presence.iloc[idx_known_post_red], 
             metric_name='avg_auc', 
             n_samples=nbr_samples_conf_int
         )
-        post_red_spe_avg_pre_rec_f1_ci = boostrap_conf_interval(
-            y_true=all_grd_truth_spe_presence.iloc[total_pre_red_btn:start_test_phase], 
-            y_pred=all_pred_spe_presence_yn.iloc[total_pre_red_btn:start_test_phase], 
+        post_red_spe_avg_pre_rec_f1_ci_known = boostrap_conf_interval(
+            y_true=all_grd_truth_spe_presence.iloc[idx_known_post_red], 
+            y_pred=all_pred_spe_presence_yn.iloc[idx_known_post_red], 
             metric_name='avg_pre/rec/f1', 
             n_samples=nbr_samples_conf_int
         )
 
         # test phase
-        test_post_red_per_spe_auc_arr = np.array([test_post_red_per_spe_auc[spe]['value'] for spe in test_post_red_per_spe_auc])
-        test_post_red_per_spe_precision_arr = np.array([test_post_red_per_spe_precision[spe]['value'] for spe in test_post_red_per_spe_precision])
-        test_post_red_per_spe_recall_arr = np.array([test_post_red_per_spe_recall[spe]['value'] for spe in test_post_red_per_spe_recall])
-        test_post_red_per_spe_f1_arr = np.array([test_post_red_per_spe_f1[spe]['value'] for spe in test_post_red_per_spe_f1])
+        test_post_red_per_spe_auc_arr_known = np.array([test_post_red_per_spe_auc[spe]['known']['value'] for spe in test_post_red_per_spe_auc])
+        test_post_red_per_spe_precision_arr_known = np.array([test_post_red_per_spe_precision[spe]['known']['value'] for spe in test_post_red_per_spe_precision])
+        test_post_red_per_spe_recall_arr_known = np.array([test_post_red_per_spe_recall[spe]['known']['value'] for spe in test_post_red_per_spe_recall])
+        test_post_red_per_spe_f1_arr_known = np.array([test_post_red_per_spe_f1[spe]['known']['value'] for spe in test_post_red_per_spe_f1])
 
-        test_post_red_spe_avg_auc = round(np.mean(test_post_red_per_spe_auc_arr[test_post_red_per_spe_auc_arr >= 0]), 2)
-        test_post_red_spe_avg_pre = round(np.mean(test_post_red_per_spe_precision_arr[test_post_red_per_spe_precision_arr >= 0]), 2)
-        test_post_red_spe_avg_rec = round(np.mean(test_post_red_per_spe_recall_arr[test_post_red_per_spe_recall_arr >= 0]), 2)
-        test_post_red_spe_avg_f1 = round(np.mean(test_post_red_per_spe_f1_arr[test_post_red_per_spe_f1_arr >= 0]), 2)
+        test_post_red_spe_avg_auc_known = round(
+            np.mean(test_post_red_per_spe_auc_arr_known[test_post_red_per_spe_auc_arr_known >= 0]), 2
+        )
+        test_post_red_spe_avg_pre_known = round(
+            np.mean(test_post_red_per_spe_precision_arr_known[test_post_red_per_spe_precision_arr_known >= 0]), 2
+        )
+        test_post_red_spe_avg_rec_known = round(
+            np.mean(test_post_red_per_spe_recall_arr_known[test_post_red_per_spe_recall_arr_known >= 0]), 2
+        )
+        test_post_red_spe_avg_f1_known = round(
+            np.mean(test_post_red_per_spe_f1_arr_known[test_post_red_per_spe_f1_arr_known >= 0]), 2
+        )
 
-        test_post_red_spe_avg_auc_ci = boostrap_conf_interval(
-            y_true=all_grd_truth_spe_presence.iloc[start_test_phase:], 
-            y_pred=all_pred_spe_presence.iloc[start_test_phase:], 
+        test_post_red_spe_avg_auc_ci_known = boostrap_conf_interval(
+            y_true=all_grd_truth_spe_presence.iloc[idx_known_test_post_red], 
+            y_pred=all_pred_spe_presence.iloc[idx_known_test_post_red], 
             metric_name='avg_auc', 
             n_samples=nbr_samples_conf_int
         )
-        test_post_red_spe_avg_pre_rec_f1_ci = boostrap_conf_interval(
-            y_true=all_grd_truth_spe_presence.iloc[start_test_phase:], 
-            y_pred=all_pred_spe_presence_yn.iloc[start_test_phase:], 
+        test_post_red_spe_avg_pre_rec_f1_ci_known = boostrap_conf_interval(
+            y_true=all_grd_truth_spe_presence.iloc[idx_known_test_post_red], 
+            y_pred=all_pred_spe_presence_yn.iloc[idx_known_test_post_red], 
+            metric_name='avg_pre/rec/f1', 
+            n_samples=nbr_samples_conf_int
+        )
+
+        # *** novel ***
+        post_red_per_spe_auc_arr_novel = np.array([post_red_per_spe_auc[spe]['novel']['value'] for spe in post_red_per_spe_auc])
+        post_red_per_spe_precision_arr_novel = np.array([post_red_per_spe_precision[spe]['novel']['value'] for spe in post_red_per_spe_precision])
+        post_red_per_spe_recall_arr_novel = np.array([post_red_per_spe_recall[spe]['novel']['value'] for spe in post_red_per_spe_recall])
+        post_red_per_spe_f1_arr_novel = np.array([post_red_per_spe_f1[spe]['novel']['value'] for spe in post_red_per_spe_f1])
+        
+        post_red_spe_avg_auc_novel = round(np.mean(post_red_per_spe_auc_arr_novel[post_red_per_spe_auc_arr_novel >= 0]), 2)
+        post_red_spe_avg_pre_novel = round(np.mean(post_red_per_spe_precision_arr_novel[post_red_per_spe_precision_arr_novel >= 0]), 2)
+        post_red_spe_avg_rec_novel = round(np.mean(post_red_per_spe_recall_arr_novel[post_red_per_spe_recall_arr_novel >= 0]), 2)
+        post_red_spe_avg_f1_novel = round(np.mean(post_red_per_spe_f1_arr_novel[post_red_per_spe_f1_arr_novel >= 0]), 2)
+
+        post_red_spe_avg_auc_ci_novel = boostrap_conf_interval(
+            y_true=all_grd_truth_spe_presence.iloc[idx_novel_post_red], 
+            y_pred=all_pred_spe_presence.iloc[idx_novel_post_red], 
+            metric_name='avg_auc', 
+            n_samples=nbr_samples_conf_int
+        )
+        post_red_spe_avg_pre_rec_f1_ci_novel = boostrap_conf_interval(
+            y_true=all_grd_truth_spe_presence.iloc[idx_novel_post_red], 
+            y_pred=all_pred_spe_presence_yn.iloc[idx_novel_post_red], 
+            metric_name='avg_pre/rec/f1', 
+            n_samples=nbr_samples_conf_int
+        )
+
+        # test phase
+        test_post_red_per_spe_auc_arr_novel = np.array([test_post_red_per_spe_auc[spe]['novel']['value'] for spe in test_post_red_per_spe_auc])
+        test_post_red_per_spe_precision_arr_novel = np.array([test_post_red_per_spe_precision[spe]['novel']['value'] for spe in test_post_red_per_spe_precision])
+        test_post_red_per_spe_recall_arr_novel = np.array([test_post_red_per_spe_recall[spe]['novel']['value'] for spe in test_post_red_per_spe_recall])
+        test_post_red_per_spe_f1_arr_novel = np.array([test_post_red_per_spe_f1[spe]['novel']['value'] for spe in test_post_red_per_spe_f1])
+
+        test_post_red_spe_avg_auc_novel = round(
+            np.mean(test_post_red_per_spe_auc_arr_novel[test_post_red_per_spe_auc_arr_novel >= 0]), 2
+        )
+        test_post_red_spe_avg_pre_novel = round(
+            np.mean(test_post_red_per_spe_precision_arr_novel[test_post_red_per_spe_precision_arr_novel >= 0]), 2
+        )
+        test_post_red_spe_avg_rec_novel = round(
+            np.mean(test_post_red_per_spe_recall_arr_novel[test_post_red_per_spe_recall_arr_novel >= 0]), 2
+        )
+        test_post_red_spe_avg_f1_novel = round(
+            np.mean(test_post_red_per_spe_f1_arr_novel[test_post_red_per_spe_f1_arr_novel >= 0]), 2
+        )
+
+        test_post_red_spe_avg_auc_ci_novel = boostrap_conf_interval(
+            y_true=all_grd_truth_spe_presence.iloc[idx_novel_test_post_red], 
+            y_pred=all_pred_spe_presence.iloc[idx_novel_test_post_red], 
+            metric_name='avg_auc', 
+            n_samples=nbr_samples_conf_int
+        )
+        test_post_red_spe_avg_pre_rec_f1_ci_novel = boostrap_conf_interval(
+            y_true=all_grd_truth_spe_presence.iloc[idx_novel_test_post_red], 
+            y_pred=all_pred_spe_presence_yn.iloc[idx_novel_test_post_red], 
             metric_name='avg_pre/rec/f1', 
             n_samples=nbr_samples_conf_int
         )
     else:
         # the trial does not have any novelty
-        post_red_spe_avg_auc = -1
-        post_red_spe_avg_pre = -1
-        post_red_spe_avg_rec = -1
-        post_red_spe_avg_f1 = -1
+        post_red_spe_avg_auc_known, post_red_spe_avg_auc_novel = -1, -1
+        post_red_spe_avg_pre_known, post_red_spe_avg_pre_novel = -1, -1
+        post_red_spe_avg_rec_known, post_red_spe_avg_rec_novel = -1, -1
+        post_red_spe_avg_f1_known, post_red_spe_avg_f1_novel = -1, -1
 
-        post_red_spe_avg_auc_ci = -1
-        post_red_spe_avg_pre_rec_f1_ci = {
+        post_red_spe_avg_auc_ci_known, post_red_spe_avg_auc_ci_novel = -1, -1
+        post_red_spe_avg_pre_rec_f1_ci_known = {
+            'avg_precision': -1,
+            'avg_recall': -1,
+            'avg_f1_score': -1
+        }
+        post_red_spe_avg_pre_rec_f1_ci_novel = {
             'avg_precision': -1,
             'avg_recall': -1,
             'avg_f1_score': -1
         }
 
-        test_post_red_spe_avg_auc = -1
-        test_post_red_spe_avg_pre = -1
-        test_post_red_spe_avg_rec = -1
-        test_post_red_spe_avg_f1 = -1
-        test_post_red_spe_avg_auc_ci = -1
-        test_post_red_spe_avg_pre_rec_f1_ci = {
+        test_post_red_spe_avg_auc_known, test_post_red_spe_avg_auc_novel = -1, -1
+        test_post_red_spe_avg_pre_known, test_post_red_spe_avg_pre_novel = -1, -1
+        test_post_red_spe_avg_rec_known, test_post_red_spe_avg_rec_novel = -1, -1
+        test_post_red_spe_avg_f1_known, test_post_red_spe_avg_f1_novel = -1, -1
+        test_post_red_spe_avg_auc_ci_known, test_post_red_spe_avg_auc_ci_novel = -1, -1
+        test_post_red_spe_avg_pre_rec_f1_ci_known = {
+            'avg_precision': -1,
+            'avg_recall': -1,
+            'avg_f1_score': -1
+        }
+        test_post_red_spe_avg_pre_rec_f1_ci_novel = {
             'avg_precision': -1,
             'avg_recall': -1,
             'avg_f1_score': -1
@@ -2054,56 +2726,124 @@ def score_test_from_boxes(
     agg_species_presence = {
         'pre_red_btn':{
             'avg_auc': {
-                'value': pre_red_spe_avg_auc,
-                'ci': pre_red_spe_avg_auc_ci
+                'known': {
+                    'value': pre_red_spe_avg_auc,
+                    'ci': pre_red_spe_avg_auc_ci
+                },
+                'novel': {
+                    'value': -1
+                }
             },
             'avg_precision': {
-                'value': pre_red_spe_avg_pre,
-                'ci': pre_red_spe_avg_pre_rec_f1_ci['avg_precision']
+                'known': {
+                    'value': pre_red_spe_avg_pre,
+                    'ci': pre_red_spe_avg_pre_rec_f1_ci['avg_precision']
+                },
+                'novel': {
+                    'value': -1
+                }
             },
             'avg_recall': {
-                'value': pre_red_spe_avg_rec,
-                'ci': pre_red_spe_avg_pre_rec_f1_ci['avg_recall']
+                'known': {
+                    'value': pre_red_spe_avg_rec,
+                    'ci': pre_red_spe_avg_pre_rec_f1_ci['avg_recall']
+                },
+                'novel': {
+                    'value': -1
+                }
             },
             'avg_f1_score': {
-                'value': pre_red_spe_avg_f1,
-                'ci': pre_red_spe_avg_pre_rec_f1_ci['avg_f1_score']
+                'known': {
+                    'value': pre_red_spe_avg_f1,
+                    'ci': pre_red_spe_avg_pre_rec_f1_ci['avg_f1_score']
+                },
+                'novel': {
+                    'value': -1
+                }
             }
         },
         'post_red_btn':{
             'avg_auc': {
-                'value': post_red_spe_avg_auc,
-                'ci': post_red_spe_avg_auc_ci
+                'known': {
+                    'value': post_red_spe_avg_auc_known,
+                    'ci': post_red_spe_avg_auc_ci_known
+                },
+                'novel': {
+                    'value': post_red_spe_avg_auc_novel,
+                    'ci': post_red_spe_avg_auc_ci_novel
+                }
             },
             'avg_precision': {
-                'value': post_red_spe_avg_pre,
-                'ci': post_red_spe_avg_pre_rec_f1_ci['avg_precision']
+                'known': {
+                    'value': post_red_spe_avg_pre_known,
+                    'ci': post_red_spe_avg_pre_rec_f1_ci_known['avg_precision']
+                },
+                'novel': {
+                    'value': post_red_spe_avg_pre_novel,
+                    'ci': post_red_spe_avg_pre_rec_f1_ci_novel['avg_precision']
+                }
             },
             'avg_recall': {
-                'value': post_red_spe_avg_rec,
-                'ci': post_red_spe_avg_pre_rec_f1_ci['avg_recall']
+                'known': {
+                    'value': post_red_spe_avg_rec_known,
+                    'ci': post_red_spe_avg_pre_rec_f1_ci_known['avg_recall']
+                },
+                'novel': {
+                    'value': post_red_spe_avg_rec_novel,
+                    'ci': post_red_spe_avg_pre_rec_f1_ci_novel['avg_recall']
+                }
             },
             'avg_f1_score': {
-                'value': post_red_spe_avg_f1,
-                'ci': post_red_spe_avg_pre_rec_f1_ci['avg_f1_score']
+                'known': {
+                    'value': post_red_spe_avg_f1_known,
+                    'ci': post_red_spe_avg_pre_rec_f1_ci_known['avg_f1_score']
+                },
+                'novel': {
+                    'value': post_red_spe_avg_f1_novel,
+                    'ci': post_red_spe_avg_pre_rec_f1_ci_novel['avg_f1_score']
+                }
             }
         },
         'test_post_red_btn':{
             'avg_auc': {
-                'value': test_post_red_spe_avg_auc,
-                'ci': test_post_red_spe_avg_auc_ci
+                'known': {
+                    'value': test_post_red_spe_avg_auc_known,
+                    'ci': test_post_red_spe_avg_auc_ci_known
+                },
+                'novel': {
+                    'value': test_post_red_spe_avg_auc_novel,
+                    'ci': test_post_red_spe_avg_auc_ci_novel
+                }
             },
             'avg_precision': {
-                'value': test_post_red_spe_avg_pre,
-                'ci': test_post_red_spe_avg_pre_rec_f1_ci['avg_precision']
+                'known': {
+                    'value': test_post_red_spe_avg_pre_known,
+                    'ci': test_post_red_spe_avg_pre_rec_f1_ci_known['avg_precision']
+                },
+                'novel': {
+                    'value': test_post_red_spe_avg_pre_novel,
+                    'ci': test_post_red_spe_avg_pre_rec_f1_ci_novel['avg_precision']
+                }
             },
             'avg_recall': {
-                'value': test_post_red_spe_avg_rec,
-                'ci': test_post_red_spe_avg_pre_rec_f1_ci['avg_recall']
+                'known': {
+                    'value': test_post_red_spe_avg_rec_known,
+                    'ci': test_post_red_spe_avg_pre_rec_f1_ci_known['avg_recall']
+                },
+                'novel': {
+                    'value': test_post_red_spe_avg_rec_novel,
+                    'ci': test_post_red_spe_avg_pre_rec_f1_ci_novel['avg_recall']
+                }
             },
             'avg_f1_score': {
-                'value': test_post_red_spe_avg_f1,
-                'ci': test_post_red_spe_avg_pre_rec_f1_ci['avg_f1_score']
+                'known': {
+                    'value': test_post_red_spe_avg_f1_known,
+                    'ci': test_post_red_spe_avg_pre_rec_f1_ci_known['avg_f1_score']
+                },
+                'novel': {
+                    'value': test_post_red_spe_avg_f1_novel,
+                    'ci': test_post_red_spe_avg_pre_rec_f1_ci_novel['avg_f1_score']
+                }
             }
         }
     }
@@ -2133,10 +2873,10 @@ def score_test_from_boxes(
     all_performances['Per_activity_presence'][test_id] = activity_presence
 
     # Aggregate activity presence
-    pre_red_per_act_auc_arr = np.array([pre_red_per_act_auc[act]['value'] for act in pre_red_per_act_auc])
-    pre_red_per_act_precision_arr = np.array([pre_red_per_act_precision[act]['value'] for act in pre_red_per_act_precision])
-    pre_red_per_act_recall_arr = np.array([pre_red_per_act_recall[act]['value'] for act in pre_red_per_act_recall])
-    pre_red_per_act_f1_arr = np.array([pre_red_per_act_f1[act]['value'] for act in pre_red_per_act_f1])
+    pre_red_per_act_auc_arr = np.array([pre_red_per_act_auc[act]['known']['value'] for act in pre_red_per_act_auc])
+    pre_red_per_act_precision_arr = np.array([pre_red_per_act_precision[act]['known']['value'] for act in pre_red_per_act_precision])
+    pre_red_per_act_recall_arr = np.array([pre_red_per_act_recall[act]['known']['value'] for act in pre_red_per_act_recall])
+    pre_red_per_act_f1_arr = np.array([pre_red_per_act_f1[act]['known']['value'] for act in pre_red_per_act_f1])
 
     pre_red_act_avg_auc = round(np.mean(pre_red_per_act_auc_arr[pre_red_per_act_auc_arr >= 0]), 2)
     pre_red_act_avg_pre = round(np.mean(pre_red_per_act_precision_arr[pre_red_per_act_precision_arr >= 0]), 2)
@@ -2157,73 +2897,134 @@ def score_test_from_boxes(
     )
 
     if total_pre_red_btn < start_test_phase:
-        post_red_per_act_auc_arr = np.array([post_red_per_act_auc[act]['value'] for act in post_red_per_act_auc])
-        post_red_per_act_precision_arr = np.array([post_red_per_act_precision[act]['value'] for act in post_red_per_act_precision])
-        post_red_per_act_recall_arr = np.array([post_red_per_act_recall[act]['value'] for act in post_red_per_act_recall])
-        post_red_per_act_f1_arr = np.array([post_red_per_act_f1[act]['value'] for act in post_red_per_act_f1])
+        # -----------------
+        # ****  Known  ****
+        post_red_per_act_auc_arr_known = np.array([post_red_per_act_auc[act]['known']['value'] for act in post_red_per_act_auc])
+        post_red_per_act_precision_arr_known = np.array([post_red_per_act_precision[act]['known']['value'] for act in post_red_per_act_precision])
+        post_red_per_act_recall_arr_known = np.array([post_red_per_act_recall[act]['known']['value'] for act in post_red_per_act_recall])
+        post_red_per_act_f1_arr_known = np.array([post_red_per_act_f1[act]['known']['value'] for act in post_red_per_act_f1])
 
-        post_red_act_avg_auc = round(np.mean(post_red_per_act_auc_arr[post_red_per_act_auc_arr >= 0]), 2)
-        post_red_act_avg_pre = round(np.mean(post_red_per_act_precision_arr[post_red_per_act_precision_arr >= 0]), 2)
-        post_red_act_avg_rec = round(np.mean(post_red_per_act_recall_arr[post_red_per_act_recall_arr >= 0]), 2)
-        post_red_act_avg_f1 = round(np.mean(post_red_per_act_f1_arr[post_red_per_act_f1_arr >= 0]), 2)
+        post_red_act_avg_auc_known = round(np.mean(post_red_per_act_auc_arr_known[post_red_per_act_auc_arr_known >= 0]), 2)
+        post_red_act_avg_pre_known = round(np.mean(post_red_per_act_precision_arr_known[post_red_per_act_precision_arr_known >= 0]), 2)
+        post_red_act_avg_rec_known = round(np.mean(post_red_per_act_recall_arr_known[post_red_per_act_recall_arr_known >= 0]), 2)
+        post_red_act_avg_f1_known = round(np.mean(post_red_per_act_f1_arr_known[post_red_per_act_f1_arr_known >= 0]), 2)
 
 
-        post_red_act_avg_auc_ci = boostrap_conf_interval(
-            y_true=all_grd_truth_act_presence.iloc[total_pre_red_btn:start_test_phase], 
-            y_pred=all_pred_act_presence.iloc[total_pre_red_btn:start_test_phase], 
+        post_red_act_avg_auc_ci_known = boostrap_conf_interval(
+            y_true=all_grd_truth_act_presence.iloc[idx_known_post_red], 
+            y_pred=all_pred_act_presence.iloc[idx_known_post_red], 
             metric_name='avg_auc', 
             n_samples=nbr_samples_conf_int
         )
-        post_red_act_avg_pre_rec_f1_ci = boostrap_conf_interval(
-            y_true=all_grd_truth_act_presence.iloc[total_pre_red_btn:start_test_phase], 
-            y_pred=all_pred_act_presence_yn.iloc[total_pre_red_btn:start_test_phase], 
+        post_red_act_avg_pre_rec_f1_ci_known = boostrap_conf_interval(
+            y_true=all_grd_truth_act_presence.iloc[idx_known_post_red], 
+            y_pred=all_pred_act_presence_yn.iloc[idx_known_post_red], 
             metric_name='avg_pre/rec/f1', 
             n_samples=nbr_samples_conf_int
         )
 
-        test_post_red_per_act_auc_arr = np.array([test_post_red_per_act_auc[act]['value'] for act in test_post_red_per_act_auc])
-        test_post_red_per_act_precision_arr = np.array([test_post_red_per_act_precision[act]['value'] for act in test_post_red_per_act_precision])
-        test_post_red_per_act_recall_arr = np.array([test_post_red_per_act_recall[act]['value'] for act in test_post_red_per_act_recall])
-        test_post_red_per_act_f1_arr = np.array([test_post_red_per_act_f1[act]['value'] for act in test_post_red_per_act_f1])
+        test_post_red_per_act_auc_arr_known = np.array([test_post_red_per_act_auc[act]['known']['value'] for act in test_post_red_per_act_auc])
+        test_post_red_per_act_precision_arr_known = np.array([test_post_red_per_act_precision[act]['known']['value'] for act in test_post_red_per_act_precision])
+        test_post_red_per_act_recall_arr_known = np.array([test_post_red_per_act_recall[act]['known']['value'] for act in test_post_red_per_act_recall])
+        test_post_red_per_act_f1_arr_known = np.array([test_post_red_per_act_f1[act]['known']['value'] for act in test_post_red_per_act_f1])
 
-        test_post_red_act_avg_auc = round(np.mean(test_post_red_per_act_auc_arr[test_post_red_per_act_auc_arr >= 0]), 2)
-        test_post_red_act_avg_pre = round(np.mean(test_post_red_per_act_precision_arr[test_post_red_per_act_precision_arr >= 0]), 2)
-        test_post_red_act_avg_rec = round(np.mean(test_post_red_per_act_recall_arr[test_post_red_per_act_recall_arr >= 0]), 2)
-        test_post_red_act_avg_f1 = round(np.mean(test_post_red_per_act_f1_arr[test_post_red_per_act_f1_arr >= 0]), 2)
+        test_post_red_act_avg_auc_known = round(np.mean(test_post_red_per_act_auc_arr_known[test_post_red_per_act_auc_arr_known >= 0]), 2)
+        test_post_red_act_avg_pre_known = round(np.mean(test_post_red_per_act_precision_arr_known[test_post_red_per_act_precision_arr_known >= 0]), 2)
+        test_post_red_act_avg_rec_known = round(np.mean(test_post_red_per_act_recall_arr_known[test_post_red_per_act_recall_arr_known >= 0]), 2)
+        test_post_red_act_avg_f1_known = round(np.mean(test_post_red_per_act_f1_arr_known[test_post_red_per_act_f1_arr_known >= 0]), 2)
 
-        test_post_red_act_avg_auc_ci = boostrap_conf_interval(
-            y_true=all_grd_truth_act_presence.iloc[start_test_phase:], 
-            y_pred=all_pred_act_presence.iloc[start_test_phase:], 
+        test_post_red_act_avg_auc_ci_known = boostrap_conf_interval(
+            y_true=all_grd_truth_act_presence.iloc[idx_known_test_post_red], 
+            y_pred=all_pred_act_presence.iloc[idx_known_test_post_red], 
             metric_name='avg_auc', 
             n_samples=nbr_samples_conf_int
         )
-        test_post_red_act_avg_pre_rec_f1_ci = boostrap_conf_interval(
-            y_true=all_grd_truth_act_presence.iloc[start_test_phase:], 
-            y_pred=all_pred_act_presence_yn.iloc[start_test_phase:], 
+        test_post_red_act_avg_pre_rec_f1_ci_known = boostrap_conf_interval(
+            y_true=all_grd_truth_act_presence.iloc[idx_known_test_post_red], 
+            y_pred=all_pred_act_presence_yn.iloc[idx_known_test_post_red], 
+            metric_name='avg_pre/rec/f1', 
+            n_samples=nbr_samples_conf_int
+        )
+
+        # -----------------
+        # ****  novel  ****
+        post_red_per_act_auc_arr_novel = np.array([post_red_per_act_auc[act]['novel']['value'] for act in post_red_per_act_auc])
+        post_red_per_act_precision_arr_novel = np.array([post_red_per_act_precision[act]['novel']['value'] for act in post_red_per_act_precision])
+        post_red_per_act_recall_arr_novel = np.array([post_red_per_act_recall[act]['novel']['value'] for act in post_red_per_act_recall])
+        post_red_per_act_f1_arr_novel = np.array([post_red_per_act_f1[act]['novel']['value'] for act in post_red_per_act_f1])
+
+        post_red_act_avg_auc_novel = round(np.mean(post_red_per_act_auc_arr_novel[post_red_per_act_auc_arr_novel >= 0]), 2)
+        post_red_act_avg_pre_novel = round(np.mean(post_red_per_act_precision_arr_novel[post_red_per_act_precision_arr_novel >= 0]), 2)
+        post_red_act_avg_rec_novel = round(np.mean(post_red_per_act_recall_arr_novel[post_red_per_act_recall_arr_novel >= 0]), 2)
+        post_red_act_avg_f1_novel = round(np.mean(post_red_per_act_f1_arr_novel[post_red_per_act_f1_arr_novel >= 0]), 2)
+
+
+        post_red_act_avg_auc_ci_novel = boostrap_conf_interval(
+            y_true=all_grd_truth_act_presence.iloc[idx_novel_post_red], 
+            y_pred=all_pred_act_presence.iloc[idx_novel_post_red], 
+            metric_name='avg_auc', 
+            n_samples=nbr_samples_conf_int
+        )
+        post_red_act_avg_pre_rec_f1_ci_novel = boostrap_conf_interval(
+            y_true=all_grd_truth_act_presence.iloc[idx_novel_post_red], 
+            y_pred=all_pred_act_presence_yn.iloc[idx_novel_post_red], 
+            metric_name='avg_pre/rec/f1', 
+            n_samples=nbr_samples_conf_int
+        )
+
+        test_post_red_per_act_auc_arr_novel = np.array([test_post_red_per_act_auc[act]['novel']['value'] for act in test_post_red_per_act_auc])
+        test_post_red_per_act_precision_arr_novel = np.array([test_post_red_per_act_precision[act]['novel']['value'] for act in test_post_red_per_act_precision])
+        test_post_red_per_act_recall_arr_novel = np.array([test_post_red_per_act_recall[act]['novel']['value'] for act in test_post_red_per_act_recall])
+        test_post_red_per_act_f1_arr_novel = np.array([test_post_red_per_act_f1[act]['novel']['value'] for act in test_post_red_per_act_f1])
+
+        test_post_red_act_avg_auc_novel = round(np.mean(test_post_red_per_act_auc_arr_novel[test_post_red_per_act_auc_arr_novel >= 0]), 2)
+        test_post_red_act_avg_pre_novel = round(np.mean(test_post_red_per_act_precision_arr_novel[test_post_red_per_act_precision_arr_novel >= 0]), 2)
+        test_post_red_act_avg_rec_novel = round(np.mean(test_post_red_per_act_recall_arr_novel[test_post_red_per_act_recall_arr_novel >= 0]), 2)
+        test_post_red_act_avg_f1_novel = round(np.mean(test_post_red_per_act_f1_arr_novel[test_post_red_per_act_f1_arr_novel >= 0]), 2)
+
+        test_post_red_act_avg_auc_ci_novel = boostrap_conf_interval(
+            y_true=all_grd_truth_act_presence.iloc[idx_novel_test_post_red], 
+            y_pred=all_pred_act_presence.iloc[idx_novel_test_post_red], 
+            metric_name='avg_auc', 
+            n_samples=nbr_samples_conf_int
+        )
+        test_post_red_act_avg_pre_rec_f1_ci_novel = boostrap_conf_interval(
+            y_true=all_grd_truth_act_presence.iloc[idx_novel_test_post_red], 
+            y_pred=all_pred_act_presence_yn.iloc[idx_novel_test_post_red], 
             metric_name='avg_pre/rec/f1', 
             n_samples=nbr_samples_conf_int
         )
     else:
         # the trial does not have any novelty
-        post_red_act_avg_auc = -1
-        post_red_act_avg_pre = -1
-        post_red_act_avg_rec = -1
-        post_red_act_avg_f1 = -1
+        post_red_act_avg_auc_known, post_red_act_avg_auc_novel = -1, -1
+        post_red_act_avg_pre_known, post_red_act_avg_pre_novel = -1, -1
+        post_red_act_avg_rec_known, post_red_act_avg_rec_novel = -1, -1
+        post_red_act_avg_f1_known, post_red_act_avg_f1_novel = -1, -1
 
-        post_red_act_avg_auc_ci = -1
-        post_red_act_avg_pre_rec_f1_ci = {
+        post_red_act_avg_auc_ci_known, post_red_act_avg_auc_ci_novel = -1, -1
+        post_red_act_avg_pre_rec_f1_ci_known = {
+            'avg_precision': -1,
+            'avg_recall': -1,
+            'avg_f1_score': -1
+        }
+        post_red_act_avg_pre_rec_f1_ci_novel = {
             'avg_precision': -1,
             'avg_recall': -1,
             'avg_f1_score': -1
         }
 
-        test_post_red_act_avg_auc = -1
-        test_post_red_act_avg_pre = -1
-        test_post_red_act_avg_rec = -1
-        test_post_red_act_avg_f1 = -1
+        test_post_red_act_avg_auc_known, test_post_red_act_avg_auc_novel = -1, -1
+        test_post_red_act_avg_pre_known, test_post_red_act_avg_pre_novel = -1, -1
+        test_post_red_act_avg_rec_known, test_post_red_act_avg_rec_novel = -1, -1
+        test_post_red_act_avg_f1_known, test_post_red_act_avg_f1_novel = -1, -1
 
-        test_post_red_act_avg_auc_ci = -1
-        test_post_red_act_avg_pre_rec_f1_ci = {
+        test_post_red_act_avg_auc_ci_known, test_post_red_act_avg_auc_ci_novel = -1, -1
+        test_post_red_act_avg_pre_rec_f1_ci_known = {
+            'avg_precision': -1,
+            'avg_recall': -1,
+            'avg_f1_score': -1
+        }
+        test_post_red_act_avg_pre_rec_f1_ci_novel = {
             'avg_precision': -1,
             'avg_recall': -1,
             'avg_f1_score': -1
@@ -2233,56 +3034,124 @@ def score_test_from_boxes(
     agg_activity_presence = {
         'pre_red_btn':{
             'avg_auc': {
-                'value': pre_red_act_avg_auc,
-                'ci': pre_red_act_avg_auc_ci
+                'known': {
+                    'value': pre_red_act_avg_auc,
+                    'ci': pre_red_act_avg_auc_ci
+                },
+                'novel': {
+                    'value': -1
+                }
             },
             'avg_precision': {
-                'value': pre_red_act_avg_pre,
-                'ci': pre_red_act_avg_pre_rec_f1_ci['avg_precision']
+                'known': {
+                    'value': pre_red_act_avg_pre,
+                    'ci': pre_red_act_avg_pre_rec_f1_ci['avg_precision']
+                },
+                'novel': {
+                    'value': -1
+                }
             },
             'avg_recall': {
-                'value': pre_red_act_avg_rec,
-                'ci': pre_red_act_avg_pre_rec_f1_ci['avg_recall']
+                'known': {
+                    'value': pre_red_act_avg_rec,
+                    'ci': pre_red_act_avg_pre_rec_f1_ci['avg_recall']
+                },
+                'novel': {
+                    'value': -1
+                }
             },
             'avg_f1_score': {
-                'value': pre_red_act_avg_f1,
-                'ci': pre_red_act_avg_pre_rec_f1_ci['avg_f1_score']
+                'known': {
+                    'value': pre_red_act_avg_f1,
+                    'ci': pre_red_act_avg_pre_rec_f1_ci['avg_f1_score']
+                },
+                'novel': {
+                    'value': -1
+                }
             }
         },
         'post_red_btn':{
             'avg_auc': {
-                'value': post_red_act_avg_auc,
-                'ci': post_red_act_avg_auc_ci
+                'known': {
+                    'value': post_red_act_avg_auc_known,
+                    'ci': post_red_act_avg_auc_ci_known
+                },
+                'novel': {
+                    'value': post_red_act_avg_auc_novel,
+                    'ci': post_red_act_avg_auc_ci_novel
+                }
             },
             'avg_precision': {
-                'value': post_red_act_avg_pre,
-                'ci': post_red_act_avg_pre_rec_f1_ci['avg_precision']
+                'known': {
+                    'value': post_red_act_avg_pre_known,
+                    'ci': post_red_act_avg_pre_rec_f1_ci_known['avg_precision']
+                },
+                'novel': {
+                    'value': post_red_act_avg_pre_novel,
+                    'ci': post_red_act_avg_pre_rec_f1_ci_novel['avg_precision']
+                }
             },
             'avg_recall': {
-                'value': post_red_act_avg_rec,
-                'ci': post_red_act_avg_pre_rec_f1_ci['avg_recall']
+                'known': {
+                    'value': post_red_act_avg_rec_known,
+                    'ci': post_red_act_avg_pre_rec_f1_ci_known['avg_recall']
+                },
+                'novel': {
+                    'value': post_red_act_avg_rec_novel,
+                    'ci': post_red_act_avg_pre_rec_f1_ci_novel['avg_recall']
+                }
             },
             'avg_f1_score': {
-                'value': post_red_act_avg_f1,
-                'ci': post_red_act_avg_pre_rec_f1_ci['avg_f1_score']
+                'known': {
+                    'value': post_red_act_avg_f1_known,
+                    'ci': post_red_act_avg_pre_rec_f1_ci_known['avg_f1_score']
+                },
+                'novel': {
+                    'value': post_red_act_avg_f1_novel,
+                    'ci': post_red_act_avg_pre_rec_f1_ci_novel['avg_f1_score']
+                }
             }
         },
         'test_post_red_btn':{
             'avg_auc': {
-                'value': test_post_red_act_avg_auc,
-                'ci': test_post_red_act_avg_auc_ci
+                'known': {
+                    'value': test_post_red_act_avg_auc_known,
+                    'ci': test_post_red_act_avg_auc_ci_known
+                },
+                'novel': {
+                    'value': test_post_red_act_avg_auc_novel,
+                    'ci': test_post_red_act_avg_auc_ci_novel
+                }
             },
             'avg_precision': {
-                'value': test_post_red_act_avg_pre,
-                'ci': test_post_red_act_avg_pre_rec_f1_ci['avg_precision']
+                'known': {
+                    'value': test_post_red_act_avg_pre_known,
+                    'ci': test_post_red_act_avg_pre_rec_f1_ci_known['avg_precision']
+                },
+                'novel': {
+                    'value': test_post_red_act_avg_pre_novel,
+                    'ci': test_post_red_act_avg_pre_rec_f1_ci_novel['avg_precision']
+                }
             },
             'avg_recall': {
-                'value': test_post_red_act_avg_rec,
-                'ci': test_post_red_act_avg_pre_rec_f1_ci['avg_recall']
+                'known': {
+                    'value': test_post_red_act_avg_rec_known,
+                    'ci': test_post_red_act_avg_pre_rec_f1_ci_known['avg_recall']
+                },
+                'novel': {
+                    'value': test_post_red_act_avg_rec_novel,
+                    'ci': test_post_red_act_avg_pre_rec_f1_ci_novel['avg_recall']
+                }
             },
             'avg_f1_score': {
-                'value': test_post_red_act_avg_f1,
-                'ci': test_post_red_act_avg_pre_rec_f1_ci['avg_f1_score']
+                'known': {
+                    'value': test_post_red_act_avg_f1_known,
+                    'ci': test_post_red_act_avg_pre_rec_f1_ci_known['avg_f1_score']
+                },
+                'novel': {
+                    'value': test_post_red_act_avg_f1_novel,
+                    'ci': test_post_red_act_avg_pre_rec_f1_ci_novel['avg_f1_score']
+                }
             }
         }
     }
@@ -2454,7 +3323,6 @@ def score_tests(
                 )
         
 
-    # write_results_to_log(all_performances, output_path=log_dir)
     write_results_to_csv(all_performances, output_path=log_dir)
     print_confusion_matrices(all_performances, log_dir / "confusion.pdf")
     print_reliability_diagrams(all_performances, log_dir / "reliability_diagrams.pdf")
@@ -2507,6 +3375,7 @@ def main():
         args.save_symlinks, dataset_root, detection_threshold, species_presence_threshold,
         activity_presence_threshold
     )
+
 
 if __name__ == '__main__':
     main()
