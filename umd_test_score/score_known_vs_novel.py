@@ -2995,102 +2995,201 @@ def score_test_from_boxes(
 
     if total_pre_red_btn < start_test_phase:
         # -----------------
-        # ****  Known  ****
-        post_red_per_act_auc_arr_known = np.array([post_red_per_act_auc[act]['known']['value'] for act in post_red_per_act_auc])
-        post_red_per_act_precision_arr_known = np.array([post_red_per_act_precision[act]['known']['value'] for act in post_red_per_act_precision])
-        post_red_per_act_recall_arr_known = np.array([post_red_per_act_recall[act]['known']['value'] for act in post_red_per_act_recall])
-        post_red_per_act_f1_arr_known = np.array([post_red_per_act_f1[act]['known']['value'] for act in post_red_per_act_f1])
+        try:
+            # ****  Known  ****
+            post_red_per_act_auc_arr_known = np.array([post_red_per_act_auc[act]['known']['value'] for act in post_red_per_act_auc])
+            post_red_per_act_precision_arr_known = np.array([post_red_per_act_precision[act]['known']['value'] for act in post_red_per_act_precision])
+            post_red_per_act_recall_arr_known = np.array([post_red_per_act_recall[act]['known']['value'] for act in post_red_per_act_recall])
+            post_red_per_act_f1_arr_known = np.array([post_red_per_act_f1[act]['known']['value'] for act in post_red_per_act_f1])
 
-        post_red_act_avg_auc_known = round(np.mean(post_red_per_act_auc_arr_known[post_red_per_act_auc_arr_known >= 0]), 2)
-        post_red_act_avg_pre_known = round(np.mean(post_red_per_act_precision_arr_known[post_red_per_act_precision_arr_known >= 0]), 2)
-        post_red_act_avg_rec_known = round(np.mean(post_red_per_act_recall_arr_known[post_red_per_act_recall_arr_known >= 0]), 2)
-        post_red_act_avg_f1_known = round(np.mean(post_red_per_act_f1_arr_known[post_red_per_act_f1_arr_known >= 0]), 2)
+            post_red_act_avg_auc_known = -1 
+            if any(post_red_per_act_auc_arr_known >= 0): 
+                post_red_act_avg_auc_known = round(np.mean(post_red_per_act_auc_arr_known[post_red_per_act_auc_arr_known >= 0]), 2)
 
+            post_red_act_avg_pre_known = -1 
+            if any(post_red_per_act_precision_arr_known >= 0): 
+                post_red_act_avg_pre_known = round(np.mean(post_red_per_act_precision_arr_known[post_red_per_act_precision_arr_known >= 0]), 2)
 
-        post_red_act_avg_auc_ci_known = boostrap_conf_interval(
-            y_true=all_grd_truth_act_presence.iloc[idx_known_post_red], 
-            y_pred=all_pred_act_presence.iloc[idx_known_post_red], 
-            metric_name='avg_auc', 
-            n_samples=nbr_samples_conf_int
-        )
-        post_red_act_avg_pre_rec_f1_ci_known = boostrap_conf_interval(
-            y_true=all_grd_truth_act_presence.iloc[idx_known_post_red], 
-            y_pred=all_pred_act_presence_yn.iloc[idx_known_post_red], 
-            metric_name='avg_pre/rec/f1', 
-            n_samples=nbr_samples_conf_int
-        )
+            post_red_act_avg_rec_known = -1 
+            if any(post_red_per_act_recall_arr_known >= 0): 
+                post_red_act_avg_rec_known = round(np.mean(post_red_per_act_recall_arr_known[post_red_per_act_recall_arr_known >= 0]), 2)
 
-        test_post_red_per_act_auc_arr_known = np.array([test_post_red_per_act_auc[act]['known']['value'] for act in test_post_red_per_act_auc])
-        test_post_red_per_act_precision_arr_known = np.array([test_post_red_per_act_precision[act]['known']['value'] for act in test_post_red_per_act_precision])
-        test_post_red_per_act_recall_arr_known = np.array([test_post_red_per_act_recall[act]['known']['value'] for act in test_post_red_per_act_recall])
-        test_post_red_per_act_f1_arr_known = np.array([test_post_red_per_act_f1[act]['known']['value'] for act in test_post_red_per_act_f1])
+            post_red_act_avg_f1_known = -1 
+            if any(post_red_per_act_f1_arr_known >= 0): 
+                post_red_act_avg_f1_known = round(np.mean(post_red_per_act_f1_arr_known[post_red_per_act_f1_arr_known >= 0]), 2)
 
-        test_post_red_act_avg_auc_known = round(np.mean(test_post_red_per_act_auc_arr_known[test_post_red_per_act_auc_arr_known >= 0]), 2)
-        test_post_red_act_avg_pre_known = round(np.mean(test_post_red_per_act_precision_arr_known[test_post_red_per_act_precision_arr_known >= 0]), 2)
-        test_post_red_act_avg_rec_known = round(np.mean(test_post_red_per_act_recall_arr_known[test_post_red_per_act_recall_arr_known >= 0]), 2)
-        test_post_red_act_avg_f1_known = round(np.mean(test_post_red_per_act_f1_arr_known[test_post_red_per_act_f1_arr_known >= 0]), 2)
-
-        test_post_red_act_avg_auc_ci_known = boostrap_conf_interval(
-            y_true=all_grd_truth_act_presence.iloc[idx_known_test_post_red], 
-            y_pred=all_pred_act_presence.iloc[idx_known_test_post_red], 
-            metric_name='avg_auc', 
-            n_samples=nbr_samples_conf_int
-        )
-        test_post_red_act_avg_pre_rec_f1_ci_known = boostrap_conf_interval(
-            y_true=all_grd_truth_act_presence.iloc[idx_known_test_post_red], 
-            y_pred=all_pred_act_presence_yn.iloc[idx_known_test_post_red], 
-            metric_name='avg_pre/rec/f1', 
-            n_samples=nbr_samples_conf_int
-        )
-
-        # -----------------
-        # ****  novel  ****
-        post_red_per_act_auc_arr_novel = np.array([post_red_per_act_auc[act]['novel']['value'] for act in post_red_per_act_auc])
-        post_red_per_act_precision_arr_novel = np.array([post_red_per_act_precision[act]['novel']['value'] for act in post_red_per_act_precision])
-        post_red_per_act_recall_arr_novel = np.array([post_red_per_act_recall[act]['novel']['value'] for act in post_red_per_act_recall])
-        post_red_per_act_f1_arr_novel = np.array([post_red_per_act_f1[act]['novel']['value'] for act in post_red_per_act_f1])
-
-        post_red_act_avg_auc_novel = round(np.mean(post_red_per_act_auc_arr_novel[post_red_per_act_auc_arr_novel >= 0]), 2)
-        post_red_act_avg_pre_novel = round(np.mean(post_red_per_act_precision_arr_novel[post_red_per_act_precision_arr_novel >= 0]), 2)
-        post_red_act_avg_rec_novel = round(np.mean(post_red_per_act_recall_arr_novel[post_red_per_act_recall_arr_novel >= 0]), 2)
-        post_red_act_avg_f1_novel = round(np.mean(post_red_per_act_f1_arr_novel[post_red_per_act_f1_arr_novel >= 0]), 2)
+            # post_red_act_avg_auc_known = round(np.mean(post_red_per_act_auc_arr_known[post_red_per_act_auc_arr_known >= 0]), 2)
+            # post_red_act_avg_pre_known = round(np.mean(post_red_per_act_precision_arr_known[post_red_per_act_precision_arr_known >= 0]), 2)
+            # post_red_act_avg_rec_known = round(np.mean(post_red_per_act_recall_arr_known[post_red_per_act_recall_arr_known >= 0]), 2)
+            # post_red_act_avg_f1_known = round(np.mean(post_red_per_act_f1_arr_known[post_red_per_act_f1_arr_known >= 0]), 2)
 
 
-        post_red_act_avg_auc_ci_novel = boostrap_conf_interval(
-            y_true=all_grd_truth_act_presence.iloc[idx_novel_post_red], 
-            y_pred=all_pred_act_presence.iloc[idx_novel_post_red], 
-            metric_name='avg_auc', 
-            n_samples=nbr_samples_conf_int
-        )
-        post_red_act_avg_pre_rec_f1_ci_novel = boostrap_conf_interval(
-            y_true=all_grd_truth_act_presence.iloc[idx_novel_post_red], 
-            y_pred=all_pred_act_presence_yn.iloc[idx_novel_post_red], 
-            metric_name='avg_pre/rec/f1', 
-            n_samples=nbr_samples_conf_int
-        )
+            post_red_act_avg_auc_ci_known = boostrap_conf_interval(
+                y_true=all_grd_truth_act_presence.iloc[idx_known_post_red], 
+                y_pred=all_pred_act_presence.iloc[idx_known_post_red], 
+                metric_name='avg_auc', 
+                n_samples=nbr_samples_conf_int
+            )
+            post_red_act_avg_pre_rec_f1_ci_known = boostrap_conf_interval(
+                y_true=all_grd_truth_act_presence.iloc[idx_known_post_red], 
+                y_pred=all_pred_act_presence_yn.iloc[idx_known_post_red], 
+                metric_name='avg_pre/rec/f1', 
+                n_samples=nbr_samples_conf_int
+            )
 
-        test_post_red_per_act_auc_arr_novel = np.array([test_post_red_per_act_auc[act]['novel']['value'] for act in test_post_red_per_act_auc])
-        test_post_red_per_act_precision_arr_novel = np.array([test_post_red_per_act_precision[act]['novel']['value'] for act in test_post_red_per_act_precision])
-        test_post_red_per_act_recall_arr_novel = np.array([test_post_red_per_act_recall[act]['novel']['value'] for act in test_post_red_per_act_recall])
-        test_post_red_per_act_f1_arr_novel = np.array([test_post_red_per_act_f1[act]['novel']['value'] for act in test_post_red_per_act_f1])
+            test_post_red_per_act_auc_arr_known = np.array([test_post_red_per_act_auc[act]['known']['value'] for act in test_post_red_per_act_auc])
+            test_post_red_per_act_precision_arr_known = np.array([test_post_red_per_act_precision[act]['known']['value'] for act in test_post_red_per_act_precision])
+            test_post_red_per_act_recall_arr_known = np.array([test_post_red_per_act_recall[act]['known']['value'] for act in test_post_red_per_act_recall])
+            test_post_red_per_act_f1_arr_known = np.array([test_post_red_per_act_f1[act]['known']['value'] for act in test_post_red_per_act_f1])
 
-        test_post_red_act_avg_auc_novel = round(np.mean(test_post_red_per_act_auc_arr_novel[test_post_red_per_act_auc_arr_novel >= 0]), 2)
-        test_post_red_act_avg_pre_novel = round(np.mean(test_post_red_per_act_precision_arr_novel[test_post_red_per_act_precision_arr_novel >= 0]), 2)
-        test_post_red_act_avg_rec_novel = round(np.mean(test_post_red_per_act_recall_arr_novel[test_post_red_per_act_recall_arr_novel >= 0]), 2)
-        test_post_red_act_avg_f1_novel = round(np.mean(test_post_red_per_act_f1_arr_novel[test_post_red_per_act_f1_arr_novel >= 0]), 2)
+            test_post_red_act_avg_auc_known = -1 
+            if any(test_post_red_per_act_auc_arr_known >= 0): 
+                test_post_red_act_avg_auc_known = round(np.mean(test_post_red_per_act_auc_arr_known[test_post_red_per_act_auc_arr_known >= 0]), 2)
 
-        test_post_red_act_avg_auc_ci_novel = boostrap_conf_interval(
-            y_true=all_grd_truth_act_presence.iloc[idx_novel_test_post_red], 
-            y_pred=all_pred_act_presence.iloc[idx_novel_test_post_red], 
-            metric_name='avg_auc', 
-            n_samples=nbr_samples_conf_int
-        )
-        test_post_red_act_avg_pre_rec_f1_ci_novel = boostrap_conf_interval(
-            y_true=all_grd_truth_act_presence.iloc[idx_novel_test_post_red], 
-            y_pred=all_pred_act_presence_yn.iloc[idx_novel_test_post_red], 
-            metric_name='avg_pre/rec/f1', 
-            n_samples=nbr_samples_conf_int
-        )
+            test_post_red_act_avg_pre_known = -1 
+            if any(test_post_red_per_act_precision_arr_known >= 0): 
+                test_post_red_act_avg_pre_known = round(np.mean(test_post_red_per_act_precision_arr_known[test_post_red_per_act_precision_arr_known >= 0]), 2)
+
+            test_post_red_act_avg_rec_known = -1 
+            if any(test_post_red_per_act_recall_arr_known >= 0): 
+                test_post_red_act_avg_rec_known = round(np.mean(test_post_red_per_act_recall_arr_known[test_post_red_per_act_recall_arr_known >= 0]), 2)
+
+            test_post_red_act_avg_f1_known = -1 
+            if any(test_post_red_per_act_f1_arr_known >= 0): 
+                test_post_red_act_avg_f1_known = round(np.mean(test_post_red_per_act_f1_arr_known[test_post_red_per_act_f1_arr_known >= 0]), 2)
+
+            # test_post_red_act_avg_auc_known = round(np.mean(test_post_red_per_act_auc_arr_known[test_post_red_per_act_auc_arr_known >= 0]), 2)
+            # test_post_red_act_avg_pre_known = round(np.mean(test_post_red_per_act_precision_arr_known[test_post_red_per_act_precision_arr_known >= 0]), 2)
+            # test_post_red_act_avg_rec_known = round(np.mean(test_post_red_per_act_recall_arr_known[test_post_red_per_act_recall_arr_known >= 0]), 2)
+            # test_post_red_act_avg_f1_known = round(np.mean(test_post_red_per_act_f1_arr_known[test_post_red_per_act_f1_arr_known >= 0]), 2)
+
+            test_post_red_act_avg_auc_ci_known = boostrap_conf_interval(
+                y_true=all_grd_truth_act_presence.iloc[idx_known_test_post_red], 
+                y_pred=all_pred_act_presence.iloc[idx_known_test_post_red], 
+                metric_name='avg_auc', 
+                n_samples=nbr_samples_conf_int
+            )
+            test_post_red_act_avg_pre_rec_f1_ci_known = boostrap_conf_interval(
+                y_true=all_grd_truth_act_presence.iloc[idx_known_test_post_red], 
+                y_pred=all_pred_act_presence_yn.iloc[idx_known_test_post_red], 
+                metric_name='avg_pre/rec/f1', 
+                n_samples=nbr_samples_conf_int
+            )
+
+            # -----------------
+            # ****  novel  ****
+            post_red_per_act_auc_arr_novel = np.array([post_red_per_act_auc[act]['novel']['value'] for act in post_red_per_act_auc])
+            post_red_per_act_precision_arr_novel = np.array([post_red_per_act_precision[act]['novel']['value'] for act in post_red_per_act_precision])
+            post_red_per_act_recall_arr_novel = np.array([post_red_per_act_recall[act]['novel']['value'] for act in post_red_per_act_recall])
+            post_red_per_act_f1_arr_novel = np.array([post_red_per_act_f1[act]['novel']['value'] for act in post_red_per_act_f1])
+
+            post_red_act_avg_auc_novel = -1 
+            if any(post_red_per_act_auc_arr_novel >= 0): 
+                post_red_act_avg_auc_novel = round(np.mean(post_red_per_act_auc_arr_novel[post_red_per_act_auc_arr_novel >= 0]), 2)
+
+            post_red_act_avg_pre_novel = -1 
+            if any(post_red_per_act_precision_arr_novel >= 0): 
+                post_red_act_avg_pre_novel = round(np.mean(post_red_per_act_precision_arr_novel[post_red_per_act_precision_arr_novel >= 0]), 2)
+
+            post_red_act_avg_rec_novel = -1 
+            if any(post_red_per_act_recall_arr_novel >= 0): 
+                post_red_act_avg_rec_novel = round(np.mean(post_red_per_act_recall_arr_novel[post_red_per_act_recall_arr_novel >= 0]), 2)
+
+            post_red_act_avg_f1_novel = -1 
+            if any(post_red_per_act_f1_arr_novel >= 0): 
+                post_red_act_avg_f1_novel = round(np.mean(post_red_per_act_f1_arr_novel[post_red_per_act_f1_arr_novel >= 0]), 2)
+            
+            # post_red_act_avg_auc_novel = round(np.mean(post_red_per_act_auc_arr_novel[post_red_per_act_auc_arr_novel >= 0]), 2)
+            # post_red_act_avg_pre_novel = round(np.mean(post_red_per_act_precision_arr_novel[post_red_per_act_precision_arr_novel >= 0]), 2)
+            # post_red_act_avg_rec_novel = round(np.mean(post_red_per_act_recall_arr_novel[post_red_per_act_recall_arr_novel >= 0]), 2)
+            # post_red_act_avg_f1_novel = round(np.mean(post_red_per_act_f1_arr_novel[post_red_per_act_f1_arr_novel >= 0]), 2)
+
+            post_red_act_avg_auc_ci_novel = boostrap_conf_interval(
+                y_true=all_grd_truth_act_presence.iloc[idx_novel_post_red], 
+                y_pred=all_pred_act_presence.iloc[idx_novel_post_red], 
+                metric_name='avg_auc', 
+                n_samples=nbr_samples_conf_int
+            )
+            post_red_act_avg_pre_rec_f1_ci_novel = boostrap_conf_interval(
+                y_true=all_grd_truth_act_presence.iloc[idx_novel_post_red], 
+                y_pred=all_pred_act_presence_yn.iloc[idx_novel_post_red], 
+                metric_name='avg_pre/rec/f1', 
+                n_samples=nbr_samples_conf_int
+            )
+
+            test_post_red_per_act_auc_arr_novel = np.array([test_post_red_per_act_auc[act]['novel']['value'] for act in test_post_red_per_act_auc])
+            test_post_red_per_act_precision_arr_novel = np.array([test_post_red_per_act_precision[act]['novel']['value'] for act in test_post_red_per_act_precision])
+            test_post_red_per_act_recall_arr_novel = np.array([test_post_red_per_act_recall[act]['novel']['value'] for act in test_post_red_per_act_recall])
+            test_post_red_per_act_f1_arr_novel = np.array([test_post_red_per_act_f1[act]['novel']['value'] for act in test_post_red_per_act_f1])
+
+            test_post_red_act_avg_auc_novel = -1 
+            if any(test_post_red_per_act_auc_arr_novel >= 0): 
+                test_post_red_act_avg_auc_novel = round(np.mean(test_post_red_per_act_auc_arr_novel[test_post_red_per_act_auc_arr_novel >= 0]), 2)
+
+            test_post_red_act_avg_pre_novel = -1 
+            if any(test_post_red_per_act_precision_arr_novel >= 0): 
+                test_post_red_act_avg_pre_novel = round(np.mean(test_post_red_per_act_precision_arr_novel[test_post_red_per_act_precision_arr_novel >= 0]), 2)
+
+            test_post_red_act_avg_rec_novel = -1 
+            if any(test_post_red_per_act_recall_arr_novel >= 0): 
+                test_post_red_act_avg_rec_novel = round(np.mean(test_post_red_per_act_recall_arr_novel[test_post_red_per_act_recall_arr_novel >= 0]), 2)
+
+            test_post_red_act_avg_f1_novel = -1 
+            if any(test_post_red_per_act_f1_arr_novel >= 0): 
+                test_post_red_act_avg_f1_novel = round(np.mean(test_post_red_per_act_f1_arr_novel[test_post_red_per_act_f1_arr_novel >= 0]), 2)
+
+            # test_post_red_act_avg_auc_novel = round(np.mean(test_post_red_per_act_auc_arr_novel[test_post_red_per_act_auc_arr_novel >= 0]), 2)
+            # test_post_red_act_avg_pre_novel = round(np.mean(test_post_red_per_act_precision_arr_novel[test_post_red_per_act_precision_arr_novel >= 0]), 2)
+            # test_post_red_act_avg_rec_novel = round(np.mean(test_post_red_per_act_recall_arr_novel[test_post_red_per_act_recall_arr_novel >= 0]), 2)
+            # test_post_red_act_avg_f1_novel = round(np.mean(test_post_red_per_act_f1_arr_novel[test_post_red_per_act_f1_arr_novel >= 0]), 2)
+
+            test_post_red_act_avg_auc_ci_novel = boostrap_conf_interval(
+                y_true=all_grd_truth_act_presence.iloc[idx_novel_test_post_red], 
+                y_pred=all_pred_act_presence.iloc[idx_novel_test_post_red], 
+                metric_name='avg_auc', 
+                n_samples=nbr_samples_conf_int
+            )
+            test_post_red_act_avg_pre_rec_f1_ci_novel = boostrap_conf_interval(
+                y_true=all_grd_truth_act_presence.iloc[idx_novel_test_post_red], 
+                y_pred=all_pred_act_presence_yn.iloc[idx_novel_test_post_red], 
+                metric_name='avg_pre/rec/f1', 
+                n_samples=nbr_samples_conf_int
+            )
+        except Exception as ex:
+            # the trial does not have any novelty
+            post_red_act_avg_auc_known, post_red_act_avg_auc_novel = -1, -1
+            post_red_act_avg_pre_known, post_red_act_avg_pre_novel = -1, -1
+            post_red_act_avg_rec_known, post_red_act_avg_rec_novel = -1, -1
+            post_red_act_avg_f1_known, post_red_act_avg_f1_novel = -1, -1
+
+            post_red_act_avg_auc_ci_known, post_red_act_avg_auc_ci_novel = -1, -1
+            post_red_act_avg_pre_rec_f1_ci_known = {
+                'avg_precision': -1,
+                'avg_recall': -1,
+                'avg_f1_score': -1
+            }
+            post_red_act_avg_pre_rec_f1_ci_novel = {
+                'avg_precision': -1,
+                'avg_recall': -1,
+                'avg_f1_score': -1
+            }
+
+            test_post_red_act_avg_auc_known, test_post_red_act_avg_auc_novel = -1, -1
+            test_post_red_act_avg_pre_known, test_post_red_act_avg_pre_novel = -1, -1
+            test_post_red_act_avg_rec_known, test_post_red_act_avg_rec_novel = -1, -1
+            test_post_red_act_avg_f1_known, test_post_red_act_avg_f1_novel = -1, -1
+
+            test_post_red_act_avg_auc_ci_known, test_post_red_act_avg_auc_ci_novel = -1, -1
+            test_post_red_act_avg_pre_rec_f1_ci_known = {
+                'avg_precision': -1,
+                'avg_recall': -1,
+                'avg_f1_score': -1
+            }
+            test_post_red_act_avg_pre_rec_f1_ci_novel = {
+                'avg_precision': -1,
+                'avg_recall': -1,
+                'avg_f1_score': -1
+            }
     else:
         # the trial does not have any novelty
         post_red_act_avg_auc_known, post_red_act_avg_auc_novel = -1, -1
@@ -3339,7 +3438,7 @@ def score_tests(
 ):   
     
     nbr_rounds = 300
-    size_test_phase = 1000  # number of images at the end of the trials used for testing
+    size_test_phase = 100  # number of images at the end of the trials used for testing
     
     # test_ids = open(test_dir/'test_ids.csv', 'r').read().splitlines()
     import pathlib 
