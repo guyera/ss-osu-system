@@ -3438,7 +3438,7 @@ def score_tests(
 ):   
     
     nbr_rounds = 300
-    size_test_phase = 100  # number of images at the end of the trials used for testing
+    size_test_phase = 1000  # number of images at the end of the trials used for testing
     
     # test_ids = open(test_dir/'test_ids.csv', 'r').read().splitlines()
     import pathlib 
