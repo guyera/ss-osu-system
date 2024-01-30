@@ -42,6 +42,27 @@ def print_nan(t, name):
 def contains_nan(tensor):
     return torch.isnan(tensor).any() 
 
+class BoxPredictionGradBalancer(torch.autograd.Function):
+    @staticmethod
+    def forward(input, weights):
+        return input
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        input, weights = inputs
+        ctx.weights = weights
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        grad_input = None
+
+        if grad_output is not None:
+            grad_input = grad_output * ctx.weights
+
+        return grad_input, None
+
+_balance_box_prediction_grads = BoxPredictionGradBalancer.apply
+
 '''
 Dynamic program solution to the multiple instance count problem
 
@@ -738,7 +759,8 @@ class ClassifierTrainer(ABC):
             train_sampler_fn,
             feedback_batch_sampler_fn,
             allow_write,
-            allow_print):
+            allow_print,
+            feedback_class_frequencies):
         return NotImplemented
 
     @abstractmethod
@@ -1006,7 +1028,8 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             species_classifier,
             activity_classifier,
             optimizer,
-            device):
+            device,
+            feedback_class_frequencies):
         # Set everything to train mode
         species_classifier.train()
         activity_classifier.train()
@@ -1030,11 +1053,35 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         # Compute losses
         species_weights = None
         activity_weights = None
+        species_frequencies = None
+        activity_frequencies = None
         if self._class_frequencies is not None:
-            species_frequencies, activity_frequencies = self._class_frequencies
-            species_frequencies = species_frequencies.to(device)
-            activity_frequencies = activity_frequencies.to(device)
+            train_species_frequencies,\
+                train_activity_frequencies = self._class_frequencies
+            train_species_frequencies = train_species_frequencies.to(device)
+            train_activity_frequencies = train_activity_frequencies.to(device)
+            
+            species_frequencies = train_species_frequencies
+            activity_frequencies = train_activity_frequencies
 
+        if feedback_class_frequencies is not None:
+            feedback_species_frequencies,\
+                feedback_activity_frequencies = feedback_class_frequencies
+            feedback_species_frequencies =\
+                feedback_species_frequencies.to(device)
+            feedback_activity_frequencies =\
+                feedback_activity_frequencies.to(device)
+
+            if species_frequencies is None:
+                species_frequencies = feedback_species_frequencies
+                activity_frequencies = feedback_activity_frequencies
+            else:
+                species_frequencies =\
+                    species_frequencies + feedback_species_frequencies
+                activity_frequencies =\
+                    activity_frequencies + feedback_activity_frequencies
+
+        if species_frequencies is not None:
             species_proportions = species_frequencies /\
                 species_frequencies.sum()
             unnormalized_species_weights =\
@@ -1113,6 +1160,21 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 flattened_feedback_activity_logits,
                 dim=1
             )
+
+            # TODO copy out If class balancing, scale the gradients according
+            # to class weights
+            if species_weights is not None:
+                flattened_feedback_species_preds =\
+                    _balance_box_prediction_grads(
+                        flattened_feedback_species_preds,
+                        species_weights
+                    )
+                flattened_feedback_activity_preds =\
+                    _balance_box_prediction_grads(
+                        flattened_feedback_activity_preds,
+                        activity_weights
+                    )
+
             feedback_box_counts = [len(x) for x in feedback_box_features]
             feedback_species_preds = torch.split(
                 flattened_feedback_species_preds,
@@ -1227,7 +1289,8 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             train_sampler_fn,
             feedback_batch_sampler_fn,
             allow_write,
-            allow_print):
+            allow_print,
+            feedback_class_frequencies):
         # Construct the optimizer
         optimizer = torch.optim.SGD(
             list(species_classifier.parameters())\
@@ -1368,7 +1431,8 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 species_classifier,
                 activity_classifier,
                 optimizer,
-                device
+                device,
+                feedback_class_frequencies
             )
 
             if root_log_dir is not None:
@@ -1504,7 +1568,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             feedback_activity_labels,
             feedback_box_images,
             device,
-            allow_print):
+            allow_print,
+            feedback_class_frequencies):
         # Move to device
         species_labels = species_labels.to(device)
         activity_labels = activity_labels.to(device)
@@ -1525,11 +1590,35 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         # Compute losses
         species_weights = None
         activity_weights = None
+        species_frequencies = None
+        activity_frequencies = None
         if self._class_frequencies is not None:
-            species_frequencies, activity_frequencies = self._class_frequencies
-            species_frequencies = species_frequencies.to(device)
-            activity_frequencies = activity_frequencies.to(device)
+            train_species_frequencies,\
+                train_activity_frequencies = self._class_frequencies
+            train_species_frequencies = train_species_frequencies.to(device)
+            train_activity_frequencies = train_activity_frequencies.to(device)
+            
+            species_frequencies = train_species_frequencies
+            activity_frequencies = train_activity_frequencies
 
+        if feedback_class_frequencies is not None:
+            feedback_species_frequencies,\
+                feedback_activity_frequencies = feedback_class_frequencies
+            feedback_species_frequencies =\
+                feedback_species_frequencies.to(device)
+            feedback_activity_frequencies =\
+                feedback_activity_frequencies.to(device)
+
+            if species_frequencies is None:
+                species_frequencies = feedback_species_frequencies
+                activity_frequencies = feedback_activity_frequencies
+            else:
+                species_frequencies =\
+                    species_frequencies + feedback_species_frequencies
+                activity_frequencies =\
+                    activity_frequencies + feedback_activity_frequencies
+
+        if species_frequencies is not None:
             species_proportions = species_frequencies /\
                 species_frequencies.sum()
             unnormalized_species_weights =\
@@ -1624,6 +1713,18 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 torch.nn.functional.softmax(feedback_species_logits, dim=1)
             feedback_activity_preds =\
                 torch.nn.functional.softmax(feedback_activity_logits, dim=1)
+
+            # If class balancing, scale the gradients according
+            # to class weights
+            if species_weights is not None:
+                feedback_species_preds = _balance_box_prediction_grads(
+                    feedback_species_preds,
+                    species_weights
+                )
+                feedback_activity_preds = _balance_box_prediction_grads(
+                    feedback_activity_preds,
+                    activity_weights
+                )
 
             if allow_print:
                 print_nan(feedback_activity_preds, 'feedback_activity_preds')
@@ -1740,7 +1841,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             activity_classifier,
             optimizer,
             device,
-            allow_print):
+            allow_print,
+            feedback_class_frequencies):
         # Set everything to train mode
         backbone.train()
         species_classifier.train()
@@ -1807,7 +1909,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     feedback_activity_labels,
                     feedback_box_images,
                     device,
-                    allow_print
+                    allow_print,
+                    feedback_class_frequencies
                 )
 
             sum_loss += batch_loss
@@ -1921,7 +2024,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             train_sampler_fn,
             feedback_batch_sampler_fn,
             allow_write,
-            allow_print):
+            allow_print,
+            feedback_class_frequencies):
         if self._memory_cache:
             train_dataset = FlattenedBoxImageDataset(BoxImageMemoryDataset(self._train_dataset))
         else:
@@ -2146,7 +2250,8 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 activity_classifier,
                 optimizer,
                 device,
-                allow_print
+                allow_print,
+                feedback_class_frequencies
             )
 
             if self._root_checkpoint_dir is not None and allow_write:
@@ -2346,8 +2451,12 @@ class EWCClassifierTrainer(ClassifierTrainer):
             feedback_activity_labels,
             feedback_box_images,
             device,
-            allow_print):
-        # Move to device
+            allow_print,
+            class_frequencies):
+        if self.just_finetune == False and self.ewc == True:
+            non_feedback_loss = self.ewc_calculation.penalty(backbone, species_classifier, activity_classifier)
+        else:
+            non_feedback_loss = 0
         if feedback_box_images is not None:
             feedback_species_labels = feedback_species_labels.to(device)
             feedback_activity_labels = feedback_activity_labels.to(device)
@@ -2376,6 +2485,40 @@ class EWCClassifierTrainer(ClassifierTrainer):
             feedback_activity_preds_ = feedback_activity_preds
             if allow_print:
                 print_nan(feedback_activity_preds, 'feedback_activity_preds')
+
+            if class_frequencies is not None:
+                # Compute weights for class balancing
+                species_frequencies, activity_frequencies = class_frequencies
+
+                species_proportions = species_frequencies /\
+                    species_frequencies.sum()
+                unnormalized_species_weights =\
+                    torch.pow(1.0 / species_proportions, 1.0 / 3.0)
+                unnormalized_species_weights[species_proportions == 0.0] = 0.0
+                proportional_species_sum =\
+                    (species_proportions * unnormalized_species_weights).sum()
+                species_weights =\
+                    unnormalized_species_weights / proportional_species_sum
+
+                activity_proportions = activity_frequencies /\
+                    activity_frequencies.sum()
+                unnormalized_activity_weights =\
+                    torch.pow(1.0 / activity_proportions, 1.0 / 3.0)
+                unnormalized_activity_weights[activity_proportions == 0.0] = 0.0
+                proportional_activity_sum =\
+                    (activity_proportions * unnormalized_activity_weights).sum()
+                activity_weights =\
+                    unnormalized_activity_weights / proportional_activity_sum
+
+                # Scale the gradients according to class weights
+                feedback_species_preds = _balance_box_prediction_grads(
+                    feedback_species_preds,
+                    species_weights
+                )
+                feedback_activity_preds = _balance_box_prediction_grads(
+                    feedback_activity_preds,
+                    activity_weights
+                )
             
             # Re-split feedback predictions for loss computation
             feedback_species_preds = torch.split(
@@ -2411,11 +2554,6 @@ class EWCClassifierTrainer(ClassifierTrainer):
             feedback_loss = feedback_species_loss + feedback_activity_loss
             if allow_print:
                 print_nan(feedback_loss, "feedback_loss")
-            
-            if self.just_finetune == False and self.ewc == True:
-                non_feedback_loss = self.ewc_calculation.penalty(backbone, species_classifier, activity_classifier)
-            else:
-                non_feedback_loss = 0
 
             loss =  feedback_loss + 100 * non_feedback_loss 
      
@@ -2441,7 +2579,6 @@ class EWCClassifierTrainer(ClassifierTrainer):
             for param in backbone.parameters():
                 if param.grad is not None:
                     print_nan(param.grad.data, 'some parameter\'s gradient 1')
-        # print(loss)
         loss.backward()
 
    
@@ -2480,7 +2617,8 @@ class EWCClassifierTrainer(ClassifierTrainer):
             activity_classifier,
             optimizer,
             device,
-            allow_print):
+            allow_print,
+            class_frequencies):
         # Set everything to train mode
         backbone.train()
         species_classifier.train()
@@ -2503,8 +2641,6 @@ class EWCClassifierTrainer(ClassifierTrainer):
         feedback_box_images = None
         batch_loss = None
         
-        # TODO remove i and usages (used to clip training batches for debugging)
-        i = 0
         if allow_print:
             train_feedback_loader_progress = tqdm(
                 feedback_loader,
@@ -2541,7 +2677,8 @@ class EWCClassifierTrainer(ClassifierTrainer):
                     feedback_activity_labels,
                     feedback_box_images,
                     device,
-                    allow_print
+                    allow_print,
+                    class_frequencies
                 )
 
             sum_loss += batch_loss
@@ -2655,7 +2792,8 @@ class EWCClassifierTrainer(ClassifierTrainer):
             train_sampler_fn,
             feedback_batch_sampler_fn,
             allow_write,
-            allow_print):
+            allow_print,
+            feedback_class_frequencies):
         if self._memory_cache:
             train_dataset = FlattenedBoxImageDataset(BoxImageMemoryDataset(self._train_dataset))
         else:
@@ -2843,9 +2981,43 @@ class EWCClassifierTrainer(ClassifierTrainer):
                 with open(validation_log, 'rb') as f:
                     validation_accuracy_curve = pkl.load(f)
 
+        # Combine train and feedback class frequencies
+        species_frequencies = None
+        activity_frequencies = None
+        if self._class_frequencies is not None:
+            train_species_frequencies,\
+                train_activity_frequencies = self._class_frequencies
+            train_species_frequencies = train_species_frequencies.to(device)
+            train_activity_frequencies = train_activity_frequencies.to(device)
+            
+            species_frequencies = train_species_frequencies
+            activity_frequencies = train_activity_frequencies
+
+        if feedback_class_frequencies is not None:
+            feedback_species_frequencies,\
+                feedback_activity_frequencies = feedback_class_frequencies
+            feedback_species_frequencies =\
+                feedback_species_frequencies.to(device)
+            feedback_activity_frequencies =\
+                feedback_activity_frequencies.to(device)
+
+            if species_frequencies is None:
+                species_frequencies = feedback_species_frequencies
+                activity_frequencies = feedback_activity_frequencies
+            else:
+                species_frequencies =\
+                    species_frequencies + feedback_species_frequencies
+                activity_frequencies =\
+                    activity_frequencies + feedback_activity_frequencies
+
+        if species_frequencies is not None:
+            class_frequencies = (species_frequencies, activity_frequencies)
+        else:
+            class_frequencies = None
+
         # Train
         if self.just_finetune == False and self.ewc == True:
-            self.ewc_calculation = EWC(backbone, species_classifier, activity_classifier, train_loader, self._class_frequencies, self._loss_fn, self._label_smoothing, device)
+            self.ewc_calculation = EWC(backbone, species_classifier, activity_classifier, train_loader, class_frequencies, self._loss_fn, self._label_smoothing, device)
 
         if allow_print:
             print('lr:', self._lr)
@@ -2882,7 +3054,8 @@ class EWCClassifierTrainer(ClassifierTrainer):
                 activity_classifier,
                 optimizer,
                 device,
-                allow_print
+                allow_print,
+                class_frequencies
             )
 
             if self._root_checkpoint_dir is not None and allow_write:
@@ -3093,7 +3266,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             feedback_activity_labels,
             feedback_box_images,
             feedback_box_backbone_features,
-            device):
+            device,
+            feedback_class_frequencies):
         # Move to device
         train_species_labels = train_species_labels.to(device)
         train_activity_labels = train_activity_labels.to(device)
@@ -3139,27 +3313,39 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             torch.nn.functional.softmax(feedback_species_logits, dim=1)
         feedback_activity_preds =\
             torch.nn.functional.softmax(feedback_activity_logits, dim=1)
-        
-        # Re-split feedback predictions for loss computation
-        feedback_species_preds = torch.split(
-            feedback_species_preds,
-            feedback_box_counts,
-            dim=0
-        )
-        feedback_activity_preds = torch.split(
-            feedback_activity_preds,
-            feedback_box_counts,
-            dim=0
-        )
 
-        # Compute losses
+        # Compute class balancing weights
         species_weights = None
         activity_weights = None
+        species_frequencies = None
+        activity_frequencies = None
         if self._class_frequencies is not None:
-            species_frequencies, activity_frequencies = self._class_frequencies
-            species_frequencies = species_frequencies.to(device)
-            activity_frequencies = activity_frequencies.to(device)
+            train_species_frequencies,\
+                train_activity_frequencies = self._class_frequencies
+            train_species_frequencies = train_species_frequencies.to(device)
+            train_activity_frequencies = train_activity_frequencies.to(device)
+            
+            species_frequencies = train_species_frequencies
+            activity_frequencies = train_activity_frequencies
 
+        if feedback_class_frequencies is not None:
+            feedback_species_frequencies,\
+                feedback_activity_frequencies = feedback_class_frequencies
+            feedback_species_frequencies =\
+                feedback_species_frequencies.to(device)
+            feedback_activity_frequencies =\
+                feedback_activity_frequencies.to(device)
+
+            if species_frequencies is None:
+                species_frequencies = feedback_species_frequencies
+                activity_frequencies = feedback_activity_frequencies
+            else:
+                species_frequencies =\
+                    species_frequencies + feedback_species_frequencies
+                activity_frequencies =\
+                    activity_frequencies + feedback_activity_frequencies
+
+        if species_frequencies is not None:
             species_proportions = species_frequencies /\
                 species_frequencies.sum()
             unnormalized_species_weights =\
@@ -3180,6 +3366,31 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             activity_weights =\
                 unnormalized_activity_weights / proportional_activity_sum
 
+        # If class balancing, scale the gradients according
+        # to class weights
+        if species_weights is not None:
+            feedback_species_preds = _balance_box_prediction_grads(
+                feedback_species_preds,
+                species_weights
+            )
+            feedback_activity_preds = _balance_box_prediction_grads(
+                feedback_activity_preds,
+                activity_weights
+            )
+        
+        # Re-split feedback predictions for loss computation
+        feedback_species_preds = torch.split(
+            feedback_species_preds,
+            feedback_box_counts,
+            dim=0
+        )
+        feedback_activity_preds = torch.split(
+            feedback_activity_preds,
+            feedback_box_counts,
+            dim=0
+        )
+
+        # Compute losses
         if self._loss_fn == LossFnEnum.cross_entropy:
             train_species_loss = torch.nn.functional.cross_entropy(
                 train_species_preds,
@@ -3256,7 +3467,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             species_classifier,
             activity_classifier,
             optimizer,
-            device):
+            device,
+            feedback_class_frequencies):
         # Set everything to train mode
         backbone.train()
         species_classifier.train()
@@ -3298,7 +3510,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                     feedback_activity_labels,
                     feedback_box_images,
                     feedback_box_backbone_features,
-                    device
+                    device,
+                    feedback_class_frequencies
                 )
 
             sum_loss += batch_loss
@@ -3412,7 +3625,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             train_sampler_fn,
             feedback_batch_sampler_fn,
             allow_write,
-            allow_print):
+            allow_print,
+            feedback_class_frequencies):
         # Load training and validation backbone features from feature
         # files
         train_box_features, train_species_labels, train_activity_labels =\
@@ -3610,7 +3824,8 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
                 species_classifier,
                 activity_classifier,
                 optimizer,
-                device
+                device,
+                feedback_class_frequencies
             )
 
             if root_log_dir is not None and allow_write:
@@ -4228,8 +4443,34 @@ class TuplePredictorTrainer:
         
         # Retrain the backbone and classifiers
         feedback_dataset = None
+        feedback_class_frequencies = None
         if len(self._feedback_data) > 0:
             feedback_dataset = ConcatDataset(self._feedback_data)
+            feedback_label_dataset = feedback_dataset.label_dataset()
+            species_frequencies = torch.zeros(self._n_species_cls, dtype=torch.long)
+            activity_frequencies = torch.zeros(self._n_activity_cls, dtype=torch.long)
+
+            species_labels = []
+            activity_labels = []
+            for species_label, activity_label, _ in feedback_label_dataset:
+                species_labels.append(species_label)
+                activity_labels.append(activity_label)
+            species_labels = torch.tensor(species_labels, device=device)
+            activity_labels = torch.tensor(activity_labels, device=device)
+
+            for species_idx in range(self._n_species_cls):
+                n_match = (species_labels == species_idx).to(torch.long).sum()
+                species_frequencies[species_idx] = n_match
+
+            for activity_idx in range(self._n_activity_cls):
+                n_match = (activity_labels == activity_idx).to(torch.long).sum()
+                activity_frequencies[activity_idx] = n_match
+
+            feedback_class_frequencies = (
+                species_frequencies,
+                activity_frequencies
+            )
+
         self._classifier_trainer.train(
             backbone,
             species_classifier,
@@ -4240,7 +4481,8 @@ class TuplePredictorTrainer:
             train_sampler_fn,
             feedback_batch_sampler_fn,
             allow_write,
-            allow_print
+            allow_print,
+            feedback_class_frequencies
         )
 
         # Unwrap backbone and classifiers (e.g., from DDP adapters) if

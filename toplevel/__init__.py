@@ -548,7 +548,7 @@ class TopLevelApp:
         )
         if self.oracle_training:
             # selected_img_paths = self.round_paths_sorted[:feedback_max_ids]
-            print(Collecting Oracle feedback )
+            print("Collecting Oracle feedback")
             selected_img_paths = self.round_paths_sorted[:3] + self.round_paths_sorted[-2:]
 
             query_indices = []
