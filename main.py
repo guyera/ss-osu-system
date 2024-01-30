@@ -20,7 +20,7 @@ if __name__ == "__main__":
     p.add_argument('--scg-ensemble', default='./ensemble/pretrained')
     p.add_argument('--pretrained-models-dir', default='./pretrained-models')
     p.add_argument('--backbone-architecture', type=Backbone.Architecture, choices=list(Backbone.Architecture), default=Backbone.Architecture.swin_t)
-    p.add_argument('--log', action='store_true')
+    p.add_argument('--should-log', action='store_true', dest='log')
     p.add_argument('--log-dir', default='./session/temp/logsDete10')
     p.add_argument('--ignore-verb-novelty', default=False, action='store_true')
     p.add_argument('--detection-feedback', action='store_true')
