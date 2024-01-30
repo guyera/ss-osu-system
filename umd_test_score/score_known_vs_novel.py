@@ -1876,6 +1876,103 @@ def score_test_from_boxes(
             test_post_red_per_spe_recall[spe] = {'known': {'value': -1}}
             test_post_red_per_spe_f1[spe] = {'known': {'value': -1}}
 
+        
+        # *** novel
+        try:
+            pre_red_precision, pre_red_rec, pre_red_f1, _ = metrics.precision_recall_fscore_support(
+                all_grd_truth_spe_presence[spe].iloc[:total_pre_red_btn], 
+                all_pred_spe_presence_yn[spe].iloc[:total_pre_red_btn],
+                average='binary',
+                zero_division=0.0
+            )
+            post_red_precision_novel, post_red_rec_novel, post_red_f1_novel, _ = metrics.precision_recall_fscore_support(
+                all_grd_truth_spe_presence[spe].iloc[idx_novel_post_red], 
+                all_pred_spe_presence_yn[spe].iloc[idx_novel_post_red],
+                average='binary',
+                zero_division=0.0
+            )
+            test_post_red_precision_novel, test_post_red_rec_novel, test_post_red_f1_novel, _ = metrics.precision_recall_fscore_support(
+                all_grd_truth_spe_presence[spe].iloc[idx_novel_test_post_red], 
+                all_pred_spe_presence_yn[spe].iloc[idx_novel_test_post_red],
+                average='binary',
+                zero_division=0.0
+            )
+
+            if estimate_ci:
+                pre_red_pr_rec_f1_ci = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_presence[spe].iloc[:total_pre_red_btn].to_numpy(), 
+                    y_pred=all_pred_spe_presence_yn[spe].iloc[:total_pre_red_btn].to_numpy(), 
+                    metric_name='pre/rec/f1', 
+                    n_samples=nbr_samples_conf_int
+                )
+                post_red_pr_rec_f1_ci_novel = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_presence[spe].iloc[idx_novel_post_red].to_numpy(), 
+                    y_pred=all_pred_spe_presence_yn[spe].iloc[idx_novel_post_red].to_numpy(), 
+                    metric_name='pre/rec/f1', 
+                    n_samples=nbr_samples_conf_int
+                )
+                test_post_red_pr_rec_f1_ci_novel = boostrap_conf_interval(
+                    y_true=all_grd_truth_spe_presence[spe].iloc[idx_novel_test_post_red].to_numpy(), 
+                    y_pred=all_pred_spe_presence_yn[spe].iloc[idx_novel_test_post_red].to_numpy(), 
+                    metric_name='pre/rec/f1', 
+                    n_samples=nbr_samples_conf_int
+                )
+                
+            # Precision
+            pre_red_per_spe_precision[spe]['novel'] = {
+                'value': pre_red_precision if pre_red_precision != 0.0 else -1,
+                'ci': pre_red_pr_rec_f1_ci['precision'] if estimate_ci else -1
+            }
+            post_red_per_spe_precision[spe]['novel'] = {
+                'value': post_red_precision_novel if post_red_precision_novel != 0.0 else -1,
+                'ci': post_red_pr_rec_f1_ci_novel['precision'] if estimate_ci else -1
+            }
+            test_post_red_per_spe_precision[spe]['novel'] = {
+                'value': test_post_red_precision_novel if test_post_red_precision_novel != 0.0 else -1,
+                'ci': test_post_red_pr_rec_f1_ci_novel['precision'] if estimate_ci else -1
+            }
+
+            # Recall
+            pre_red_per_spe_recall[spe]['novel'] = {
+                'value': pre_red_rec if pre_red_rec != 0.0 else -1,
+                'ci': pre_red_pr_rec_f1_ci['recall'] if estimate_ci else -1
+            }
+            post_red_per_spe_recall[spe]['novel'] = {
+                'value': post_red_rec_novel if post_red_rec_novel != 0.0 else -1,
+                'ci': post_red_pr_rec_f1_ci_novel['recall'] if estimate_ci else -1
+            }
+            test_post_red_per_spe_recall[spe]['novel'] = {
+                'value': test_post_red_rec_novel if test_post_red_rec_novel != 0.0 else -1,
+                'ci': test_post_red_pr_rec_f1_ci_novel['recall'] if estimate_ci else -1
+            }
+
+            # F1 score
+            pre_red_per_spe_f1[spe]['novel'] = {
+                'value': pre_red_f1 if pre_red_f1 != 0.0 else -1,
+                'ci': pre_red_pr_rec_f1_ci['f1_score'] if estimate_ci else -1
+            }
+            post_red_per_spe_f1[spe]['novel'] = {
+                'value': post_red_f1_novel if post_red_f1_novel != 0.0 else -1,
+                'ci': post_red_pr_rec_f1_ci_novel['f1_score'] if estimate_ci else -1
+            }
+            test_post_red_per_spe_f1[spe]['novel'] = {
+                'value': test_post_red_f1_novel if test_post_red_f1_novel != 0.0 else -1,
+                'ci': test_post_red_pr_rec_f1_ci_novel['f1_score'] if estimate_ci else -1
+            }
+
+        except Exception as ex:
+            print('**** Exception when computing species presence metrics:', ex)
+
+            post_red_per_spe_auc[spe]['novel'] = {'value': -1}
+            post_red_per_spe_precision[spe]['novel'] = {'value': -1}
+            post_red_per_spe_recall[spe]['novel'] = {'value': -1}
+            post_red_per_spe_f1[spe]['novel'] = {'value': -1}
+
+            test_post_red_per_spe_auc[spe]['novel'] = {'value': -1}
+            test_post_red_per_spe_precision[spe]['novel'] = {'value': -1}
+            test_post_red_per_spe_recall[spe]['novel'] = {'value': -1}
+            test_post_red_per_spe_f1[spe]['novel'] = {'value': -1}
+
 
     # *****************************  SPECIES COUNT PERFORMANCE  ********************************
 
