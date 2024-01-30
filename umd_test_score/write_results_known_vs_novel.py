@@ -449,7 +449,7 @@ def write_results_to_csv(results_dict, output_path):
         ['', '', '', '', '', '', '', '', '', '', '', '', '']
     ]
 
-    with open(os.path.join(output_path, f'summary.csv'), 'w') as myfile:
+    with open(os.path.join(output_path, f'summary_known_vs_novel.csv'), 'w') as myfile:
      
         # using csv.writer method from CSV package
         write = csv.writer(myfile)
