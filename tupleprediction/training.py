@@ -4455,8 +4455,8 @@ class TuplePredictorTrainer:
             for species_label, activity_label, _ in feedback_label_dataset:
                 species_labels.append(species_label)
                 activity_labels.append(activity_label)
-            species_labels = torch.tensor(species_labels, device=device)
-            activity_labels = torch.tensor(activity_labels, device=device)
+            species_labels = torch.cat(species_labels, dim=0).to(device)
+            activity_labels = torch.cat(activity_labels, dim=0).to(device)
 
             for species_idx in range(self._n_species_cls):
                 n_match = (species_labels == species_idx).to(torch.long).sum()
