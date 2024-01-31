@@ -170,7 +170,7 @@ class TopLevelApp:
         self.batch_num = 0 
         self.trial_size = trial_size
         self.trial_batch_size = trial_batch_size
-        self.second_retrain_batch_num = (self.trial_size - 1000) // self.trial_batch_size
+        self.second_retrain_batch_num = (self.trial_size - 2300) // self.trial_batch_size
         self.disable_retraining = disable_retraining
         # Auxiliary debugging data
         self._classifier_debugging_data = {}
@@ -439,7 +439,7 @@ class TopLevelApp:
                 hint_b=hint_typeB_data
             )
         
-        p_ni = p_ni.cpu().double()
+        p_ni = p_ni.cpu().float()
         self.per_image_p_type = torch.cat([self.per_image_p_type, batch_p_type.cpu()])
 
         # Update batch p type based on given detection hints
@@ -636,7 +636,7 @@ class TopLevelApp:
                     # Remove NaNs by setting them to the normalized override
                     # mask compliment
                     self.batch_context.p_type[normalizer == 0] =\
-                        (~p_type_override_mask[:]).to(torch.double)
+                        (~p_type_override_mask[:]).to(torch.float)
                     self.batch_context.p_type = self.batch_context.p_type /\
                         self.batch_context.p_type.sum(dim=1, keepdim=True)
 
@@ -741,7 +741,7 @@ class TopLevelApp:
         log_p_type_5 = self._infer_log_p_type(prior, filtered[:, 5])
 
         round_characterization_logits = torch.tensor([log_p_type_1, log_p_type_2, log_p_type_3, log_p_type_4, log_p_type_5])
-        round_characterization_preds = torch.nn.functional.softmax(round_characterization_logits, dim=0).double()
+        round_characterization_preds = torch.nn.functional.softmax(round_characterization_logits, dim=0).float()
 
         self.characterization_preds.append(round_characterization_preds.numpy())
 

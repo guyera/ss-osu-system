@@ -71,7 +71,7 @@ if __name__ == "__main__":
 
     from datetime import timedelta
     DEFAULT_TIMEOUT = timedelta(seconds=1000000)
-    torch.set_default_tensor_type(torch.DoubleTensor)
+    # torch.set_default_tensor_type(torch.DoubleTensor)
     if args.distributed:
 
         dist.init_process_group('nccl', timeout = DEFAULT_TIMEOUT)

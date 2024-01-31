@@ -42,24 +42,42 @@ def print_nan(t, name):
 def contains_nan(tensor):
     return torch.isnan(tensor).any() 
 
+# class BoxPredictionGradBalancer(torch.autograd.Function):
+#     @staticmethod
+#     def forward(input, weights):
+#         return input
+
+#     @staticmethod
+#     def setup_context(ctx, inputs, output):
+#         input, weights = inputs
+#         ctx.weights = weights
+
+#     @staticmethod
+#     def backward(ctx, grad_output):
+#         grad_input = None
+
+#         if grad_output is not None:
+#             grad_input = grad_output * ctx.weights
+
+#         return grad_input, None
+
+
 class BoxPredictionGradBalancer(torch.autograd.Function):
     @staticmethod
-    def forward(input, weights):
+    def forward(ctx, input, weights):
+        ctx.save_for_backward(weights)
         return input
 
     @staticmethod
-    def setup_context(ctx, inputs, output):
-        input, weights = inputs
-        ctx.weights = weights
-
-    @staticmethod
     def backward(ctx, grad_output):
+        weights, = ctx.saved_tensors
         grad_input = None
 
         if grad_output is not None:
-            grad_input = grad_output * ctx.weights
+            grad_input = grad_output * weights
 
         return grad_input, None
+
 
 _balance_box_prediction_grads = BoxPredictionGradBalancer.apply
 
