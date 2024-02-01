@@ -1003,9 +1003,6 @@ def score_test_from_boxes(
         if int(test_tuple.agent1_id) not in species_id2name_mapping:
             species_id2name_mapping[int(test_tuple.agent1_id)] = test_tuple.agent1_name
 
-        # if 0 not in species_id2name_mapping:
-        #     species_id2name_mapping[0] = 'blank'
-
         if not pd.isnull(test_tuple.agent2_id):
             ground_truth_species_counts[int(test_tuple.agent2_id)] = int(test_tuple.agent2_count)
             ground_truth_species_presence[int(test_tuple.agent2_id)] = 1
@@ -1082,7 +1079,7 @@ def score_test_from_boxes(
 
         all_grd_truth_act_presence[pos, :] = ground_truth_activity_presence
 
-        # *********************************
+        # ****
         if len(list_activities_id) == 1:
             # **** Activity CONFUSION MATRIX ****
             # This image contains a single activity therefore the image level label can be pushed to the bounding
@@ -1122,7 +1119,7 @@ def score_test_from_boxes(
 
                     test_post_red_pred_prob_act_in_box += list(act_boxes_pred[ii, :])
                     test_post_red_grd_truth_act_in_box_yn += onehot_grd_trth_act
-        # *********************************
+        # ***
 
     # ** new column names
     new_spe_count_col_names = {}
@@ -1566,7 +1563,7 @@ def score_test_from_boxes(
                 all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn], 
                 all_pred_spe_counts[spe].iloc[:total_pre_red_btn], 
                 metric='AE'
-            ) / num_pre_red_img_w_spe[spe]
+            )
 
             if estimate_ci:
                 pre_red_count_ci = boostrap_conf_interval(
@@ -1589,7 +1586,7 @@ def score_test_from_boxes(
                 all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:start_test_phase], 
                 all_pred_spe_counts[spe].iloc[total_pre_red_btn:start_test_phase], 
                 metric='AE'
-            ) / num_post_red_img_w_spe[spe]
+            )
 
             if estimate_ci:
                 post_red_count_ci = boostrap_conf_interval(
@@ -1612,7 +1609,7 @@ def score_test_from_boxes(
                 all_grd_truth_spe_counts[spe].iloc[start_test_phase:], 
                 all_pred_spe_counts[spe].iloc[start_test_phase:], 
                 metric='AE'
-            ) / num_test_post_red_img_w_spe[spe]
+            )
 
             if estimate_ci:
                 test_post_red_count_ci = boostrap_conf_interval(
@@ -1635,8 +1632,8 @@ def score_test_from_boxes(
             pre_red_cnt_rel_err = species_count_error(
                 all_grd_truth_spe_counts[spe].iloc[:total_pre_red_btn], 
                 all_pred_spe_counts[spe].iloc[:total_pre_red_btn], 
-                metric='AE',
-            ) / num_pre_red_animals_from_spe
+                metric='RE',
+            )
 
             if estimate_ci:
                 pre_red_count_ci = boostrap_conf_interval(
@@ -1660,8 +1657,8 @@ def score_test_from_boxes(
             post_red_cnt_rel_err = species_count_error(
                 all_grd_truth_spe_counts[spe].iloc[total_pre_red_btn:start_test_phase], 
                 all_pred_spe_counts[spe].iloc[total_pre_red_btn:start_test_phase], 
-                metric='AE'
-            ) / num_post_red_animals_from_spe
+                metric='RE'
+            )
 
             if estimate_ci:
                 post_red_count_ci = boostrap_conf_interval(
@@ -1685,8 +1682,8 @@ def score_test_from_boxes(
             test_post_red_cnt_rel_err = species_count_error(
                 all_grd_truth_spe_counts[spe].iloc[start_test_phase:], 
                 all_pred_spe_counts[spe].iloc[start_test_phase:], 
-                metric='AE'
-            ) / num_test_post_red_animals_from_spe
+                metric='RE'
+            )
 
             if estimate_ci:
                 test_post_red_count_ci = boostrap_conf_interval(
@@ -1744,14 +1741,44 @@ def score_test_from_boxes(
     }
     all_performances['Species_counts'][test_id] = counts
 
-    # Aggregate species counts
-    pre_red_abs_err_count_arr = np.array([pre_red_abs_err_count[spe]['value'] for spe in pre_red_abs_err_count])
-    post_red_abs_err_count_arr = np.array([post_red_abs_err_count[spe]['value'] for spe in post_red_abs_err_count])
-    test_post_red_abs_err_count_arr = np.array([test_post_red_abs_err_count[spe]['value'] for spe in test_post_red_abs_err_count])
+    # **********************************
+    # **** Aggregate species counts ****
+    # ----------------------------------
+    # ** Mean Absolute Error **
+    pre_red_avg_abs_err = species_count_error(
+        all_grd_truth_spe_counts.iloc[:total_pre_red_btn], 
+        all_pred_spe_counts.iloc[:total_pre_red_btn], 
+        metric='MAE'
+    )
+    post_red_avg_abs_err = species_count_error(
+        all_grd_truth_spe_counts.iloc[total_pre_red_btn:start_test_phase], 
+        all_pred_spe_counts.iloc[total_pre_red_btn:start_test_phase], 
+        metric='MAE'
+    )
 
-    pre_red_rel_err_count_arr = np.array([pre_red_rel_err_count[spe]['value'] for spe in pre_red_rel_err_count])
-    post_red_rel_err_count_arr = np.array([post_red_rel_err_count[spe]['value'] for spe in post_red_rel_err_count])
-    test_post_red_rel_err_count_arr = np.array([test_post_red_rel_err_count[spe]['value'] for spe in test_post_red_rel_err_count])
+    test_post_red_avg_abs_err = species_count_error(
+        all_grd_truth_spe_counts.iloc[start_test_phase:], 
+        all_pred_spe_counts.iloc[start_test_phase:], 
+        metric='MAE'
+    )
+
+    # ** Mean Relative Error **
+    pre_red_avg_rel_err = species_count_error(
+        all_grd_truth_spe_counts.iloc[:total_pre_red_btn], 
+        all_pred_spe_counts.iloc[:total_pre_red_btn], 
+        metric='MRE'
+    )
+    post_red_avg_rel_err = species_count_error(
+        all_grd_truth_spe_counts.iloc[total_pre_red_btn:start_test_phase], 
+        all_pred_spe_counts.iloc[total_pre_red_btn:start_test_phase], 
+        metric='MRE'
+    )
+
+    test_post_red_avg_rel_err = species_count_error(
+        all_grd_truth_spe_counts.iloc[start_test_phase:], 
+        all_pred_spe_counts.iloc[start_test_phase:], 
+        metric='MRE'
+    )
 
     pre_red_avg_abs_err_count_ci = boostrap_conf_interval(
         y_true=all_grd_truth_spe_counts.iloc[:total_pre_red_btn], 
@@ -1792,30 +1819,6 @@ def score_test_from_boxes(
         is_abs_err=False,
         n_samples=nbr_samples_conf_int
     )
-
-    pre_red_avg_abs_err = -1 
-    if any(pre_red_abs_err_count_arr >= 0): 
-        pre_red_avg_abs_err = round(np.mean(pre_red_abs_err_count_arr[pre_red_abs_err_count_arr >= 0]), 3)
-
-    pre_red_avg_rel_err = -1 
-    if any(pre_red_rel_err_count_arr >= 0): 
-        pre_red_avg_rel_err = round(np.mean(pre_red_rel_err_count_arr[pre_red_rel_err_count_arr >= 0]), 3)
-
-    post_red_avg_abs_err = -1 
-    if any(post_red_abs_err_count_arr >= 0): 
-        post_red_avg_abs_err = round(np.mean(post_red_abs_err_count_arr[post_red_abs_err_count_arr >= 0]), 3)
-
-    post_red_avg_rel_err = -1 
-    if any(post_red_rel_err_count_arr >= 0): 
-        post_red_avg_rel_err = round(np.mean(post_red_rel_err_count_arr[post_red_rel_err_count_arr >= 0]), 3)
-
-    test_post_red_avg_abs_err = -1 
-    if any(test_post_red_abs_err_count_arr >= 0): 
-        test_post_red_avg_abs_err = round(np.mean(test_post_red_abs_err_count_arr[test_post_red_abs_err_count_arr >= 0]), 3)
-
-    test_post_red_avg_rel_err = -1 
-    if any(test_post_red_rel_err_count_arr >= 0): 
-        test_post_red_avg_rel_err = round(np.mean(test_post_red_rel_err_count_arr[test_post_red_rel_err_count_arr >= 0]), 3)
 
     agg_species_counts = {
         'pre_red_btn':{
@@ -2418,6 +2421,7 @@ def score_tests(
             with (open(pkl_fname, "rb")) as pkl_file:
                 boxes_pred_dict = pickle.load(pkl_file)
 
+            
             test_id = test_id[4:]
 
             detect_lines = []
@@ -2432,13 +2436,15 @@ def score_tests(
             detect_lines = np.concatenate(detect_lines)
 
             class_lines = np.concatenate(class_lines)
-            
-            # if (sys_output_dir / f'{session_id}.{test_id}_detection.csv').exists():
-            #     detect_lines = open(sys_output_dir / f'{session_id}.{test_id}_detection.csv').read().splitlines()
-            #     class_lines = open(sys_output_dir / f'{session_id}.{test_id}_classification.csv').read().splitlines()
-                
-            # else:
-            #     print(f'No results found for Test {session_id}.{test_id}_.')
+            '''
+            # --
+            if (sys_output_dir / f'{session_id}.{test_id}_detection.csv').exists():
+                detect_lines = open(sys_output_dir / f'{session_id}.{test_id}_detection.csv').read().splitlines()
+                class_lines = open(sys_output_dir / f'{session_id}.{test_id}_classification.csv').read().splitlines()
+            else:
+                print(f'No results found for Test {session_id}.{test_id}_.')
+            # --
+            '''
            
             with open(log_dir / f'{test_id}.log', 'w') as log:
                 # score_test(

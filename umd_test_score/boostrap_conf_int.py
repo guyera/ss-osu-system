@@ -73,19 +73,11 @@ def boostrap_conf_interval(y_true, y_pred, metric_name, is_abs_err=True, n_sampl
                     continue
 
             elif metric_name == 'count_err':
-                if is_abs_err:
-                    total = len(y_true[indices][y_true[indices] > 0])
-                else:
-                    total = sum(y_true[indices])
-
-                if total == 0:
-                    continue
-
                 score = species_count_error(
                     y_true[indices], 
                     y_pred[indices], 
-                    metric='AE'
-                ) / total
+                    metric='AE' if is_abs_err else 'RE'
+                )
                 sample_score.append(score)
             else:
                 raise ValueError(f'metric_name "{metric_name}" unknown!')
@@ -116,8 +108,16 @@ def boostrap_conf_interval(y_true, y_pred, metric_name, is_abs_err=True, n_sampl
             col_scores = []
 
         indices = np.random.randint(0, len(y_true), len(y_true))
+        if metric_name == 'avg_count_err':
+            col_score = species_count_error(
+                y_true.iloc[indices], 
+                y_pred.iloc[indices], 
+                metric='MAE' if is_abs_err else 'MRE'
+            )
+            sample_score.append(col_score)
+            continue
+
         for col in y_true.columns:
-                       
             if metric_name.lower() == 'avg_auc':
                 if len(y_true[col].iloc[indices].unique()) < 2:
                     # all classes are required in the ground truth for AUC
@@ -140,40 +140,30 @@ def boostrap_conf_interval(y_true, y_pred, metric_name, is_abs_err=True, n_sampl
                     )
                     col_scores['precision'].append(pre)
                     col_scores['recall'].append(rec)
-                    if f1 != 0:
-                        col_scores['f1_score'].append(f1)
+                    col_scores['f1_score'].append(f1)
+                    # if f1 != 0:
+                    #     col_scores['f1_score'].append(f1)
                 except Exception as ex:
                     print('** The following exception happened:', ex)
                     continue
-            elif metric_name == 'avg_count_err':
-                if is_abs_err:
-                    total_col = y_true[col].iloc[indices].astype(bool).sum()
-                else:
-                    total_col = y_true[col].iloc[indices].sum()
-
-                if total_col == 0:
-                    continue
-
-                col_score = species_count_error(
-                    y_true[col].iloc[indices], 
-                    y_pred[col].iloc[indices], 
-                    metric='AE'
-                ) / total_col
-                col_scores.append(col_score)
             else:
                 raise ValueError(f'metric_name "{metric_name}" unknown!')
 
         if metric_name.lower() == 'avg_pre/rec/f1':
-            sample_score['avg_precision'].append(np.mean(col_scores['precision']))
-            sample_score['avg_recall'].append(np.mean(col_scores['recall']))
-            sample_score['avg_f1_score'].append(np.mean(col_scores['f1_score']))
-        else:
             try:
-                sample_score.append(np.mean(col_scores))
+                sample_score['avg_precision'].append(np.mean(col_scores['precision']))
+                sample_score['avg_recall'].append(np.mean(col_scores['recall']))
+                sample_score['avg_f1_score'].append(np.mean(col_scores['f1_score']))
             except Exception as ex:
-                continue
-                print(col_scores)
-                print('\n The following exception happened in boostrap_conf_int():', ex)
+                print('\n This exception has happened:', ex)
+                print('\n\n col_scores:', col_scores)
+        # else:
+        #     try:
+        #         sample_score.append(np.mean(col_scores))
+        #     except Exception as ex:
+        #         continue
+        #         print(col_scores)
+        #         print('\n The following exception happened in boostrap_conf_int():', ex)
 
     if isinstance(sample_score, list):
         return np.percentile(sample_score, (lower_c, upper_c)) if len(sample_score) > 0 else -1
