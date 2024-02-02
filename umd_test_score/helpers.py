@@ -14,15 +14,19 @@ def species_count_error(grd_trth, pred, metric='MAE'):
     Computes the squared error, absolute error, mean squared error, 
     mean absolute error or root mean squared error between the ground truth and the predicion
     '''
-    assert metric in ('RE', 'AE', 'MAE', 'MRE')
+    assert metric in ('AE', 'MAE')  # ('RE', 'AE', 'MAE', 'MRE')
     assert len(grd_trth) == len(pred)
 
     grd_trth = np.array(grd_trth)
     pred = np.array(pred)
     err = grd_trth - pred
 
+    if np.sum(np.abs(err)) == 0:
+        return -1
+
     if metric == 'AE' or metric == 'MAE':
-        return np.sum(np.abs(err)) / 2 * len(grd_trth)
+        N = 2 * len(grd_trth)
+        return np.sum(np.abs(err)) / N
     elif metric == 'MRE':
         sum_err = np.sum(np.abs(err), axis=1)
         num_boxes = np.sum(grd_trth, axis=1)
