@@ -1430,7 +1430,7 @@ def score_test_from_boxes(
     agg_species_counts = {
         'pre_red_btn':{
             'known': {
-                'value': pre_red_avg_abs_err,
+                'value': round(pre_red_avg_abs_err,2),
                 'ci': pre_red_avg_abs_err_count_ci
             },
             'novel': {
@@ -1439,21 +1439,21 @@ def score_test_from_boxes(
         },
         'post_red_btn':{
             'known': {
-                'value': post_red_avg_abs_err_known,
+                'value': round(post_red_avg_abs_err_known,2),
                 'ci': post_red_avg_abs_err_count_ci_known
             },
             'novel': {
-                'value': post_red_avg_abs_err_novel,
+                'value': round(post_red_avg_abs_err_novel,2),
                 'ci': post_red_avg_abs_err_count_ci_novel
             }
         },
         'test_post_red_btn':{
             'known': {
-                'value': test_post_red_avg_abs_err_known,
+                'value': round(test_post_red_avg_abs_err_known,2),
                 'ci': test_post_red_avg_abs_err_count_ci_known
             },
             'novel': {
-                'value': test_post_red_avg_abs_err_novel,
+                'value': round(test_post_red_avg_abs_err_novel,2),
                 'ci': test_post_red_avg_abs_err_count_ci_novel
             }
         }
@@ -2398,7 +2398,7 @@ def score_tests(
             with (open(pkl_fname, "rb")) as pkl_file:
                 boxes_pred_dict = pickle.load(pkl_file)
 
-
+            
             test_id = test_id[4:]
 
             detect_lines = []

@@ -49,7 +49,7 @@ def write_results_to_csv(results_dict, output_path):
 
     # Aggregate species presence
     output += [
-        ['Average Species Counts', '', '', '', '', '', '', '', ''],
+        ['AVERAGE SPECIES COUNTS', '', '', '', '', '', '', '', ''],
         ['', 'Pre-nov', 'Pre-nov', '', 'Post-nov', 'Post-nov', '', 'Test', 'Test'],
         ['', 'MAE', 'CI MAE', '', 'MAE', 'CI MAE', '', 'MAE', 'CI MAE']
     ]
@@ -91,7 +91,7 @@ def write_results_to_csv(results_dict, output_path):
         
     # Aggregate species presence
     output += [
-        ['Average Species Presence', '', '', '', '', '', '', '', ''],
+        ['AVERAGE SPECIES PRESENCE', '', '', '', '', '', '', '', ''],
         ['', 'Pre-nov', 'Pre-nov', '', 'Post-nov', 'Post-nov', '', 'Test', 'Test'],
         ['', 'Avg AUC', 'Avg F1', '', 'Avg AUC', 'Avg F1', '', 'Avg AUC', 'Avg F1']
     ]
@@ -153,7 +153,7 @@ def write_results_to_csv(results_dict, output_path):
 
     # Aggregate activity presence
     output += [
-        ['Average Activity Presence', '', '', '', '', '', '', '', ''],
+        ['AVERAGE ACTIVITY PRESENCE', '', '', '', '', '', '', '', ''],
         ['', 'Pre-nov', 'Pre-nov', '', 'Post-nov', 'Post-nov', '', 'Test', 'Test'],
         ['', 'Avg AUC', 'Avg F1', '', 'Avg AUC', 'Avg F1', '', 'Avg AUC', 'Avg F1']
     ]

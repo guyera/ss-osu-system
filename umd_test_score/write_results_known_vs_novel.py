@@ -49,7 +49,7 @@ def write_results_to_csv(results_dict, output_path):
 
     # Aggregate species presence
     output += [
-        ['Average Species Counts', '', '', '', '', '', '', '', '', '', '', '', ''],
+        ['Average SPECIES COUNTS', '', '', '', '', '', '', '', '', '', '', '', ''],
         ['', 'Pre-nov', 'Pre-nov', '', 'Post-nov', 'Post-nov', 'Post-nov', 'Post-nov', '', 'Test', 'Test', 'Test', 'Test'],
         ['', 'MAE', 'MAE-CI', '', 'MAE (known)', 'MAE-CI (known)', 'MAE (novel)', 'MAE-CI (novel)', '', 'MAE (known)', 'MAE-CI (known)', 'MAE (novel)', 'MAE-CI (novel)']
     ]
@@ -399,6 +399,7 @@ def write_results_to_csv(results_dict, output_path):
         # using csv.writer method from CSV package
         write = csv.writer(myfile)
         write.writerows(output)
+
 
 def print_confusion_matrices(results_dict, out_file):
     test_ids = sorted(list(results_dict['Red_button'].keys()))
