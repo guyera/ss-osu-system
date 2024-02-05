@@ -7,14 +7,13 @@ from helpers import species_count_error
 np.seterr('raise')
 
 
-def boostrap_conf_interval(y_true, y_pred, metric_name, is_abs_err=True, n_samples=500, alpha=0.05, seed=10000):
+def boostrap_conf_interval(y_true, y_pred, metric_name, n_samples=500, alpha=0.05, seed=10000):
     """
     Computes estimate confidence interval of a metric by simulation
     Arguments:
         y_pred: model prediction (can be presence or counts)
         y_true: ground truth labels
         metric_name: name of the metric being computed
-        is_abs_err: check if computing absolute error or not (only used when metric_name == 'count_err')
         n_samples: number of samples to draw for simulation
         alpha: confidence level
         seed: random state for repreducibility
@@ -66,26 +65,17 @@ def boostrap_conf_interval(y_true, y_pred, metric_name, is_abs_err=True, n_sampl
                     )
                     sample_score['precision'].append(pre)
                     sample_score['recall'].append(rec)
-                    if f1 != 0:
-                        sample_score['f1_score'].append(f1)
+                    sample_score['f1_score'].append(f1)
                 except Exception as ex:
                     print('==>> Exception:', ex)
                     continue
 
             elif metric_name == 'count_err':
-                if is_abs_err:
-                    total = len(y_true[indices][y_true[indices] > 0])
-                else:
-                    total = sum(y_true[indices])
-
-                if total == 0:
-                    continue
-
                 score = species_count_error(
                     y_true[indices], 
                     y_pred[indices], 
                     metric='AE'
-                ) / total
+                )
                 sample_score.append(score)
             else:
                 raise ValueError(f'metric_name "{metric_name}" unknown!')
@@ -116,64 +106,63 @@ def boostrap_conf_interval(y_true, y_pred, metric_name, is_abs_err=True, n_sampl
             col_scores = []
 
         indices = np.random.randint(0, len(y_true), len(y_true))
+        if metric_name == 'avg_count_err':
+            col_score = species_count_error(
+                y_true.iloc[indices], 
+                y_pred.iloc[indices], 
+                metric='MAE'
+            )
+            sample_score.append(col_score)
+            continue
+
         for col in y_true.columns:
-                       
             if metric_name.lower() == 'avg_auc':
                 if len(y_true[col].iloc[indices].unique()) < 2:
                     # all classes are required in the ground truth for AUC
+                    # print('Only one class in ground truth, cannot compute auc')
                     continue
 
                 try:
                     col_score = metrics.roc_auc_score(y_true[col].iloc[indices],  y_pred[col].iloc[indices])
+                    col_scores.append(col_score)
                 except Exception as ex:
                     print('>> This exception happened when computing avg_auc:', ex)
                     continue
 
-                col_scores.append(col_score)
             elif metric_name.lower() == 'avg_pre/rec/f1':
                 try:
                     pre, rec, f1, _ = metrics.precision_recall_fscore_support(
-                        y_true[col].iloc[indices].to_numpy(),  
-                        y_pred[col].iloc[indices].to_numpy(),
+                        y_true[col].iloc[indices],  
+                        y_pred[col].iloc[indices],
                         average='binary',
                         zero_division=0.0
                     )
                     col_scores['precision'].append(pre)
                     col_scores['recall'].append(rec)
-                    if f1 != 0:
+                    # col_scores['f1_score'].append(f1)
+                    if f1 > 0:
                         col_scores['f1_score'].append(f1)
                 except Exception as ex:
                     print('** The following exception happened:', ex)
                     continue
-            elif metric_name == 'avg_count_err':
-                if is_abs_err:
-                    total_col = y_true[col].iloc[indices].astype(bool).sum()
-                else:
-                    total_col = y_true[col].iloc[indices].sum()
-
-                if total_col == 0:
-                    continue
-
-                col_score = species_count_error(
-                    y_true[col].iloc[indices], 
-                    y_pred[col].iloc[indices], 
-                    metric='AE'
-                ) / total_col
-                col_scores.append(col_score)
             else:
                 raise ValueError(f'metric_name "{metric_name}" unknown!')
 
         if metric_name.lower() == 'avg_pre/rec/f1':
-            sample_score['avg_precision'].append(np.mean(col_scores['precision']))
-            sample_score['avg_recall'].append(np.mean(col_scores['recall']))
-            sample_score['avg_f1_score'].append(np.mean(col_scores['f1_score']))
+            try:
+                sample_score['avg_precision'].append(np.mean(col_scores['precision']))
+                sample_score['avg_recall'].append(np.mean(col_scores['recall']))
+                sample_score['avg_f1_score'].append(np.mean(col_scores['f1_score']))
+            except Exception as ex:
+                print('\n This exception has happened:', ex)
+                # print('\n\n col_scores:', col_scores)
         else:
             try:
                 sample_score.append(np.mean(col_scores))
             except Exception as ex:
                 continue
-                print(col_scores)
-                print('\n The following exception happened in boostrap_conf_int():', ex)
+        #         print(col_scores)
+        #         print('\n The following exception happened in boostrap_conf_int():', ex)
 
     if isinstance(sample_score, list):
         return np.percentile(sample_score, (lower_c, upper_c)) if len(sample_score) > 0 else -1

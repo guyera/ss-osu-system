@@ -49,49 +49,37 @@ def write_results_to_csv(results_dict, output_path):
 
     # Aggregate species presence
     output += [
-        ['Average Species Counts', '', '', '', '', '', '', '', ''],
-        ['', 'Pre-novelty', 'Pre-novelty', '', 'Post-novelty', 'Post-novelty', '', 'Test', 'Test'],
-        ['', 'Average MAE', 'Average MRE', '', 'Average MAE', 'Average MRE', '', 'Average MAE', 'Average MRE']
+        ['AVERAGE SPECIES COUNTS', '', '', '', '', '', '', '', ''],
+        ['', 'Pre-nov', 'Pre-nov', '', 'Post-nov', 'Post-nov', '', 'Test', 'Test'],
+        ['', 'MAE', 'CI MAE', '', 'MAE', 'CI MAE', '', 'MAE', 'CI MAE']
     ]
     for test_id in test_ids:
         # pre red button
-        pre_red_avg_spe_abs_err = results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_abs_err']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_abs_err']:
-            pre_red_avg_spe_abs_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_abs_err']['ci'])
-
-        pre_red_avg_spe_rel_err = results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_rel_err']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_rel_err']:
-            pre_red_avg_spe_rel_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_rel_err']['ci'])
+        pre_red_avg_spe_abs_err = results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['value']
+        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']:
+            pre_red_avg_spe_abs_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['ci'])
 
         # post red button
-        post_red_avg_spe_abs_err = results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']:
-            post_red_avg_spe_abs_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']['ci'])
-
-        post_red_avg_spe_rel_err = results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']:
-            post_red_avg_spe_rel_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']['ci'])
+        post_red_avg_spe_abs_err = results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['value']
+        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['post_red_btn']:
+            post_red_avg_spe_abs_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['ci'])
 
         # post red button test phase
-        test_post_red_avg_spe_abs_err = results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_abs_err']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_abs_err']:
-            test_post_red_avg_spe_abs_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_abs_err']['ci'])
-
-        test_post_red_avg_spe_rel_err = results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_rel_err']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_rel_err']:
-            test_post_red_avg_spe_rel_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_rel_err']['ci'])
+        test_post_red_avg_spe_abs_err = results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['value']
+        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']:
+            test_post_red_avg_spe_abs_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['ci'])
 
         output.append(
             [
                 test_id, 
-                f'{pre_red_avg_spe_abs_err} {pre_red_avg_spe_abs_err_ci}', 
-                f'{pre_red_avg_spe_rel_err} {pre_red_avg_spe_rel_err_ci}', 
+                f'{pre_red_avg_spe_abs_err}', 
+                f'{pre_red_avg_spe_abs_err_ci}', 
                 '', 
-                f'{post_red_avg_spe_abs_err} {post_red_avg_spe_abs_err_ci}', 
-                f'{post_red_avg_spe_rel_err} {post_red_avg_spe_rel_err_ci}', 
+                f'{post_red_avg_spe_abs_err}', 
+                f'{post_red_avg_spe_abs_err_ci}', 
                 '', 
-                f'{test_post_red_avg_spe_abs_err} {test_post_red_avg_spe_abs_err_ci}', 
-                f'{test_post_red_avg_spe_rel_err} {test_post_red_avg_spe_rel_err_ci}'
+                f'{test_post_red_avg_spe_abs_err}', 
+                f'{test_post_red_avg_spe_abs_err_ci}'
             ]
         )
 
@@ -103,21 +91,18 @@ def write_results_to_csv(results_dict, output_path):
         
     # Aggregate species presence
     output += [
-        ['Average Species Presence', '', '', '', '', '', '', '', ''],
-        ['', 'Pre-novelty', 'Pre-novelty', '', 'Post-novelty', 'Post-novelty', '', 'Test', 'Test'],
-        ['', 'Average AUC', 'Average F1', '', 'Average AUC', 'Average F1', '', 'Average AUC', 'Average F1']
+        ['AVERAGE SPECIES PRESENCE', '', '', '', '', '', '', '', ''],
+        ['', 'Pre-nov', 'Pre-nov', '', 'Post-nov', 'Post-nov', '', 'Test', 'Test'],
+        ['', 'Avg AUC', 'Avg F1', '', 'Avg AUC', 'Avg F1', '', 'Avg AUC', 'Avg F1']
     ]
 
     for test_id in test_ids:
         # pre red button
-        pre_red_species_avg_auc_ci, pre_red_species_avg_f1_ci, pre_red_avg_spe_abs_err_ci, pre_red_avg_spe_rel_err_ci = '--', '--', '--', '--'
+        pre_red_species_avg_auc_ci, pre_red_species_avg_f1_ci, pre_red_avg_spe_abs_err_ci = '--', '--', '--'
 
         pre_red_species_avg_auc = results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_auc']['value']
         if 'ci' in results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_auc']:
             pre_red_species_avg_auc_ci = ci_string(results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_auc']['ci'])
-
-        pre_red_species_avg_precision = results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_precision']
-        pre_red_species_avg_recall = results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_recall']
 
         pre_red_species_avg_f1 = results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_f1_score']['value']
         if 'ci' in results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_f1_score']:
@@ -125,21 +110,18 @@ def write_results_to_csv(results_dict, output_path):
 
 
         # post red button
-        post_red_species_avg_auc_ci, post_red_species_avg_f1_ci, post_red_avg_spe_abs_err_ci, post_red_avg_spe_rel_err_ci = '--', '--', '--', '--'
+        post_red_species_avg_auc_ci, post_red_species_avg_f1_ci, post_red_avg_spe_abs_err_ci = '--', '--', '--'
 
         post_red_species_avg_auc = results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_auc']['value']
         if 'ci' in results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_auc']:
             post_red_species_avg_auc_ci = ci_string(results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_auc']['ci'])
-
-        post_red_species_avg_precision = results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_precision']
-        post_red_species_avg_recall = results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_recall']
 
         post_red_species_avg_f1 = results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_f1_score']['value']
         if 'ci' in results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_f1_score']:
             post_red_species_avg_f1_ci = ci_string(results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_f1_score']['ci'])
 
         # post red button test phase
-        test_post_red_species_avg_auc_ci, test_post_red_species_avg_f1_ci, test_post_red_avg_spe_abs_err_ci, test_post_red_avg_spe_rel_err_ci = '--', '--', '--', '--'
+        test_post_red_species_avg_auc_ci, test_post_red_species_avg_f1_ci, test_post_red_avg_spe_abs_err_ci = '--', '--', '--'
 
         test_post_red_species_avg_auc = results_dict['Aggregate_species_presence'][test_id]['test_post_red_btn']['avg_auc']['value']
         if 'ci' in results_dict['Aggregate_species_presence'][test_id]['test_post_red_btn']['avg_auc']:
@@ -171,9 +153,9 @@ def write_results_to_csv(results_dict, output_path):
 
     # Aggregate activity presence
     output += [
-        ['Average Activity Presence', '', '', '', '', '', '', '', ''],
-        ['', 'Pre-novelty', 'Pre-novelty', '', 'Post-novelty', 'Post-novelty', '', 'Test', 'Test'],
-        ['', 'Average AUC', 'Average F1', '', 'Average AUC', 'Average F1', '', 'Average AUC', 'Average F1']
+        ['AVERAGE ACTIVITY PRESENCE', '', '', '', '', '', '', '', ''],
+        ['', 'Pre-nov', 'Pre-nov', '', 'Post-nov', 'Post-nov', '', 'Test', 'Test'],
+        ['', 'Avg AUC', 'Avg F1', '', 'Avg AUC', 'Avg F1', '', 'Avg AUC', 'Avg F1']
     ]
 
     # ** print average activity presence metrics
@@ -243,23 +225,20 @@ def write_results_to_csv(results_dict, output_path):
     output.append(['Per Species Counts', '', '', '', '', '', '', '', ''])
     for test_id in test_ids:
         # species counts
-        pre_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['pre_red_btn']['abs_err']
-        pre_red_per_species_count_rel_err = results_dict['Species_counts'][test_id]['pre_red_btn']['rel_err']
-
-        post_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['post_red_btn']['abs_err']
-        post_red_per_species_count_rel_err = results_dict['Species_counts'][test_id]['post_red_btn']['rel_err']
-
-        test_post_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['test_post_red_btn']['abs_err']
-        test_post_red_per_species_count_rel_err = results_dict['Species_counts'][test_id]['test_post_red_btn']['rel_err']
-
+        pre_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['pre_red_btn']
+        
+        post_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['post_red_btn']
+        
+        test_post_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['test_post_red_btn']
+        
 
         species_id2name_mapping = results_dict['Species_id2name'][test_id]
         species_name2id_mapping = dict((v,k) for k,v in species_id2name_mapping.items())
 
         output += [
             [f'{test_id}', '', '', '', '', '', '', '', ''],
-            ['', 'Pre-novelty', 'Pre-novelty', '', 'Post-novelty', 'Post-novelty', '', 'Test', 'Test'],
-            ['', 'Mean Abs Err', 'Mean Rel Err', '', 'Mean Abs Err', 'Mean Rel Err', '', 'Mean Abs Err', 'Mean Rel Err']
+            ['', 'Pre-nov', 'Pre-nov', '', 'Post-nov', 'Post-nov', '', 'Test', 'Test'],
+            ['', 'MAE', 'MAE-CI', '', 'MAE', 'MAE-CI', '', 'MAE', 'MAE-CI']
         ]
 
         species_present = list(set(list(pre_red_per_species_count_abs_err.keys()) + list(pre_red_per_species_count_abs_err.keys())))
@@ -277,48 +256,36 @@ def write_results_to_csv(results_dict, output_path):
                 spe_id = species_name2id_mapping[spe_name]
             
             # pre red button
-            pre_red_per_spe_cnt_abs_err_ci, pre_red_per_spe_cnt_rel_err_ci = '--', '--'
+            pre_red_per_spe_cnt_abs_err_ci = '--'
             pre_red_per_spe_cnt_abs_err = round(pre_red_per_species_count_abs_err[spe_name]['value'], 2)
             if 'ci' in pre_red_per_species_count_abs_err[spe_name]:
                 pre_red_per_spe_cnt_abs_err_ci = ci_string(pre_red_per_species_count_abs_err[spe_name]['ci'])
 
-            pre_red_per_spe_cnt_rel_err = round(pre_red_per_species_count_rel_err[spe_name]['value'], 2)
-            if 'ci' in pre_red_per_species_count_rel_err[spe_name]:
-                pre_red_per_spe_cnt_rel_err_ci = ci_string(pre_red_per_species_count_rel_err[spe_name]['ci'])
-
             # post red button
-            post_red_per_spe_cnt_abs_err_ci, post_red_per_spe_cnt_rel_err_ci = '--', '--'
+            post_red_per_spe_cnt_abs_err_ci = '--'
 
             post_red_per_spe_cnt_abs_err = round(post_red_per_species_count_abs_err[spe_name]['value'], 2)
             if 'ci' in post_red_per_species_count_abs_err[spe_name]:
                 post_red_per_spe_cnt_abs_err_ci = ci_string(post_red_per_species_count_abs_err[spe_name]['ci'])
 
-            post_red_per_spe_cnt_rel_err = round(post_red_per_species_count_rel_err[spe_name]['value'], 2)
-            if 'ci' in post_red_per_species_count_rel_err[spe_name]:
-                post_red_per_spe_cnt_rel_err_ci = ci_string(post_red_per_species_count_rel_err[spe_name]['ci'])
-
             # post red button test phase
-            test_post_red_per_spe_cnt_abs_err_ci, test_post_red_per_spe_cnt_rel_err_ci = '--', '--'
+            test_post_red_per_spe_cnt_abs_err_ci = '--'
 
             test_post_red_per_spe_cnt_abs_err = round(test_post_red_per_species_count_abs_err[spe_name]['value'], 2)
             if 'ci' in test_post_red_per_species_count_abs_err[spe_name]:
                 test_post_red_per_spe_cnt_abs_err_ci = ci_string(test_post_red_per_species_count_abs_err[spe_name]['ci'])
 
-            test_post_red_per_spe_cnt_rel_err = round(test_post_red_per_species_count_rel_err[spe_name]['value'], 2)
-            if 'ci' in test_post_red_per_species_count_rel_err[spe_name]:
-                test_post_red_per_spe_cnt_rel_err_ci = ci_string(test_post_red_per_species_count_rel_err[spe_name]['ci'])
-
             output.append(
                 [
                     f'{species_name} ({spe_id}):', 
-                    f'{pre_red_per_spe_cnt_abs_err} {pre_red_per_spe_cnt_abs_err_ci}', 
-                    f'{pre_red_per_spe_cnt_rel_err} {pre_red_per_spe_cnt_rel_err_ci}', 
+                    f'{pre_red_per_spe_cnt_abs_err}', 
+                    f'{pre_red_per_spe_cnt_abs_err_ci}', 
                     '', 
-                    f'{post_red_per_spe_cnt_abs_err} {post_red_per_spe_cnt_abs_err_ci}', 
-                    f'{post_red_per_spe_cnt_rel_err} {post_red_per_spe_cnt_rel_err_ci}', 
+                    f'{post_red_per_spe_cnt_abs_err}', 
+                    f'{post_red_per_spe_cnt_abs_err_ci}', 
                     '', 
-                    f'{test_post_red_per_spe_cnt_abs_err} {test_post_red_per_spe_cnt_abs_err_ci}', 
-                    f'{test_post_red_per_spe_cnt_rel_err} {test_post_red_per_spe_cnt_rel_err_ci}'
+                    f'{test_post_red_per_spe_cnt_abs_err}', 
+                    f'{test_post_red_per_spe_cnt_abs_err_ci}'
                 ]
             )
 
@@ -336,18 +303,12 @@ def write_results_to_csv(results_dict, output_path):
     for test_id in test_ids:
         # species present
         pre_red_per_species_auc = results_dict['Per_species_presence'][test_id]['pre_red_btn']['auc']
-        pre_red_per_species_precision = results_dict['Per_species_presence'][test_id]['pre_red_btn']['precision']
-        pre_red_per_species_recall = results_dict['Per_species_presence'][test_id]['pre_red_btn']['recall']
         pre_red_per_species_f1_score = results_dict['Per_species_presence'][test_id]['pre_red_btn']['f1_score']
 
         post_red_per_species_auc = results_dict['Per_species_presence'][test_id]['post_red_btn']['auc']
-        post_red_per_species_precision = results_dict['Per_species_presence'][test_id]['post_red_btn']['precision']
-        post_red_per_species_recall = results_dict['Per_species_presence'][test_id]['post_red_btn']['recall']
         post_red_per_species_f1_score = results_dict['Per_species_presence'][test_id]['post_red_btn']['f1_score']
 
         test_post_red_per_species_auc = results_dict['Per_species_presence'][test_id]['test_post_red_btn']['auc']
-        test_post_red_per_species_precision = results_dict['Per_species_presence'][test_id]['test_post_red_btn']['precision']
-        test_post_red_per_species_recall = results_dict['Per_species_presence'][test_id]['test_post_red_btn']['recall']
         test_post_red_per_species_f1_score = results_dict['Per_species_presence'][test_id]['test_post_red_btn']['f1_score']
 
         species_id2name_mapping = results_dict['Species_id2name'][test_id]
@@ -355,7 +316,7 @@ def write_results_to_csv(results_dict, output_path):
 
         output += [
             [test_id, '', '', '', '', '', '', '', ''],
-            ['', 'Pre-novelty', 'Pre-novelty', '', 'Post-novelty', 'Post-novelty', '', 'Test', 'Test'],
+            ['', 'Pre-nov', 'Pre-nov', '', 'Post-nov', 'Post-nov', '', 'Test', 'Test'],
             ['', 'AUC', 'F1', '', 'AUC', 'F1', '', 'AUC', 'F1']
         ]
 
@@ -442,18 +403,12 @@ def write_results_to_csv(results_dict, output_path):
     output.append(['Per Activity Presence', '', '', '', '', '', '', '', ''])
     for test_id in test_ids:
         pre_red_per_activity_auc = results_dict['Per_activity_presence'][test_id]['pre_red_btn']['auc']
-        pre_red_per_activity_precision = results_dict['Per_activity_presence'][test_id]['pre_red_btn']['precision']
-        pre_red_per_activity_recall = results_dict['Per_activity_presence'][test_id]['pre_red_btn']['recall']
         pre_red_per_activity_f1_score = results_dict['Per_activity_presence'][test_id]['pre_red_btn']['f1_score']
 
         post_red_per_activity_auc = results_dict['Per_activity_presence'][test_id]['post_red_btn']['auc']
-        post_red_per_activity_precision = results_dict['Per_activity_presence'][test_id]['post_red_btn']['precision']
-        post_red_per_activity_recall = results_dict['Per_activity_presence'][test_id]['post_red_btn']['recall']
         post_red_per_activity_f1_score = results_dict['Per_activity_presence'][test_id]['post_red_btn']['f1_score']
 
         test_post_red_per_activity_auc = results_dict['Per_activity_presence'][test_id]['test_post_red_btn']['auc']
-        test_post_red_per_activity_precision = results_dict['Per_activity_presence'][test_id]['test_post_red_btn']['precision']
-        test_post_red_per_activity_recall = results_dict['Per_activity_presence'][test_id]['test_post_red_btn']['recall']
         test_post_red_per_activity_f1_score = results_dict['Per_activity_presence'][test_id]['test_post_red_btn']['f1_score']
 
         activity_id2name_mapping = results_dict['Activity_id2name'][test_id]
@@ -461,7 +416,7 @@ def write_results_to_csv(results_dict, output_path):
 
         output += [
             [test_id, '', '', '', '', '', '', '', ''],
-            ['', 'Pre-novelty', 'Pre-novelty', '', 'Post-novelty', 'Post-novelty', '', 'Test', 'Test'],
+            ['', 'Pre-nov', 'Pre-nov', '', 'Post-nov', 'Post-nov', '', 'Test', 'Test'],
             ['', 'AUC', 'F1', '', 'AUC', 'F1', '', 'AUC', 'F1']
         ]
 

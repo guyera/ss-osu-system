@@ -7,6 +7,7 @@ from torch.autograd import Variable
 import torch.utils.data
 from enum import Enum
 from tqdm import tqdm
+import os
 
 def variable(t: torch.Tensor, use_cuda=True, **kwargs):
     if torch.cuda.is_available() and use_cuda:
@@ -22,7 +23,7 @@ class LossFnEnum(Enum):
 
 
 class EWC(object):
-    def __init__(self, backbone, species_classifier, activity_classifier, train_loader, _class_frequencies, _loss_fn, _label_smoothing, device):
+    def __init__(self, backbone, species_classifier, activity_classifier, train_loader, _class_frequencies, _loss_fn, _label_smoothing, device,  precision_matrices_path=None):
 
         self.backbone = backbone
         self.species_classifier = species_classifier
@@ -38,7 +39,14 @@ class EWC(object):
         self.params_species_classifier = {n: p for n, p in self.species_classifier.named_parameters() if p.requires_grad}
         self.params_activity_classifier = {n: p for n, p in self.activity_classifier.named_parameters() if p.requires_grad}
         self._means = {}
-        self._precision_matrices = self._diag_fisher()
+
+        self.precision_matrices_path = precision_matrices_path
+        if self.precision_matrices_path and os.path.isfile(self.precision_matrices_path):
+            self._precision_matrices = torch.load(self.precision_matrices_path, map_location=self.device)
+        else:
+            self._precision_matrices = self._diag_fisher()
+            if self.precision_matrices_path:
+                self._save_precision_matrices()
 
         for n, p in deepcopy(self.params_backbone).items():
             self._means[n] = variable(p.data)
@@ -49,6 +57,8 @@ class EWC(object):
         for n, p in deepcopy(self.params_activity_classifier).items():
             self._means[n+'activity'] = variable(p.data)
 
+    def _save_precision_matrices(self):
+        torch.save(self._precision_matrices, self.precision_matrices_path)
 
     def _diag_fisher(self):
         precision_matrices = {}
@@ -144,11 +154,14 @@ class EWC(object):
         for n, p in backbone.named_parameters():
             _loss = self._precision_matrices[n] * (p - self._means[n]) ** 2
             loss += _loss.sum()
+            
         for n, p in species_classifier.named_parameters():
             _loss = self._precision_matrices[n+'species'] * (p - self._means[n+'species']) ** 2
+
             loss += _loss.sum()
         for n, p in activity_classifier.named_parameters():
             _loss = self._precision_matrices[n+'activity'] * (p - self._means[n+'activity']) ** 2
             loss += _loss.sum()
+        
         return loss
 

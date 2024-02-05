@@ -35,7 +35,7 @@ from tupleprediction.training import\
     EWCClassifierTrainer
 from data.custom import build_species_label_mapping
 
-from taming_transformers.cycleGAN import CycleGAN
+# from taming_transformers.cycleGAN import CycleGAN
 
 def gen_retrain_fn(device_id, train_sampler_fn, feedback_batch_sampler_fn, allow_write, allow_print, distributed=False, root_log_dir= './logs'):
     device = f'cuda:{device_id}' if device_id is not None else 'cpu'
@@ -109,8 +109,8 @@ class TopLevelApp:
         #     raise Exception(f'validation CSV was not found in path {val_csv_path}')
         # import ipdb; ipdb.set_trace()
         self.gan_augment = gan_augment
-        if self.gan_augment:
-            self.cycleGAN = CycleGAN('./taming_transformers/logs/vqgan_imagenet_f16_1024/configs/model.yaml','./taming_transformers/logs/vqgan_imagenet_f16_1024/checkpoints/last.ckpt')
+        # if self.gan_augment:
+        #     self.cycleGAN = CycleGAN('./taming_transformers/logs/vqgan_imagenet_f16_1024/configs/model.yaml','./taming_transformers/logs/vqgan_imagenet_f16_1024/checkpoints/last.ckpt')
         self.retraining_buffer = pd.DataFrame(columns=['image_path','filename','width','height','agent1_name','agent1_id'
                                                         ,'agent1_count','agent2_name','agent2_id','agent2_count','agent3_name',
                                                         'agent3_id','agent3_count','activities','activities_id','environment',
@@ -170,7 +170,7 @@ class TopLevelApp:
         self.batch_num = 0 
         self.trial_size = trial_size
         self.trial_batch_size = trial_batch_size
-        self.second_retrain_batch_num = (self.trial_size - 2300) // self.trial_batch_size
+        self.second_retrain_batch_num = (self.trial_size - 1000) // self.trial_batch_size
         self.disable_retraining = disable_retraining
         # Auxiliary debugging data
         self._classifier_debugging_data = {}

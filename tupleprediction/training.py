@@ -42,42 +42,25 @@ def print_nan(t, name):
 def contains_nan(tensor):
     return torch.isnan(tensor).any() 
 
-# class BoxPredictionGradBalancer(torch.autograd.Function):
-#     @staticmethod
-#     def forward(input, weights):
-#         return input
-
-#     @staticmethod
-#     def setup_context(ctx, inputs, output):
-#         input, weights = inputs
-#         ctx.weights = weights
-
-#     @staticmethod
-#     def backward(ctx, grad_output):
-#         grad_input = None
-
-#         if grad_output is not None:
-#             grad_input = grad_output * ctx.weights
-
-#         return grad_input, None
-
 
 class BoxPredictionGradBalancer(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input, weights):
-        ctx.save_for_backward(weights)
+    def forward(input, weights):
         return input
 
     @staticmethod
+    def setup_context(ctx, inputs, output):
+        input, weights = inputs
+        ctx.weights = weights
+
+    @staticmethod
     def backward(ctx, grad_output):
-        weights, = ctx.saved_tensors
         grad_input = None
 
         if grad_output is not None:
-            grad_input = grad_output * weights
+            grad_input = grad_output * ctx.weights
 
         return grad_input, None
-
 
 _balance_box_prediction_grads = BoxPredictionGradBalancer.apply
 
@@ -990,7 +973,8 @@ class DistributedRandomBoxImageBatchSampler:
                 cur_rank = 0
 
             # Append the image to the smallest batch
-            cur_batches[cur_rank].append(img_idx)
+            # cur_batches[cur_rank].append(img_idx)
+            cur_batches[cur_rank].append(indices[img_idx])
             cur_batch_sizes[cur_rank] += box_counts[img_idx]
 
         # Finished adding all images to batches. If all current batches are
@@ -1810,16 +1794,43 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         # print(loss)
         loss.backward()
 
-        # for param in backbone.parameters():
-        #     if param.grad is not None and \
-        #     (torch.any(torch.isnan(param.grad.data)) or \
-        #         torch.any(torch.isinf(param.grad.data))):
-        #         # Found some NaNs in the gradients. "Skip" this batch by
-        #         # zeroing the gradients. This should work in distributed
-        #         # mode as well
-        #         optimizer.zero_grad()
-        #         break
         
+        for param in species_classifier.parameters():
+            if param.grad is not None and \
+            (torch.any(torch.isnan(param.grad.data)) or \
+                torch.any(torch.isinf(param.grad.data))):
+                # Found some NaNs in the gradients. "Skip" this batch by
+                # zeroing the gradients. This should work in distributed
+                # mode as well
+                print('Some NaNs in the gradients of species_classifier. Skiping this batch ...')
+                optimizer.zero_grad()
+                break
+                
+        for param in activity_classifier.parameters():
+            if param.grad is not None and \
+            (torch.any(torch.isnan(param.grad.data)) or \
+                torch.any(torch.isinf(param.grad.data))):
+                # Found some NaNs in the gradients. "Skip" this batch by
+                # zeroing the gradients. This should work in distributed
+                # mode as well
+                print('Some NaNs in the gradients of activity_classifier. Skiping this batch ...')
+                optimizer.zero_grad()
+                break
+                
+        for param in backbone.parameters():
+            if param.grad is not None and \
+            (torch.any(torch.isnan(param.grad.data)) or \
+                torch.any(torch.isinf(param.grad.data))):
+                # Found some NaNs in the gradients. "Skip" this batch by
+                # zeroing the gradients. This should work in distributed
+                # mode as well
+                print('Some NaNs in the gradients of backbone. Skiping this batch ...')
+                optimizer.zero_grad()
+                break
+
+
+        
+
         # Gradient clipping
         # torch.nn.utils.clip_grad_norm_(backbone.parameters(), max_norm=1.0)
         # torch.nn.utils.clip_grad_norm_(activity_classifier.parameters(), max_norm=1.0)
@@ -2384,10 +2395,10 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             activation_statistical_model):
         # backbone.zero_grad(set_to_none=True)
         # torch.cuda.empty_cache()
-        pass
-        # classifier.reset()
-        # backbone.reset()
-        # activation_statistical_model.reset()
+        # pass
+        classifier.reset()
+        backbone.reset()
+        activation_statistical_model.reset()
 
     def fit_activation_statistics(
             self,
@@ -2471,10 +2482,7 @@ class EWCClassifierTrainer(ClassifierTrainer):
             device,
             allow_print,
             class_frequencies):
-        if self.just_finetune == False and self.ewc == True:
-            non_feedback_loss = self.ewc_calculation.penalty(backbone, species_classifier, activity_classifier)
-        else:
-            non_feedback_loss = 0
+                
         if feedback_box_images is not None:
             feedback_species_labels = feedback_species_labels.to(device)
             feedback_activity_labels = feedback_activity_labels.to(device)
@@ -2499,8 +2507,7 @@ class EWCClassifierTrainer(ClassifierTrainer):
                 torch.nn.functional.softmax(feedback_species_logits, dim=1)
             feedback_activity_preds =\
                 torch.nn.functional.softmax(feedback_activity_logits, dim=1)
-            feedback_species_preds_ = feedback_species_preds
-            feedback_activity_preds_ = feedback_activity_preds
+
             if allow_print:
                 print_nan(feedback_activity_preds, 'feedback_activity_preds')
 
@@ -2573,10 +2580,15 @@ class EWCClassifierTrainer(ClassifierTrainer):
             if allow_print:
                 print_nan(feedback_loss, "feedback_loss")
 
-            loss =  feedback_loss + 100 * non_feedback_loss 
+            
+            ewc_penalty_ = self.ewc_calculation.penalty(backbone, species_classifier, activity_classifier)
+            non_feedback_loss = 1000 * ewc_penalty_ 
+            loss =  feedback_loss + non_feedback_loss
      
             if allow_print:
                 if torch.any(torch.isnan(loss)):
+                    print('feedback_species_loss', feedback_species_loss)
+                    print('feedback_activity_loss', feedback_activity_loss)
                     print('feedback_loss', feedback_loss)
                     print('non_feedback_loss', non_feedback_loss)
                     print('loss', loss)
@@ -2599,33 +2611,66 @@ class EWCClassifierTrainer(ClassifierTrainer):
                     print_nan(param.grad.data, 'some parameter\'s gradient 1')
         loss.backward()
 
-   
+        for param in species_classifier.parameters():
+            if param.grad is not None and \
+            (torch.any(torch.isnan(param.grad.data)) or \
+                torch.any(torch.isinf(param.grad.data))):
+                # Found some NaNs in the gradients. "Skip" this batch by
+                # zeroing the gradients. This should work in distributed
+                # mode as well
+                print('Some NaNs in the gradients of species_classifier. Skiping this batch ...')
+                optimizer.zero_grad()
+                break
+                
+        for param in activity_classifier.parameters():
+            if param.grad is not None and \
+            (torch.any(torch.isnan(param.grad.data)) or \
+                torch.any(torch.isinf(param.grad.data))):
+                # Found some NaNs in the gradients. "Skip" this batch by
+                # zeroing the gradients. This should work in distributed
+                # mode as well
+                print('Some NaNs in the gradients of activity_classifier. Skiping this batch ...')
+                optimizer.zero_grad()
+                break
+                
+        for param in backbone.parameters():
+            if param.grad is not None and \
+            (torch.any(torch.isnan(param.grad.data)) or \
+                torch.any(torch.isinf(param.grad.data))):
+                # Found some NaNs in the gradients. "Skip" this batch by
+                # zeroing the gradients. This should work in distributed
+                # mode as well
+                print('Some NaNs in the gradients of backbone. Skiping this batch ...')
+                optimizer.zero_grad()
+                break
+
 
         optimizer.step()
+        indices_with_len_1 = [i for i, tensor in enumerate(feedback_species_preds) if tensor.size(0) == 1]
 
-        if allow_print:
-            for param in backbone.parameters():
-                print_nan(param, 'some parameter 2')
-            for param in backbone.parameters():
-                if param.grad is not None:
-                    print_nan(param.grad.data, 'some parameter\'s gradient 2')
+        feedback_species_preds_len_1 = torch.stack([feedback_species_preds[i] for i in indices_with_len_1]).squeeze(1)
+        feedback_activity_preds_len_1 = torch.stack([feedback_activity_preds[i] for i in indices_with_len_1]).squeeze(1)
+        numerical_feedback_species_labels = feedback_species_labels[indices_with_len_1].to(dtype=torch.int)
+        numerical_feedback_activity_labels = feedback_activity_labels[indices_with_len_1].to(dtype=torch.int)
 
-        # species_correct = torch.argmax(feedback_species_preds_, dim=1) == \
-        #     feedback_species_labels
-        # n_species_correct = int(
-        #     species_correct.to(torch.int).sum().detach().cpu().item()
-        # )
+        species_correct = torch.argmax(feedback_species_preds_len_1, dim=1) == \
+            torch.argmax(numerical_feedback_species_labels, dim=1)
+        n_species_correct = int(
+            species_correct.to(torch.int).sum().detach().cpu().item()
+        )
 
-        # activity_correct = torch.argmax(feedback_activity_preds_, dim=1) == \
-        #     feedback_activity_labels
-        # n_activity_correct = int(
-        #     activity_correct.to(torch.int).sum().detach().cpu().item()
-        # )
-        n_species_correct = 0
-        n_activity_correct = 0
+        activity_correct = torch.argmax(feedback_activity_preds_len_1, dim=1) == \
+            torch.argmax(numerical_feedback_activity_labels, dim=1)
+        n_activity_correct = int(
+            activity_correct.to(torch.int).sum().detach().cpu().item()
+        )
         return loss.detach().cpu().item(),\
             n_species_correct,\
-            n_activity_correct
+            n_activity_correct, \
+            feedback_species_loss, \
+            feedback_activity_loss, \
+            non_feedback_loss
+
 
     def _train_epoch(
             self,
@@ -2648,6 +2693,9 @@ class EWCClassifierTrainer(ClassifierTrainer):
         n_examples = 0
         n_species_correct = 0
         n_activity_correct = 0
+        activity_loss = 0
+        species_loss = 0
+        ewc_penalty = 0
 
         feedback_iter =\
             iter(feedback_loader) if feedback_loader is not None else None
@@ -2685,7 +2733,8 @@ class EWCClassifierTrainer(ClassifierTrainer):
                         feedback_box_images,\
                         _ = next(feedback_iter)
                 gc.collect()
-            batch_loss, batch_n_species_correct, batch_n_activity_correct =\
+            batch_loss, batch_n_species_correct, batch_n_activity_correct, \
+            species_l, activity_l, ewc_p =\
                 self._train_batch(
                     backbone,
                     species_classifier,
@@ -2700,6 +2749,9 @@ class EWCClassifierTrainer(ClassifierTrainer):
                 )
 
             sum_loss += batch_loss
+            activity_loss += activity_l
+            species_loss += species_l  
+            ewc_penalty += ewc_p
             n_iterations += 1
             n_examples += len(feedback_box_images)
             n_species_correct += batch_n_species_correct
@@ -2713,7 +2765,9 @@ class EWCClassifierTrainer(ClassifierTrainer):
                     )
                 )
             
-
+        activity_loss /= n_iterations
+        species_loss /= n_iterations  
+        ewc_penalty /= n_iterations
 
         mean_loss = sum_loss / n_iterations
 
@@ -2722,7 +2776,8 @@ class EWCClassifierTrainer(ClassifierTrainer):
 
         mean_accuracy = (mean_species_accuracy + mean_activity_accuracy) / 2.0
 
-        return mean_loss, mean_accuracy
+        return mean_loss, species_loss, activity_loss, ewc_penalty, \
+        mean_accuracy, mean_species_accuracy, mean_activity_accuracy
 
     def _val_batch(
             self,
@@ -2972,6 +3027,11 @@ class EWCClassifierTrainer(ClassifierTrainer):
         training_loss_curve = {}
         training_accuracy_curve = {}
         validation_accuracy_curve = {}
+        training_species_loss_curve = {}
+        training_activity_loss_curve = {}
+        training_mean_species_accuracy_curve  = {}
+        training_mean_activity_accuracy_curve  = {}
+        training_ewc_penalty_curve = {}
 
         def get_log_dir():
             return os.path.join(
@@ -3034,8 +3094,9 @@ class EWCClassifierTrainer(ClassifierTrainer):
             class_frequencies = None
 
         # Train
+        pre_ewc_path = '/nfs/stak/users/ullaham/hpc-share/SailON/phase3/ss-osu-system/pretrained-models-balanced-normalization-corrected/train-heads/hack/swin_t/pre_ewc_path.pth'
         if self.just_finetune == False and self.ewc == True:
-            self.ewc_calculation = EWC(backbone, species_classifier, activity_classifier, train_loader, class_frequencies, self._loss_fn, self._label_smoothing, device)
+            self.ewc_calculation = EWC(backbone, species_classifier, activity_classifier, train_loader, class_frequencies, self._loss_fn, self._label_smoothing, device, pre_ewc_path)
 
         if allow_print:
             print('lr:', self._lr)
@@ -3058,14 +3119,10 @@ class EWCClassifierTrainer(ClassifierTrainer):
                 # We haven't improved in several epochs. Time to stop
                 # training.
                 break
-
-            # if train_loader.sampler is not None:
-            #     # Set the sampler epoch for shuffling when running in
-            #     # distributed mode
-            #     train_loader.sampler.set_epoch(epoch)
-
-            # Train for one full epoch
-            mean_train_loss, mean_train_accuracy = self._train_epoch(
+            
+            mean_train_loss, species_loss, activity_loss, ewc_penalty, \
+            mean_train_accuracy, mean_species_accuracy, mean_activity_accuracy = \
+            self._train_epoch(
                 backbone,
                 feedback_loader,
                 species_classifier,
@@ -3075,6 +3132,14 @@ class EWCClassifierTrainer(ClassifierTrainer):
                 allow_print,
                 class_frequencies
             )
+
+            print(f'Mean Train Loss: {mean_train_loss}, '
+                    f'Species Loss: {species_loss}, '
+                    f'Activity Loss: {activity_loss}, '
+                    f'EWC Penalty: {ewc_penalty}, '
+                    f'Mean Train Accuracy: {mean_train_accuracy}, '
+                    f'Mean Species Accuracy: {mean_species_accuracy}, '
+                    f'Mean Activity Accuracy: {mean_activity_accuracy}')
 
             if self._root_checkpoint_dir is not None and allow_write:
                 checkpoint_dir = get_checkpoint_dir()
@@ -3097,6 +3162,11 @@ class EWCClassifierTrainer(ClassifierTrainer):
             if root_log_dir is not None and allow_write:
                 training_loss_curve[epoch] = mean_train_loss
                 training_accuracy_curve[epoch] = mean_train_accuracy
+                training_species_loss_curve[epoch] = species_loss
+                training_activity_loss_curve[epoch] = activity_loss
+                training_mean_species_accuracy_curve[epoch] = mean_species_accuracy
+                training_mean_activity_accuracy_curve[epoch] = mean_activity_accuracy
+                training_ewc_penalty_curve[epoch] = ewc_penalty
                 log_dir = get_log_dir()
                 os.makedirs(log_dir, exist_ok=True)
                 training_log = os.path.join(log_dir, 'training.pkl')
@@ -3105,6 +3175,11 @@ class EWCClassifierTrainer(ClassifierTrainer):
                     sd = {}
                     sd['training_loss_curve'] = training_loss_curve
                     sd['training_accuracy_curve'] = training_accuracy_curve
+                    sd['training_species_loss_curve'] = training_species_loss_curve
+                    sd['training_activity_loss_curve'] = training_activity_loss_curve
+                    sd['training_mean_species_accuracy_curve'] = training_mean_species_accuracy_curve
+                    sd['training_mean_activity_accuracy_curve'] = training_mean_activity_accuracy_curve
+                    sd['training_ewc_penalty_curve'] = training_ewc_penalty_curve
                     pkl.dump(sd, f)
 
             # Measure validation accuracy for early stopping / model selection.
@@ -3188,10 +3263,10 @@ class EWCClassifierTrainer(ClassifierTrainer):
             activation_statistical_model):
         # backbone.zero_grad(set_to_none=True)
         # torch.cuda.empty_cache()
-        # pass
+        pass
         # classifier.reset()
         # backbone.reset()
-        activation_statistical_model.reset()
+        # activation_statistical_model.reset()
 
     def fit_activation_statistics(
             self,
@@ -4465,24 +4540,17 @@ class TuplePredictorTrainer:
         if len(self._feedback_data) > 0:
             feedback_dataset = ConcatDataset(self._feedback_data)
             feedback_label_dataset = feedback_dataset.label_dataset()
-            species_frequencies = torch.zeros(self._n_species_cls, dtype=torch.long)
-            activity_frequencies = torch.zeros(self._n_activity_cls, dtype=torch.long)
 
             species_labels = []
             activity_labels = []
             for species_label, activity_label, _ in feedback_label_dataset:
-                species_labels.append(species_label)
-                activity_labels.append(activity_label)
-            species_labels = torch.cat(species_labels, dim=0).to(device)
-            activity_labels = torch.cat(activity_labels, dim=0).to(device)
+                species_labels.append(species_label.to(torch.long))
+                activity_labels.append(activity_label.to(torch.long))
+            species_labels = torch.stack(species_labels, dim=0).to(device)
+            activity_labels = torch.stack(activity_labels, dim=0).to(device)
 
-            for species_idx in range(self._n_species_cls):
-                n_match = (species_labels == species_idx).to(torch.long).sum()
-                species_frequencies[species_idx] = n_match
-
-            for activity_idx in range(self._n_activity_cls):
-                n_match = (activity_labels == activity_idx).to(torch.long).sum()
-                activity_frequencies[activity_idx] = n_match
+            species_frequencies = species_labels.sum(dim=0)
+            activity_frequencies = activity_labels.sum(dim=0)
 
             feedback_class_frequencies = (
                 species_frequencies,

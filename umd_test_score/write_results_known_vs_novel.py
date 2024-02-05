@@ -49,73 +49,53 @@ def write_results_to_csv(results_dict, output_path):
 
     # Aggregate species presence
     output += [
-        ['Average Species Counts', '', '', '', '', '', '', '', '', '', '', '', ''],
-        ['', 'Pre-novelty', 'Pre-novelty', '', 'Post-novelty', 'Post-novelty', 'Post-novelty', 'Post-novelty', '', 'Test', 'Test', 'Test', 'Test'],
-        ['', 'Average MAE', 'Average MRE', '', 'Average MAE (known)', 'Average MAE (novel)', 'Average MRE (known)', 'Average MRE (novel)', '', 'Average MAE (known)', 'Average MAE (novel)', 'Average MRE (known)', 'Average MRE (novel)']
+        ['Average SPECIES COUNTS', '', '', '', '', '', '', '', '', '', '', '', ''],
+        ['', 'Pre-nov', 'Pre-nov', '', 'Post-nov', 'Post-nov', 'Post-nov', 'Post-nov', '', 'Test', 'Test', 'Test', 'Test'],
+        ['', 'MAE', 'MAE-CI', '', 'MAE (known)', 'MAE-CI (known)', 'MAE (novel)', 'MAE-CI (novel)', '', 'MAE (known)', 'MAE-CI (known)', 'MAE (novel)', 'MAE-CI (novel)']
     ]
     for test_id in test_ids:
         # pre red button
-        pre_red_avg_spe_abs_err = results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_abs_err']['known']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_abs_err']['known']:
-            pre_red_avg_spe_abs_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_abs_err']['known']['ci'])
-
-        pre_red_avg_spe_rel_err = results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_rel_err']['known']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_rel_err']['known']:
-            pre_red_avg_spe_rel_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['avg_rel_err']['known']['ci'])
+        pre_red_avg_spe_abs_err = results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['known']['value']
+        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['known']:
+            pre_red_avg_spe_abs_err_ci = ci_string(results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['known']['ci'])
 
         # post red button
         # ** known **
-        post_red_avg_spe_abs_err_known = results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']['known']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']['known']:
-            post_red_avg_spe_abs_err_ci_known = ci_string(results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']['known']['ci'])
-
-        post_red_avg_spe_rel_err_known = results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']['known']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']['known']:
-            post_red_avg_spe_rel_err_ci_known = ci_string(results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']['known']['ci'])
+        post_red_avg_spe_abs_err_known = results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['known']['value']
+        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['known']:
+            post_red_avg_spe_abs_err_ci_known = ci_string(results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['known']['ci'])
 
         # ** novel **
-        post_red_avg_spe_abs_err_novel = results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']['novel']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']['novel']:
-            post_red_avg_spe_abs_err_ci_novel = ci_string(results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_abs_err']['novel']['ci'])
-
-        post_red_avg_spe_rel_err_novel = results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']['novel']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']['novel']:
-            post_red_avg_spe_rel_err_ci_novel = ci_string(results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['avg_rel_err']['novel']['ci'])
+        post_red_avg_spe_abs_err_novel = results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['novel']['value']
+        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['novel']:
+            post_red_avg_spe_abs_err_ci_novel = ci_string(results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['novel']['ci'])
 
         # post red button test phase
         # ** known **
-        test_post_red_avg_spe_abs_err_known = results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_abs_err']['known']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_abs_err']['known']:
-            test_post_red_avg_spe_abs_err_ci_known = ci_string(results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_abs_err']['known']['ci'])
-
-        test_post_red_avg_spe_rel_err_known = results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_rel_err']['known']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_rel_err']['known']:
-            test_post_red_avg_spe_rel_err_ci_known = ci_string(results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_rel_err']['known']['ci'])
+        test_post_red_avg_spe_abs_err_known = results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['known']['value']
+        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['known']:
+            test_post_red_avg_spe_abs_err_ci_known = ci_string(results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['known']['ci'])
 
         # ** novel **
-        test_post_red_avg_spe_abs_err_novel = results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_abs_err']['novel']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_abs_err']['novel']:
-            test_post_red_avg_spe_abs_err_ci_novel = ci_string(results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_abs_err']['novel']['ci'])
-
-        test_post_red_avg_spe_rel_err_novel = results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_rel_err']['novel']['value']
-        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_rel_err']['novel']:
-            test_post_red_avg_spe_rel_err_ci_novel = ci_string(results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['avg_rel_err']['novel']['ci'])
+        test_post_red_avg_spe_abs_err_novel = results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['novel']['value']
+        if 'ci' in results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['novel']:
+            test_post_red_avg_spe_abs_err_ci_novel = ci_string(results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['novel']['ci'])
 
         output.append(
             [
                 test_id, 
-                f'{pre_red_avg_spe_abs_err} {pre_red_avg_spe_abs_err_ci}', 
-                f'{pre_red_avg_spe_rel_err} {pre_red_avg_spe_rel_err_ci}', 
+                f'{pre_red_avg_spe_abs_err}', 
+                f'{pre_red_avg_spe_abs_err_ci}', 
                 '', 
-                f'{post_red_avg_spe_abs_err_known} {post_red_avg_spe_abs_err_ci_known}', 
-                f'{post_red_avg_spe_abs_err_novel} {post_red_avg_spe_abs_err_ci_novel}', 
-                f'{post_red_avg_spe_rel_err_known} {post_red_avg_spe_rel_err_ci_known}',
-                f'{post_red_avg_spe_rel_err_novel} {post_red_avg_spe_rel_err_ci_novel}', 
+                f'{post_red_avg_spe_abs_err_known}', 
+                f'{post_red_avg_spe_abs_err_ci_known}', 
+                f'{post_red_avg_spe_abs_err_novel}',
+                f'{post_red_avg_spe_abs_err_ci_novel}', 
                 '', 
-                f'{test_post_red_avg_spe_abs_err_known} {test_post_red_avg_spe_abs_err_ci_known}', 
-                f'{test_post_red_avg_spe_abs_err_novel} {test_post_red_avg_spe_abs_err_ci_novel}', 
-                f'{test_post_red_avg_spe_rel_err_known} {test_post_red_avg_spe_rel_err_ci_known}',
-                f'{test_post_red_avg_spe_rel_err_novel} {test_post_red_avg_spe_rel_err_ci_novel}'
+                f'{test_post_red_avg_spe_abs_err_known}', 
+                f'{test_post_red_avg_spe_abs_err_ci_known}', 
+                f'{test_post_red_avg_spe_abs_err_novel}',
+                f'{test_post_red_avg_spe_abs_err_ci_novel}'
             ]
         )
 
@@ -127,9 +107,9 @@ def write_results_to_csv(results_dict, output_path):
         
     # Aggregate species presence
     output += [
-        ['Average Species Presence', '', '', '', '', '', '', '', '', '', '', '', ''],
-        ['', 'Pre-novelty', 'Pre-novelty', '', 'Post-novelty', 'Post-novelty', 'Post-novelty', 'Post-novelty', '', 'Test', 'Test', 'Test', 'Test'],
-        ['', 'Average AUC', 'Average F1', '', 'Average AUC (known)', 'Average AUC (novel)', 'Average F1(known)', 'Average F1(novel)', '', 'Average AUC (known)', 'Average AUC (novel)', 'Average F1 (known)', 'Average F1 (novel)']
+        ['AVERAGE SPECIES PRESENCE', '', '', '', '', '', '', '', '', '', '', '', ''],
+        ['', 'Pre-nov', 'Pre-nov', '', 'Post-nov', 'Post-nov', 'Post-nov', 'Post-nov', '', 'Test', 'Test', 'Test', 'Test'],
+        ['', 'Avg AUC', 'Avg F1', '', 'Avg AUC (known)', 'Avg AUC (novel)', 'Avg F1(known)', 'Avg F1(novel)', '', 'Avg AUC (known)', 'Avg AUC (novel)', 'Avg F1 (known)', 'Avg F1 (novel)']
     ]
 
     for test_id in test_ids:
@@ -140,9 +120,6 @@ def write_results_to_csv(results_dict, output_path):
         if 'ci' in results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_auc']['known']:
             pre_red_species_avg_auc_ci = ci_string(results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_auc']['known']['ci'])
 
-        # pre_red_species_avg_precision = results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['known']['avg_precision']
-        # pre_red_species_avg_recall = results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['known']['avg_recall']
-
         pre_red_species_avg_f1 = results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_f1_score']['known']['value']
         if 'ci' in results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_f1_score']['known']:
             pre_red_species_avg_f1_ci = ci_string(results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_f1_score']['known']['ci'])
@@ -151,7 +128,7 @@ def write_results_to_csv(results_dict, output_path):
         # post red button
         # ** known **
         post_red_species_avg_auc_ci_known, post_red_species_avg_f1_ci_known = '--', '--'
-        post_red_avg_spe_abs_err_ci_known, post_red_avg_spe_rel_err_ci_known = '--', '--'
+        post_red_avg_spe_abs_err_ci_known = '--'
 
         post_red_species_avg_auc_known = results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_auc']['known']['value']
         if 'ci' in results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_auc']['known']:
@@ -163,7 +140,7 @@ def write_results_to_csv(results_dict, output_path):
         
         # ** novel **
         post_red_species_avg_auc_ci_novel, post_red_species_avg_f1_ci_novel = '--', '--'
-        post_red_avg_spe_abs_err_ci_novel, post_red_avg_spe_rel_err_ci_novel = '--', '--'
+        post_red_avg_spe_abs_err_ci_novel  = '--'
 
         post_red_species_avg_auc_novel = results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_auc']['novel']['value']
         if 'ci' in results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_auc']['novel']:
@@ -177,7 +154,7 @@ def write_results_to_csv(results_dict, output_path):
         # post red button test phase
         # ** known **
         test_post_red_species_avg_auc_ci_known, test_post_red_species_avg_f1_ci_known = '--', '--'
-        test_post_red_avg_spe_abs_err_ci_known, test_post_red_avg_spe_rel_err_ci_known = '--', '--'
+        test_post_red_avg_spe_abs_err_ci_known  = '--'
 
         test_post_red_species_avg_auc_known = results_dict['Aggregate_species_presence'][test_id]['test_post_red_btn']['avg_auc']['known']['value']
         if 'ci' in results_dict['Aggregate_species_presence'][test_id]['test_post_red_btn']['avg_auc']['known']:
@@ -189,7 +166,7 @@ def write_results_to_csv(results_dict, output_path):
 
         # ** novel **
         test_post_red_species_avg_auc_ci_novel, test_post_red_species_avg_f1_ci_novel = '--', '--'
-        test_post_red_avg_spe_abs_err_ci_novel, test_post_red_avg_spe_rel_err_ci_novel = '--', '--'
+        test_post_red_avg_spe_abs_err_ci_novel  = '--'
 
         test_post_red_species_avg_auc_novel = results_dict['Aggregate_species_presence'][test_id]['test_post_red_btn']['avg_auc']['novel']['value']
         if 'ci' in results_dict['Aggregate_species_presence'][test_id]['test_post_red_btn']['avg_auc']['novel']:
@@ -225,9 +202,9 @@ def write_results_to_csv(results_dict, output_path):
 
     # Aggregate activity presence
     output += [
-        ['Average Activity Presence', '', '', '', '', '', '', '', '', '', '', '', ''],
-        ['', 'Pre-novelty', 'Pre-novelty', '', 'Post-novelty', 'Post-novelty', 'Post-novelty', 'Post-novelty', '', 'Test', 'Test', 'Test', 'Test'],
-        ['', 'Average AUC', 'Average F1', '', 'Average AUC (known)', 'Average AUC (novel)', 'Average F1 (known)', 'Average F1 (novel)', '', 'Average AUC (known)', 'Average AUC (novel)', 'Average F1 (known)', 'Average F1 (novel)']
+        ['AVERAGE ACTIVITY PRESENCE', '', '', '', '', '', '', '', '', '', '', '', ''],
+        ['', 'Pre-nov', 'Pre-nov', '', 'Post-nov', 'Post-nov', 'Post-nov', 'Post-nov', '', 'Test', 'Test', 'Test', 'Test'],
+        ['', 'Avg AUC', 'Avg F1', '', 'Avg AUC (known)', 'Avg AUC (novel)', 'Avg F1 (known)', 'Avg F1 (novel)', '', 'Avg AUC (known)', 'Avg AUC (novel)', 'Avg F1 (known)', 'Avg F1 (novel)']
     ]
 
     # ** print average activity presence metrics
@@ -313,35 +290,23 @@ def write_results_to_csv(results_dict, output_path):
         ['', '', '', '', '', '', '', '', '', '', '', '', '']
     ]
 
+    """
     # Per species count errors
     output.append(['Per Species Counts', '', '', '', '', '', '', '', '', '', '', '', ''])
     for test_id in test_ids:
         # species counts
         # ***  known  ***
-        pre_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['pre_red_btn']['abs_err']
-        pre_red_per_species_count_rel_err = results_dict['Species_counts'][test_id]['pre_red_btn']['rel_err']
-
-        post_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['post_red_btn']['abs_err']
-        post_red_per_species_count_rel_err = results_dict['Species_counts'][test_id]['post_red_btn']['rel_err']
-
-        test_post_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['test_post_red_btn']['abs_err']
-        test_post_red_per_species_count_rel_err = results_dict['Species_counts'][test_id]['test_post_red_btn']['rel_err']
-
-        # ***  novel  ***
-        # post_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['post_red_btn']['abs_err']
-        # post_red_per_species_count_rel_err = results_dict['Species_counts'][test_id]['post_red_btn']['rel_err']
-
-        # test_post_red_per_species_count_abs_err_novel = results_dict['Species_counts'][test_id]['test_post_red_btn']['abs_err']['novel']
-        # test_post_red_per_species_count_rel_err_novel = results_dict['Species_counts'][test_id]['test_post_red_btn']['rel_err']['novel']
-
+        pre_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['pre_red_btn']
+        post_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['post_red_btn']
+        test_post_red_per_species_count_abs_err = results_dict['Species_counts'][test_id]['test_post_red_btn']
 
         species_id2name_mapping = results_dict['Species_id2name'][test_id]
         species_name2id_mapping = dict((v,k) for k,v in species_id2name_mapping.items())
 
         output += [
             [f'{test_id}', '', '', '', '', '', '', '', '', '', '', '', ''],
-            ['', 'Pre-novelty', 'Pre-novelty', '', 'Post-novelty', 'Post-novelty', 'Post-novelty', 'Post-novelty', '', 'Test', 'Test', 'Test', 'Test'],
-            ['', 'Mean Abs Err', 'Mean Rel Err', '', 'MAE (known)', 'MAE (novel)', 'MRE (known)', 'MRE (novel)', '', 'MAE (known)', 'MAE (novel)', 'MRE (known)', 'MRE (novel)']
+            ['', 'Pre-nov', 'Pre-nov', '', 'Post-nov', 'Post-nov', 'Post-nov', 'Post-nov', '', 'Test', 'Test', 'Test', 'Test'],
+            ['', 'MAE (known)', 'MAE-CI (known)', '', 'MAE (known)', 'MAE-CI (known)', 'MAE (novel)', 'MAE-CI (novel)', '', 'MAE (known)', 'MAE-CI (known)', 'MAE (novel)', 'MAE-CI (novel)']
         ]
 
         species_present = list(
@@ -366,78 +331,57 @@ def write_results_to_csv(results_dict, output_path):
             
             # pre red button
             # ** known **
-            pre_red_per_spe_cnt_abs_err_ci, pre_red_per_spe_cnt_rel_err_ci = '--', '--'
-            pre_red_per_spe_cnt_abs_err = round(pre_red_per_species_count_abs_err[spe_name]['known']['value'], 2)
+            pre_red_per_spe_cnt_abs_err_ci = '--'
+            pre_red_per_spe_cnt_abs_err = round(pre_red_per_species_count_abs_err[spe_name]['known']['value'], 3)
             if 'ci' in pre_red_per_species_count_abs_err[spe_name]['known']:
                 pre_red_per_spe_cnt_abs_err_ci = ci_string(pre_red_per_species_count_abs_err[spe_name]['known']['ci'])
 
-            pre_red_per_spe_cnt_rel_err = round(pre_red_per_species_count_rel_err[spe_name]['known']['value'], 2)
-            if 'ci' in pre_red_per_species_count_rel_err[spe_name]['known']:
-                pre_red_per_spe_cnt_rel_err_ci = ci_string(pre_red_per_species_count_rel_err[spe_name]['known']['ci'])
-
-
             # post red button
             # ** known **
-            post_red_per_spe_cnt_abs_err_ci_known, post_red_per_spe_cnt_rel_err_ci_known = '--', '--'
+            post_red_per_spe_cnt_abs_err_ci_known = '--'
 
-            post_red_per_spe_cnt_abs_err_known = round(post_red_per_species_count_abs_err[spe_name]['known']['value'], 2)
+            post_red_per_spe_cnt_abs_err_known = round(post_red_per_species_count_abs_err[spe_name]['known']['value'], 3)
             if 'ci' in post_red_per_species_count_abs_err[spe_name]['known']:
                 post_red_per_spe_cnt_abs_err_ci_known = ci_string(post_red_per_species_count_abs_err[spe_name]['known']['ci'])
 
-            post_red_per_spe_cnt_rel_err_known = round(post_red_per_species_count_rel_err[spe_name]['known']['value'], 2)
-            if 'ci' in post_red_per_species_count_rel_err[spe_name]['known']:
-                post_red_per_spe_cnt_rel_err_ci_known = ci_string(post_red_per_species_count_rel_err[spe_name]['known']['ci'])
-
             # ** novel **
-            post_red_per_spe_cnt_abs_err_ci_novel, post_red_per_spe_cnt_rel_err_ci_novel = '--', '--'
+            post_red_per_spe_cnt_abs_err_ci_novel = '--'
 
-            post_red_per_spe_cnt_abs_err_novel = round(post_red_per_species_count_abs_err[spe_name]['novel']['value'], 2)
+            post_red_per_spe_cnt_abs_err_novel = round(post_red_per_species_count_abs_err[spe_name]['novel']['value'], 3)
             if 'ci' in post_red_per_species_count_abs_err[spe_name]['novel']:
                 post_red_per_spe_cnt_abs_err_ci_novel = ci_string(post_red_per_species_count_abs_err[spe_name]['novel']['ci'])
-
-            post_red_per_spe_cnt_rel_err_novel = round(post_red_per_species_count_rel_err[spe_name]['novel']['value'], 2)
-            if 'ci' in post_red_per_species_count_rel_err[spe_name]['novel']:
-                post_red_per_spe_cnt_rel_err_ci_novel = ci_string(post_red_per_species_count_rel_err[spe_name]['novel']['ci'])
 
 
             # post red button test phase
             # ** known **
-            test_post_red_per_spe_cnt_abs_err_ci_known, test_post_red_per_spe_cnt_rel_err_ci_known = '--', '--'
+            test_post_red_per_spe_cnt_abs_err_ci_known = '--'
 
-            test_post_red_per_spe_cnt_abs_err_known = round(test_post_red_per_species_count_abs_err[spe_name]['known']['value'], 2)
+            test_post_red_per_spe_cnt_abs_err_known = round(test_post_red_per_species_count_abs_err[spe_name]['known']['value'], 3)
             if 'ci' in test_post_red_per_species_count_abs_err[spe_name]['known']:
                 test_post_red_per_spe_cnt_abs_err_ci_known = ci_string(test_post_red_per_species_count_abs_err[spe_name]['known']['ci'])
 
-            test_post_red_per_spe_cnt_rel_err_known = round(test_post_red_per_species_count_rel_err[spe_name]['known']['value'], 2)
-            if 'ci' in test_post_red_per_species_count_rel_err[spe_name]['known']:
-                test_post_red_per_spe_cnt_rel_err_ci_known = ci_string(test_post_red_per_species_count_rel_err[spe_name]['known']['ci'])
-
             # ** novel **
-            test_post_red_per_spe_cnt_abs_err_ci_novel, test_post_red_per_spe_cnt_rel_err_ci_novel = '--', '--'
+            test_post_red_per_spe_cnt_abs_err_ci_novel = '--'
 
-            test_post_red_per_spe_cnt_abs_err_novel = round(test_post_red_per_species_count_abs_err[spe_name]['novel']['value'], 2)
+            test_post_red_per_spe_cnt_abs_err_novel = round(test_post_red_per_species_count_abs_err[spe_name]['novel']['value'], 3)
             if 'ci' in test_post_red_per_species_count_abs_err[spe_name]['novel']:
                 test_post_red_per_spe_cnt_abs_err_ci_novel = ci_string(test_post_red_per_species_count_abs_err[spe_name]['novel']['ci'])
-
-            test_post_red_per_spe_cnt_rel_err_novel = round(test_post_red_per_species_count_rel_err[spe_name]['novel']['value'], 2)
-            if 'ci' in test_post_red_per_species_count_rel_err[spe_name]['novel']:
-                test_post_red_per_spe_cnt_rel_err_ci_novel = ci_string(test_post_red_per_species_count_rel_err[spe_name]['novel']['ci'])
 
             output.append(
                 [
                     f'{species_name} ({spe_id}):', 
-                    f'{pre_red_per_spe_cnt_abs_err} {pre_red_per_spe_cnt_abs_err_ci}', 
-                    f'{pre_red_per_spe_cnt_rel_err} {pre_red_per_spe_cnt_rel_err_ci}', 
+                    f'{pre_red_per_spe_cnt_abs_err}', 
+                    f'{pre_red_per_spe_cnt_abs_err_ci}', 
                     '', 
-                    f'{post_red_per_spe_cnt_abs_err_known} {post_red_per_spe_cnt_abs_err_ci_known}', 
-                    f'{post_red_per_spe_cnt_abs_err_novel} {post_red_per_spe_cnt_abs_err_ci_novel}', 
-                    f'{post_red_per_spe_cnt_rel_err_known} {post_red_per_spe_cnt_rel_err_ci_known}',
-                    f'{post_red_per_spe_cnt_rel_err_novel} {post_red_per_spe_cnt_rel_err_ci_novel}', 
+                    f'{post_red_per_spe_cnt_abs_err_known}', 
+                    f'{post_red_per_spe_cnt_abs_err_ci_known}', 
+                    f'{post_red_per_spe_cnt_abs_err_novel}',
+                    f'{post_red_per_spe_cnt_abs_err_ci_novel}', 
                     '', 
-                    f'{test_post_red_per_spe_cnt_abs_err_known} {test_post_red_per_spe_cnt_abs_err_ci_known}', 
-                    f'{test_post_red_per_spe_cnt_abs_err_novel} {test_post_red_per_spe_cnt_abs_err_ci_novel}', 
-                    f'{test_post_red_per_spe_cnt_rel_err_known} {test_post_red_per_spe_cnt_rel_err_ci_known}',
-                    f'{test_post_red_per_spe_cnt_rel_err_novel} {test_post_red_per_spe_cnt_rel_err_ci_novel}'
+                    f'{test_post_red_per_spe_cnt_abs_err_known}', 
+                    f'{test_post_red_per_spe_cnt_abs_err_ci_known}', 
+                    f'{test_post_red_per_spe_cnt_abs_err_novel}',
+                    f'{test_post_red_per_spe_cnt_abs_err_ci_novel}'
                 ]
             )
 
@@ -448,12 +392,14 @@ def write_results_to_csv(results_dict, output_path):
         ['', '', '', '', '', '', '', '', '', '', '', '', ''],
         ['', '', '', '', '', '', '', '', '', '', '', '', '']
     ]
+    """
 
     with open(os.path.join(output_path, f'summary_known_vs_novel.csv'), 'w') as myfile:
      
         # using csv.writer method from CSV package
         write = csv.writer(myfile)
         write.writerows(output)
+
 
 def print_confusion_matrices(results_dict, out_file):
     test_ids = sorted(list(results_dict['Red_button'].keys()))

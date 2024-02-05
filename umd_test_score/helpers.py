@@ -9,25 +9,29 @@ def percent_string(num, denom=None):
     return f'{100 * num / denom:6.2f}%'
 
 
-def species_count_error(grd_trth_vec, pred_vec, metric='MSE'):
+def species_count_error(grd_trth, pred, metric='MAE'):
     '''
     Computes the squared error, absolute error, mean squared error, 
     mean absolute error or root mean squared error between the ground truth and the predicion
     '''
-    assert metric in ('SE', 'AE', 'RMSE', 'MSE', 'MAE')
-    assert len(grd_trth_vec) == len(pred_vec)
+    assert metric in ('AE', 'MAE')  # ('RE', 'AE', 'MAE', 'MRE')
+    assert len(grd_trth) == len(pred)
 
-    grd_trth_vec = np.array(grd_trth_vec).ravel()
-    pred_vec = np.array(pred_vec).ravel()
-    diff = grd_trth_vec - pred_vec
-    sqrt_diff = np.power(diff, 2)
+    grd_trth = np.array(grd_trth)
+    pred = np.array(pred)
+    err = grd_trth - pred
 
-    if metric == 'SE':
-        return sum(sqrt_diff)
-    elif metric == 'AE':
-        return sum(np.abs(diff))
-    elif metric == 'MSE':
-        return np.mean(sqrt_diff)
-    elif metric == 'MAE':
-        return np.mean(np.abs(diff))
-    return np.sqrt(np.mean(sqrt_diff))
+    if np.sum(np.abs(err)) == 0:
+        return -1
+
+    if metric == 'AE' or metric == 'MAE':
+        N = 2 * len(grd_trth)
+        return np.sum(np.abs(err)) / N
+    elif metric == 'MRE':
+        sum_err = np.sum(np.abs(err), axis=1)
+        num_boxes = np.sum(grd_trth, axis=1)
+        rel_err = np.divide(sum_err, 2 * num_boxes)
+        if len(rel_err) == 0 or len(grd_trth) == 0:
+            return -1
+        return np.sum(rel_err) / len(grd_trth)
+    return -1
