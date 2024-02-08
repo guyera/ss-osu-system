@@ -1133,6 +1133,83 @@ def print_reliability_diagrams(results_dict, out_file):
                 plt.close()
 
 
+def print_hist_of_ci(results_dict, out_file):
+    """
+    Plot the histograms of values used for computing the confidence interval
+    (Analysis of the confidence intervals)
+    """
+    test_ids = sorted(list(results_dict['Red_button'].keys()))
+    with PdfPages(out_file) as pdf_pages:
+        # plot confusion matrix of species
+        for test_id in test_ids:
+            pre_red_avg_spe_abs_errs = results_dict['Aggregate_species_counts'][test_id]['pre_red_btn']['boostrap_values']
+            post_red_avg_spe_abs_errs = results_dict['Aggregate_species_counts'][test_id]['post_red_btn']['boostrap_values']
+            test_post_red_avg_spe_abs_errs = results_dict['Aggregate_species_counts'][test_id]['test_post_red_btn']['boostrap_values']
+
+            pre_red_spe_avg_f1 = results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_f1_score']['boostrap_values']
+            post_red_spe_avg_f1 = results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_f1_score']['boostrap_values']
+            test_post_red_spe_avg_f1 = results_dict['Aggregate_species_presence'][test_id]['test_post_red_btn']['avg_f1_score']['boostrap_values']
+
+            pre_red_spe_avg_auc = results_dict['Aggregate_species_presence'][test_id]['pre_red_btn']['avg_auc']['boostrap_values']
+            post_red_spe_avg_auc = results_dict['Aggregate_species_presence'][test_id]['post_red_btn']['avg_auc']['boostrap_values']
+            test_post_red_spe_avg_auc = results_dict['Aggregate_species_presence'][test_id]['test_post_red_btn']['avg_auc']['boostrap_values']
+
+            pre_red_act_avg_f1 = results_dict['Aggregate_activity_presence'][test_id]['pre_red_btn']['avg_f1_score']['boostrap_values']
+            post_red_act_avg_f1 = results_dict['Aggregate_activity_presence'][test_id]['post_red_btn']['avg_f1_score']['boostrap_values']
+            test_post_red_act_avg_f1 = results_dict['Aggregate_activity_presence'][test_id]['test_post_red_btn']['avg_f1_score']['boostrap_values']
+
+            pre_red_act_avg_auc = results_dict['Aggregate_activity_presence'][test_id]['pre_red_btn']['avg_auc']['boostrap_values']
+            post_red_act_avg_auc = results_dict['Aggregate_activity_presence'][test_id]['post_red_btn']['avg_auc']['boostrap_values']
+            test_post_red_act_avg_auc = results_dict['Aggregate_activity_presence'][test_id]['test_post_red_btn']['avg_auc']['boostrap_values']
+
+            
+            # fig = plt.figure('', figsize=[14, 14])
+            fig, axs = plt.subplots(5, 3, figsize=(15, 10), layout='constrained')
+            values = [
+                pre_red_avg_spe_abs_errs, post_red_avg_spe_abs_errs, test_post_red_avg_spe_abs_errs,
+                pre_red_spe_avg_auc, post_red_spe_avg_auc, test_post_red_spe_avg_auc,
+                pre_red_spe_avg_f1, post_red_spe_avg_f1, test_post_red_spe_avg_f1,
+                pre_red_act_avg_auc, post_red_act_avg_auc, test_post_red_act_avg_auc,
+                pre_red_act_avg_f1, post_red_act_avg_f1, test_post_red_act_avg_f1
+            ]
+
+            titles = [
+                'Pre red btn avg MAE', 'Post red btn avg MAE', 'Test red btn avg MAE',
+                'Pre red btn avg spe AUC', 'Post red btn avg spe AUC', 'Test red btn avg spe AUC',
+                'Pre red btn avg spe F1', 'Post red btn avg spe F1', 'Test red btn avg spe F1',
+                'Pre red btn avg act AUC', 'Post red btn avg act AUC', 'Test red btn avg act AUC',
+                'Pre red btn avg act F1', 'Post red btn avg act F1', 'Test red btn avg act F1'
+            ]
+            for ax, vals, plt_title in zip(axs.flat, values, titles):
+                if vals:
+                    ax.hist(vals, bins=20)
+                    ax.set_ylabel("Count")
+                    ax.set_title(plt_title)
+
+            '''
+            ax1 = plt.subplot2grid((3, 1), (0, 0), rowspan=2)
+            ax2 = plt.subplot2grid((3, 1), (2, 0))
+
+            prob_true, prob_pred = calibration_curve(y_true, pred_prob, n_bins=num_bins)
+            ax1.plot(prob_pred, prob_true, "s-")
+            ax1.axline([0, 0], [1, 1], color='gray', ls='--')
+
+            ax2.hist(pred_prob, range=(0, 1), bins=num_bins, histtype="step", lw=2)
+
+            ax1.set_ylabel("Fraction of positives")
+            ax1.set_xlabel("Mean predicted value")
+            ax1.set_title(f"{test_id}: {phases_abrv[i]} species (Reliability Curve)")
+
+            ax2.set_xlabel("Mean predicted value")
+            ax2.set_ylabel("Count")
+            '''
+
+            fig.suptitle(f'Novelty type - {test_id}', fontsize=16)
+            fig.tight_layout()
+            pdf_pages.savefig()
+            plt.close()
+
+
 def __print_reliability_diagrams(results_dict, out_file):
     test_ids = sorted(list(results_dict['Red_button'].keys()))
     phases = ['pre_red_btn', 'post_red_btn', 'test_post_red_btn']

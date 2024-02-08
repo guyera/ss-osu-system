@@ -165,9 +165,10 @@ def boostrap_conf_interval(y_true, y_pred, metric_name, n_samples=500, alpha=0.0
         #         print('\n The following exception happened in boostrap_conf_int():', ex)
 
     if isinstance(sample_score, list):
-        return np.percentile(sample_score, (lower_c, upper_c)) if len(sample_score) > 0 else -1
+        ci = np.percentile(sample_score, (lower_c, upper_c)) if len(sample_score) > 0 else -1
+        return ci, sample_score
     return {
         'avg_precision': np.percentile(sample_score['avg_precision'], (lower_c, upper_c)) if len(sample_score['avg_precision']) > 0 else -1,
         'avg_recall': np.percentile(sample_score['avg_recall'], (lower_c, upper_c)) if len(sample_score['avg_recall']) > 0 else -1,
         'avg_f1_score': np.percentile(sample_score['avg_f1_score'], (lower_c, upper_c)) if len(sample_score['avg_f1_score']) > 0 else -1
-    }
+    }, sample_score
