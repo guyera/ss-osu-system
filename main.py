@@ -53,7 +53,7 @@ if __name__ == "__main__":
     p.add_argument('--retraining-max-epochs', type=int, default=1000)
     p.add_argument('--retraining-label-smoothing', type=float, default=0.0)
     p.add_argument('--retraining-scheduler-type', type=SchedulerType, choices=list(SchedulerType), default=SchedulerType.none)
-    p.add_argument('--feedback-sampling-configuration', type=FeedbackSamplingConfigurationOption, default=FeedbackSamplingConfigurationOption.none)
+    p.add_argument('--feedback-sampling-configuration', type=(lambda s : FeedbackSamplingConfigurationOption[s]), choices=list(FeedbackSamplingConfigurationOption), default=FeedbackSamplingConfigurationOption.none)
     p.add_argument('--feedback-loss-weight', type=float, default=0.5)
     p.add_argument('--detection-threshold', type=float, default=0.5)
     p.add_argument('--retraining-loss-fn', type=LossFnEnum, choices=list(LossFnEnum), default=LossFnEnum.cross_entropy)
