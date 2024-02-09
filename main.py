@@ -10,7 +10,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 from backbone import Backbone
-from tupleprediction.training import Augmentation, SchedulerType, LossFnEnum, DistributedRandomBoxImageBatchSampler
+from tupleprediction.training import Augmentation, SchedulerType, LossFnEnum, DistributedRandomBoxImageBatchSampler, FeedbackSamplingConfigurationOption
 from toplevel import TopLevelApp, gen_retrain_fn
 import distributedutils
 
@@ -53,6 +53,7 @@ if __name__ == "__main__":
     p.add_argument('--retraining-max-epochs', type=int, default=1000)
     p.add_argument('--retraining-label-smoothing', type=float, default=0.0)
     p.add_argument('--retraining-scheduler-type', type=SchedulerType, choices=list(SchedulerType), default=SchedulerType.none)
+    p.add_argument('--feedback-sampling-configuration', type=FeedbackSamplingConfigurationOption, default=FeedbackSamplingConfigurationOption.none)
     p.add_argument('--feedback-loss-weight', type=float, default=0.5)
     p.add_argument('--detection-threshold', type=float, default=0.5)
     p.add_argument('--retraining-loss-fn', type=LossFnEnum, choices=list(LossFnEnum), default=LossFnEnum.cross_entropy)
@@ -124,7 +125,6 @@ if __name__ == "__main__":
                 allow_write,
                 allow_print,
                 distributed=True
-                
             )
             # Run the retrain function in a loop until told to terminate
             # (signified by a skip of the function call, in-turn signified by
@@ -255,7 +255,8 @@ if __name__ == "__main__":
         device=device,
         retrain_fn=retrain_fn,
         val_reduce_fn=val_reduce_fn,
-        model_unwrap_fn=model_unwrap_fn
+        model_unwrap_fn=model_unwrap_fn,
+        feedback_sampling_configuration=args.feedback_sampling_configuration
     )
 
     test_session = BBNSession('OND', args.domain, args.class_count, 

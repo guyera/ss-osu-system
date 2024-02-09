@@ -49,7 +49,8 @@ def gen_retrain_fn(device_id, train_sampler_fn, feedback_batch_sampler_fn, allow
             activation_statistical_model,
             scorer,
             root_log_dir,
-            model_unwrap_fn):
+            model_unwrap_fn,
+            feedback_sampling_configuration):
         # Move everything to target device
         backbone = backbone.to(device)
         classifier = classifier.to(device)
@@ -75,7 +76,8 @@ def gen_retrain_fn(device_id, train_sampler_fn, feedback_batch_sampler_fn, allow
             allow_write,
             allow_print,
             root_log_dir=root_log_dir,
-            model_unwrap_fn=model_unwrap_fn
+            model_unwrap_fn=model_unwrap_fn,
+            feedback_sampling_configuration=feedback_sampling_configuration
         )
 
     return retrain
@@ -94,7 +96,7 @@ class TopLevelApp:
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_size, trial_batch_size, disable_retraining,
             root_cache_dir, n_known_val, classifier_trainer, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_val_interval, retraining_patience, retraining_min_epochs, retraining_max_epochs,
-            retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, class_frequency_file, gan_augment, device, retrain_fn, val_reduce_fn, model_unwrap_fn):
+            retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, class_frequency_file, gan_augment, device, retrain_fn, val_reduce_fn, model_unwrap_fn, feedback_sampling_configuration):
 
         pretrained_backbone_path = os.path.join(
             pretrained_models_dir,
@@ -343,6 +345,7 @@ class TopLevelApp:
         self.retrain_fn = retrain_fn
 
         self.model_unwrap_fn = model_unwrap_fn
+        self.feedback_sampling_configuration = feedback_sampling_configuration
         
     def reset(self):
         self.post_red = False
@@ -1056,6 +1059,7 @@ class TopLevelApp:
                 self.und_manager.scorer,
                 self.log_dir,
                 self.model_unwrap_fn,
+                self.feedback_sampling_configuration
             )
 
             # self.backbone.eval()

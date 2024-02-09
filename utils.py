@@ -18,6 +18,18 @@ import re
 from torch.utils.data import DataLoader
 
 
+class LengthedIter:
+    def __init__(self, l):
+        self._iter = iter(l)
+        self._length = len(l)
+
+    def __len__(self):
+        return self._length
+
+    def __next__(self):
+        return next(self._iter)
+
+
 class DataLoaderX(DataLoader):
     def __iter__(self):
         return BackgroundGenerator(super().__iter__())

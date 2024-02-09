@@ -20,7 +20,7 @@ from torch.nn import Module
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from boximagedataset import BoxImageDataset, BoxImageMemoryDataset
-from utils import gen_custom_collate, gen_tqdm_description
+from utils import gen_custom_collate, gen_tqdm_description, LengthedIter
 from transforms import\
     Compose,\
     Normalize,\
@@ -761,7 +761,8 @@ class ClassifierTrainer(ABC):
             feedback_batch_sampler_fn,
             allow_write,
             allow_print,
-            feedback_class_frequencies):
+            feedback_class_frequencies,
+            feedback_sampling_configuration):
         return NotImplemented
 
     @abstractmethod
@@ -927,6 +928,68 @@ class TransformingBoxImageDataset(Dataset):
         return self._dataset.box_count(idx)
 
 
+class FeedbackSamplingConfiguration(ABC):
+    @abstractmethod
+    def configure_datasets(self, train_dataset, feedback_dataset):
+        return NotImplemented
+
+    @abstractmethod
+    def configure_data(
+            self,
+            train_box_features,
+            train_species_labels,
+            train_activity_labels,
+            feedback_box_features,
+            feedback_species_labels,
+            feedback_activity_labels):
+        return NotImplemented
+
+
+class CombinedFeedbackSamplingConfiguration(FeedbackSamplingConfiguration):
+    def configure_datasets(self, train_dataset, feedback_dataset):
+        return None, ConcatDataset((train_dataset, feedback_dataset))
+
+    def configure_data(
+            self,
+            train_box_features,
+            train_species_labels,
+            train_activity_labels,
+            feedback_box_features,
+            feedback_species_labels,
+            feedback_activity_labels):
+        # Convert train_species_labels to count vectors and
+        # train_activity_labels to presence vectors
+        train_species_labels = torch.nn.functional.one_hot(
+            train_species_labels,
+            feedback_species_labels.shape[1]
+        )
+        train_activity_labels = torch.nn.functional.one_hot(
+            train_activity_labels,
+            feedback_activity_labels.shape[1]
+        )
+        return None,\
+            None,\
+            None,\
+            torch.split(train_box_features, 1) + feedback_box_features,\
+            torch.cat((train_species_labels, feedback_species_labels), dim=0),\
+            torch.cat((train_activity_labels, feedback_activity_labels), dim=0)
+
+
+class FeedbackSamplingConfigurationOption(Enum):
+    combined = {
+        'ctor': CombinedFeedbackSamplingConfiguration
+    }
+    none = {
+        'ctor': lambda : None
+    }
+
+    def __str__(self):
+        return self.name
+
+    def ctor(self):
+        return self.value['ctor']
+
+
 class DistributedRandomBoxImageBatchSampler:
     def __init__(
             self,
@@ -986,7 +1049,12 @@ class DistributedRandomBoxImageBatchSampler:
         # Return an iterator for the batches corresponding to this replica's
         # rank (resting assured that all replicas will receive the same
         # number of batches by construction)
-        return iter(all_batches)
+        return LengthedIter(all_batches)
+
+    def __len__(self):
+        copy_sampler = deepcopy(self)
+        next_iter = iter(copy_sampler)
+        return len(next_iter)
 
 
 class LogitLayerClassifierTrainer(ClassifierTrainer):
@@ -1036,23 +1104,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         species_classifier.train()
         activity_classifier.train()
 
-        ## Non-feedback
-
-        # Compute logits by passing the features through the appropriate
-        # classifiers
-        species_preds = species_classifier(box_features)
-        activity_preds = activity_classifier(box_features)
-
-        focal_loss = torch.hub.load(
-            'adeelh/pytorch-multi-class-focal-loss',
-            model='FocalLoss',
-            alpha=torch.tensor([.75, .25]),
-            gamma=2,
-            reduction='none',
-            force_reload=False
-        )
-
-        # Compute losses
+        # Compute class weights
         species_weights = None
         activity_weights = None
         species_frequencies = None
@@ -1104,39 +1156,60 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             activity_weights =\
                 unnormalized_activity_weights / proportional_activity_sum
 
-        if self._loss_fn == LossFnEnum.cross_entropy:
-            species_loss = torch.nn.functional.cross_entropy(
-                species_preds,
-                species_labels,
-                weight=species_weights,
-                label_smoothing=self._label_smoothing
-            )
-            activity_loss = torch.nn.functional.cross_entropy(
-                activity_preds,
-                activity_labels,
-                weight=activity_weights,
-                label_smoothing=self._label_smoothing
-            )
+        ## Non-feedback loss
+        if box_features is not None and\
+                species_labels is not None and\
+                activity_labels is not None and\
+                self._feedback_loss_weight != 1:
+            # Compute logits by passing the features through the appropriate
+            # classifiers
+            species_preds = species_classifier(box_features)
+            activity_preds = activity_classifier(box_features)
+
+            if self._loss_fn == LossFnEnum.cross_entropy:
+                species_loss = torch.nn.functional.cross_entropy(
+                    species_preds,
+                    species_labels,
+                    weight=species_weights,
+                    label_smoothing=self._label_smoothing
+                )
+                activity_loss = torch.nn.functional.cross_entropy(
+                    activity_preds,
+                    activity_labels,
+                    weight=activity_weights,
+                    label_smoothing=self._label_smoothing
+                )
+            else:
+                focal_loss = torch.hub.load(
+                    'adeelh/pytorch-multi-class-focal-loss',
+                    model='FocalLoss',
+                    alpha=torch.tensor([.75, .25]),
+                    gamma=2,
+                    reduction='none',
+                    force_reload=False
+                )
+
+                ex_species_weights = species_weights[species_labels]
+                species_loss_all = focal_loss(
+                    species_preds,
+                    species_labels
+                )
+                species_loss =\
+                    (species_loss_all * ex_species_weights).mean()
+                
+                ex_activity_weights = activity_weights[activity_labels]
+                activity_loss_all = focal_loss(
+                    activity_preds,
+                    activity_labels
+                )
+                activity_loss =\
+                    (activity_loss_all * ex_activity_weights).mean()
+
+            non_feedback_loss = species_loss + activity_loss
         else:
-            ex_species_weights = species_weights[species_labels]
-            species_loss_all = focal_loss(
-                species_preds,
-                species_labels
-            )
-            species_loss =\
-                (species_loss_all * ex_species_weights).mean()
-            
-            ex_activity_weights = activity_weights[activity_labels]
-            activity_loss_all = focal_loss(
-                activity_preds,
-                activity_labels
-            )
-            activity_loss =\
-                (activity_loss_all * ex_activity_weights).mean()
+            non_feedback_loss = 0
 
-        non_feedback_loss = species_loss + activity_loss
-
-        ## Feedback
+        ## Feedback loss
 
         # Flatten feedback box features, compute predictions, and re-split
         # per-image
@@ -1163,8 +1236,8 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 dim=1
             )
 
-            # TODO copy out If class balancing, scale the gradients according
-            # to class weights
+            # If class balancing, scale the gradients according to class
+            # weights
             if species_weights is not None:
                 flattened_feedback_species_preds =\
                     _balance_box_prediction_grads(
@@ -1204,11 +1277,12 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
 
             # Compute loss as weighted average between feedback and non-feedback
             # losses
-            loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
-                self._feedback_loss_weight * feedback_loss
         else:
             # No feedback data. Loss is just equal to the non-feedback loss.
-            loss = non_feedback_loss
+            feedback_loss = 0
+
+        loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
+            self._feedback_loss_weight * feedback_loss
 
         # Optimizer step
         optimizer.zero_grad()
@@ -1292,7 +1366,8 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             feedback_batch_sampler_fn,
             allow_write,
             allow_print,
-            feedback_class_frequencies):
+            feedback_class_frequencies,
+            feedback_sampling_configuration):
         # Construct the optimizer
         optimizer = torch.optim.SGD(
             list(species_classifier.parameters())\
@@ -1403,6 +1478,22 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             feedback_box_features = None
             feedback_species_labels = None
             feedback_activity_labels = None
+
+        if feedback_sampling_configuration is not None:
+            train_box_features,\
+                train_species_labels,\
+                train_activity_labels,\
+                feedback_box_features,\
+                feedback_species_labels,\
+                feedback_activity_labels =\
+                    feedback_sampling_configuration.configure_data(
+                        train_box_features,
+                        train_species_labels,
+                        train_activity_labels,
+                        feedback_box_features,
+                        feedback_species_labels,
+                        feedback_activity_labels
+                    )
 
         # Train
         progress = tqdm(
@@ -1517,6 +1608,54 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             device):
         pass
     
+class MultiLoader:
+    class MultiLoaderIter:
+        def __init__(self, loaders, primary_loader):
+            self._loaders = loaders
+            self._primary_loader = primary_loader
+            self._iters = [
+                iter(loader) if loader is not None else None for\
+                    loader in self._loaders
+            ]
+
+        def __next__(self):
+            data = []
+            for idx in range(len(self._iters)):
+                itr = self._iters[idx]
+                if itr is not None:
+                    try:
+                        data_tuple = next(itr)
+                    except:
+                        if idx == self._primary_loader:
+                            raise StopIteration
+
+                        loader = self._loaders[idx]
+                        self._iters[idx] = iter(loader)
+                        itr = self._iters[idx]
+                        data_tuple = next(itr)
+                else:
+                    data_tuple = None
+
+                data.append(data_tuple)
+
+            return tuple(data)
+
+    def __init__(self, loaders):
+        self._loaders = loaders
+        lengths = [
+            len(loader) if loader is not None else 0 for\
+                loader in self._loaders
+        ]
+        max_length = max(lengths)
+        self._primary_loader = lengths.index(max_length)
+
+    def __iter__(self):
+        return MultiLoader.MultiLoaderIter(self._loaders, self._primary_loader)
+
+    def __len__(self):
+        return len(self._loaders[self._primary_loader])
+
+
 class EndToEndClassifierTrainer(ClassifierTrainer):
     def __init__(
             self,
@@ -1572,24 +1711,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             device,
             allow_print,
             feedback_class_frequencies):
-        # Move to device
-        species_labels = species_labels.to(device)
-        activity_labels = activity_labels.to(device)
-        box_images = box_images.to(device)
-        if allow_print:
-            print_nan(box_images, 'box_images')
-
-        # Extract box features
-        box_features = backbone(box_images)
-        if allow_print:
-            print_nan(box_features, 'box_features')
-
-        # Compute logits by passing the features through the appropriate
-        # classifiers
-        species_preds = species_classifier(box_features)
-        activity_preds = activity_classifier(box_features)
-
-        # Compute losses
+        # Compute class weights
         species_weights = None
         activity_weights = None
         species_frequencies = None
@@ -1641,65 +1763,94 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             activity_weights =\
                 unnormalized_activity_weights / proportional_activity_sum
 
-        if self._loss_fn == LossFnEnum.cross_entropy:
-            species_loss = torch.nn.functional.cross_entropy(
-                species_preds,
-                species_labels,
-                weight=species_weights,
-                label_smoothing=self._label_smoothing
-            )
-            activity_loss = torch.nn.functional.cross_entropy(
-                activity_preds,
-                activity_labels,
-                weight=activity_weights,
-                label_smoothing=self._label_smoothing
-            )
+        # Compute losses
+
+        # Non-feedback loss
+        if box_images is not None and\
+                species_labels is not None and\
+                activity_labels is not None and\
+                self._feedback_loss_weight != 1:
+            # Move to device
+            species_labels = species_labels.to(device)
+            activity_labels = activity_labels.to(device)
+            box_images = box_images.to(device)
+            if allow_print:
+                print_nan(box_images, 'box_images')
+
+            # Extract box features
+            box_features = backbone(box_images)
+            if allow_print:
+                print_nan(box_features, 'box_features')
+
+            # Compute logits by passing the features through the appropriate
+            # classifiers
+            species_preds = species_classifier(box_features)
+            activity_preds = activity_classifier(box_features)
+
+            # Losses
+            if self._loss_fn == LossFnEnum.cross_entropy:
+                species_loss = torch.nn.functional.cross_entropy(
+                    species_preds,
+                    species_labels,
+                    weight=species_weights,
+                    label_smoothing=self._label_smoothing
+                )
+                activity_loss = torch.nn.functional.cross_entropy(
+                    activity_preds,
+                    activity_labels,
+                    weight=activity_weights,
+                    label_smoothing=self._label_smoothing
+                )
+            else:
+                focal_loss = torch.hub.load(
+                    'adeelh/pytorch-multi-class-focal-loss',
+                    model='FocalLoss',
+                    alpha=None,
+                    gamma=2,
+                    reduction='none',
+                    force_reload=False
+                )
+                if species_weights is not None:
+                    ex_species_weights = species_weights[species_labels]
+                else:
+                    ex_species_weights = 1
+                species_loss_all = focal_loss(
+                    species_preds,
+                    species_labels
+                )
+                species_loss =\
+                    (species_loss_all * ex_species_weights).mean()
+                
+                if activity_weights is not None:
+                    ex_activity_weights = activity_weights[activity_labels]
+                else:
+                    ex_activity_weights = 1
+                activity_loss_all = focal_loss(
+                    activity_preds,
+                    activity_labels
+                )
+                activity_loss =\
+                    (activity_loss_all * ex_activity_weights).mean()
+
+            non_feedback_loss = species_loss + activity_loss
+            if allow_print:
+                print_nan(non_feedback_loss, 'non_feedback_loss')
         else:
-            focal_loss = torch.hub.load(
-                'adeelh/pytorch-multi-class-focal-loss',
-                model='FocalLoss',
-                alpha=None,
-                gamma=2,
-                reduction='none',
-                force_reload=False
-            )
-            if species_weights is not None:
-                ex_species_weights = species_weights[species_labels]
-            else:
-                ex_species_weights = 1
-            species_loss_all = focal_loss(
-                species_preds,
-                species_labels
-            )
-            species_loss =\
-                (species_loss_all * ex_species_weights).mean()
-            
-            if activity_weights is not None:
-                ex_activity_weights = activity_weights[activity_labels]
-            else:
-                ex_activity_weights = 1
-            activity_loss_all = focal_loss(
-                activity_preds,
-                activity_labels
-            )
-            activity_loss =\
-                (activity_loss_all * ex_activity_weights).mean()
+            non_feedback_loss = 0
 
-        non_feedback_loss = species_loss + activity_loss
-        if allow_print:
-            print_nan(non_feedback_loss, 'non_feedback_loss')
-
-        #if feedback_box_images is not None and\
-        #        self._feedback_loss_weight != 0:
-        if feedback_box_images is not None:
+        if feedback_box_images is not None and\
+                self._feedback_loss_weight != 0:
+            # Move to device
             feedback_species_labels = feedback_species_labels.to(device)
             feedback_activity_labels = feedback_activity_labels.to(device)
             feedback_box_images = [x.to(device) for x in feedback_box_images]
 
+            # Get counts and flatten box images
             feedback_box_counts = [len(x) for x in feedback_box_images]
             feedback_box_images = torch.cat(feedback_box_images, dim=0)
             print_nan(feedback_box_images, 'feedback_box_images')
 
+            # Compute features and logits
             feedback_box_features = backbone(feedback_box_images)
             if allow_print:
                 print_nan(feedback_box_features, 'feedback_box_features')
@@ -1765,22 +1916,11 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             feedback_loss = feedback_species_loss + feedback_activity_loss
             if allow_print:
                 print_nan(feedback_loss, "feedback_loss")
-
-            loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
-                self._feedback_loss_weight * feedback_loss
-
-            if allow_print:
-                if torch.any(torch.isnan(loss)):
-                    print('feedback_loss', feedback_loss)
-                    print('non_feedback_loss', non_feedback_loss)
-                    print('loss', loss)
-                print_nan(feedback_loss, 'feedback_loss')
-                print_nan(non_feedback_loss, 'non_feedback_loss')
-                print_nan(loss, 'loss 1')
         else:
-            loss = non_feedback_loss
-            if allow_print:
-                print_nan(loss, 'loss 2')
+            feedback_loss = 0
+
+        loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
+            self._feedback_loss_weight * feedback_loss
 
         optimizer.zero_grad()
         if allow_print:
@@ -1791,10 +1931,9 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             for param in backbone.parameters():
                 if param.grad is not None:
                     print_nan(param.grad.data, 'some parameter\'s gradient 1')
-        # print(loss)
+
         loss.backward()
 
-        
         for param in species_classifier.parameters():
             if param.grad is not None and \
             (torch.any(torch.isnan(param.grad.data)) or \
@@ -1827,15 +1966,6 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 print('Some NaNs in the gradients of backbone. Skiping this batch ...')
                 optimizer.zero_grad()
                 break
-
-
-        
-
-        # Gradient clipping
-        # torch.nn.utils.clip_grad_norm_(backbone.parameters(), max_norm=1.0)
-        # torch.nn.utils.clip_grad_norm_(activity_classifier.parameters(), max_norm=1.0)
-        # total_grad_norm = torch.nn.utils.clip_grad_norm_(backbone.parameters(), max_norm=float('inf'))
-        # print(f"Total gradient norm: {total_grad_norm}")
 
         optimizer.step()
 
@@ -1893,38 +2023,40 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         feedback_activity_labels = None
         feedback_box_images = None
         batch_loss = None
+
+        multi_loader = MultiLoader((train_loader, feedback_loader))
         if allow_print:
             train_loader_progress = tqdm(
-                train_loader,
+                multi_loader,
                 desc=gen_tqdm_description(
                     'Training batch...',
                     batch_loss=batch_loss
                 )
             )
         else:
-            train_loader_progress = train_loader
-        # TODO remove i and usages (used to clip training batches for debugging)
-        i = 0
-        for species_labels, activity_labels, box_images in train_loader_progress:
-            if i >= 10:
-                #break
-                pass
-            i += 1
-            if feedback_iter is not None:
-                try:
-                    feedback_species_labels,\
-                        feedback_activity_labels,\
-                        _,\
-                        feedback_box_images,\
-                        _ = next(feedback_iter)
-                except:
-                    feedback_iter = iter(feedback_loader)
-                    feedback_species_labels,\
-                        feedback_activity_labels,\
-                        _,\
-                        feedback_box_images,\
-                        _ = next(feedback_iter)
-                gc.collect()
+            train_loader_progress = multi_loader
+        # for species_labels, activity_labels, box_images in train_loader_progress:
+        for train_batch, feedback_batch in train_loader_progress:
+            if train_batch is not None:
+                species_labels, activity_labels, box_images = train_batch
+            else:
+                species_labels = None
+                activity_labels = None
+                box_images = None
+
+            if feedback_batch is not None:
+                feedback_species_labels,\
+                    feedback_activity_labels,\
+                    _,\
+                    feedback_box_images,\
+                    _ = feedback_batch
+            else:
+                feedback_species_labels = None
+                feedback_activity_labels = None
+                feedback_box_images = None
+
+            gc.collect()
+
             batch_loss, batch_n_species_correct, batch_n_activity_correct =\
                 self._train_batch(
                     backbone,
@@ -2054,27 +2186,40 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             feedback_batch_sampler_fn,
             allow_write,
             allow_print,
-            feedback_class_frequencies):
-        if self._memory_cache:
-            train_dataset = FlattenedBoxImageDataset(BoxImageMemoryDataset(self._train_dataset))
+            feedback_class_frequencies,
+            feedback_sampling_configuration):
+        train_dataset = self._train_dataset
+
+        if feedback_sampling_configuration is not None:
+            train_dataset, feedback_dataset =\
+                feedback_sampling_configuration.configure_datasets(
+                    train_dataset,
+                    feedback_dataset
+                )
+
+        if train_dataset is not None:
+            if self._memory_cache:
+                train_dataset = FlattenedBoxImageDataset(BoxImageMemoryDataset(train_dataset))
+            else:
+                train_dataset = FlattenedBoxImageDataset(train_dataset)
+
+            if train_sampler_fn is not None:
+                train_sampler = train_sampler_fn(train_dataset)
+                train_loader = DataLoader(
+                    train_dataset,
+                    batch_size=self._retraining_batch_size,
+                    num_workers=0,
+                    sampler=train_sampler
+                )
+            else:
+                train_loader = DataLoader(
+                    train_dataset,
+                    batch_size=self._retraining_batch_size,
+                    shuffle=True,
+                    num_workers=0
+                )
         else:
-            train_dataset = FlattenedBoxImageDataset(self._train_dataset)
-        
-        if train_sampler_fn is not None:
-            train_sampler = train_sampler_fn(train_dataset)
-            train_loader = DataLoader(
-                train_dataset,
-                batch_size=self._retraining_batch_size,
-                num_workers=0,
-                sampler=train_sampler
-            )
-        else:
-            train_loader = DataLoader(
-                train_dataset,
-                batch_size=self._retraining_batch_size,
-                shuffle=True,
-                num_workers=0
-            )
+            train_loader = None
 
         if feedback_dataset is not None:
             feedback_box_counts = [
@@ -2265,7 +2410,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 # training.
                 break
 
-            if train_loader.sampler is not None:
+            if train_loader is not None and train_loader.sampler is not None:
                 # Set the sampler epoch for shuffling when running in
                 # distributed mode
                 train_loader.sampler.set_epoch(epoch)
@@ -2866,11 +3011,19 @@ class EWCClassifierTrainer(ClassifierTrainer):
             feedback_batch_sampler_fn,
             allow_write,
             allow_print,
-            feedback_class_frequencies):
+            feedback_class_frequencies,
+            feedback_sampling_configuration):
+        if feedback_sampling_configuration is not None:
+            raise ValueError(('EWC training currently only supports '
+                              'feedback_sampling_configuration=None'))
+
+        train_dataset = self._train_dataset
+
         if self._memory_cache:
-            train_dataset = FlattenedBoxImageDataset(BoxImageMemoryDataset(self._train_dataset))
+            train_dataset = \
+                FlattenedBoxImageDataset(BoxImageMemoryDataset(train_dataset))
         else:
-            train_dataset = FlattenedBoxImageDataset(self._train_dataset)
+            train_dataset = FlattenedBoxImageDataset(train_dataset)
         
         if train_sampler_fn is not None:
             train_sampler = train_sampler_fn(train_dataset)
@@ -3719,7 +3872,12 @@ class SideTuningClassifierTrainer(ClassifierTrainer):
             feedback_batch_sampler_fn,
             allow_write,
             allow_print,
-            feedback_class_frequencies):
+            feedback_class_frequencies,
+            feedback_sampling_configuration):
+        if feedback_sampling_configuration is not None:
+            raise ValueError(('Side tuning currently only supports '
+                              'feedback_sampling_configuration=None'))
+
         # Load training and validation backbone features from feature
         # files
         train_box_features, train_species_labels, train_activity_labels =\
@@ -4527,6 +4685,7 @@ class TuplePredictorTrainer:
             feedback_batch_sampler_fn,
             allow_write,
             allow_print,
+            feedback_sampling_configuration,
             root_log_dir=None,
             model_unwrap_fn=None):
         species_classifier = classifier.species_classifier
@@ -4557,6 +4716,9 @@ class TuplePredictorTrainer:
                 activity_frequencies
             )
 
+        feedback_sampling_configuration_ctor =\
+            feedback_sampling_configuration.ctor()
+
         self._classifier_trainer.train(
             backbone,
             species_classifier,
@@ -4568,7 +4730,8 @@ class TuplePredictorTrainer:
             feedback_batch_sampler_fn,
             allow_write,
             allow_print,
-            feedback_class_frequencies
+            feedback_class_frequencies,
+            feedback_sampling_configuration_ctor()
         )
 
         # Unwrap backbone and classifiers (e.g., from DDP adapters) if
