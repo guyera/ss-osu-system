@@ -2388,12 +2388,13 @@ def score_tests(
         'Activity_id2name': {}
     }
     for test_id in test_ids:
-        # if 'OND' in test_id and '100.000' not in test_id:
-        if 'OND' in test_id:
+        # if 'OND' in test_id and '100.000' not in test_id and '1063.000' not in test_id and '1064.000' not in test_id:
+        if 'OND' in test_id and '102.000' in test_id or '103.000' in test_id:
             metadata = json.load(open(test_dir / f'{test_id}_metadata.json', 'r'))
             test_df = pd.read_csv(test_dir / f'{test_id}_single_df.csv')
 
             pkl_fname = os.path.join(bboxes_dir, test_id+'/'+test_id+'.pkl')
+            print(pkl_fname)
             assert os.path.exists(pkl_fname)
             with (open(pkl_fname, "rb")) as pkl_file:
                 boxes_pred_dict = pickle.load(pkl_file)

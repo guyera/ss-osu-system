@@ -32,3 +32,5 @@ pretrained-models*
 .log*
 .checkpoint*
 roc_curve*
+.features*
+read_pkl*

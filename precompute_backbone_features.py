@@ -113,7 +113,7 @@ static_label_mapper = LabelMapper(deepcopy(label_mapping), update=False)
 dynamic_label_mapper = LabelMapper(label_mapping, update=True)
 box_transform, post_cache_train_transform, post_cache_val_transform =\
     get_transforms(Augmentation.none)
-train_dataset, val_known_dataset, _ = get_datasets(
+train_dataset, val_known_dataset, val_dataset = get_datasets(
     args.data_root,
     args.train_csv_path,
     args.cal_csv_path,
@@ -125,9 +125,9 @@ train_dataset, val_known_dataset, _ = get_datasets(
     post_cache_train_transform,
     post_cache_val_transform,
     root_cache_dir=args.root_cache_dir,
-    allow_write=True,
     n_known_val=args.n_known_val
 )
+
 
 start_time = time.time()
 
@@ -191,6 +191,7 @@ with torch.no_grad():
         train_species_labels.append(species_labels)
         train_activity_labels.append(activity_labels)
 
+
     train_box_features = torch.cat(train_box_features, dim=0)
     train_species_labels = torch.cat(train_species_labels, dim=0)
     train_activity_labels = torch.cat(train_activity_labels, dim=0)
@@ -210,6 +211,7 @@ with torch.no_grad():
         val_species_labels.append(species_labels)
         val_activity_labels.append(activity_labels)
 
+
     val_box_features = torch.cat(val_box_features, dim=0)
     val_species_labels = torch.cat(val_species_labels, dim=0)
     val_activity_labels = torch.cat(val_activity_labels, dim=0)
@@ -222,3 +224,7 @@ torch.save(
     (val_box_features, val_species_labels, val_activity_labels),
     validation_features_path
 )
+
+
+
+

@@ -3,6 +3,8 @@ import itertools
 from copy import deepcopy
 import numpy as np
 import os
+from datetime import datetime
+
 from enum import Enum
 import pickle as pkl
 from abc import ABC, abstractmethod
@@ -1326,6 +1328,8 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 f'lr={self._lr}',
                 f'label_smoothing={self._label_smoothing:.2f}'
             )
+        
+
 
         train_box_features, train_species_labels, train_activity_labels =\
             torch.load(
@@ -2582,7 +2586,7 @@ class EWCClassifierTrainer(ClassifierTrainer):
 
             
             ewc_penalty_ = self.ewc_calculation.penalty(backbone, species_classifier, activity_classifier)
-            non_feedback_loss = 1000 * ewc_penalty_ 
+            non_feedback_loss = 50000 * ewc_penalty_ 
             loss =  feedback_loss + non_feedback_loss
      
             if allow_print:
@@ -2648,22 +2652,26 @@ class EWCClassifierTrainer(ClassifierTrainer):
         optimizer.step()
         indices_with_len_1 = [i for i, tensor in enumerate(feedback_species_preds) if tensor.size(0) == 1]
 
-        feedback_species_preds_len_1 = torch.stack([feedback_species_preds[i] for i in indices_with_len_1]).squeeze(1)
-        feedback_activity_preds_len_1 = torch.stack([feedback_activity_preds[i] for i in indices_with_len_1]).squeeze(1)
-        numerical_feedback_species_labels = feedback_species_labels[indices_with_len_1].to(dtype=torch.int)
-        numerical_feedback_activity_labels = feedback_activity_labels[indices_with_len_1].to(dtype=torch.int)
+        if len(indices_with_len_1) > 0:
+            feedback_species_preds_len_1 = torch.stack([feedback_species_preds[i] for i in indices_with_len_1]).squeeze(1)
+            feedback_activity_preds_len_1 = torch.stack([feedback_activity_preds[i] for i in indices_with_len_1]).squeeze(1)
+            numerical_feedback_species_labels = feedback_species_labels[indices_with_len_1].to(dtype=torch.int)
+            numerical_feedback_activity_labels = feedback_activity_labels[indices_with_len_1].to(dtype=torch.int)
 
-        species_correct = torch.argmax(feedback_species_preds_len_1, dim=1) == \
-            torch.argmax(numerical_feedback_species_labels, dim=1)
-        n_species_correct = int(
-            species_correct.to(torch.int).sum().detach().cpu().item()
-        )
+            species_correct = torch.argmax(feedback_species_preds_len_1, dim=1) == \
+                torch.argmax(numerical_feedback_species_labels, dim=1)
+            n_species_correct = int(
+                species_correct.to(torch.int).sum().detach().cpu().item()
+            )
 
-        activity_correct = torch.argmax(feedback_activity_preds_len_1, dim=1) == \
-            torch.argmax(numerical_feedback_activity_labels, dim=1)
-        n_activity_correct = int(
-            activity_correct.to(torch.int).sum().detach().cpu().item()
-        )
+            activity_correct = torch.argmax(feedback_activity_preds_len_1, dim=1) == \
+                torch.argmax(numerical_feedback_activity_labels, dim=1)
+            n_activity_correct = int(
+                activity_correct.to(torch.int).sum().detach().cpu().item()
+            )
+        else:
+            n_species_correct = 0.
+            n_activity_correct = 0.
         return loss.detach().cpu().item(),\
             n_species_correct,\
             n_activity_correct, \
@@ -3034,13 +3042,15 @@ class EWCClassifierTrainer(ClassifierTrainer):
         training_ewc_penalty_curve = {}
 
         def get_log_dir():
+            time_stamp = datetime.now().strftime('%H-%M')
             return os.path.join(
                 root_log_dir,
                 self._box_transform.path(),
                 self._post_cache_train_transform.path(),
                 'end-to-end-trainer',
                 f'lr={self._lr}',
-                f'label_smoothing={self._label_smoothing:.2f}'
+                f'label_smoothing={self._label_smoothing:.2f}',
+                time_stamp  # Add just the time as the last component of the path
             )
 
         if root_log_dir is not None and allow_write:
@@ -4111,6 +4121,7 @@ def compute_features(
         val_known_dataset,
         retraining_batch_size):
     backbone.eval()
+    print('Computing Features Set....')
     flattened_train_dataset = FlattenedBoxImageDataset(train_dataset)
     train_loader = DataLoader(
         flattened_train_dataset,
@@ -4118,6 +4129,7 @@ def compute_features(
         shuffle=False,
         num_workers=0
     )
+    os.makedirs(root_save_dir, exist_ok=True)
 
     # Construct validation loaders for early stopping / model selection.
     # I'm assuming our model selection strategy will be based solely on the
@@ -4126,6 +4138,7 @@ def compute_features(
     # data to measure novelty detection performance. These currently aren't
     # being stored (except in a special form for the logistic regressions),
     # so we'd have to modify __init__().
+
     flattened_val_dataset = FlattenedBoxImageDataset(val_known_dataset)
     val_loader = DataLoader(
         flattened_val_dataset,
@@ -4145,7 +4158,6 @@ def compute_features(
     validation_features_path = os.path.join(save_dir, 'validation.pth')
     os.makedirs(validation_features_path, exist_ok=True)
 
-    # Determine the device to use based on the backbone's fc weights
     device = backbone.device
 
     train_box_features = []
@@ -4153,19 +4165,17 @@ def compute_features(
     train_activity_labels = []
 
     with torch.no_grad():
-        for species_labels, activity_labels, box_images in train_loader:
-            # Move to device
+        for species_labels, activity_labels, box_images in tqdm(train_loader, desc="Computing Training Set Features"):
             species_labels = species_labels.to(device)
             activity_labels = activity_labels.to(device)
             box_images = box_images.to(device)
 
-            # Extract box features
             box_features = backbone(box_images)
 
-            # Store
             train_box_features.append(box_features)
             train_species_labels.append(species_labels)
             train_activity_labels.append(activity_labels)
+            break
 
         train_box_features = torch.cat(train_box_features, dim=0)
         train_species_labels = torch.cat(train_species_labels, dim=0)
@@ -4176,24 +4186,22 @@ def compute_features(
     val_activity_labels = []
 
     with torch.no_grad():
-        for species_labels, activity_labels, box_images in val_loader:
-            # Move to device
+        for species_labels, activity_labels, box_images in tqdm(val_loader, desc="Computing Validation Set Features"):
             species_labels = species_labels.to(device)
             activity_labels = activity_labels.to(device)
             box_images = box_images.to(device)
 
-            # Extract box features
             box_features = backbone(box_images)
 
-            # Store
             val_box_features.append(box_features)
             val_species_labels.append(species_labels)
             val_activity_labels.append(activity_labels)
+            break
 
         val_box_features = torch.cat(val_box_features, dim=0)
         val_species_labels = torch.cat(val_species_labels, dim=0)
         val_activity_labels = torch.cat(val_activity_labels, dim=0)
-
+    import ipdb; ipdb.set_trace()
     torch.save(
         (train_box_features, train_species_labels, train_activity_labels),
         training_features_path
@@ -4202,6 +4210,7 @@ def compute_features(
         (val_box_features, val_species_labels, val_activity_labels),
         validation_features_path
     )
+
 
 
 class TuplePredictorTrainer:
