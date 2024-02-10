@@ -1157,6 +1157,10 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 unnormalized_activity_weights / proportional_activity_sum
 
         ## Non-feedback loss
+        non_feedback_loss = 0
+        non_feedback_n_species_correct = 0
+        non_feedback_n_activity_correct = 0
+        non_feedback_n_examples = 0
         if box_features is not None and\
                 species_labels is not None and\
                 activity_labels is not None and\
@@ -1165,6 +1169,21 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
             # classifiers
             species_preds = species_classifier(box_features)
             activity_preds = activity_classifier(box_features)
+
+            # Logging metrics
+            species_correct = torch.argmax(species_preds, dim=1) == \
+                species_labels
+            non_feedback_n_species_correct = int(
+                species_correct.to(torch.int).sum().detach().cpu().item()
+            )
+
+            activity_correct = torch.argmax(activity_preds, dim=1) == \
+                activity_labels
+            non_feedback_n_activity_correct = int(
+                activity_correct.to(torch.int).sum().detach().cpu().item()
+            )
+
+            non_feedback_n_examples = species_labels.shape[0]
 
             if self._loss_fn == LossFnEnum.cross_entropy:
                 species_loss = torch.nn.functional.cross_entropy(
@@ -1206,13 +1225,15 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                     (activity_loss_all * ex_activity_weights).mean()
 
             non_feedback_loss = species_loss + activity_loss
-        else:
-            non_feedback_loss = 0
 
         ## Feedback loss
 
         # Flatten feedback box features, compute predictions, and re-split
         # per-image
+        feedback_loss = 0
+        feedback_n_species_correct = 0
+        feedback_n_species_correct = 0
+        feedback_n_examples = 0
         if feedback_box_features is not None and\
                 feedback_species_labels is not None and\
                 feedback_activity_labels is not None and\
@@ -1262,6 +1283,48 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                 dim=0
             )
 
+            # Logging metrics
+            feedback_box_counts_t = torch.tensor(
+                feedback_box_counts,
+                device=device,
+                dtype=torch.long
+            )
+            single_box_mask = feedback_box_counts_t == 1
+            single_box_indices = torch.arange(
+                len(single_box_mask),
+                dtype=torch.long,
+                device=device
+            )[single_box_mask]
+            if len(single_box_indices) > 0:
+                single_box_species_preds = torch.cat(
+                    [
+                        feedback_species_preds[i] for i in single_box_indices
+                    ],
+                    dim=0
+                )
+                single_box_activity_preds = torch.cat(
+                    [
+                        feedback_activity_preds[i] for i in single_box_indices
+                    ],
+                    dim=0
+                )
+                single_box_species_labels =\
+                    feedback_species_labels[single_box_indices]
+                single_box_activity_labels =\
+                    feedback_activity_labels[single_box_indices]
+                feedback_species_correct =\
+                    torch.argmax(single_box_species_preds, dim=1) ==\
+                        single_box_species_labels
+                feedback_activity_correct =\
+                    torch.argmax(single_box_activity_preds, dim=1) ==\
+                        single_box_activity_labels
+                feedback_n_species_correct =\
+                    feedback_species_correct.to(torch.int).sum()
+                feedback_n_activity_correct =\
+                    feedback_activity_correct.to(torch.int).sum()
+
+                feedback_n_examples = len(single_box_species_labels)
+
             # Compute loss
             # We have image-level count feedback labels for species
             feedback_species_loss = multiple_instance_count_cross_entropy_dyn(
@@ -1277,31 +1340,20 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
 
             # Compute loss as weighted average between feedback and non-feedback
             # losses
-        else:
-            # No feedback data. Loss is just equal to the non-feedback loss.
-            feedback_loss = 0
 
         loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
             self._feedback_loss_weight * feedback_loss
+        n_species_correct =\
+            non_feedback_n_species_correct + feedback_n_species_correct
+        n_activity_correct =\
+            non_feedback_n_activity_correct + feedback_n_activity_correct
+        n_examples = non_feedback_n_examples + feedback_n_examples
 
         # Optimizer step
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        species_correct = torch.argmax(species_preds, dim=1) == \
-            species_labels
-        n_species_correct = int(
-            species_correct.to(torch.int).sum().detach().cpu().item()
-        )
-
-        activity_correct = torch.argmax(activity_preds, dim=1) == \
-            activity_labels
-        n_activity_correct = int(
-            activity_correct.to(torch.int).sum().detach().cpu().item()
-        )
-
-        n_examples = species_labels.shape[0]
         mean_species_accuracy = float(n_species_correct) / n_examples
         mean_activity_accuracy = float(n_activity_correct) / n_examples
 
@@ -1766,6 +1818,10 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
         # Compute losses
 
         # Non-feedback loss
+        non_feedback_loss = 0
+        non_feedback_n_species_correct = 0
+        non_feedback_n_activity_correct = 0
+        non_feedback_n_examples = 0
         if box_images is not None and\
                 species_labels is not None and\
                 activity_labels is not None and\
@@ -1786,6 +1842,21 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             # classifiers
             species_preds = species_classifier(box_features)
             activity_preds = activity_classifier(box_features)
+
+            # Logging metrics
+            species_correct = torch.argmax(species_preds, dim=1) == \
+                species_labels
+            non_feedback_n_species_correct = int(
+                species_correct.to(torch.int).sum().detach().cpu().item()
+            )
+
+            activity_correct = torch.argmax(activity_preds, dim=1) == \
+                activity_labels
+            non_feedback_n_activity_correct = int(
+                activity_correct.to(torch.int).sum().detach().cpu().item()
+            )
+
+            non_feedback_n_examples = len(species_labels)
 
             # Losses
             if self._loss_fn == LossFnEnum.cross_entropy:
@@ -1835,9 +1906,11 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             non_feedback_loss = species_loss + activity_loss
             if allow_print:
                 print_nan(non_feedback_loss, 'non_feedback_loss')
-        else:
-            non_feedback_loss = 0
 
+        feedback_loss = 0
+        feedback_n_species_correct = 0
+        feedback_n_species_correct = 0
+        feedback_n_examples = 0
         if feedback_box_images is not None and\
                 self._feedback_loss_weight != 0:
             # Move to device
@@ -1894,6 +1967,48 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 dim=0
             )
 
+            # Logging metrics
+            feedback_box_counts_t = torch.tensor(
+                feedback_box_counts,
+                device=device,
+                dtype=torch.long
+            )
+            single_box_mask = feedback_box_counts_t == 1
+            single_box_indices = torch.arange(
+                len(single_box_mask),
+                dtype=torch.long,
+                device=device
+            )[single_box_mask]
+            if len(single_box_indices) > 0:
+                single_box_species_preds = torch.cat(
+                    [
+                        feedback_species_preds[i] for i in single_box_indices
+                    ],
+                    dim=0
+                ) 
+                single_box_activity_preds = torch.cat(
+                    [
+                        feedback_activity_preds[i] for i in single_box_indices
+                    ],
+                    dim=0
+                )
+                single_box_species_labels =\
+                    feedback_species_labels[single_box_indices]
+                single_box_activity_labels =\
+                    feedback_activity_labels[single_box_indices]
+                feedback_species_correct =\
+                    torch.argmax(single_box_species_preds, dim=1) ==\
+                        single_box_species_labels
+                feedback_activity_correct =\
+                    torch.argmax(single_box_activity_preds, dim=1) ==\
+                        single_box_activity_labels
+                feedback_n_species_correct =\
+                    feedback_species_correct.to(torch.int).sum()
+                feedback_n_activity_correct =\
+                    feedback_activity_correct.to(torch.int).sum()
+
+                feedback_n_examples = len(single_box_species_labels)
+
             # We have image-level count feedback labels for species
             feedback_species_loss =\
                 multiple_instance_count_cross_entropy_dyn(
@@ -1916,11 +2031,14 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
             feedback_loss = feedback_species_loss + feedback_activity_loss
             if allow_print:
                 print_nan(feedback_loss, "feedback_loss")
-        else:
-            feedback_loss = 0
 
         loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
             self._feedback_loss_weight * feedback_loss
+        n_species_correct =\
+            non_feedback_n_species_correct + feedback_n_species_correct
+        n_activity_correct =\
+            non_feedback_n_activity_correct + feedback_n_activity_correct
+        n_examples = non_feedback_n_examples + feedback_n_examples
 
         optimizer.zero_grad()
         if allow_print:
@@ -1976,20 +2094,10 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                 if param.grad is not None:
                     print_nan(param.grad.data, 'some parameter\'s gradient 2')
 
-        species_correct = torch.argmax(species_preds, dim=1) == \
-            species_labels
-        n_species_correct = int(
-            species_correct.to(torch.int).sum().detach().cpu().item()
-        )
-
-        activity_correct = torch.argmax(activity_preds, dim=1) == \
-            activity_labels
-        n_activity_correct = int(
-            activity_correct.to(torch.int).sum().detach().cpu().item()
-        )
         return loss.detach().cpu().item(),\
             n_species_correct,\
-            n_activity_correct
+            n_activity_correct,\
+            n_examples
 
     def _train_epoch(
             self,
@@ -2057,7 +2165,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
             gc.collect()
 
-            batch_loss, batch_n_species_correct, batch_n_activity_correct =\
+            batch_loss, batch_n_species_correct, batch_n_activity_correct, batch_n_examples =\
                 self._train_batch(
                     backbone,
                     species_classifier,
@@ -2076,7 +2184,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
             sum_loss += batch_loss
             n_iterations += 1
-            n_examples += box_images.shape[0]
+            n_examples += batch_n_examples
             n_species_correct += batch_n_species_correct
             n_activity_correct += batch_n_activity_correct
             
