@@ -22,17 +22,18 @@ import os
 from backbone import Backbone
 from sidetuningbackbone import SideTuningBackbone
 from labelmapping import LabelMapper
-from tupleprediction.training import\
-    Augmentation,\
-    SchedulerType,\
-    get_transforms,\
-    get_datasets,\
-    TuplePredictorTrainer,\
-    LogitLayerClassifierTrainer,\
-    SideTuningClassifierTrainer,\
-    EndToEndClassifierTrainer, \
-    TransformingBoxImageDataset, \
-    EWCClassifierTrainer
+from tupleprediction.training import *
+    # Augmentation,\
+    # SchedulerType,\
+    # get_transforms,\
+    # compute_features,\
+    # get_datasets,\
+    # TuplePredictorTrainer,\
+    # LogitLayerClassifierTrainer,\
+    # SideTuningClassifierTrainer,\
+    # EndToEndClassifierTrainer, \
+    # TransformingBoxImageDataset, \
+    # EWCClassifierTrainer 
 from data.custom import build_species_label_mapping
 
 # from taming_transformers.cycleGAN import CycleGAN
@@ -109,7 +110,7 @@ class TopLevelApp:
         #     raise Exception(f'training CSV was not found in path {train_csv_path}')
         # if not Path(val_csv_path).exists():
         #     raise Exception(f'validation CSV was not found in path {val_csv_path}')
-        # import ipdb; ipdb.set_trace()
+        
         self.gan_augment = gan_augment
         # if self.gan_augment:
         #     self.cycleGAN = CycleGAN('./taming_transformers/logs/vqgan_imagenet_f16_1024/configs/model.yaml','./taming_transformers/logs/vqgan_imagenet_f16_1024/checkpoints/last.ckpt')
@@ -257,6 +258,16 @@ class TopLevelApp:
         )
         self._val_reduce_fn = val_reduce_fn
         if self.classifier_trainer_enum == self.ClassifierTrainer.logit_layer:
+            if self.precomputed_feature_dir and not os.path.isfile(train_feature_file) and not os.path.isfile(val_feature_file):
+                compute_features(self.backbone,
+                self.precomputed_feature_dir,
+                self.box_transform,
+                post_cache_train_transform,
+                train_dataset,
+                val_dataset,
+                self.retraining_batch_size
+                )
+
             classifier_trainer = LogitLayerClassifierTrainer(
                 self.retraining_lr,
                 train_feature_file,
@@ -597,7 +608,7 @@ class TopLevelApp:
 
         df = pd.read_csv(feedback_csv_path)
         nov_types = df['novelty_type'].to_numpy()
-        # import ipdb; ipdb.set_trace()
+        
         for idx, nov_type in enumerate(nov_types):
             batch_idx = self.batch_context.query_indices[idx]
 
@@ -867,6 +878,15 @@ class TopLevelApp:
             'validation.pth'
         )
         if self.classifier_trainer_enum == self.ClassifierTrainer.logit_layer:
+            if self.precomputed_feature_dir and not os.path.isfile(train_feature_file) and not os.path.isfile(val_feature_file):
+                compute_features(self.backbone,
+                self.precomputed_feature_dir,
+                self.box_transform,
+                post_cache_train_transform,
+                train_dataset,
+                val_dataset,
+                self.retraining_batch_size
+                )
             classifier_trainer = LogitLayerClassifierTrainer(
                 self.retraining_lr,
                 train_feature_file,
