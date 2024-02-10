@@ -1232,7 +1232,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         # per-image
         feedback_loss = 0
         feedback_n_species_correct = 0
-        feedback_n_species_correct = 0
+        feedback_n_activity_correct = 0
         feedback_n_examples = 0
         if feedback_box_features is not None and\
                 feedback_species_labels is not None and\
@@ -1314,10 +1314,10 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
                     feedback_activity_labels[single_box_indices]
                 feedback_species_correct =\
                     torch.argmax(single_box_species_preds, dim=1) ==\
-                        single_box_species_labels
+                        torch.argmax(single_box_species_labels, dim=1)
                 feedback_activity_correct =\
                     torch.argmax(single_box_activity_preds, dim=1) ==\
-                        single_box_activity_labels
+                        torch.argmax(single_box_activity_labels.to(torch.long), dim=1)
                 feedback_n_species_correct =\
                     feedback_species_correct.to(torch.int).sum()
                 feedback_n_activity_correct =\
@@ -1909,7 +1909,7 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
 
         feedback_loss = 0
         feedback_n_species_correct = 0
-        feedback_n_species_correct = 0
+        feedback_n_activity_correct = 0
         feedback_n_examples = 0
         if feedback_box_images is not None and\
                 self._feedback_loss_weight != 0:
@@ -1998,10 +1998,10 @@ class EndToEndClassifierTrainer(ClassifierTrainer):
                     feedback_activity_labels[single_box_indices]
                 feedback_species_correct =\
                     torch.argmax(single_box_species_preds, dim=1) ==\
-                        single_box_species_labels
+                        torch.argmax(single_box_species_labels, dim=1)
                 feedback_activity_correct =\
                     torch.argmax(single_box_activity_preds, dim=1) ==\
-                        single_box_activity_labels
+                        torch.argmax(single_box_activity_labels.to(torch.long), dim=1)
                 feedback_n_species_correct =\
                     feedback_species_correct.to(torch.int).sum()
                 feedback_n_activity_correct =\
