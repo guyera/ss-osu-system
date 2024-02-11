@@ -1372,19 +1372,19 @@ def score_test_from_boxes(
         metric='MAE'
     )
 
-    pre_red_avg_abs_err_count_ci = boostrap_conf_interval(
+    pre_red_avg_abs_err_count_ci, _ = boostrap_conf_interval(
         y_true=all_grd_truth_spe_counts.iloc[:total_pre_red_btn], 
         y_pred=all_pred_spe_counts.iloc[:total_pre_red_btn], 
         metric_name='avg_count_err', 
         n_samples=nbr_samples_conf_int
     )
-    post_red_avg_abs_err_count_ci_known = boostrap_conf_interval(
+    post_red_avg_abs_err_count_ci_known, _ = boostrap_conf_interval(
         y_true=all_grd_truth_spe_counts.iloc[idx_known_post_red], 
         y_pred=all_pred_spe_counts.iloc[idx_known_post_red], 
         metric_name='avg_count_err', 
         n_samples=nbr_samples_conf_int
     )
-    test_post_red_avg_abs_err_count_ci_known = boostrap_conf_interval(
+    test_post_red_avg_abs_err_count_ci_known, _ = boostrap_conf_interval(
         y_true=all_grd_truth_spe_counts.iloc[idx_known_test_post_red], 
         y_pred=all_pred_spe_counts.iloc[idx_known_test_post_red], 
         metric_name='avg_count_err', 
@@ -1407,19 +1407,19 @@ def score_test_from_boxes(
     )
 
     
-    pre_red_avg_abs_err_count_ci = boostrap_conf_interval(
+    pre_red_avg_abs_err_count_ci, _ = boostrap_conf_interval(
         y_true=all_grd_truth_spe_counts.iloc[:total_pre_red_btn], 
         y_pred=all_pred_spe_counts.iloc[:total_pre_red_btn], 
         metric_name='avg_count_err', 
         n_samples=nbr_samples_conf_int
     )
-    post_red_avg_abs_err_count_ci_novel = boostrap_conf_interval(
+    post_red_avg_abs_err_count_ci_novel, _ = boostrap_conf_interval(
         y_true=all_grd_truth_spe_counts.iloc[idx_novel_post_red], 
         y_pred=all_pred_spe_counts.iloc[idx_novel_post_red], 
         metric_name='avg_count_err', 
         n_samples=nbr_samples_conf_int
     )
-    test_post_red_avg_abs_err_count_ci_novel = boostrap_conf_interval(
+    test_post_red_avg_abs_err_count_ci_novel, _ = boostrap_conf_interval(
         y_true=all_grd_truth_spe_counts.iloc[idx_novel_test_post_red], 
         y_pred=all_pred_spe_counts.iloc[idx_novel_test_post_red], 
         metric_name='avg_count_err', 
@@ -1575,13 +1575,13 @@ def score_test_from_boxes(
     pre_red_spe_avg_rec = round(np.mean(pre_red_per_spe_recall_arr[pre_red_per_spe_recall_arr >= 0]), 2)
     pre_red_spe_avg_f1 = round(np.mean(pre_red_per_spe_f1_arr[pre_red_per_spe_f1_arr >= 0]), 2)
 
-    pre_red_spe_avg_auc_ci = boostrap_conf_interval(
+    pre_red_spe_avg_auc_ci, _ = boostrap_conf_interval(
         y_true=all_grd_truth_spe_presence.iloc[:total_pre_red_btn], 
         y_pred=all_pred_spe_presence.iloc[:total_pre_red_btn], 
         metric_name='avg_auc', 
         n_samples=nbr_samples_conf_int
     )
-    pre_red_spe_avg_pre_rec_f1_ci = boostrap_conf_interval(
+    pre_red_spe_avg_pre_rec_f1_ci, _ = boostrap_conf_interval(
         y_true=all_grd_truth_spe_presence.iloc[:total_pre_red_btn], 
         y_pred=all_pred_spe_presence_yn.iloc[:total_pre_red_btn], 
         metric_name='avg_pre/rec/f1', 
@@ -1600,13 +1600,13 @@ def score_test_from_boxes(
         post_red_spe_avg_rec_known = round(np.mean(post_red_per_spe_recall_arr_known[post_red_per_spe_recall_arr_known >= 0]), 2)
         post_red_spe_avg_f1_known = round(np.mean(post_red_per_spe_f1_arr_known[post_red_per_spe_f1_arr_known >= 0]), 2)
 
-        post_red_spe_avg_auc_ci_known = boostrap_conf_interval(
+        post_red_spe_avg_auc_ci_known, _ = boostrap_conf_interval(
             y_true=all_grd_truth_spe_presence.iloc[idx_known_post_red], 
             y_pred=all_pred_spe_presence.iloc[idx_known_post_red], 
             metric_name='avg_auc', 
             n_samples=nbr_samples_conf_int
         )
-        post_red_spe_avg_pre_rec_f1_ci_known = boostrap_conf_interval(
+        post_red_spe_avg_pre_rec_f1_ci_known, _ = boostrap_conf_interval(
             y_true=all_grd_truth_spe_presence.iloc[idx_known_post_red], 
             y_pred=all_pred_spe_presence_yn.iloc[idx_known_post_red], 
             metric_name='avg_pre/rec/f1', 
@@ -1632,13 +1632,13 @@ def score_test_from_boxes(
             np.mean(test_post_red_per_spe_f1_arr_known[test_post_red_per_spe_f1_arr_known >= 0]), 2
         )
 
-        test_post_red_spe_avg_auc_ci_known = boostrap_conf_interval(
+        test_post_red_spe_avg_auc_ci_known, _ = boostrap_conf_interval(
             y_true=all_grd_truth_spe_presence.iloc[idx_known_test_post_red], 
             y_pred=all_pred_spe_presence.iloc[idx_known_test_post_red], 
             metric_name='avg_auc', 
             n_samples=nbr_samples_conf_int
         )
-        test_post_red_spe_avg_pre_rec_f1_ci_known = boostrap_conf_interval(
+        test_post_red_spe_avg_pre_rec_f1_ci_known, _ = boostrap_conf_interval(
             y_true=all_grd_truth_spe_presence.iloc[idx_known_test_post_red], 
             y_pred=all_pred_spe_presence_yn.iloc[idx_known_test_post_red], 
             metric_name='avg_pre/rec/f1', 
@@ -1656,13 +1656,13 @@ def score_test_from_boxes(
         post_red_spe_avg_rec_novel = round(np.mean(post_red_per_spe_recall_arr_novel[post_red_per_spe_recall_arr_novel >= 0]), 2)
         post_red_spe_avg_f1_novel = round(np.mean(post_red_per_spe_f1_arr_novel[post_red_per_spe_f1_arr_novel >= 0]), 2)
 
-        post_red_spe_avg_auc_ci_novel = boostrap_conf_interval(
+        post_red_spe_avg_auc_ci_novel, _ = boostrap_conf_interval(
             y_true=all_grd_truth_spe_presence.iloc[idx_novel_post_red], 
             y_pred=all_pred_spe_presence.iloc[idx_novel_post_red], 
             metric_name='avg_auc', 
             n_samples=nbr_samples_conf_int
         )
-        post_red_spe_avg_pre_rec_f1_ci_novel = boostrap_conf_interval(
+        post_red_spe_avg_pre_rec_f1_ci_novel, _ = boostrap_conf_interval(
             y_true=all_grd_truth_spe_presence.iloc[idx_novel_post_red], 
             y_pred=all_pred_spe_presence_yn.iloc[idx_novel_post_red], 
             metric_name='avg_pre/rec/f1', 
@@ -1688,13 +1688,13 @@ def score_test_from_boxes(
             np.mean(test_post_red_per_spe_f1_arr_novel[test_post_red_per_spe_f1_arr_novel >= 0]), 2
         )
 
-        test_post_red_spe_avg_auc_ci_novel = boostrap_conf_interval(
+        test_post_red_spe_avg_auc_ci_novel, _ = boostrap_conf_interval(
             y_true=all_grd_truth_spe_presence.iloc[idx_novel_test_post_red], 
             y_pred=all_pred_spe_presence.iloc[idx_novel_test_post_red], 
             metric_name='avg_auc', 
             n_samples=nbr_samples_conf_int
         )
-        test_post_red_spe_avg_pre_rec_f1_ci_novel = boostrap_conf_interval(
+        test_post_red_spe_avg_pre_rec_f1_ci_novel, _ = boostrap_conf_interval(
             y_true=all_grd_truth_spe_presence.iloc[idx_novel_test_post_red], 
             y_pred=all_pred_spe_presence_yn.iloc[idx_novel_test_post_red], 
             metric_name='avg_pre/rec/f1', 
@@ -1895,13 +1895,13 @@ def score_test_from_boxes(
     pre_red_act_avg_rec = round(np.mean(pre_red_per_act_recall_arr[pre_red_per_act_recall_arr >= 0]), 2)
     pre_red_act_avg_f1 = round(np.mean(pre_red_per_act_f1_arr[pre_red_per_act_f1_arr >= 0]), 2)
 
-    pre_red_act_avg_auc_ci = boostrap_conf_interval(
+    pre_red_act_avg_auc_ci, _ = boostrap_conf_interval(
         y_true=all_grd_truth_act_presence.iloc[:total_pre_red_btn], 
         y_pred=all_pred_act_presence.iloc[:total_pre_red_btn], 
         metric_name='avg_auc', 
         n_samples=nbr_samples_conf_int
     )
-    pre_red_act_avg_pre_rec_f1_ci = boostrap_conf_interval(
+    pre_red_act_avg_pre_rec_f1_ci, _ = boostrap_conf_interval(
         y_true=all_grd_truth_act_presence.iloc[:total_pre_red_btn], 
         y_pred=all_pred_act_presence_yn.iloc[:total_pre_red_btn], 
         metric_name='avg_pre/rec/f1', 
@@ -1939,13 +1939,13 @@ def score_test_from_boxes(
             # post_red_act_avg_f1_known = round(np.mean(post_red_per_act_f1_arr_known[post_red_per_act_f1_arr_known >= 0]), 2)
 
 
-            post_red_act_avg_auc_ci_known = boostrap_conf_interval(
+            post_red_act_avg_auc_ci_known, _ = boostrap_conf_interval(
                 y_true=all_grd_truth_act_presence.iloc[idx_known_post_red], 
                 y_pred=all_pred_act_presence.iloc[idx_known_post_red], 
                 metric_name='avg_auc', 
                 n_samples=nbr_samples_conf_int
             )
-            post_red_act_avg_pre_rec_f1_ci_known = boostrap_conf_interval(
+            post_red_act_avg_pre_rec_f1_ci_known, _ = boostrap_conf_interval(
                 y_true=all_grd_truth_act_presence.iloc[idx_known_post_red], 
                 y_pred=all_pred_act_presence_yn.iloc[idx_known_post_red], 
                 metric_name='avg_pre/rec/f1', 
@@ -1973,18 +1973,13 @@ def score_test_from_boxes(
             if any(test_post_red_per_act_f1_arr_known >= 0): 
                 test_post_red_act_avg_f1_known = round(np.mean(test_post_red_per_act_f1_arr_known[test_post_red_per_act_f1_arr_known >= 0]), 2)
 
-            # test_post_red_act_avg_auc_known = round(np.mean(test_post_red_per_act_auc_arr_known[test_post_red_per_act_auc_arr_known >= 0]), 2)
-            # test_post_red_act_avg_pre_known = round(np.mean(test_post_red_per_act_precision_arr_known[test_post_red_per_act_precision_arr_known >= 0]), 2)
-            # test_post_red_act_avg_rec_known = round(np.mean(test_post_red_per_act_recall_arr_known[test_post_red_per_act_recall_arr_known >= 0]), 2)
-            # test_post_red_act_avg_f1_known = round(np.mean(test_post_red_per_act_f1_arr_known[test_post_red_per_act_f1_arr_known >= 0]), 2)
-
-            test_post_red_act_avg_auc_ci_known = boostrap_conf_interval(
+            test_post_red_act_avg_auc_ci_known, _ = boostrap_conf_interval(
                 y_true=all_grd_truth_act_presence.iloc[idx_known_test_post_red], 
                 y_pred=all_pred_act_presence.iloc[idx_known_test_post_red], 
                 metric_name='avg_auc', 
                 n_samples=nbr_samples_conf_int
             )
-            test_post_red_act_avg_pre_rec_f1_ci_known = boostrap_conf_interval(
+            test_post_red_act_avg_pre_rec_f1_ci_known, _ = boostrap_conf_interval(
                 y_true=all_grd_truth_act_presence.iloc[idx_known_test_post_red], 
                 y_pred=all_pred_act_presence_yn.iloc[idx_known_test_post_red], 
                 metric_name='avg_pre/rec/f1', 
@@ -2019,13 +2014,13 @@ def score_test_from_boxes(
             # post_red_act_avg_rec_novel = round(np.mean(post_red_per_act_recall_arr_novel[post_red_per_act_recall_arr_novel >= 0]), 2)
             # post_red_act_avg_f1_novel = round(np.mean(post_red_per_act_f1_arr_novel[post_red_per_act_f1_arr_novel >= 0]), 2)
 
-            post_red_act_avg_auc_ci_novel = boostrap_conf_interval(
+            post_red_act_avg_auc_ci_novel, _ = boostrap_conf_interval(
                 y_true=all_grd_truth_act_presence.iloc[idx_novel_post_red], 
                 y_pred=all_pred_act_presence.iloc[idx_novel_post_red], 
                 metric_name='avg_auc', 
                 n_samples=nbr_samples_conf_int
             )
-            post_red_act_avg_pre_rec_f1_ci_novel = boostrap_conf_interval(
+            post_red_act_avg_pre_rec_f1_ci_novel, _ = boostrap_conf_interval(
                 y_true=all_grd_truth_act_presence.iloc[idx_novel_post_red], 
                 y_pred=all_pred_act_presence_yn.iloc[idx_novel_post_red], 
                 metric_name='avg_pre/rec/f1', 
@@ -2053,18 +2048,13 @@ def score_test_from_boxes(
             if any(test_post_red_per_act_f1_arr_novel >= 0): 
                 test_post_red_act_avg_f1_novel = round(np.mean(test_post_red_per_act_f1_arr_novel[test_post_red_per_act_f1_arr_novel >= 0]), 2)
 
-            # test_post_red_act_avg_auc_novel = round(np.mean(test_post_red_per_act_auc_arr_novel[test_post_red_per_act_auc_arr_novel >= 0]), 2)
-            # test_post_red_act_avg_pre_novel = round(np.mean(test_post_red_per_act_precision_arr_novel[test_post_red_per_act_precision_arr_novel >= 0]), 2)
-            # test_post_red_act_avg_rec_novel = round(np.mean(test_post_red_per_act_recall_arr_novel[test_post_red_per_act_recall_arr_novel >= 0]), 2)
-            # test_post_red_act_avg_f1_novel = round(np.mean(test_post_red_per_act_f1_arr_novel[test_post_red_per_act_f1_arr_novel >= 0]), 2)
-
-            test_post_red_act_avg_auc_ci_novel = boostrap_conf_interval(
+            test_post_red_act_avg_auc_ci_novel, _ = boostrap_conf_interval(
                 y_true=all_grd_truth_act_presence.iloc[idx_novel_test_post_red], 
                 y_pred=all_pred_act_presence.iloc[idx_novel_test_post_red], 
                 metric_name='avg_auc', 
                 n_samples=nbr_samples_conf_int
             )
-            test_post_red_act_avg_pre_rec_f1_ci_novel = boostrap_conf_interval(
+            test_post_red_act_avg_pre_rec_f1_ci_novel, _ = boostrap_conf_interval(
                 y_true=all_grd_truth_act_presence.iloc[idx_novel_test_post_red], 
                 y_pred=all_pred_act_presence_yn.iloc[idx_novel_test_post_red], 
                 metric_name='avg_pre/rec/f1', 
@@ -2398,7 +2388,7 @@ def score_tests(
             with (open(pkl_fname, "rb")) as pkl_file:
                 boxes_pred_dict = pickle.load(pkl_file)
 
-            
+            '''
             test_id = test_id[4:]
 
             detect_lines = []
@@ -2420,7 +2410,7 @@ def score_tests(
                 
             else:
                 print(f'No results found for Test {session_id}.{test_id}_.')
-            '''
+            
            
             with open(log_dir / f'{test_id}.log', 'w') as log:
                 # score_test(

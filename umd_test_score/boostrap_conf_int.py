@@ -154,8 +154,9 @@ def boostrap_conf_interval(y_true, y_pred, metric_name, n_samples=500, alpha=0.0
                 sample_score['avg_recall'].append(np.mean(col_scores['recall']))
                 sample_score['avg_f1_score'].append(np.mean(col_scores['f1_score']))
             except Exception as ex:
-                print('\n This exception has happened:', ex)
+                # print('\n This exception has happened:', ex)
                 # print('\n\n col_scores:', col_scores)
+                continue
         else:
             try:
                 sample_score.append(np.mean(col_scores))
