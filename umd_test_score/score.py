@@ -2391,7 +2391,7 @@ def score_tests(
             with (open(pkl_fname, "rb")) as pkl_file:
                 boxes_pred_dict = pickle.load(pkl_file)
 
-            '''
+            
             test_id = test_id[4:]
 
             detect_lines = []
@@ -2414,7 +2414,7 @@ def score_tests(
             else:
                 print(f'No results found for Test {session_id}.{test_id}_.')
             # --
-            
+            '''
            
             with open(log_dir / f'{test_id}.log', 'w') as log:
                 # score_test(
