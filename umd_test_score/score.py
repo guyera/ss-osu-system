@@ -1869,10 +1869,21 @@ def score_test_from_boxes(
         post_red_per_spe_recall_arr = np.array([post_red_per_spe_recall[spe]['value'] for spe in post_red_per_spe_recall])
         post_red_per_spe_f1_arr = np.array([post_red_per_spe_f1[spe]['value'] for spe in post_red_per_spe_f1])
         
-        post_red_spe_avg_auc = round(np.mean(post_red_per_spe_auc_arr[post_red_per_spe_auc_arr >= 0]), 3)
-        post_red_spe_avg_pre = round(np.mean(post_red_per_spe_precision_arr[post_red_per_spe_precision_arr >= 0]), 3)
-        post_red_spe_avg_rec = round(np.mean(post_red_per_spe_recall_arr[post_red_per_spe_recall_arr >= 0]), 3)
-        post_red_spe_avg_f1 = round(np.mean(post_red_per_spe_f1_arr[post_red_per_spe_f1_arr >= 0]), 3)
+        post_red_spe_avg_auc = -1
+        if any(post_red_per_spe_auc_arr >= 0):
+            post_red_spe_avg_auc = round(np.mean(post_red_per_spe_auc_arr[post_red_per_spe_auc_arr >= 0]), 3)
+
+        post_red_spe_avg_pre = -1
+        if any(post_red_per_spe_precision_arr >= 0):
+            post_red_spe_avg_pre = round(np.mean(post_red_per_spe_precision_arr[post_red_per_spe_precision_arr >= 0]), 3)
+
+        post_red_spe_avg_rec = -1
+        if any(post_red_per_spe_recall_arr >= 0):
+            post_red_spe_avg_rec = round(np.mean(post_red_per_spe_recall_arr[post_red_per_spe_recall_arr >= 0]), 3)
+
+        post_red_spe_avg_f1 = -1
+        if any(post_red_per_spe_f1_arr >= 0):
+            post_red_spe_avg_f1 = round(np.mean(post_red_per_spe_f1_arr[post_red_per_spe_f1_arr >= 0]), 3)
 
         post_red_spe_avg_auc_ci, post_red_boostrap_avg_aucs = boostrap_conf_interval(
             y_true=all_grd_truth_spe_presence.iloc[total_pre_red_btn:start_test_phase], 
@@ -1893,10 +1904,21 @@ def score_test_from_boxes(
         test_post_red_per_spe_recall_arr = np.array([test_post_red_per_spe_recall[spe]['value'] for spe in test_post_red_per_spe_recall])
         test_post_red_per_spe_f1_arr = np.array([test_post_red_per_spe_f1[spe]['value'] for spe in test_post_red_per_spe_f1])
 
-        test_post_red_spe_avg_auc = round(np.mean(test_post_red_per_spe_auc_arr[test_post_red_per_spe_auc_arr >= 0]), 2)
-        test_post_red_spe_avg_pre = round(np.mean(test_post_red_per_spe_precision_arr[test_post_red_per_spe_precision_arr >= 0]), 2)
-        test_post_red_spe_avg_rec = round(np.mean(test_post_red_per_spe_recall_arr[test_post_red_per_spe_recall_arr >= 0]), 2)
-        test_post_red_spe_avg_f1 = round(np.mean(test_post_red_per_spe_f1_arr[test_post_red_per_spe_f1_arr >= 0]), 2)
+        test_post_red_spe_avg_auc = -1
+        if any(test_post_red_per_spe_auc_arr >= 0):
+            test_post_red_spe_avg_auc = round(np.mean(test_post_red_per_spe_auc_arr[test_post_red_per_spe_auc_arr >= 0]), 3)
+
+        test_post_red_spe_avg_pre = -1
+        if any(test_post_red_per_spe_precision_arr >= 0):
+            test_post_red_spe_avg_pre = round(np.mean(test_post_red_per_spe_precision_arr[test_post_red_per_spe_precision_arr >= 0]), 3)
+
+        test_post_red_spe_avg_rec = -1
+        if any(test_post_red_per_spe_recall_arr >= 0):
+            test_post_red_spe_avg_rec = round(np.mean(test_post_red_per_spe_recall_arr[test_post_red_per_spe_recall_arr >= 0]), 3)
+
+        test_post_red_spe_avg_f1 = -1
+        if any(test_post_red_per_spe_f1_arr >= 0):
+            test_post_red_spe_avg_f1 = round(np.mean(test_post_red_per_spe_f1_arr[test_post_red_per_spe_f1_arr >= 0]), 3)
 
         test_post_red_spe_avg_auc_ci, test_post_red_boostrap_avg_aucs = boostrap_conf_interval(
             y_true=all_grd_truth_spe_presence.iloc[start_test_phase:], 
@@ -2069,10 +2091,21 @@ def score_test_from_boxes(
         post_red_per_act_recall_arr = np.array([post_red_per_act_recall[act]['value'] for act in post_red_per_act_recall])
         post_red_per_act_f1_arr = np.array([post_red_per_act_f1[act]['value'] for act in post_red_per_act_f1])
 
-        post_red_act_avg_auc = round(np.mean(post_red_per_act_auc_arr[post_red_per_act_auc_arr >= 0]), 2)
-        post_red_act_avg_pre = round(np.mean(post_red_per_act_precision_arr[post_red_per_act_precision_arr >= 0]), 2)
-        post_red_act_avg_rec = round(np.mean(post_red_per_act_recall_arr[post_red_per_act_recall_arr >= 0]), 2)
-        post_red_act_avg_f1 = round(np.mean(post_red_per_act_f1_arr[post_red_per_act_f1_arr >= 0]), 2)
+        post_red_act_avg_auc = -1
+        if any(post_red_per_act_auc_arr >= 0):
+            post_red_act_avg_auc = round(np.mean(post_red_per_act_auc_arr[post_red_per_act_auc_arr >= 0]), 2)
+
+        post_red_act_avg_pre = -1
+        if any(post_red_per_act_precision_arr >= 0):
+            post_red_act_avg_pre = round(np.mean(post_red_per_act_precision_arr[post_red_per_act_precision_arr >= 0]), 2)
+
+        post_red_act_avg_rec = -1
+        if any(post_red_per_act_recall_arr >= 0):
+            post_red_act_avg_rec = round(np.mean(post_red_per_act_recall_arr[post_red_per_act_recall_arr >= 0]), 2)
+
+        post_red_act_avg_f1 = -1
+        if any(post_red_per_act_f1_arr >= 0):
+            post_red_act_avg_f1 = round(np.mean(post_red_per_act_f1_arr[post_red_per_act_f1_arr >= 0]), 2)
 
 
         post_red_act_avg_auc_ci, post_red_boostrap_avg_act_aucs = boostrap_conf_interval(
@@ -2093,10 +2126,21 @@ def score_test_from_boxes(
         test_post_red_per_act_recall_arr = np.array([test_post_red_per_act_recall[act]['value'] for act in test_post_red_per_act_recall])
         test_post_red_per_act_f1_arr = np.array([test_post_red_per_act_f1[act]['value'] for act in test_post_red_per_act_f1])
 
-        test_post_red_act_avg_auc = round(np.mean(test_post_red_per_act_auc_arr[test_post_red_per_act_auc_arr >= 0]), 3)
-        test_post_red_act_avg_pre = round(np.mean(test_post_red_per_act_precision_arr[test_post_red_per_act_precision_arr >= 0]), 3)
-        test_post_red_act_avg_rec = round(np.mean(test_post_red_per_act_recall_arr[test_post_red_per_act_recall_arr >= 0]), 3)
-        test_post_red_act_avg_f1 = round(np.mean(test_post_red_per_act_f1_arr[test_post_red_per_act_f1_arr >= 0]), 3)
+        test_post_red_act_avg_auc = -1
+        if any(test_post_red_per_act_auc_arr >= 0):
+            test_post_red_act_avg_auc = round(np.mean(test_post_red_per_act_auc_arr[test_post_red_per_act_auc_arr >= 0]), 2)
+
+        test_post_red_act_avg_pre = -1
+        if any(test_post_red_per_act_precision_arr >= 0):
+            test_post_red_act_avg_pre = round(np.mean(test_post_red_per_act_precision_arr[test_post_red_per_act_precision_arr >= 0]), 2)
+
+        test_post_red_act_avg_rec = -1
+        if any(test_post_red_per_act_recall_arr >= 0):
+            test_post_red_act_avg_rec = round(np.mean(test_post_red_per_act_recall_arr[test_post_red_per_act_recall_arr >= 0]), 2)
+
+        test_post_red_act_avg_f1 = -1
+        if any(test_post_red_per_act_f1_arr >= 0):
+            test_post_red_act_avg_f1 = round(np.mean(test_post_red_per_act_f1_arr[test_post_red_per_act_f1_arr >= 0]), 2)
 
         test_post_red_act_avg_auc_ci, test_post_red_boostrap_avg_act_aucs = boostrap_conf_interval(
             y_true=all_grd_truth_act_presence.iloc[start_test_phase:], 
@@ -2347,7 +2391,7 @@ def score_tests(
             with (open(pkl_fname, "rb")) as pkl_file:
                 boxes_pred_dict = pickle.load(pkl_file)
 
-            
+            '''
             test_id = test_id[4:]
 
             detect_lines = []
@@ -2370,7 +2414,7 @@ def score_tests(
             else:
                 print(f'No results found for Test {session_id}.{test_id}_.')
             # --
-            '''
+            
            
             with open(log_dir / f'{test_id}.log', 'w') as log:
                 # score_test(

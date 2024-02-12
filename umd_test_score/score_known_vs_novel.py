@@ -1595,10 +1595,21 @@ def score_test_from_boxes(
         post_red_per_spe_recall_arr_known = np.array([post_red_per_spe_recall[spe]['known']['value'] for spe in post_red_per_spe_recall])
         post_red_per_spe_f1_arr_known = np.array([post_red_per_spe_f1[spe]['known']['value'] for spe in post_red_per_spe_f1])
         
-        post_red_spe_avg_auc_known = round(np.mean(post_red_per_spe_auc_arr_known[post_red_per_spe_auc_arr_known >= 0]), 2)
-        post_red_spe_avg_pre_known = round(np.mean(post_red_per_spe_precision_arr_known[post_red_per_spe_precision_arr_known >= 0]), 2)
-        post_red_spe_avg_rec_known = round(np.mean(post_red_per_spe_recall_arr_known[post_red_per_spe_recall_arr_known >= 0]), 2)
-        post_red_spe_avg_f1_known = round(np.mean(post_red_per_spe_f1_arr_known[post_red_per_spe_f1_arr_known >= 0]), 2)
+        post_red_spe_avg_auc_known = -1
+        if any(post_red_per_spe_auc_arr_known >= 0):
+            post_red_spe_avg_auc_known = round(np.mean(post_red_per_spe_auc_arr_known[post_red_per_spe_auc_arr_known >= 0]), 2)
+
+        post_red_spe_avg_pre_known = -1
+        if any(post_red_per_spe_precision_arr_known >= 0):
+            post_red_spe_avg_pre_known = round(np.mean(post_red_per_spe_precision_arr_known[post_red_per_spe_precision_arr_known >= 0]), 2)
+
+        post_red_spe_avg_rec_known = -1
+        if any(post_red_per_spe_recall_arr_known >= 0):
+            post_red_spe_avg_rec_known = round(np.mean(post_red_per_spe_recall_arr_known[post_red_per_spe_recall_arr_known >= 0]), 2)
+
+        post_red_spe_avg_f1_known = -1
+        if any(post_red_per_spe_f1_arr_known >= 0):
+            post_red_spe_avg_f1_known = round(np.mean(post_red_per_spe_f1_arr_known[post_red_per_spe_f1_arr_known >= 0]), 2)
 
         post_red_spe_avg_auc_ci_known, _ = boostrap_conf_interval(
             y_true=all_grd_truth_spe_presence.iloc[idx_known_post_red], 
@@ -1619,18 +1630,29 @@ def score_test_from_boxes(
         test_post_red_per_spe_recall_arr_known = np.array([test_post_red_per_spe_recall[spe]['known']['value'] for spe in test_post_red_per_spe_recall])
         test_post_red_per_spe_f1_arr_known = np.array([test_post_red_per_spe_f1[spe]['known']['value'] for spe in test_post_red_per_spe_f1])
 
-        test_post_red_spe_avg_auc_known = round(
-            np.mean(test_post_red_per_spe_auc_arr_known[test_post_red_per_spe_auc_arr_known >= 0]), 2
-        )
-        test_post_red_spe_avg_pre_known = round(
-            np.mean(test_post_red_per_spe_precision_arr_known[test_post_red_per_spe_precision_arr_known >= 0]), 2
-        )
-        test_post_red_spe_avg_rec_known = round(
-            np.mean(test_post_red_per_spe_recall_arr_known[test_post_red_per_spe_recall_arr_known >= 0]), 2
-        )
-        test_post_red_spe_avg_f1_known = round(
-            np.mean(test_post_red_per_spe_f1_arr_known[test_post_red_per_spe_f1_arr_known >= 0]), 2
-        )
+        test_post_red_spe_avg_auc_known = -1
+        if any(test_post_red_per_spe_auc_arr_known >= 0):
+            test_post_red_spe_avg_auc_known = round(
+                np.mean(test_post_red_per_spe_auc_arr_known[test_post_red_per_spe_auc_arr_known >= 0]), 2
+            )
+
+        test_post_red_spe_avg_pre_known = -1
+        if any(test_post_red_per_spe_precision_arr_known >= 0):
+            test_post_red_spe_avg_pre_known = round(
+                np.mean(test_post_red_per_spe_precision_arr_known[test_post_red_per_spe_precision_arr_known >= 0]), 2
+            )
+
+        test_post_red_spe_avg_rec_known = -1
+        if any(test_post_red_per_spe_recall_arr_known >= 0):
+            test_post_red_spe_avg_rec_known = round(
+                np.mean(test_post_red_per_spe_recall_arr_known[test_post_red_per_spe_recall_arr_known >= 0]), 2
+            )
+
+        test_post_red_spe_avg_f1_known = -1
+        if any(test_post_red_per_spe_f1_arr_known >= 0):
+            test_post_red_spe_avg_f1_known = round(
+                np.mean(test_post_red_per_spe_f1_arr_known[test_post_red_per_spe_f1_arr_known >= 0]), 2
+            )
 
         test_post_red_spe_avg_auc_ci_known, _ = boostrap_conf_interval(
             y_true=all_grd_truth_spe_presence.iloc[idx_known_test_post_red], 
@@ -1651,10 +1673,21 @@ def score_test_from_boxes(
         post_red_per_spe_recall_arr_novel = np.array([post_red_per_spe_recall[spe]['novel']['value'] for spe in post_red_per_spe_recall])
         post_red_per_spe_f1_arr_novel = np.array([post_red_per_spe_f1[spe]['novel']['value'] for spe in post_red_per_spe_f1])
         
-        post_red_spe_avg_auc_novel = round(np.mean(post_red_per_spe_auc_arr_novel[post_red_per_spe_auc_arr_novel >= 0]), 2)
-        post_red_spe_avg_pre_novel = round(np.mean(post_red_per_spe_precision_arr_novel[post_red_per_spe_precision_arr_novel >= 0]), 2)
-        post_red_spe_avg_rec_novel = round(np.mean(post_red_per_spe_recall_arr_novel[post_red_per_spe_recall_arr_novel >= 0]), 2)
-        post_red_spe_avg_f1_novel = round(np.mean(post_red_per_spe_f1_arr_novel[post_red_per_spe_f1_arr_novel >= 0]), 2)
+        post_red_spe_avg_auc_novel = -1
+        if any(post_red_per_spe_auc_arr_novel >= 0):
+            post_red_spe_avg_auc_novel = round(np.mean(post_red_per_spe_auc_arr_novel[post_red_per_spe_auc_arr_novel >= 0]), 2)
+
+        post_red_spe_avg_pre_novel = -1
+        if any(post_red_per_spe_precision_arr_novel >= 0):
+            post_red_spe_avg_pre_novel = round(np.mean(post_red_per_spe_precision_arr_novel[post_red_per_spe_precision_arr_novel >= 0]), 2)
+
+        post_red_spe_avg_rec_novel = -1
+        if any(post_red_per_spe_recall_arr_novel >= 0):
+            post_red_spe_avg_rec_novel = round(np.mean(post_red_per_spe_recall_arr_novel[post_red_per_spe_recall_arr_novel >= 0]), 2)
+
+        post_red_spe_avg_f1_novel = -1
+        if any(post_red_per_spe_f1_arr_novel >= 0):
+            post_red_spe_avg_f1_novel = round(np.mean(post_red_per_spe_f1_arr_novel[post_red_per_spe_f1_arr_novel >= 0]), 2)
 
         post_red_spe_avg_auc_ci_novel, _ = boostrap_conf_interval(
             y_true=all_grd_truth_spe_presence.iloc[idx_novel_post_red], 
@@ -1675,18 +1708,29 @@ def score_test_from_boxes(
         test_post_red_per_spe_recall_arr_novel = np.array([test_post_red_per_spe_recall[spe]['novel']['value'] for spe in test_post_red_per_spe_recall])
         test_post_red_per_spe_f1_arr_novel = np.array([test_post_red_per_spe_f1[spe]['novel']['value'] for spe in test_post_red_per_spe_f1])
 
-        test_post_red_spe_avg_auc_novel = round(
-            np.mean(test_post_red_per_spe_auc_arr_novel[test_post_red_per_spe_auc_arr_novel >= 0]), 2
-        )
-        test_post_red_spe_avg_pre_novel = round(
-            np.mean(test_post_red_per_spe_precision_arr_novel[test_post_red_per_spe_precision_arr_novel >= 0]), 2
-        )
-        test_post_red_spe_avg_rec_novel = round(
-            np.mean(test_post_red_per_spe_recall_arr_novel[test_post_red_per_spe_recall_arr_novel >= 0]), 2
-        )
-        test_post_red_spe_avg_f1_novel = round(
-            np.mean(test_post_red_per_spe_f1_arr_novel[test_post_red_per_spe_f1_arr_novel >= 0]), 2
-        )
+        test_post_red_spe_avg_auc_novel = -1
+        if any(test_post_red_per_spe_auc_arr_novel >= 0):
+            test_post_red_spe_avg_auc_novel = round(
+                np.mean(test_post_red_per_spe_auc_arr_novel[test_post_red_per_spe_auc_arr_novel >= 0]), 2
+            )
+
+        test_post_red_spe_avg_pre_novel = -1
+        if any(test_post_red_per_spe_precision_arr_novel >= 0):
+            test_post_red_spe_avg_pre_novel = round(
+                np.mean(test_post_red_per_spe_precision_arr_novel[test_post_red_per_spe_precision_arr_novel >= 0]), 2
+            )
+
+        test_post_red_spe_avg_rec_novel = -1
+        if any(test_post_red_per_spe_recall_arr_novel >= 0):
+            test_post_red_spe_avg_rec_novel = round(
+                np.mean(test_post_red_per_spe_recall_arr_novel[test_post_red_per_spe_recall_arr_novel >= 0]), 2
+            )
+
+        test_post_red_spe_avg_f1_novel = -1
+        if any(test_post_red_per_spe_f1_arr_novel >= 0):
+            test_post_red_spe_avg_f1_novel = round(
+                np.mean(test_post_red_per_spe_f1_arr_novel[test_post_red_per_spe_f1_arr_novel >= 0]), 2
+            )
 
         test_post_red_spe_avg_auc_ci_novel, _ = boostrap_conf_interval(
             y_true=all_grd_truth_spe_presence.iloc[idx_novel_test_post_red], 
