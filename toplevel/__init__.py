@@ -89,6 +89,7 @@ class TopLevelApp:
         side_tuning = 'side-tuning'
         end_to_end = 'end-to-end'
         ewc_train = 'ewc-train'
+        ewc_logit_layer_train = 'ewc-logit-layer-train'
 
         def __str__(self):
             return self.value
@@ -259,14 +260,30 @@ class TopLevelApp:
         self._val_reduce_fn = val_reduce_fn
         if self.classifier_trainer_enum == self.ClassifierTrainer.logit_layer:
             if self.precomputed_feature_dir and not os.path.isfile(train_feature_file) and not os.path.isfile(val_feature_file):
-                compute_features(self.backbone,
-                self.precomputed_feature_dir,
+                assert not self.precomputed_feature_dir or os.path.isfile(train_feature_file) or os.path.isfile(val_feature_file), \
+                "Precomputed feature files must exist if precomputed_feature_dir is set. \
+                 precompute_backbone_features.py script can be used to compute featrues"
+
+            classifier_trainer = LogitLayerClassifierTrainer(
+                self.retraining_lr,
+                train_feature_file,
+                val_feature_file,
                 self.box_transform,
                 post_cache_train_transform,
-                train_dataset,
-                val_dataset,
-                self.retraining_batch_size
-                )
+                feedback_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.ewc_logit_layer_train:
+            if self.precomputed_feature_dir and not os.path.isfile(train_feature_file) and not os.path.isfile(val_feature_file):
+                assert not self.precomputed_feature_dir or os.path.isfile(train_feature_file) or os.path.isfile(val_feature_file), \
+                "Precomputed feature files must exist if precomputed_feature_dir is set. \
+                 precompute_backbone_features.py script can be used to compute featrues"
 
             classifier_trainer = LogitLayerClassifierTrainer(
                 self.retraining_lr,
@@ -879,14 +896,31 @@ class TopLevelApp:
         )
         if self.classifier_trainer_enum == self.ClassifierTrainer.logit_layer:
             if self.precomputed_feature_dir and not os.path.isfile(train_feature_file) and not os.path.isfile(val_feature_file):
-                compute_features(self.backbone,
-                self.precomputed_feature_dir,
+                assert not self.precomputed_feature_dir or os.path.isfile(train_feature_file) or os.path.isfile(val_feature_file), \
+                "Precomputed feature files must exist if precomputed_feature_dir is set. \
+                precompute_backbone_features.py script can be used to compute featrues"
+
+            classifier_trainer = LogitLayerClassifierTrainer(
+                self.retraining_lr,
+                train_feature_file,
+                val_feature_file,
                 self.box_transform,
                 post_cache_train_transform,
-                train_dataset,
-                val_dataset,
-                self.retraining_batch_size
-                )
+                feedback_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.ewc_logit_layer_train:
+            if self.precomputed_feature_dir and not os.path.isfile(train_feature_file) and not os.path.isfile(val_feature_file):
+                assert not self.precomputed_feature_dir or os.path.isfile(train_feature_file) or os.path.isfile(val_feature_file), \
+                "Precomputed feature files must exist if precomputed_feature_dir is set. \
+                 precompute_backbone_features.py script can be used to compute featrues"
+
             classifier_trainer = LogitLayerClassifierTrainer(
                 self.retraining_lr,
                 train_feature_file,
@@ -977,88 +1011,7 @@ class TopLevelApp:
         retrain_cond_1 = self.num_retrains_so_far == 0 and len(self.retraining_buffer) >= 15
         retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) 
         # if retrain_cond_1 or retrain_cond_2:
-        if retrain_cond_2:
-            csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
-            self.retraining_buffer.to_csv(csv_path, index=True)
-            csv_path_temp = os.path.join(self.temp_path, f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
-            
-            self.gan_augment = False
-            if self.gan_augment == True:
-                box_dict = {}
-                self.cycleGAN.load_datasets(self.data_root, self.train_csv_path, csv_path_temp, 4) 
-                self.cycleGAN.train(400)
-                self.novelty_trainer.add_feedback_data(self.data_root, csv_path_temp)   
-
-                # box_dict = {}
-                # csv_pd = pd.read_csv(csv_path_temp, na_values=[''])
-                # # with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/valid.json', 'r') as f:
-                # with open('/nfs/hpc/share/sail_on3/final/test.json', 'r') as f:
-                #     box_dict_valid = json.load(f)
-                # for index, row in csv_pd.iterrows():
-                #     if not box_dict_valid.get(row['filename']):
-                #         print(row['filename']," Not in Json file")
-                #         csv_pd = csv_pd.drop(index)
-                #     else:
-                #         box_dict[row['filename']] = box_dict_valid[row['filename']]
-                # csv_pd.to_csv(csv_path_temp, index=True)
-
-                # with open(csv_path_temp[:-4]+'.json', 'w') as file:
-                #     # Write the dictionary to the file as json
-                #     json.dump(box_dict, file)
-
-
-                # self.cycleGAN.delete_models()
-            # else:
-            #     # self.novelty_trainer.add_feedback_data(self.data_root, feedback_csv_path)   
-
-            #     # box_dict = {}
-            #     # csv_pd = pd.read_csv(csv_path_temp, na_values=[''])
-            #     # # with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/valid.json', 'r') as f:
-            #     # with open('/nfs/hpc/share/sail_on3/final/test.json', 'r') as f:
-            #     #     box_dict_valid = json.load(f)
-            #     # for index, row in csv_pd.iterrows():
-            #     #     if not box_dict_valid.get(row['filename']):
-            #     #         print(row['filename']," Not in Json file")
-            #     #         csv_pd = csv_pd.drop(index)
-            #     #     else:
-            #     #         box_dict[row['filename']] = box_dict_valid[row['filename']]
-                
-                # box_dict = {}
-            #     if self.retrain_num == 1:
-            #         csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_fog.csv'
-            #         csv_pd = pd.read_csv(csv_path, na_values=['']).head(1000)
-            #         with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_fog.json', 'r') as f:
-            #             box_dict_valid = json.load(f)
-            #     if self.retrain_num == 2:
-            #         csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_fog.csv'
-            #         csv_pd = pd.read_csv(csv_path, na_values=['']).tail(1000)
-            #         with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_fog.json', 'r') as f:
-            #             box_dict_valid = json.load(f)
-                
-                # if self.retrain_num == 1:
-                #     csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_snow.csv'
-                #     csv_pd = pd.read_csv(csv_path, na_values=['']).head(1000)
-                #     with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_snow.json', 'r') as f:
-                #         box_dict_valid = json.load(f)
-            #     if self.retrain_num == 4:
-            #         csv_path = '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_snow.csv'
-            #         csv_pd = pd.read_csv(csv_path, na_values=['']).tail(1000)
-            #         with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train_corrupt_snow.json', 'r') as f:
-            #             box_dict_valid = json.load(f)
-                
-                # for index, row in csv_pd.iterrows():
-                #     if not box_dict_valid.get(row['filename']):
-                #         print(row['filename']," Not in Json file")
-                #         csv_pd = csv_pd.drop(index)
-                #     else:
-                #         box_dict[row['filename']] = box_dict_valid[row['filename']]
-                # csv_pd.to_csv(csv_path_temp, index=True)
-
-                # with open(csv_path_temp[:-4]+'.json', 'w') as file:
-                #     # Write the dictionary to the file as json
-                #     json.dump(box_dict, file)
-                # self.retrain_num+=1
-                # self.novelty_trainer.add_feedback_data(self.data_root, csv_path_temp)   
+        if retrain_cond_2:                          
 
             ## self.num_retrains_so_far += 1
             self.novelty_trainer.prepare_for_retraining(

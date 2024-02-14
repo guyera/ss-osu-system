@@ -149,25 +149,24 @@ def boostrap_conf_interval(y_true, y_pred, metric_name, n_samples=500, alpha=0.0
                 raise ValueError(f'metric_name "{metric_name}" unknown!')
 
         if metric_name.lower() == 'avg_pre/rec/f1':
-            try:
+
+            if col_scores['precision']:
                 sample_score['avg_precision'].append(np.mean(col_scores['precision']))
+
+            if col_scores['recall']:
                 sample_score['avg_recall'].append(np.mean(col_scores['recall']))
+
+            if col_scores['f1_score']:
                 sample_score['avg_f1_score'].append(np.mean(col_scores['f1_score']))
-            except Exception as ex:
-                print('\n This exception has happened:', ex)
-                # print('\n\n col_scores:', col_scores)
         else:
-            try:
+            if col_scores:
                 sample_score.append(np.mean(col_scores))
-            except Exception as ex:
-                continue
-        #         print(col_scores)
-        #         print('\n The following exception happened in boostrap_conf_int():', ex)
 
     if isinstance(sample_score, list):
-        return np.percentile(sample_score, (lower_c, upper_c)) if len(sample_score) > 0 else -1
+        ci = np.percentile(sample_score, (lower_c, upper_c)) if len(sample_score) > 0 else -1
+        return ci, sample_score
     return {
         'avg_precision': np.percentile(sample_score['avg_precision'], (lower_c, upper_c)) if len(sample_score['avg_precision']) > 0 else -1,
         'avg_recall': np.percentile(sample_score['avg_recall'], (lower_c, upper_c)) if len(sample_score['avg_recall']) > 0 else -1,
         'avg_f1_score': np.percentile(sample_score['avg_f1_score'], (lower_c, upper_c)) if len(sample_score['avg_f1_score']) > 0 else -1
-    }
+    }, sample_score

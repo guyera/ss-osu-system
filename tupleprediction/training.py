@@ -9,7 +9,7 @@ from enum import Enum
 import pickle as pkl
 from abc import ABC, abstractmethod
 import sys
-from tupleprediction.ewc import EWC
+from tupleprediction.ewc import EWC_All_Models
 
 from tqdm import tqdm
 from torch.utils.data import\
@@ -43,6 +43,38 @@ def print_nan(t, name):
 
 def contains_nan(tensor):
     return torch.isnan(tensor).any() 
+
+
+class NonFeedbackDataset(Dataset):
+    def __init__(self, features, species_labels, activity_labels):
+        self.features = features
+        self.species_labels = species_labels
+        self.activity_labels = activity_labels
+
+    def __len__(self):
+        return len(self.features)
+
+    def __getitem__(self, idx):
+        return self.features[idx], self.species_labels[idx], self.activity_labels[idx]
+
+class FeedbackDatasetBatched(Dataset):
+    def __init__(self, features, species_labels, activity_labels, batch_size):
+        self.batch_size = batch_size
+        self.batches = self.create_mini_batches(features, species_labels, activity_labels, batch_size)
+
+    def create_mini_batches(self, features, species_labels, activity_labels, batch_size):
+        batches = []
+        for start_idx in range(0, len(features), batch_size):
+            end_idx = min(start_idx + batch_size, len(features))
+            batch = (features[start_idx:end_idx], species_labels[start_idx:end_idx], activity_labels[start_idx:end_idx])
+            batches.append(batch)
+        return batches
+
+    def __len__(self):
+        return len(self.batches)
+
+    def __getitem__(self, idx):
+        return self.batches[idx]
 
 
 class BoxPredictionGradBalancer(torch.autograd.Function):
@@ -976,13 +1008,15 @@ class CombinedFeedbackSamplingConfiguration(FeedbackSamplingConfiguration):
             torch.cat((train_species_labels, feedback_species_labels), dim=0),\
             torch.cat((train_activity_labels, feedback_activity_labels), dim=0)
 
+def none_ctor():
+    return None
 
 class FeedbackSamplingConfigurationOption(Enum):
     combined = {
         'ctor': CombinedFeedbackSamplingConfiguration
     }
     none = {
-        'ctor': lambda : None
+        'ctor': none_ctor,
     }
 
     def __str__(self):
@@ -1059,7 +1093,7 @@ class DistributedRandomBoxImageBatchSampler:
         return len(next_iter)
 
 
-class LogitLayerClassifierTrainer(ClassifierTrainer):
+class EWCLogitLayerClassifierTrainer(ClassifierTrainer):
     def __init__(
             self,
             lr,
@@ -1106,128 +1140,7 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         species_classifier.train()
         activity_classifier.train()
 
-        # Compute class weights
-        species_weights = None
-        activity_weights = None
-        species_frequencies = None
-        activity_frequencies = None
-        if self._class_frequencies is not None:
-            train_species_frequencies,\
-                train_activity_frequencies = self._class_frequencies
-            train_species_frequencies = train_species_frequencies.to(device)
-            train_activity_frequencies = train_activity_frequencies.to(device)
-            
-            species_frequencies = train_species_frequencies
-            activity_frequencies = train_activity_frequencies
-
-        if feedback_class_frequencies is not None:
-            feedback_species_frequencies,\
-                feedback_activity_frequencies = feedback_class_frequencies
-            feedback_species_frequencies =\
-                feedback_species_frequencies.to(device)
-            feedback_activity_frequencies =\
-                feedback_activity_frequencies.to(device)
-
-            if species_frequencies is None:
-                species_frequencies = feedback_species_frequencies
-                activity_frequencies = feedback_activity_frequencies
-            else:
-                species_frequencies =\
-                    species_frequencies + feedback_species_frequencies
-                activity_frequencies =\
-                    activity_frequencies + feedback_activity_frequencies
-
-        if species_frequencies is not None:
-            species_proportions = species_frequencies /\
-                species_frequencies.sum()
-            unnormalized_species_weights =\
-                torch.pow(1.0 / species_proportions, 1.0 / 3.0)
-            unnormalized_species_weights[species_proportions == 0.0] = 0.0
-            proportional_species_sum =\
-                (species_proportions * unnormalized_species_weights).sum()
-            species_weights =\
-                unnormalized_species_weights / proportional_species_sum
-
-            activity_proportions = activity_frequencies /\
-                activity_frequencies.sum()
-            unnormalized_activity_weights =\
-                torch.pow(1.0 / activity_proportions, 1.0 / 3.0)
-            unnormalized_activity_weights[activity_proportions == 0.0] = 0.0
-            proportional_activity_sum =\
-                (activity_proportions * unnormalized_activity_weights).sum()
-            activity_weights =\
-                unnormalized_activity_weights / proportional_activity_sum
-
-        ## Non-feedback loss
-        non_feedback_loss = 0
-        non_feedback_n_species_correct = 0
-        non_feedback_n_activity_correct = 0
-        non_feedback_n_examples = 0
-        if box_features is not None and\
-                species_labels is not None and\
-                activity_labels is not None and\
-                self._feedback_loss_weight != 1:
-            # Compute logits by passing the features through the appropriate
-            # classifiers
-            species_preds = species_classifier(box_features)
-            activity_preds = activity_classifier(box_features)
-
-            # Logging metrics
-            species_correct = torch.argmax(species_preds, dim=1) == \
-                species_labels
-            non_feedback_n_species_correct = int(
-                species_correct.to(torch.int).sum().detach().cpu().item()
-            )
-
-            activity_correct = torch.argmax(activity_preds, dim=1) == \
-                activity_labels
-            non_feedback_n_activity_correct = int(
-                activity_correct.to(torch.int).sum().detach().cpu().item()
-            )
-
-            non_feedback_n_examples = species_labels.shape[0]
-
-            if self._loss_fn == LossFnEnum.cross_entropy:
-                species_loss = torch.nn.functional.cross_entropy(
-                    species_preds,
-                    species_labels,
-                    weight=species_weights,
-                    label_smoothing=self._label_smoothing
-                )
-                activity_loss = torch.nn.functional.cross_entropy(
-                    activity_preds,
-                    activity_labels,
-                    weight=activity_weights,
-                    label_smoothing=self._label_smoothing
-                )
-            else:
-                focal_loss = torch.hub.load(
-                    'adeelh/pytorch-multi-class-focal-loss',
-                    model='FocalLoss',
-                    alpha=torch.tensor([.75, .25]),
-                    gamma=2,
-                    reduction='none',
-                    force_reload=False
-                )
-
-                ex_species_weights = species_weights[species_labels]
-                species_loss_all = focal_loss(
-                    species_preds,
-                    species_labels
-                )
-                species_loss =\
-                    (species_loss_all * ex_species_weights).mean()
-                
-                ex_activity_weights = activity_weights[activity_labels]
-                activity_loss_all = focal_loss(
-                    activity_preds,
-                    activity_labels
-                )
-                activity_loss =\
-                    (activity_loss_all * ex_activity_weights).mean()
-
-            non_feedback_loss = species_loss + activity_loss
-
+        
         ## Feedback loss
 
         # Flatten feedback box features, compute predictions, and re-split
@@ -1342,14 +1255,13 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
 
             # Compute loss as weighted average between feedback and non-feedback
             # losses
+        ewc_penalty_ = self.ewc_calculation.penalty(species_classifier, activity_classifier)
+        non_feedback_loss = 10000 * ewc_penalty_ 
 
-        loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
-            self._feedback_loss_weight * feedback_loss
-        n_species_correct =\
-            non_feedback_n_species_correct + feedback_n_species_correct
-        n_activity_correct =\
-            non_feedback_n_activity_correct + feedback_n_activity_correct
-        n_examples = non_feedback_n_examples + feedback_n_examples
+        loss =  feedback_loss + non_feedback_loss
+        n_species_correct =feedback_n_species_correct
+        n_activity_correct = feedback_n_activity_correct
+        n_examples = feedback_n_examples
 
         # Optimizer step
         optimizer.zero_grad()
@@ -1362,6 +1274,661 @@ class LogitLayerClassifierTrainer(ClassifierTrainer):
         mean_accuracy = (mean_species_accuracy + mean_activity_accuracy) / 2.0
 
         return loss.detach().cpu().item(), mean_accuracy
+
+    def _val_epoch(
+            self,
+            box_features,
+            species_labels,
+            activity_labels,
+            species_classifier,
+            activity_classifier):
+        with torch.no_grad():
+            species_classifier.eval()
+            activity_classifier.eval()
+
+            species_preds = species_classifier(box_features)
+            activity_preds = activity_classifier(box_features)
+
+            species_correct = torch.argmax(species_preds, dim=1) == \
+                species_labels
+            n_species_correct = int(
+                species_correct.to(torch.int).sum().detach().cpu().item()
+            )
+
+            activity_correct = torch.argmax(activity_preds, dim=1) == \
+                activity_labels
+            n_activity_correct = int(
+                activity_correct.to(torch.int).sum().detach().cpu().item()
+            )
+
+            n_examples = species_labels.shape[0]
+            mean_species_accuracy = float(n_species_correct) / n_examples
+            mean_activity_accuracy = float(n_activity_correct) / n_examples
+
+            mean_accuracy = \
+                (mean_species_accuracy + mean_activity_accuracy) / 2.0
+
+            return mean_accuracy
+
+    '''
+    Params:
+        species_classifier: ClassifierV2
+            Species classifier to train
+        activity_classifier: ClassifierV2
+            Activity classifier to train
+        root_log_dir: str
+            Root directory for logging training. Should include named transform
+            paths, if appropriate.
+    '''
+    def train(
+            self,
+            backbone,
+            species_classifier,
+            activity_classifier,
+            root_log_dir,
+            feedback_dataset,
+            device,
+            train_sampler_fn,
+            feedback_batch_sampler_fn,
+            allow_write,
+            allow_print,
+            feedback_class_frequencies,
+            feedback_sampling_configuration):
+        # Construct the optimizer
+        optimizer = torch.optim.SGD(
+            list(species_classifier.parameters())\
+                + list(activity_classifier.parameters()),
+            self._lr,
+            momentum=0.9,
+            weight_decay=1e-3
+        )
+
+        # Define convergence parameters (early stopping + model selection)
+        epochs_since_improvement = 0
+        best_accuracy = None
+        best_accuracy_species_classifier_state_dict = None
+        best_accuracy_activity_classifier_state_dict = None
+        mean_train_loss = None
+        mean_train_accuracy = None
+        mean_val_accuracy = None
+
+        # If we didn't load an optimizer state dict, and so the scheduler
+        # hasn't been constructed yet, then construct it
+        training_loss_curve = {}
+        training_accuracy_curve = {}
+        validation_accuracy_curve = {}
+
+        def get_log_dir():
+            return os.path.join(
+                root_log_dir,
+                self._box_transform.path(),
+                self._post_cache_train_transform.path(),
+                'logit-layer-classifier-trainer',
+                f'lr={self._lr}',
+                f'label_smoothing={self._label_smoothing:.2f}'
+            )
+        
+
+
+        train_box_features, train_species_labels, train_activity_labels =\
+            torch.load(
+                self._train_feature_file,
+                map_location=device
+            )
+        val_box_features, val_species_labels, val_activity_labels =\
+            torch.load(
+                self._val_feature_file,
+                map_location=device
+            )
+
+        if feedback_dataset is not None:
+            feedback_box_counts = [
+                feedback_dataset.box_count(i) for\
+                    i in range(len(feedback_dataset))
+            ]
+            feedback_batch_sampler = DistributedRandomBoxImageBatchSampler(feedback_box_counts, self._feedback_batch_size, 1, 0)
+            feedback_loader = DataLoader(
+                feedback_dataset,
+                num_workers=0,
+                batch_sampler=feedback_batch_sampler,
+                collate_fn=gen_custom_collate()
+            )
+            # Precompute feedback backbone features
+            backbone.eval()
+            feedback_box_features = []
+            feedback_species_labels = []
+            feedback_activity_labels = []
+            with torch.no_grad():
+                for batch_species_labels,\
+                        batch_activity_labels,\
+                        _,\
+                        batch_box_images,\
+                        _ in feedback_loader:
+                    # Move batch to device
+                    batch_species_labels =\
+                        batch_species_labels.to(device)
+                    batch_activity_labels =\
+                        batch_activity_labels.to(device)
+                    batch_box_images =\
+                        [b.to(device) for b in batch_box_images]
+
+                    # Get list of per-image box counts
+                    batch_box_counts = [len(x) for x in batch_box_images]
+
+                    # Flatten box images and compute features
+                    flattened_box_images = torch.cat(batch_box_images, dim=0)
+                    batch_box_features = backbone(flattened_box_images)
+
+                    # Use batch_box_counts to split the computed features back
+                    # to per-image feature tensors and concatenate to
+                    # feedback_box_features
+                    feedback_box_features += torch.split(
+                        batch_box_features,
+                        batch_box_counts,
+                        dim=0
+                    )
+
+                    # Record labels
+                    feedback_species_labels.append(batch_species_labels)
+                    feedback_activity_labels.append(batch_activity_labels)
+                    
+
+                # Concatenate labels
+                feedback_species_labels = torch.cat(
+                    feedback_species_labels,
+                    dim=0
+                )
+                feedback_activity_labels = torch.cat(
+                    feedback_activity_labels,
+                    dim=0
+                )
+        else:
+            feedback_box_features = None
+            feedback_species_labels = None
+            feedback_activity_labels = None
+
+        if feedback_sampling_configuration is not None:
+            train_box_features,\
+                train_species_labels,\
+                train_activity_labels,\
+                feedback_box_features,\
+                feedback_species_labels,\
+                feedback_activity_labels =\
+                    feedback_sampling_configuration.configure_data(
+                        train_box_features,
+                        train_species_labels,
+                        train_activity_labels,
+                        feedback_box_features,
+                        feedback_species_labels,
+                        feedback_activity_labels
+                    )
+
+        # Train
+        progress = tqdm(
+            range(self._max_epochs),
+            desc=gen_tqdm_description(
+                'Training classifiers...',
+                train_loss=mean_train_loss,
+                train_accuracy=mean_train_accuracy,
+                val_accuracy=mean_val_accuracy
+            ),
+            total=self._max_epochs
+        )
+        pre_ewc_path = '.temp/pre_EWC_Logit_Layers_path.pth'
+        
+        self.ewc_calculation = EWC_Logit_Layers(species_classifier, activity_classifier, train_loader, self.class_frequencies , self._loss_fn, self._label_smoothing, device, pre_ewc_path)
+
+        for epoch in progress:
+            if self._patience is not None and\
+                    epochs_since_improvement >= self._patience:
+                # We haven't improved in several epochs. Time to stop
+                # training.
+                break
+
+            # Train for one full epoch
+            mean_train_loss, mean_train_accuracy = self._train_epoch(
+                train_box_features,
+                train_species_labels,
+                train_activity_labels,
+                feedback_box_features,
+                feedback_species_labels,
+                feedback_activity_labels,
+                species_classifier,
+                activity_classifier,
+                optimizer,
+                device,
+                feedback_class_frequencies
+            )
+
+            if root_log_dir is not None:
+                training_loss_curve[epoch] = mean_train_loss
+                training_accuracy_curve[epoch] = mean_train_accuracy
+                log_dir = get_log_dir()
+                os.makedirs(log_dir, exist_ok=True)
+                training_log = os.path.join(log_dir, 'training.pkl')
+                
+                with open(training_log, 'wb') as f:
+                    sd = {}
+                    sd['training_loss_curve'] = training_loss_curve
+                    sd['training_accuracy_curve'] = training_accuracy_curve
+                    pkl.dump(sd, f)
+
+            # Measure validation accuracy for early stopping / model selection.
+            if epoch >= self._min_epochs - 1:
+                mean_val_accuracy = self._val_epoch(
+                    val_box_features,
+                    val_species_labels,
+                    val_activity_labels,
+                    species_classifier,
+                    activity_classifier
+                )
+
+                if best_accuracy is None or mean_val_accuracy > best_accuracy:
+                    epochs_since_improvement = 0
+                    best_accuracy = mean_val_accuracy
+                    best_accuracy_species_classifier_state_dict =\
+                        deepcopy(species_classifier.state_dict())
+                    best_accuracy_activity_classifier_state_dict =\
+                        deepcopy(activity_classifier.state_dict())
+                else:
+                    epochs_since_improvement += 1
+
+                if root_log_dir is not None:
+                    validation_accuracy_curve[epoch] = mean_val_accuracy
+                    log_dir = get_log_dir()
+                    os.makedirs(log_dir, exist_ok=True)
+                    validation_log = os.path.join(log_dir, 'validation.pkl')
+
+                    with open(validation_log, 'wb') as f:
+                        pkl.dump(validation_accuracy_curve, f)
+
+            progress.set_description(
+                gen_tqdm_description(
+                    'Training classifiers...',
+                    train_loss=mean_train_loss,
+                    train_accuracy=mean_train_accuracy,
+                    val_accuracy=mean_val_accuracy
+                )
+            )
+
+        progress.close()
+
+        # Load the best-accuracy state dicts
+        # NOTE To save GPU memory, we could temporarily move the models to the
+        # CPU before copying or loading their state dicts.
+        species_classifier.load_state_dict(
+            best_accuracy_species_classifier_state_dict
+        )
+        activity_classifier.load_state_dict(
+            best_accuracy_activity_classifier_state_dict
+        )
+
+    def prepare_for_retraining(
+            self,
+            backbone,
+            classifier,
+            activation_statistical_model):
+        # classifier.reset()
+        pass
+
+
+    def fit_activation_statistics(
+            self,
+            backbone,
+            activation_statistical_model,
+            val_known_dataset,
+            device):
+        pass
+
+
+class LogitLayerClassifierTrainer(ClassifierTrainer):
+    def __init__(
+            self,
+            lr,
+            train_feature_file,
+            val_feature_file,
+            box_transform,
+            post_cache_train_transform,
+            feedback_batch_size=32,
+            patience=3,
+            min_epochs=3,
+            max_epochs=30,
+            label_smoothing=0.0,
+            feedback_loss_weight=0.5,
+            loss_fn=LossFnEnum.cross_entropy,
+            class_frequencies=None):
+        self._lr = lr
+        self._train_feature_file = train_feature_file
+        self._val_feature_file = val_feature_file
+        self._box_transform = box_transform
+        self._post_cache_train_transform = post_cache_train_transform
+        self._feedback_batch_size = feedback_batch_size
+        self._patience = patience
+        self._min_epochs = min_epochs
+        self._max_epochs = max_epochs
+        self._label_smoothing = label_smoothing
+        self._feedback_loss_weight = feedback_loss_weight
+        self._loss_fn = loss_fn
+        self._class_frequencies = class_frequencies
+
+
+    def _train_epoch(
+            self,
+            box_features,
+            species_labels,
+            activity_labels,
+            feedback_box_features,
+            feedback_species_labels,
+            feedback_activity_labels,
+            species_classifier,
+            activity_classifier,
+            optimizer,
+            device,
+            feedback_class_frequencies):
+        # Set everything to train mode
+        species_classifier.train()
+        activity_classifier.train()
+
+        # Compute class weights
+        species_weights = None
+        activity_weights = None
+        species_frequencies = None
+        activity_frequencies = None
+        if self._class_frequencies is not None:
+            train_species_frequencies,\
+                train_activity_frequencies = self._class_frequencies
+            train_species_frequencies = train_species_frequencies.to(device)
+            train_activity_frequencies = train_activity_frequencies.to(device)
+            
+            species_frequencies = train_species_frequencies
+            activity_frequencies = train_activity_frequencies
+
+        if feedback_class_frequencies is not None:
+            feedback_species_frequencies,\
+                feedback_activity_frequencies = feedback_class_frequencies
+            feedback_species_frequencies =\
+                feedback_species_frequencies.to(device)
+            feedback_activity_frequencies =\
+                feedback_activity_frequencies.to(device)
+
+            if species_frequencies is None:
+                species_frequencies = feedback_species_frequencies
+                activity_frequencies = feedback_activity_frequencies
+            else:
+                species_frequencies =\
+                    species_frequencies + feedback_species_frequencies
+                activity_frequencies =\
+                    activity_frequencies + feedback_activity_frequencies
+
+        if species_frequencies is not None:
+            species_proportions = species_frequencies /\
+                species_frequencies.sum()
+            unnormalized_species_weights =\
+                torch.pow(1.0 / species_proportions, 1.0 / 3.0)
+            unnormalized_species_weights[species_proportions == 0.0] = 0.0
+            proportional_species_sum =\
+                (species_proportions * unnormalized_species_weights).sum()
+            species_weights =\
+                unnormalized_species_weights / proportional_species_sum
+
+            activity_proportions = activity_frequencies /\
+                activity_frequencies.sum()
+            unnormalized_activity_weights =\
+                torch.pow(1.0 / activity_proportions, 1.0 / 3.0)
+            unnormalized_activity_weights[activity_proportions == 0.0] = 0.0
+            proportional_activity_sum =\
+                (activity_proportions * unnormalized_activity_weights).sum()
+            activity_weights =\
+                unnormalized_activity_weights / proportional_activity_sum
+
+        ## Non-feedback loss
+        non_feedback_loss = 0
+        non_feedback_n_species_correct = 0
+        non_feedback_n_activity_correct = 0
+        non_feedback_n_examples = 0
+        n_examples = 0
+        all_loss =0
+        n_species_correct = 0
+        n_activity_correct = 0
+
+        feedback_loss = 0
+        feedback_n_species_correct = 0
+        feedback_n_activity_correct = 0
+        feedback_n_examples = 0
+
+        if box_features is not None and\
+        species_labels is not None and\
+        activity_labels is not None:
+
+            non_feedback_dataset = NonFeedbackDataset(box_features, species_labels, activity_labels)
+            feedback_dataset = FeedbackDatasetBatched(feedback_box_features, feedback_species_labels, feedback_activity_labels, batch_size = self._feedback_batch_size)
+
+            non_feedback_loader = DataLoader(non_feedback_dataset, batch_size=self._feedback_batch_size, shuffle=True, num_workers=0)
+            feedback_loader = DataLoader(feedback_dataset, batch_size= 1, shuffle=True, num_workers=0)
+            feedback_iterator = itertools.cycle(feedback_loader)
+            
+            # Training loop
+            for non_feedback_data in tqdm(non_feedback_loader, desc='Training Progress'):
+                non_feedback_features, non_feedback_species, non_feedback_activity = non_feedback_data
+
+                species_preds = species_classifier(non_feedback_features)
+                activity_preds = activity_classifier(non_feedback_features)
+
+                # Logging metrics
+                species_correct = torch.argmax(species_preds, dim=1) == \
+                    non_feedback_species
+                non_feedback_n_species_correct += int(
+                    species_correct.to(torch.int).sum().detach().cpu().item()
+                )
+
+                activity_correct = torch.argmax(activity_preds, dim=1) == \
+                    non_feedback_activity
+                non_feedback_n_activity_correct += int(
+                    activity_correct.to(torch.int).sum().detach().cpu().item()
+                )
+
+                non_feedback_n_examples = non_feedback_species.shape[0]
+
+                if self._loss_fn == LossFnEnum.cross_entropy:
+                    species_loss = torch.nn.functional.cross_entropy(
+                        species_preds,
+                        non_feedback_species,
+                        weight=species_weights,
+                        label_smoothing=self._label_smoothing
+                    )
+                    activity_loss = torch.nn.functional.cross_entropy(
+                        activity_preds,
+                        non_feedback_activity,
+                        weight=activity_weights,
+                        label_smoothing=self._label_smoothing
+                    )
+                else:
+                    focal_loss = torch.hub.load(
+                        'adeelh/pytorch-multi-class-focal-loss',
+                        model='FocalLoss',
+                        alpha=torch.tensor([.75, .25]),
+                        gamma=2,
+                        reduction='none',
+                        force_reload=False
+                    )
+
+                    ex_species_weights = species_weights[non_feedback_species]
+                    species_loss_all = focal_loss(
+                        species_preds,
+                        non_feedback_species
+                    )
+                    species_loss =\
+                        (species_loss_all * ex_species_weights).mean()
+                    
+                    ex_activity_weights = activity_weights[non_feedback_activity]
+                    activity_loss_all = focal_loss(
+                        activity_preds,
+                        non_feedback_activity
+                    )
+                    activity_loss =\
+                        (activity_loss_all * ex_activity_weights).mean()
+
+                non_feedback_loss = species_loss + activity_loss
+                # Get next feedback batch, restart automatically if at the end
+                try:
+                    feedback_data = next(feedback_iterator)
+                    feedback_features, feedback_species, feedback_activity = feedback_data
+                    feedback_features = [torch.squeeze(f, dim=0) for f in feedback_features]
+                    feedback_species =  torch.squeeze(feedback_species, dim=0) 
+                    feedback_activity = torch.squeeze(feedback_activity, dim=0)
+                except: 
+                    print("Feedback batches iterator is empty. Iterator restarted")
+                    feedback_data = next(feedback_iterator)
+                    feedback_features, feedback_species, feedback_activity = feedback_data
+                    feedback_features = [torch.squeeze(f, dim=0) for f in feedback_features]
+                    feedback_species =  torch.squeeze(feedback_species, dim=0) 
+                    feedback_activity = torch.squeeze(feedback_activity, dim=0)
+             
+
+                flattened_feedback_box_features = torch.cat(
+                    feedback_features,
+                    dim=0
+                )
+                flattened_feedback_species_logits = species_classifier(
+                    flattened_feedback_box_features
+                )
+                flattened_feedback_activity_logits = activity_classifier(
+                    flattened_feedback_box_features
+                )
+                flattened_feedback_species_preds = torch.nn.functional.softmax(
+                    flattened_feedback_species_logits,
+                    dim=1
+                )
+                flattened_feedback_activity_preds = torch.nn.functional.softmax(
+                    flattened_feedback_activity_logits,
+                    dim=1
+                )
+
+                # If class balancing, scale the gradients according to class
+                # weights
+                if species_weights is not None:
+                    flattened_feedback_species_preds =\
+                        _balance_box_prediction_grads(
+                            flattened_feedback_species_preds,
+                            species_weights
+                        )
+                    flattened_feedback_activity_preds =\
+                        _balance_box_prediction_grads(
+                            flattened_feedback_activity_preds,
+                            activity_weights
+                        )
+                feedback_box_counts = [len(x) for x in feedback_features]
+                feedback_species_preds = torch.split(
+                    flattened_feedback_species_preds,
+                    feedback_box_counts,
+                    dim=0
+                )
+                feedback_activity_preds = torch.split(
+                    flattened_feedback_activity_preds,
+                    feedback_box_counts,
+                    dim=0
+                )
+
+                # Logging metrics
+                feedback_box_counts_t = torch.tensor(
+                    feedback_box_counts,
+                    device=device,
+                    dtype=torch.long
+                )
+                single_box_mask = feedback_box_counts_t == 1
+                single_box_indices = torch.arange(
+                    len(single_box_mask),
+                    dtype=torch.long,
+                    device=device
+                )[single_box_mask]
+                if len(single_box_indices) > 0:
+                    single_box_species_preds = torch.cat(
+                        [
+                            feedback_species_preds[i] for i in single_box_indices
+                        ],
+                        dim=0
+                    )
+                    single_box_activity_preds = torch.cat(
+                        [
+                            feedback_activity_preds[i] for i in single_box_indices
+                        ],
+                        dim=0
+                    )
+                    single_box_species_labels =\
+                        feedback_species[single_box_indices]
+                    single_box_activity_labels =\
+                        feedback_activity[single_box_indices]
+                    feedback_species_correct =\
+                        torch.argmax(single_box_species_preds, dim=1) ==\
+                            torch.argmax(single_box_species_labels, dim=1)
+                    feedback_activity_correct =\
+                        torch.argmax(single_box_activity_preds, dim=1) ==\
+                            torch.argmax(single_box_activity_labels.to(torch.long), dim=1)
+                    feedback_n_species_correct =\
+                        feedback_species_correct.to(torch.int).sum()
+                    feedback_n_activity_correct =\
+                        feedback_activity_correct.to(torch.int).sum()
+
+                    feedback_n_examples = len(single_box_species_labels)
+
+                # Compute loss
+                # We have image-level count feedback labels for species
+                feedback_species_loss = multiple_instance_count_cross_entropy_dyn(
+                    feedback_species_preds,
+                    feedback_species
+                )
+                # We have image-level presence feedback labels for activities
+                feedback_activity_loss = multiple_instance_presence_cross_entropy_dyn(
+                    feedback_activity_preds,
+                    feedback_activity
+                )
+                feedback_loss = feedback_species_loss + feedback_activity_loss
+            
+
+                loss = (1 - self._feedback_loss_weight) * non_feedback_loss +\
+                    self._feedback_loss_weight * feedback_loss
+               
+                # Gradient and optimizer steps
+                optimizer.zero_grad()
+                loss.backward()
+                for param in species_classifier.parameters():
+                    if param.grad is not None and \
+                    (torch.any(torch.isnan(param.grad.data)) or \
+                        torch.any(torch.isinf(param.grad.data))):
+                        # Found some NaNs in the gradients. "Skip" this batch by
+                        # zeroing the gradients. This should work in distributed
+                        # mode as well
+                        print('Some NaNs in the gradients of species_classifier. Skiping this batch ...')
+                        optimizer.zero_grad()
+                        break
+                        
+                for param in activity_classifier.parameters():
+                    if param.grad is not None and \
+                    (torch.any(torch.isnan(param.grad.data)) or \
+                        torch.any(torch.isinf(param.grad.data))):
+                        # Found some NaNs in the gradients. "Skip" this batch by
+                        # zeroing the gradients. This should work in distributed
+                        # mode as well
+                        print('Some NaNs in the gradients of activity_classifier. Skiping this batch ...')
+                        optimizer.zero_grad()
+                        break
+                
+                optimizer.step()
+
+                n_species_correct +=\
+                    non_feedback_n_species_correct + feedback_n_species_correct
+                n_activity_correct +=\
+                    non_feedback_n_activity_correct + feedback_n_activity_correct
+                n_examples += non_feedback_n_examples + feedback_n_examples
+                all_loss+=loss
+
+
+        mean_species_accuracy = float(n_species_correct) / n_examples
+        mean_activity_accuracy = float(n_activity_correct) / n_examples
+
+        mean_accuracy = (mean_species_accuracy + mean_activity_accuracy) / 2.0
+
+        return all_loss.detach().cpu().item()/ 2.0, mean_accuracy
 
     def _val_epoch(
             self,
@@ -2839,7 +3406,7 @@ class EWCClassifierTrainer(ClassifierTrainer):
 
             
             ewc_penalty_ = self.ewc_calculation.penalty(backbone, species_classifier, activity_classifier)
-            non_feedback_loss = 50000 * ewc_penalty_ 
+            non_feedback_loss = 10000 * ewc_penalty_ 
             loss =  feedback_loss + non_feedback_loss
      
             if allow_print:
@@ -3365,9 +3932,9 @@ class EWCClassifierTrainer(ClassifierTrainer):
             class_frequencies = None
 
         # Train
-        pre_ewc_path = '/nfs/stak/users/ullaham/hpc-share/SailON/phase3/ss-osu-system/pretrained-models-balanced-normalization-corrected/train-heads/hack/swin_t/pre_ewc_path.pth'
+        pre_ewc_path = '.temp/pre_ewc_path.pth'
         if self.just_finetune == False and self.ewc == True:
-            self.ewc_calculation = EWC(backbone, species_classifier, activity_classifier, train_loader, class_frequencies, self._loss_fn, self._label_smoothing, device, pre_ewc_path)
+            self.ewc_calculation = EWC_All_Models(backbone, species_classifier, activity_classifier, train_loader, class_frequencies, self._loss_fn, self._label_smoothing, device, pre_ewc_path)
 
         if allow_print:
             print('lr:', self._lr)

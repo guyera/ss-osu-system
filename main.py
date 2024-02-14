@@ -66,8 +66,11 @@ if __name__ == "__main__":
     # assert ((not args.distributed) or (args.classifier_trainer == TopLevelApp.ClassifierTrainer.end_to_end)),\
     #     'Only end-to-end training is supported in distributed mode'
     assert ((not args.distributed) or 
-        (args.classifier_trainer in [TopLevelApp.ClassifierTrainer.end_to_end, TopLevelApp.ClassifierTrainer.logit_layer, TopLevelApp.ClassifierTrainer.ewc_train])),\
-        'Only end-to-end, logit_layer, and ewc_train training are supported in distributed mode'
+        (args.classifier_trainer in [TopLevelApp.ClassifierTrainer.end_to_end, \
+        TopLevelApp.ClassifierTrainer.logit_layer, \
+        TopLevelApp.ClassifierTrainer.ewc_logit_layer_train, \
+        TopLevelApp.ClassifierTrainer.ewc_train])),\
+        'Only end-to-end, logit_layer, ewc_logit_layer_train, and ewc_train training are supported in distributed mode'
 
     from datetime import timedelta
     DEFAULT_TIMEOUT = timedelta(seconds=1000000)

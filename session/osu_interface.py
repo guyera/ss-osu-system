@@ -173,7 +173,7 @@ class OSUInterface:
         num_rows = feedback_csv_content.count('\n')  # Counts the number of newlines
         if round_id < 200:
             self.num_queries += num_rows
-        print(self.num_queries)
+        print(test_id, self.num_queries)
         csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}_feedback_{feedback_uuid}.csv')
         with open(csv_path, 'w') as f:
             f.write(feedback_csv_content)
