@@ -60,6 +60,8 @@ if __name__ == "__main__":
     p.add_argument('--gan_augment', type=bool, default=False)
     p.add_argument('--distributed', action='store_true')
     p.add_argument('--device', type=str, default='cuda:0')
+    p.add_argument('--oracle-training', type=bool, default=False)
+    p.add_argument('--ewc-lambda', type=float, default=1000)
 
     args = p.parse_args()
     # torch.autograd.set_detect_anomaly(True)
@@ -75,6 +77,7 @@ if __name__ == "__main__":
     from datetime import timedelta
     DEFAULT_TIMEOUT = timedelta(seconds=1000000)
     # torch.set_default_tensor_type(torch.DoubleTensor)
+
     if args.distributed:
 
         dist.init_process_group('nccl', timeout = DEFAULT_TIMEOUT)
@@ -258,7 +261,9 @@ if __name__ == "__main__":
         retrain_fn=retrain_fn,
         val_reduce_fn=val_reduce_fn,
         model_unwrap_fn=model_unwrap_fn,
-        feedback_sampling_configuration=args.feedback_sampling_configuration
+        feedback_sampling_configuration=args.feedback_sampling_configuration,
+        oracle_training = args.oracle_training,
+        ewc_lambda = args.ewc_lambda
     )
 
     test_session = BBNSession('OND', args.domain, args.class_count, 

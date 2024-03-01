@@ -13,6 +13,15 @@ def find_matching_file(folder, filename_to_match, match_length=24):
 
 def interpolate_and_save(df1, df2, base_folder, filename, increment=0.1):
     """
+
+    We are simulating an online learning system that begins the post-novelty phase with the
+    pre-trained classifier and ends the post-novelty phase with the Oracle EWC-trained classifier. 
+    Hence, image i = 1,1500 in post-novelty phase should be classified using 
+    lambda_i = (i-1)/1500, and taking the vector average
+    (1-lambda) P_pre(y|x) + lambda P_post(y|x).
+    I’m subtracting 1 because we should only update the simulated classifier after seeing image.
+
+
     Interpolate between two dataframes and save the output in specified folders.
     Assumes the first column should not be interpolated.
     """
@@ -24,13 +33,10 @@ def interpolate_and_save(df1, df2, base_folder, filename, increment=0.1):
     numeric_columns_df2 = df2.iloc[:, 1:]
 
     for lambda_val in lambda_values:
-        # Interpolate only the numeric columns
         interpolated_numeric_df = numeric_columns_df1 * (1 - lambda_val) + numeric_columns_df2 * lambda_val
 
-        # Reattach the first column
         interpolated_df = pd.concat([first_column_df1, interpolated_numeric_df], axis=1)
 
-        # Create folder and save file
         folder_name = os.path.join(base_folder, f'lambda_{lambda_val:.1f}')
         os.makedirs(folder_name, exist_ok=True)
         output_filename = os.path.join(folder_name, filename)
@@ -54,7 +60,7 @@ def interpolate_folders(folder1, folder2, output_base_folder):
             print(f"No matching file found for {filename}")
 
 # Example usage
-folder1 = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/NoRetraining/OND/image_classification/'
-folder2 = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/Oracle_100budget_EWC/OND/image_classification/'
-output_base_folder = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/'
+folder1 = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/EWC_ClassBalanced_10000/OND/image_classification/'
+folder2 = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/EWC_logit_layer_only_100000_1e-4/OND/image_classification/'
+output_base_folder = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/Interpolation'
 interpolate_folders(folder1, folder2, output_base_folder)

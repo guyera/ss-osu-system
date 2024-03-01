@@ -2422,7 +2422,8 @@ def score_tests(
         'Activity_id2name': {}
     }
     for test_id in test_ids:
-        if 'OND' in test_id and '100.000' not in test_id and '102' in test_id:
+        # if 'OND' in test_id and '100.000' not in test_id and '104' not in test_id and '103' not in test_id:# and '63' not in test_id and '64' not in test_id:# or '103' in test_id:
+        if 'OND' in test_id and '100.000' not in test_id:# and '102' in test_id:
         # if 'OND' in test_id:
             metadata = json.load(open(test_dir / f'{test_id}_metadata.json', 'r'))
             test_df = pd.read_csv(test_dir / f'{test_id}_single_df.csv')

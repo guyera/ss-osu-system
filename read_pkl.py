@@ -6,8 +6,9 @@ import matplotlib.pyplot as plt
 # Load and process training data
 # training_file_path = '.log-balanced-normalization-corrected/train-heads/hack/resizepad=224/randaugment/normalized/end-to-end-trainer/lr=0.005/label_smoothing=0.00/training.pkl'
 # training_file_path = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/EWC_102/logs/resizepad=224/none/normalized/end-to-end-trainer/lr=0.0001/label_smoothing=0.00/training.pkl'
-training_file_path = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-102-ClassBalancing_2/logs/resizepad=224/none/normalized/end-to-end-trainer/lr=0.001/label_smoothing=0.00/training.pkl'
+# training_file_path = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-102-ClassBalancing_2/logs/resizepad=224/none/normalized/end-to-end-trainer/lr=0.001/label_smoothing=0.00/training.pkl'
 # training_file_path = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/Oracle_100budget_EWC/logs/resizepad=224/none/normalized/end-to-end-trainer/lr=0.0001/label_smoothing=0.00/training.pkl'
+training_file_path = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/EWC_Batched_logit_layer_only_1000_1e-4/logs/resizepad=224/none/normalized/logit-layer-classifier-trainer/lr=0.0001/label_smoothing=0.00/training.pkl'
 with open(training_file_path, 'rb') as file:
     training_data = pickle.load(file)
 
@@ -17,7 +18,7 @@ sorted_accuracy_curve = dict(sorted(training_data['training_accuracy_curve'].ite
 # Load and process validation data
 # validation_file_path = '.log-balanced-normalization-corrected/train-heads/hack/resizepad=224/randaugment/normalized/end-to-end-trainer/lr=0.005/label_smoothing=0.00/validation.pkl'
 # validation_file_path = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/EWC_102/logs/resizepad=224/none/normalized/end-to-end-trainer/lr=0.0001/label_smoothing=0.00/validation.pkl'
-validation_file_path = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-102-ClassBalancing_2/logs/resizepad=224/none/normalized/end-to-end-trainer/lr=0.001/label_smoothing=0.00/validation.pkl'
+validation_file_path = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/EWC_Batched_logit_layer_only_1000_1e-4/logs/resizepad=224/none/normalized/logit-layer-classifier-trainer/lr=0.0001/label_smoothing=0.00/validation.pkl'
 # validation_file_path = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/Oracle_100budget_EWC/logs/resizepad=224/none/normalized/end-to-end-trainer/lr=0.0001/label_smoothing=0.00/validation.pkl'
 
 with open(validation_file_path, 'rb') as file:
@@ -52,4 +53,4 @@ plt.ylabel('Accuracy')
 
 # Adjust layout and save the figure
 plt.tight_layout()
-plt.savefig('combined_plotsNewEnd.png', dpi=300)
+plt.savefig('combined_plotsEWC.png', dpi=300)

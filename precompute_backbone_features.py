@@ -90,6 +90,8 @@ args = parser.parse_args()
 
 device = 'cuda:0'
 
+
+import ipdb; ipdb.set_trace()
 architecture = Backbone.Architecture.swin_t
 backbone = Backbone(architecture, pretrained=False).to(device)
 backbone_state_dict = torch.load(
@@ -103,10 +105,16 @@ backbone_state_dict = {
 backbone.load_state_dict(backbone_state_dict)
 backbone.eval()
 
+# n_known_species_cls = 10
+# n_species_cls = 30 # TODO Determine
+# n_known_activity_cls = 2
+# n_activity_cls = 4 # TODO Determine
+
+
 n_known_species_cls = 10
-n_species_cls = 30 # TODO Determine
+n_species_cls = 31
 n_known_activity_cls = 2
-n_activity_cls = 4 # TODO Determine
+n_activity_cls = 7
 
 label_mapping = build_species_label_mapping(args.train_csv_path)
 static_label_mapper = LabelMapper(deepcopy(label_mapping), update=False)
@@ -135,7 +143,7 @@ flattened_train_dataset = FlattenedBoxImageDataset(train_dataset)
 train_loader = DataLoader(
     flattened_train_dataset,
     batch_size=args.batch_size,
-    shuffle=False,
+    shuffle=True,
     num_workers=2
 )
 

@@ -188,7 +188,9 @@ class EWC_Logit_Layers(object):
         self.precision_matrices_path = precision_matrices_path
         if self.precision_matrices_path and os.path.isfile(self.precision_matrices_path):
             self._precision_matrices = torch.load(self.precision_matrices_path, map_location=self.device)
+            print(' Fisher Information loaded form...', self.precision_matrices_path)
         else:
+            print('Calculating Fisher Information...')
             self._precision_matrices = self._diag_fisher()
             if self.precision_matrices_path:
                 self._save_precision_matrices()
@@ -216,8 +218,8 @@ class EWC_Logit_Layers(object):
         self.activity_classifier.eval()
         self.species_classifier.eval()
 
-        species_preds = self.species_classifier(box_features)
-        activity_preds = activity_classifier(box_features)
+        species_preds = self.species_classifier(self.train_box_features)
+        activity_preds = self.activity_classifier(self.train_box_features)
 
         species_weights = None
         activity_weights = None
@@ -232,22 +234,7 @@ class EWC_Logit_Layers(object):
             species_frequencies = train_species_frequencies
             activity_frequencies = train_activity_frequencies
 
-        if feedback_class_frequencies is not None:
-            feedback_species_frequencies,\
-                feedback_activity_frequencies = feedback_class_frequencies
-            feedback_species_frequencies =\
-                feedback_species_frequencies.to(device)
-            feedback_activity_frequencies =\
-                feedback_activity_frequencies.to(device)
-
-            if species_frequencies is None:
-                species_frequencies = feedback_species_frequencies
-                activity_frequencies = feedback_activity_frequencies
-            else:
-                species_frequencies =\
-                    species_frequencies + feedback_species_frequencies
-                activity_frequencies =\
-                    activity_frequencies + feedback_activity_frequencies
+  
 
         if species_frequencies is not None:
             species_proportions = species_frequencies /\
@@ -273,28 +260,28 @@ class EWC_Logit_Layers(object):
 
         # Logging metrics
         species_correct = torch.argmax(species_preds, dim=1) == \
-            species_labels
+            self.train_species_labels
         non_feedback_n_species_correct = int(
             species_correct.to(torch.int).sum().detach().cpu().item()
         )
 
         activity_correct = torch.argmax(activity_preds, dim=1) == \
-            activity_labels
+            self.train_activity_labels
         non_feedback_n_activity_correct = int(
             activity_correct.to(torch.int).sum().detach().cpu().item()
         )
 
-        non_feedback_n_examples = species_labels.shape[0]
+        non_feedback_n_examples = self.train_species_labels.shape[0]
 
         species_loss = torch.nn.functional.cross_entropy(
             species_preds,
-            species_labels,
+            self.train_species_labels,
             weight=species_weights,
             label_smoothing=self._label_smoothing
         )
         activity_loss = torch.nn.functional.cross_entropy(
             activity_preds,
-            activity_labels,
+            self.train_activity_labels,
             weight=activity_weights,
             label_smoothing=self._label_smoothing
         )
@@ -307,11 +294,12 @@ class EWC_Logit_Layers(object):
         non_feedback_loss.backward()
 
         for n, p in self.species_classifier.named_parameters():
-            precision_matrices[n+'species'].data += p.grad.data ** 2 / len(self.train_loader)
+            print(p.grad.data.shape)
+            precision_matrices[n+'species'].data += p.grad.data ** 2 #/ len(self.train_box_features)
         
         for n, p in self.activity_classifier.named_parameters():
-            precision_matrices[n+'activity'].data += p.grad.data ** 2 / len(self.train_loader)
-
+            precision_matrices[n+'activity'].data += p.grad.data ** 2 #/ len(self.train_box_features)
+      
         precision_matrices = {n: p for n, p in precision_matrices.items()}
         return precision_matrices
 

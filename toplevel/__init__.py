@@ -94,11 +94,43 @@ class TopLevelApp:
         def __str__(self):
             return self.value
 
-    def __init__(self, data_root, pretrained_models_dir, backbone_architecture,
-            feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
-            trial_size, trial_batch_size, disable_retraining,
-            root_cache_dir, n_known_val, classifier_trainer, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_val_interval, retraining_patience, retraining_min_epochs, retraining_max_epochs,
-            retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, class_frequency_file, gan_augment, device, retrain_fn, val_reduce_fn, model_unwrap_fn, feedback_sampling_configuration):
+    def __init__(self, data_root, 
+                pretrained_models_dir, 
+                backbone_architecture,
+                feedback_enabled, 
+                given_detection, 
+                log, 
+                log_dir, 
+                ignore_verb_novelty, 
+                train_csv_path, 
+                val_csv_path,
+                trial_size, 
+                trial_batch_size, 
+                disable_retraining,
+                root_cache_dir, 
+                n_known_val, 
+                classifier_trainer, 
+                precomputed_feature_dir, 
+                retraining_augmentation, 
+                retraining_lr, 
+                retraining_batch_size, 
+                retraining_val_interval, 
+                retraining_patience, 
+                retraining_min_epochs, 
+                retraining_max_epochs,
+                retraining_label_smoothing, 
+                retraining_scheduler_type, 
+                feedback_loss_weight, 
+                retraining_loss_fn, 
+                class_frequency_file, 
+                gan_augment, 
+                device, 
+                retrain_fn, 
+                val_reduce_fn, 
+                model_unwrap_fn, 
+                feedback_sampling_configuration,
+                oracle_training,
+                ewc_lambda):
 
         pretrained_backbone_path = os.path.join(
             pretrained_models_dir,
@@ -120,7 +152,10 @@ class TopLevelApp:
                                                         'agent3_id','agent3_count','activities','activities_id','environment',
                                                         'novelty_type','master_id','novel'
                                                     ])
+        self.ewc_lambda = ewc_lambda
         self.retrain_num = 1
+        self.oracle_training = oracle_training
+        print(' self.oracle_training', self.oracle_training)
         self.device = device
         self.data_root = data_root
         self.pretrained_models_dir = pretrained_models_dir
@@ -285,7 +320,7 @@ class TopLevelApp:
                 "Precomputed feature files must exist if precomputed_feature_dir is set. \
                  precompute_backbone_features.py script can be used to compute featrues"
 
-            classifier_trainer = LogitLayerClassifierTrainer(
+            classifier_trainer = EWCLogitLayerClassifierTrainer(
                 self.retraining_lr,
                 train_feature_file,
                 val_feature_file,
@@ -298,7 +333,8 @@ class TopLevelApp:
                 label_smoothing=self.retraining_label_smoothing,
                 feedback_loss_weight=self.feedback_loss_weight,
                 loss_fn=self.retraining_loss_fn,
-                class_frequencies=self.class_frequencies
+                class_frequencies=self.class_frequencies,
+                ewc_lambda= self.ewc_lambda
             )
         elif self.classifier_trainer_enum == self.ClassifierTrainer.side_tuning:
             self.backbone = SideTuningBackbone(self.backbone)
@@ -397,7 +433,7 @@ class TopLevelApp:
         self.batch_num = 0 
         self.num_retrains_so_far = 0
         self.retraining_buffer = self.retraining_buffer.iloc[0:0] 
-        self.oracle_training = False 
+        self.oracle_training = self.oracle_training 
 
         # Auxiliary debugging data
         self._classifier_debugging_data = {}
@@ -578,9 +614,9 @@ class TopLevelApp:
             dtype=torch.long
         )
         if self.oracle_training:
-            # selected_img_paths = self.round_paths_sorted[:feedback_max_ids]
+            selected_img_paths = self.round_paths_sorted[:feedback_max_ids]
             print("Collecting Oracle feedback")
-            selected_img_paths = self.round_paths_sorted[:3] + self.round_paths_sorted[-2:]
+            # selected_img_paths = self.round_paths_sorted[:3] + self.round_paths_sorted[-2:]
 
             query_indices = []
             for path in selected_img_paths:
@@ -921,7 +957,7 @@ class TopLevelApp:
                 "Precomputed feature files must exist if precomputed_feature_dir is set. \
                  precompute_backbone_features.py script can be used to compute featrues"
 
-            classifier_trainer = LogitLayerClassifierTrainer(
+            classifier_trainer = EWCLogitLayerClassifierTrainer(
                 self.retraining_lr,
                 train_feature_file,
                 val_feature_file,
@@ -934,7 +970,8 @@ class TopLevelApp:
                 label_smoothing=self.retraining_label_smoothing,
                 feedback_loss_weight=self.feedback_loss_weight,
                 loss_fn=self.retraining_loss_fn,
-                class_frequencies=self.class_frequencies
+                class_frequencies=self.class_frequencies,
+                ewc_lambda= self.ewc_lambda
             )
         elif self.classifier_trainer_enum == self.ClassifierTrainer.side_tuning:
             self.backbone = SideTuningBackbone(self.backbone)
