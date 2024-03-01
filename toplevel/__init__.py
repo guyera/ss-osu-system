@@ -153,6 +153,7 @@ class TopLevelApp:
                                                         'novelty_type','master_id','novel'
                                                     ])
         self.ewc_lambda = ewc_lambda
+        self.test_id = ' '
         self.retrain_num = 1
         self.oracle_training = oracle_training
         print(' self.oracle_training', self.oracle_training)
@@ -443,6 +444,8 @@ class TopLevelApp:
     def process_batch(self, csv_path, test_id, round_id, img_paths, hint_typeA_data, hint_typeB_data):
         if csv_path is None:
             raise Exception('path to csv was None')
+
+        self.test_id = test_id
 
 
         path_to_all_data = f'/nfs/hpc/share/sail_on3/final/test_trials/api_tests/OND/image_classification/{test_id}_single_df.csv'
@@ -1072,8 +1075,31 @@ class TopLevelApp:
                 self.feedback_sampling_configuration
             )
 
-            # self.backbone.eval()
-            # self.retraining_buffer = self.retraining_buffer.iloc[0:0]
-            ## torch.cuda.empty_cache()
-            # import gc   
-            # gc.collect()
+            tuple_prediction_state_dicts = {}
+            tuple_prediction_state_dicts['novelty_type_classifier'] = self.und_manager.novelty_type_classifier.state_dict()
+            tuple_prediction_state_dicts['activation_statistical_model'] = self.und_manager.activation_statistical_model.state_dict()
+
+            save_dir = os.path.join(
+                        self.log_dir,
+                        self.test_id,
+                        'models'
+                    )
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+
+            torch.save(
+                self.backbone.state_dict(),
+                os.path.join(save_dir, 'backbone.pth')
+            )
+            torch.save(
+                self.und_manager.classifier.state_dict(),
+                os.path.join(save_dir, 'classifier.pth')
+            )
+            torch.save(
+                self.und_manager.confidence_calibrator.state_dict(),
+                os.path.join(save_dir, 'confidence-calibrator.pth')
+            )
+            torch.save(
+                tuple_prediction_state_dicts,
+                os.path.join(save_dir, 'tuple-prediction.pth')
+            )

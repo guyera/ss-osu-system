@@ -2382,11 +2382,13 @@ def score_tests(
     }
     for test_id in test_ids:
         # if 'OND' in test_id and '100.000' not in test_id:
-        if 'OND' in test_id:
+        if 'OND' in test_id and '100.000' not in test_id and '105.000' not in test_id:
+        # if 'OND' in test_id:
             metadata = json.load(open(test_dir / f'{test_id}_metadata.json', 'r'))
             test_df = pd.read_csv(test_dir / f'{test_id}_single_df.csv')
 
             pkl_fname = os.path.join(bboxes_dir, test_id+'/'+test_id+'.pkl')
+            print(pkl_fname)
             assert os.path.exists(pkl_fname)
             with (open(pkl_fname, "rb")) as pkl_file:
                 boxes_pred_dict = pickle.load(pkl_file)
@@ -2460,7 +2462,7 @@ def main():
     for file in sys_output_dir.iterdir():
         session_id = file.name.split('.')[0]
         session_ids.add(session_id)
-    
+    print(session_ids)
     if len(session_ids) > 1:
         raise Exception('More than one session id in results dir')
     session_id = list(session_ids)[0]
