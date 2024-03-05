@@ -81,8 +81,7 @@ def interpolated_species_count_error(grd_truth_counts, pred_counts_pre_retrain, 
     interpolated_abs_err = lambda_x_pre_retrain + lambda_x_post_retrain
     if np.sum(interpolated_abs_err) == 0:
         return -1
-    N = 2 * len(grd_truth_counts)
-    return np.sum(interpolated_abs_err) / N
+    return np.sum(interpolated_abs_err) / len(grd_truth_counts)
 
 def score_test(
     test_id, metadata, test_df, detect_lines, class_lines_pre_retrain,

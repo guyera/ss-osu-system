@@ -25,8 +25,7 @@ def species_count_error(grd_trth, pred, metric='MAE'):
         return -1
 
     if metric == 'AE' or metric == 'MAE':
-        N = 2 * len(grd_trth)
-        return np.sum(np.abs(err)) / N
+        return np.sum(np.abs(err)) / len(grd_trth)
     elif metric == 'MRE':
         sum_err = np.sum(np.abs(err), axis=1)
         num_boxes = np.sum(grd_trth, axis=1)
