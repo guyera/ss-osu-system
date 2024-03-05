@@ -1863,7 +1863,8 @@ def score_test_from_boxes(
         n_samples=nbr_samples_conf_int
     )
 
-    if total_pre_red_btn < start_test_phase:
+    if total_pre_red_btn < start_test_phase or '100.000' in test_id:
+        # Trial 100.000 does not contain any novelty. Therefore the length of the prenovelty phase is the length of the whole trial
         post_red_per_spe_auc_arr = np.array([post_red_per_spe_auc[spe]['value'] for spe in post_red_per_spe_auc])
         post_red_per_spe_precision_arr = np.array([post_red_per_spe_precision[spe]['value'] for spe in post_red_per_spe_precision])
         post_red_per_spe_recall_arr = np.array([post_red_per_spe_recall[spe]['value'] for spe in post_red_per_spe_recall])
@@ -2085,7 +2086,8 @@ def score_test_from_boxes(
         n_samples=nbr_samples_conf_int
     )
 
-    if total_pre_red_btn < start_test_phase:
+    if total_pre_red_btn < start_test_phase or '100.000' in test_id:
+        # trial 100.000 does not have any novelty. Therefore the length of the prenovelty is the length of the trial
         post_red_per_act_auc_arr = np.array([post_red_per_act_auc[act]['value'] for act in post_red_per_act_auc])
         post_red_per_act_precision_arr = np.array([post_red_per_act_precision[act]['value'] for act in post_red_per_act_precision])
         post_red_per_act_recall_arr = np.array([post_red_per_act_recall[act]['value'] for act in post_red_per_act_recall])
@@ -2106,7 +2108,6 @@ def score_test_from_boxes(
         post_red_act_avg_f1 = -1
         if any(post_red_per_act_f1_arr >= 0):
             post_red_act_avg_f1 = round(np.mean(post_red_per_act_f1_arr[post_red_per_act_f1_arr >= 0]), 2)
-
 
         post_red_act_avg_auc_ci, post_red_boostrap_avg_act_aucs = boostrap_conf_interval(
             y_true=all_grd_truth_act_presence.iloc[total_pre_red_btn:start_test_phase], 
