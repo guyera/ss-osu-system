@@ -32,7 +32,7 @@ class ActivationStatisticalModel(Scorer):
         # Fit PCA
         _, _, v = torch.svd(features)
         self._v = v
-
+        
         # PCA-project features
         projected_features = self.pca_reduce(v, features, 64)
 
@@ -46,6 +46,8 @@ class ActivationStatisticalModel(Scorer):
             whole_image_features,
             box_counts):
         # Compute and return negative log likelihood under self._kde
+        self._v = self._v.double()
+        whole_image_features = whole_image_features.double()
         projected_features = self.pca_reduce(self._v, whole_image_features, 64)
         np_scores = -self._kde.score_samples(projected_features.cpu().numpy())
         scores = torch.from_numpy(np_scores)\

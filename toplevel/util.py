@@ -39,7 +39,8 @@ class UnsupervisedNoveltyDetectionManager:
         n_species_cls,
         n_activity_cls,
         n_known_species_cls,
-        n_known_activity_cls):
+        n_known_activity_cls,
+        device):
        
         self.tuple_predictor = TuplePredictor(
             n_species_cls,
@@ -58,13 +59,13 @@ class UnsupervisedNoveltyDetectionManager:
                 pretrained_path,
                 'classifier.pth'
             ),
-            map_location='cuda:0'
+            map_location=device
         )
         self.classifier = ClassifierV2(
             256,
             n_species_cls,
             n_activity_cls
-        ).to('cuda:0')
+        ).to(device)
         self.classifier.load_state_dict(classifier_state_dict)
 
         confidence_calibrator_state_dict = torch.load(
@@ -72,9 +73,9 @@ class UnsupervisedNoveltyDetectionManager:
                 pretrained_path,
                 'confidence-calibrator.pth'
             ),
-            map_location='cuda:0'
+            map_location=device
         )
-        self.confidence_calibrator = ConfidenceCalibrator().to('cuda:0')
+        self.confidence_calibrator = ConfidenceCalibrator().to(device)
         self.confidence_calibrator.load_state_dict(
             confidence_calibrator_state_dict
         )
@@ -84,12 +85,12 @@ class UnsupervisedNoveltyDetectionManager:
                 pretrained_path,
                 'tuple-prediction.pth'
             ),
-            map_location='cuda:0'
+            map_location=device
         )
 
         self.activation_statistical_model = ActivationStatisticalModel(
             backbone_architecture
-        ).to('cuda:0')
+        ).to(device)
         self.activation_statistical_model.load_state_dict(
             tuple_prediction_state_dict['activation_statistical_model']
         )
@@ -100,7 +101,7 @@ class UnsupervisedNoveltyDetectionManager:
 
         self.novelty_type_classifier = NoveltyTypeClassifier(
             self.scorer.n_scores()
-        ).to('cuda:0')
+        ).to(device)
         self.novelty_type_classifier.load_state_dict(
             tuple_prediction_state_dict['novelty_type_classifier']
         )

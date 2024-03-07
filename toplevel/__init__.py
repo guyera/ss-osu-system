@@ -5,6 +5,7 @@ import itertools
 from pathlib import Path
 import numpy as np
 import torch
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from data.data_factory import DataFactory
 from toplevel.util import *
@@ -21,31 +22,115 @@ import os
 from backbone import Backbone
 from sidetuningbackbone import SideTuningBackbone
 from labelmapping import LabelMapper
-from tupleprediction.training import\
-    Augmentation,\
-    SchedulerType,\
-    get_transforms,\
-    get_datasets,\
-    TuplePredictorTrainer,\
-    LogitLayerClassifierTrainer,\
-    SideTuningClassifierTrainer
+from tupleprediction.training import *
+    # Augmentation,\
+    # SchedulerType,\
+    # get_transforms,\
+    # compute_features,\
+    # get_datasets,\
+    # TuplePredictorTrainer,\
+    # LogitLayerClassifierTrainer,\
+    # SideTuningClassifierTrainer,\
+    # EndToEndClassifierTrainer, \
+    # TransformingBoxImageDataset, \
+    # EWCClassifierTrainer 
 from data.custom import build_species_label_mapping
 
-from taming_transformers.cycleGAN import CycleGAN
+# from taming_transformers.cycleGAN import CycleGAN
+
+def gen_retrain_fn(device_id, train_sampler_fn, feedback_batch_sampler_fn, allow_write, allow_print, distributed=False, root_log_dir= './logs'):
+    device = f'cuda:{device_id}' if device_id is not None else 'cpu'
+    device_ids = [device_id] if device_id is not None else None
+    def retrain(
+            tuple_predictor_trainer,
+            backbone,
+            classifier,
+            confidence_calibrator,
+            novelty_type_classifier,
+            activation_statistical_model,
+            scorer,
+            root_log_dir,
+            model_unwrap_fn,
+            feedback_sampling_configuration):
+        # Move everything to target device
+        backbone = backbone.to(device)
+        classifier = classifier.to(device)
+        confidence_calibrator = confidence_calibrator.to(device)
+        novelty_type_classifier = novelty_type_classifier.to(device)
+        scorer = scorer.to(device)
+
+        if distributed:
+            # Wrap backbone and classifiers in DDPs
+            backbone = DDP(backbone, device_ids=device_ids, broadcast_buffers=False)
+            classifier.ddp(device_ids=device_ids, broadcast_buffers=False)
+
+        tuple_predictor_trainer.train_novelty_detection_module(
+            backbone,
+            classifier,
+            confidence_calibrator,
+            novelty_type_classifier,
+            activation_statistical_model,
+            scorer,
+            device,
+            train_sampler_fn,
+            feedback_batch_sampler_fn,
+            allow_write,
+            allow_print,
+            root_log_dir=root_log_dir,
+            model_unwrap_fn=model_unwrap_fn,
+            feedback_sampling_configuration=feedback_sampling_configuration
+        )
+
+    return retrain
 
 class TopLevelApp:
     class ClassifierTrainer(Enum):
         logit_layer = 'logit-layer'
         side_tuning = 'side-tuning'
+        end_to_end = 'end-to-end'
+        ewc_train = 'ewc-train'
+        ewc_logit_layer_train = 'ewc-logit-layer-train'
 
         def __str__(self):
             return self.value
 
-    def __init__(self, data_root, pretrained_models_dir, backbone_architecture,
-            feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
-            trial_size, trial_batch_size, disable_retraining,
-            root_cache_dir, n_known_val, classifier_trainer, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_val_interval, retraining_patience, retraining_min_epochs, retraining_max_epochs,
-            retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, gan_augment):
+    def __init__(self, data_root, 
+                pretrained_models_dir, 
+                backbone_architecture,
+                feedback_enabled, 
+                given_detection, 
+                log, 
+                log_dir, 
+                ignore_verb_novelty, 
+                train_csv_path, 
+                val_csv_path,
+                trial_size, 
+                trial_batch_size, 
+                disable_retraining,
+                root_cache_dir, 
+                n_known_val, 
+                classifier_trainer, 
+                precomputed_feature_dir, 
+                retraining_augmentation, 
+                retraining_lr, 
+                retraining_batch_size, 
+                retraining_val_interval, 
+                retraining_patience, 
+                retraining_min_epochs, 
+                retraining_max_epochs,
+                retraining_label_smoothing, 
+                retraining_scheduler_type, 
+                feedback_loss_weight, 
+                retraining_loss_fn, 
+                class_frequency_file, 
+                gan_augment, 
+                device, 
+                retrain_fn, 
+                val_reduce_fn, 
+                model_unwrap_fn, 
+                feedback_sampling_configuration,
+                oracle_training,
+                ewc_lambda):
 
         pretrained_backbone_path = os.path.join(
             pretrained_models_dir,
@@ -58,15 +143,21 @@ class TopLevelApp:
         #     raise Exception(f'training CSV was not found in path {train_csv_path}')
         # if not Path(val_csv_path).exists():
         #     raise Exception(f'validation CSV was not found in path {val_csv_path}')
-        # import ipdb; ipdb.set_trace()
+        
         self.gan_augment = gan_augment
-        if self.gan_augment:
-            self.cycleGAN = CycleGAN('./taming_transformers/logs/vqgan_imagenet_f16_1024/configs/model.yaml','./taming_transformers/logs/vqgan_imagenet_f16_1024/checkpoints/last.ckpt')
+        # if self.gan_augment:
+        #     self.cycleGAN = CycleGAN('./taming_transformers/logs/vqgan_imagenet_f16_1024/configs/model.yaml','./taming_transformers/logs/vqgan_imagenet_f16_1024/checkpoints/last.ckpt')
         self.retraining_buffer = pd.DataFrame(columns=['image_path','filename','width','height','agent1_name','agent1_id'
                                                         ,'agent1_count','agent2_name','agent2_id','agent2_count','agent3_name',
                                                         'agent3_id','agent3_count','activities','activities_id','environment',
                                                         'novelty_type','master_id','novel'
                                                     ])
+        self.ewc_lambda = ewc_lambda
+        self.test_id = ' '
+        self.retrain_num = 1
+        self.oracle_training = oracle_training
+        print(' self.oracle_training', self.oracle_training)
+        self.device = device
         self.data_root = data_root
         self.pretrained_models_dir = pretrained_models_dir
         self.backbone_architecture = backbone_architecture
@@ -80,6 +171,7 @@ class TopLevelApp:
         self.post_red = False
         self.all_p_ni = torch.tensor([])
         self.all_p_ni_raw = np.array([])
+        self.all_queries = torch.tensor([])
         self.all_nc = torch.tensor([])
         self.all_predictions = []
         self.all_p_type = torch.tensor([])
@@ -91,7 +183,7 @@ class TopLevelApp:
         self.post_red_base = None
         self.batch_context = BatchContext()
         self.feedback_enabled = feedback_enabled
-        self.p_val_cuttoff =  0.035808 #0.002215 #0.08803683 #   0.0085542  #0.01042724
+        self.p_val_cuttoff =  0.00221498
         self.windows_size = 40
                 
         a = np.array([[self.p_val_cuttoff, 1], [1, 1]])
@@ -118,9 +210,8 @@ class TopLevelApp:
         self.batch_num = 0 
         self.trial_size = trial_size
         self.trial_batch_size = trial_batch_size
-        self.second_retrain_batch_num = (self.trial_size - 30) // self.trial_batch_size
+        self.second_retrain_batch_num = (self.trial_size - 1000) // self.trial_batch_size
         self.disable_retraining = disable_retraining
-
         # Auxiliary debugging data
         self._classifier_debugging_data = {}
 
@@ -138,14 +229,18 @@ class TopLevelApp:
         self.retraining_label_smoothing = retraining_label_smoothing
         self.retraining_scheduler_type = retraining_scheduler_type
         self.feedback_loss_weight = feedback_loss_weight
+        self.retraining_loss_fn = retraining_loss_fn
+        self.class_frequencies = None
+        if class_frequency_file is not None:
+            self.class_frequencies = torch.load(class_frequency_file)
 
         self.backbone = Backbone(
             backbone_architecture,
             pretrained=False
-        ).to('cuda:0')
+        ).to(self.device)
         backbone_state_dict = torch.load(
             self.pretrained_backbone_path,
-            map_location='cuda:0'
+            map_location=self.device
         )
         backbone_state_dict = {
             re.sub('^module\.', '', k): v for\
@@ -160,12 +255,13 @@ class TopLevelApp:
             self.n_species_cls,
             self.n_activity_cls,
             self.n_known_species_cls,
-            self.n_known_activity_cls
+            self.n_known_activity_cls,
+            self.device
         )
 
         self.box_transform,\
             post_cache_train_transform,\
-            post_cache_val_transform =\
+            self.post_cache_val_transform =\
                 get_transforms(self.retraining_augmentation)
 
         label_mapping = build_species_label_mapping(self.train_csv_path)
@@ -184,9 +280,8 @@ class TopLevelApp:
                     self.dynamic_label_mapper,
                     self.box_transform,
                     post_cache_train_transform,
-                    post_cache_val_transform,
+                    self.post_cache_val_transform,
                     root_cache_dir=self.root_cache_dir,
-                    allow_write=True,
                     n_known_val=self.n_known_val
                 )
 
@@ -198,25 +293,53 @@ class TopLevelApp:
             self.precomputed_feature_dir,
             'validation.pth'
         )
+        self._val_reduce_fn = val_reduce_fn
         if self.classifier_trainer_enum == self.ClassifierTrainer.logit_layer:
+            if self.precomputed_feature_dir and not os.path.isfile(train_feature_file) and not os.path.isfile(val_feature_file):
+                assert not self.precomputed_feature_dir or os.path.isfile(train_feature_file) or os.path.isfile(val_feature_file), \
+                "Precomputed feature files must exist if precomputed_feature_dir is set. \
+                 precompute_backbone_features.py script can be used to compute featrues"
+
             classifier_trainer = LogitLayerClassifierTrainer(
-                self.backbone,
                 self.retraining_lr,
                 train_feature_file,
                 val_feature_file,
                 self.box_transform,
                 post_cache_train_transform,
-                device=self.backbone.device,
+                feedback_batch_size=self.retraining_batch_size,
                 patience=self.retraining_patience,
                 min_epochs=self.retraining_min_epochs,
                 max_epochs=self.retraining_max_epochs,
                 label_smoothing=self.retraining_label_smoothing,
-                feedback_loss_weight=self.feedback_loss_weight
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.ewc_logit_layer_train:
+            if self.precomputed_feature_dir and not os.path.isfile(train_feature_file) and not os.path.isfile(val_feature_file):
+                assert not self.precomputed_feature_dir or os.path.isfile(train_feature_file) or os.path.isfile(val_feature_file), \
+                "Precomputed feature files must exist if precomputed_feature_dir is set. \
+                 precompute_backbone_features.py script can be used to compute featrues"
+
+            classifier_trainer = EWCLogitLayerClassifierTrainer(
+                self.retraining_lr,
+                train_feature_file,
+                val_feature_file,
+                self.box_transform,
+                post_cache_train_transform,
+                feedback_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                ewc_lambda= self.ewc_lambda
             )
         elif self.classifier_trainer_enum == self.ClassifierTrainer.side_tuning:
             self.backbone = SideTuningBackbone(self.backbone)
             classifier_trainer = SideTuningClassifierTrainer(
-                self.backbone,
                 self.retraining_lr,
                 train_dataset,
                 val_known_dataset,
@@ -231,7 +354,45 @@ class TopLevelApp:
                 min_epochs=self.retraining_min_epochs,
                 max_epochs=self.retraining_max_epochs,
                 label_smoothing=self.retraining_label_smoothing,
-                feedback_loss_weight=self.feedback_loss_weight
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.end_to_end:
+            classifier_trainer = EndToEndClassifierTrainer(
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                self.box_transform,
+                post_cache_train_transform,
+                retraining_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                memory_cache=False,
+                val_reduce_fn=self._val_reduce_fn
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.ewc_train:
+            classifier_trainer = EWCClassifierTrainer(
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                self.box_transform,
+                post_cache_train_transform,
+                retraining_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                memory_cache=False,
+                val_reduce_fn=self._val_reduce_fn
             )
 
         self.novelty_trainer = TuplePredictorTrainer(
@@ -245,12 +406,18 @@ class TopLevelApp:
             self.dynamic_label_mapper,
             classifier_trainer
         )
+
+        self.retrain_fn = retrain_fn
+
+        self.model_unwrap_fn = model_unwrap_fn
+        self.feedback_sampling_configuration = feedback_sampling_configuration
         
     def reset(self):
         self.post_red = False
         self.unsupervised_aucs = [None, None, None]
         self.supervised_aucs = [None, None, None]
         self.all_p_ni = torch.tensor([])
+        self.all_queries = torch.tensor([])
         self.all_p_ni_raw = np.array([])
         self.all_nc = torch.tensor([], dtype=torch.long)
         self.all_predictions = []
@@ -266,7 +433,8 @@ class TopLevelApp:
         self.t_tn = None
         self.batch_num = 0 
         self.num_retrains_so_far = 0
-        self.retraining_buffer = self.retraining_buffer.iloc[0:0]  
+        self.retraining_buffer = self.retraining_buffer.iloc[0:0] 
+        self.oracle_training = self.oracle_training 
 
         # Auxiliary debugging data
         self._classifier_debugging_data = {}
@@ -276,6 +444,20 @@ class TopLevelApp:
     def process_batch(self, csv_path, test_id, round_id, img_paths, hint_typeA_data, hint_typeB_data):
         if csv_path is None:
             raise Exception('path to csv was None')
+
+        self.test_id = test_id
+
+
+        path_to_all_data = f'/nfs/hpc/share/sail_on3/final/test_trials/api_tests/OND/image_classification/{test_id}_single_df.csv'
+        csv_pd = pd.read_csv(path_to_all_data).iloc[round_id*10:round_id*10+10]
+
+        # Check if 'novel' column exists and is numeric
+        if 'novel' in csv_pd.columns and pd.api.types.is_numeric_dtype(csv_pd['novel']):
+            sorted_csv = csv_pd.sort_values(by='novel', ascending=False)
+            self.round_paths_sorted = sorted_csv['image_path'].head(10).tolist()
+            # print(sorted_csv)
+        else:
+            print("Error: 'novel' column is missing or not numeric")
 
         self.batch_num += 1
         self.batch_context.reset()
@@ -322,7 +504,7 @@ class TopLevelApp:
                 scores,
                 box_counts,
                 self.und_manager.novelty_type_classifier,
-                self.backbone.device,
+                self.device,
                 hint_a=hint_a,
                 hint_b=hint_typeB_data
             )
@@ -416,6 +598,7 @@ class TopLevelApp:
             logs['characterization'] = self.characterization_preds
             logs['red_light_scores'] = self.all_red_light_scores
             logs['per_box_predictions'] = self._classifier_debugging_data
+            logs['queries'] = self.all_queries.numpy()
 
             pickle.dump(logs, handle)
         return self.all_p_ni.numpy()
@@ -431,17 +614,31 @@ class TopLevelApp:
         ]
         bbox_counts = torch.tensor(
             bbox_counts,
-            dtype=torch.long,
-            device=self.batch_context.p_ni.device
+            dtype=torch.long
         )
-        query_indices = select_queries(
-            feedback_max_ids,
-            self.batch_context.p_ni,
-            bbox_counts
-        )
+        if self.oracle_training:
+            selected_img_paths = self.round_paths_sorted[:feedback_max_ids]
+            print("Collecting Oracle feedback")
+            # selected_img_paths = self.round_paths_sorted[:3] + self.round_paths_sorted[-2:]
 
-        selected_img_paths =\
-            [self.batch_context.image_paths[i] for i in query_indices]
+            query_indices = []
+            for path in selected_img_paths:
+                try:
+                    index = self.batch_context.image_paths.index(path)
+                    query_indices.append(index)
+                except ValueError:
+                    print(f"Path {path} not found in batch context image paths.")
+            selected_img_paths2 =\
+                [self.batch_context.image_paths[i] for i in query_indices]
+        else:
+            query_indices = select_queries(
+                feedback_max_ids,
+                self.batch_context.p_ni,
+                bbox_counts
+            )
+            selected_img_paths =\
+                [self.batch_context.image_paths[i] for i in query_indices]
+            
         bboxes = {}
         for img_path in selected_img_paths:
             img_name = os.path.basename(img_path)
@@ -451,6 +648,8 @@ class TopLevelApp:
         self.batch_context.query_mask = torch.zeros(N, dtype=torch.long)
         self.batch_context.query_mask[query_indices] = 1
         self.batch_context.query_indices = query_indices
+
+        self.all_queries = torch.cat((self.all_queries, self.batch_context.query_mask), dim=0)
 
         return selected_img_paths, bboxes
 
@@ -465,7 +664,7 @@ class TopLevelApp:
 
         df = pd.read_csv(feedback_csv_path)
         nov_types = df['novelty_type'].to_numpy()
-        # import ipdb; ipdb.set_trace()
+        
         for idx, nov_type in enumerate(nov_types):
             batch_idx = self.batch_context.query_indices[idx]
 
@@ -519,11 +718,11 @@ class TopLevelApp:
             self.batch_context.p_type)
 
         self.retraining_buffer = pd.concat([self.retraining_buffer, df[df['novel'] == 1]])
-
+        
         self.novelty_trainer.add_feedback_data(self.data_root, feedback_csv_path)
 
         if not self.disable_retraining:
-            self._retrain_supervised_detectors()                
+            self._retrain_supervised_detectors(feedback_csv_path)                
 
     def _predict(self, species_probs, activity_probs, batch_p_type):
         return self.und_manager.predict(species_probs, activity_probs, batch_p_type)
@@ -562,7 +761,7 @@ class TopLevelApp:
          
         if self.given_detection and not self.post_red and not self.red_light_this_batch:
             red_light_scores = np.zeros_like(red_light_scores)
-         
+        
         if self.given_detection and self.red_light_this_batch:
             self.red_light_this_batch = False
             self.post_red = True
@@ -642,8 +841,14 @@ class TopLevelApp:
             label_mapper=self.static_label_mapper,
             box_transform=self.box_transform,
             cache_dir=None,
-            write_cache=False,
-            image_filter=None
+            image_filter=None,
+            write_cache=False
+        )
+
+        # TODO Verify this is right...
+        novelty_dataset = TransformingBoxImageDataset(
+            novelty_dataset,
+            self.post_cache_val_transform
         )
 
         N = len(novelty_dataset)
@@ -672,10 +877,10 @@ class TopLevelApp:
         self.backbone = Backbone(
             self.backbone_architecture,
             pretrained=False
-        ).to('cuda:0')
+        ).to(self.device)
         backbone_state_dict = torch.load(
             self.pretrained_backbone_path,
-            map_location='cuda:0'
+            map_location=self.device
         )
         backbone_state_dict = {
             re.sub('^module\.', '', k): v for\
@@ -690,12 +895,13 @@ class TopLevelApp:
             self.n_species_cls,
             self.n_activity_cls,
             self.n_known_species_cls,
-            self.n_known_activity_cls
+            self.n_known_activity_cls,
+            self.device
         )
 
         self.box_transform,\
             post_cache_train_transform,\
-            post_cache_val_transform =\
+            self.post_cache_val_transform =\
                 get_transforms(self.retraining_augmentation)
 
         label_mapping = build_species_label_mapping(self.train_csv_path)
@@ -714,9 +920,8 @@ class TopLevelApp:
                     self.dynamic_label_mapper,
                     self.box_transform,
                     post_cache_train_transform,
-                    post_cache_val_transform,
+                    self.post_cache_val_transform,
                     root_cache_dir=self.root_cache_dir,
-                    allow_write=True,
                     n_known_val=self.n_known_val
                 )
 
@@ -729,24 +934,51 @@ class TopLevelApp:
             'validation.pth'
         )
         if self.classifier_trainer_enum == self.ClassifierTrainer.logit_layer:
+            if self.precomputed_feature_dir and not os.path.isfile(train_feature_file) and not os.path.isfile(val_feature_file):
+                assert not self.precomputed_feature_dir or os.path.isfile(train_feature_file) or os.path.isfile(val_feature_file), \
+                "Precomputed feature files must exist if precomputed_feature_dir is set. \
+                precompute_backbone_features.py script can be used to compute featrues"
+
             classifier_trainer = LogitLayerClassifierTrainer(
-                self.backbone,
                 self.retraining_lr,
                 train_feature_file,
                 val_feature_file,
                 self.box_transform,
                 post_cache_train_transform,
-                device=self.backbone.device,
+                feedback_batch_size=self.retraining_batch_size,
                 patience=self.retraining_patience,
                 min_epochs=self.retraining_min_epochs,
                 max_epochs=self.retraining_max_epochs,
                 label_smoothing=self.retraining_label_smoothing,
-                feedback_loss_weight=self.feedback_loss_weight
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.ewc_logit_layer_train:
+            if self.precomputed_feature_dir and not os.path.isfile(train_feature_file) and not os.path.isfile(val_feature_file):
+                assert not self.precomputed_feature_dir or os.path.isfile(train_feature_file) or os.path.isfile(val_feature_file), \
+                "Precomputed feature files must exist if precomputed_feature_dir is set. \
+                 precompute_backbone_features.py script can be used to compute featrues"
+
+            classifier_trainer = EWCLogitLayerClassifierTrainer(
+                self.retraining_lr,
+                train_feature_file,
+                val_feature_file,
+                self.box_transform,
+                post_cache_train_transform,
+                feedback_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                ewc_lambda= self.ewc_lambda
             )
         elif self.classifier_trainer_enum == self.ClassifierTrainer.side_tuning:
             self.backbone = SideTuningBackbone(self.backbone)
             classifier_trainer = SideTuningClassifierTrainer(
-                self.backbone,
                 self.retraining_lr,
                 train_dataset,
                 val_known_dataset,
@@ -761,9 +993,46 @@ class TopLevelApp:
                 min_epochs=self.retraining_min_epochs,
                 max_epochs=self.retraining_max_epochs,
                 label_smoothing=self.retraining_label_smoothing,
-                feedback_loss_weight=self.feedback_loss_weight
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies
             )
-
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.end_to_end:
+            classifier_trainer = EndToEndClassifierTrainer(
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                self.box_transform,
+                post_cache_train_transform,
+                retraining_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                memory_cache=False,
+                val_reduce_fn=self._val_reduce_fn
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.ewc_train:
+            classifier_trainer = EWCClassifierTrainer(
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                self.box_transform,
+                post_cache_train_transform,
+                retraining_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                memory_cache=False,
+                val_reduce_fn=self._val_reduce_fn
+            )
         self.novelty_trainer = TuplePredictorTrainer(
             train_dataset,
             val_known_dataset,
@@ -776,41 +1045,61 @@ class TopLevelApp:
             classifier_trainer
         )
 
-    def _retrain_supervised_detectors(self):
+    def _retrain_supervised_detectors(self, feedback_csv_path):
         # retrain_cond_1 = self.num_retrains_so_far == 0 and self.novelty_trainer.n_feedback_examples() >= 15
         # retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.novelty_trainer.n_feedback_examples() > 0)
-        print(len(self.retraining_buffer))
-
         retrain_cond_1 = self.num_retrains_so_far == 0 and len(self.retraining_buffer) >= 15
-        retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (len(self.retraining_buffer) > 0)
+        retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) 
+        # if retrain_cond_1 or retrain_cond_2:
+        if retrain_cond_2:                          
 
-        if retrain_cond_1: #or retrain_cond_2:
-            if self.gan_augment:
-                # import ipdb; ipdb.set_trace()
-                csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
-                self.retraining_buffer.to_csv(csv_path, index=True)
-                csv_path_temp = os.path.join(self.temp_path, f'{os.getpid()}_batch_{self.batch_context.round_id}_retrain.csv')
-                # csv_path_temp = './'+ csv_path_temp
-                self.cycleGAN.load_datasets(self.data_root, self.train_csv_path, csv_path_temp, 4) 
-                self.cycleGAN.train(350)
-                self.cycleGAN.delete_models()
-                self.novelty_trainer.add_feedback_data(self.data_root, csv_path_temp)   
-
-
-            self.num_retrains_so_far += 1
+            ## self.num_retrains_so_far += 1
             self.novelty_trainer.prepare_for_retraining(
+                self.backbone,
                 self.und_manager.classifier, 
                 self.und_manager.confidence_calibrator,
                 self.und_manager.novelty_type_classifier,
                 self.und_manager.activation_statistical_model
             )
-            self.novelty_trainer.train_novelty_detection_module(
+            # TODO Log training by passing in desired log directory
+            self.retrain_fn(
+                self.novelty_trainer,
                 self.backbone,
                 self.und_manager.classifier, 
                 self.und_manager.confidence_calibrator,
                 self.und_manager.novelty_type_classifier,
                 self.und_manager.activation_statistical_model,
-                self.und_manager.scorer
+                self.und_manager.scorer,
+                self.log_dir,
+                self.model_unwrap_fn,
+                self.feedback_sampling_configuration
             )
-            self.backbone.eval()
-            self.retraining_buffer = self.retraining_buffer.iloc[0:0]
+
+            tuple_prediction_state_dicts = {}
+            tuple_prediction_state_dicts['novelty_type_classifier'] = self.und_manager.novelty_type_classifier.state_dict()
+            tuple_prediction_state_dicts['activation_statistical_model'] = self.und_manager.activation_statistical_model.state_dict()
+
+            save_dir = os.path.join(
+                        self.log_dir,
+                        self.test_id,
+                        'models'
+                    )
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+
+            torch.save(
+                self.backbone.state_dict(),
+                os.path.join(save_dir, 'backbone.pth')
+            )
+            torch.save(
+                self.und_manager.classifier.state_dict(),
+                os.path.join(save_dir, 'classifier.pth')
+            )
+            torch.save(
+                self.und_manager.confidence_calibrator.state_dict(),
+                os.path.join(save_dir, 'confidence-calibrator.pth')
+            )
+            torch.save(
+                tuple_prediction_state_dicts,
+                os.path.join(save_dir, 'tuple-prediction.pth')
+            )

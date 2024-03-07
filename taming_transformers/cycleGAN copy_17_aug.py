@@ -46,7 +46,7 @@ class ImageDataset(Dataset):
         return image, row
 
 class CycleGAN:
-    def __init__(self, config_path, ckpt_path, num_of_new_generated_img = 10, G_lr=2e-5, D_lr=1e-4, beta1=0.9, beta2=0.999, lambda_cycle= 5, device='cuda:0'):
+    def __init__(self, config_path, ckpt_path, num_of_new_generated_img = 60, G_lr=2e-5, D_lr=1e-4, beta1=0.9, beta2=0.999, lambda_cycle= 1.0, device='cuda'):
         self.config_path = config_path
         self.ckpt_path = ckpt_path
         self.G_lr = G_lr
@@ -88,17 +88,14 @@ class CycleGAN:
 
     def build_models(self):
         config = self.load_config(self.config_path, display=False)
-        vqgan = self.load_vqgan(config, ckpt_path=self.ckpt_path).cuda(device=self.device)
-        self.G_XtoY = vqgan.cuda(device=self.device)
-        self.G_YtoX = vqgan.cuda(device=self.device)
-        self.D_X = vqgan.loss.cuda(device=self.device)
-        self.D_Y = vqgan.loss.cuda(device=self.device)
+        vqgan = self.load_vqgan(config, ckpt_path=self.ckpt_path).to(self.device)
+        self.G_XtoY = vqgan.to(self.device)
+        self.G_YtoX = vqgan.to(self.device)
+        self.D_X = vqgan.loss.to(self.device)
+        self.D_Y = vqgan.loss.to(self.device)
     
     def delete_models(self):
-        del self.G_XtoY, self.G_YtoX, self.D_X, self.D_Y, self.optimizer_G, self.optimizer_D
-        # torch.cuda.empty_cache() 
-        # import gc
-        # gc.collect()
+        del self.G_XtoY, self.G_YtoX, self.D_X, self.D_Y   
 
     def build_optimizers(self):
         self.optimizer_G = optim.Adam(itertools.chain(filter(lambda p: p.requires_grad and p is not self.G_XtoY.loss.parameters(), self.G_XtoY.parameters()), 
@@ -168,27 +165,15 @@ class CycleGAN:
                 for param in net.parameters():
                     param.requires_grad = requires_grad
 
-    def hinge_d_loss(self, logits_real, logits_fake):
-        loss_real = torch.mean(F.relu(1. - logits_real))
-        loss_fake = torch.mean(F.relu(1. + logits_fake))
-        d_loss = 0.5 * (loss_real + loss_fake)
-        return d_loss
-
-
-    def vanilla_d_loss(self, logits_real, logits_fake):
-        d_loss = 0.5 * (
-            torch.mean(torch.nn.functional.softplus(-logits_real)) +
-            torch.mean(torch.nn.functional.softplus(logits_fake)))
-        return d_loss
 
     def train(self, iterations):
         # train the CycleGAN model
         self.build_models()
         self.build_optimizers()
-        # self.G_XtoY = nn.DataParallel(self.G_XtoY)
-        # self.G_YtoX = nn.DataParallel(self.G_YtoX)
-        # self.D_X = nn.DataParallel(self.D_X)
-        # self.D_Y = nn.DataParallel(self.D_Y)
+        self.G_XtoY = nn.DataParallel(self.G_XtoY)
+        self.G_YtoX = nn.DataParallel(self.G_YtoX)
+        self.D_X = nn.DataParallel(self.D_X)
+        self.D_Y = nn.DataParallel(self.D_Y)
         self.G_XtoY.train()
         self.G_YtoX.train()
         self.D_X.train()
@@ -207,8 +192,7 @@ class CycleGAN:
 
         # balancing_lambda = 1/len(self.dataloader_X.dataset.image_paths)     
         balancing_lambda = 1/(iterations*self.batch_size)**(1/3)  
-        balancing_lambda2 = 1. # (1/15)**(1/3)    
-
+        balancing_lambda2 = 1. # (1/15)**(1/3)      
         # initialize loss arrays
         D_X_losses, D_Y_losses, loss_G_X_all, loss_G_Y_all, cycle_loss_X_all, cycle_loss_Y_all = [], [], [], [], [], []
         qant_lambda = 1.
@@ -218,10 +202,10 @@ class CycleGAN:
                 print("Done!")
                 break
             real_img_X, row = next(loader_X)
-            real_img_X = real_img_X.cuda(device=self.device)
+            real_img_X = real_img_X.to(self.device)
 
             real_img_Y, row = next(loader_Y)
-            real_img_Y = real_img_Y.cuda(device=self.device)
+            real_img_Y = real_img_Y.to(self.device)
 
             # generate fake images
             fake_img_Y, latent_codes, vq_loss_x  = self.G_XtoY(real_img_X)
@@ -234,9 +218,9 @@ class CycleGAN:
             self.set_requires_grad([self.D_X, self.D_Y], False)  # Ds require no gradients when optimizing Gs
             self.optimizer_G.zero_grad()
             pred_fake_X = self.D_X(fake_img_X)
-            loss_G_X = -torch.mean(pred_fake_X)* balancing_lambda
+            loss_G_X = self.criterion_GAN(pred_fake_X, torch.ones_like(pred_fake_X))* balancing_lambda
             pred_fake_Y = self.D_Y(fake_img_Y)
-            loss_G_Y =  -torch.mean(pred_fake_Y) * balancing_lambda2
+            loss_G_Y =  self.criterion_GAN(pred_fake_Y, torch.ones_like(pred_fake_Y)) * balancing_lambda2
             
             loss_G_X_all.append(loss_G_X.item())
             loss_G_Y_all.append(loss_G_Y.item())
@@ -256,20 +240,23 @@ class CycleGAN:
             self.set_requires_grad([self.D_X, self.D_Y], True)  
             self.optimizer_D.zero_grad()
             pred_real_X = self.D_X(real_img_X)
+            loss_D_real_X = self.criterion_GAN(pred_real_X, torch.ones_like(pred_real_X))
             pred_fake_X = self.D_X(fake_img_X.detach())
+            loss_D_fake_X =  self.criterion_GAN(pred_fake_X, torch.zeros_like(pred_fake_X)) 
             
-            D_X_loss = self.hinge_d_loss(pred_real_X,pred_fake_X) * balancing_lambda
+            D_X_loss = (loss_D_real_X + loss_D_fake_X ) * balancing_lambda
             D_X_loss.backward()
             D_X_losses.append(D_X_loss.item())
 
             pred_real_Y = self.D_Y(real_img_Y)
+            loss_D_real_Y = self.criterion_GAN(pred_real_Y, torch.ones_like(pred_real_Y))
             pred_fake_Y = self.D_Y(fake_img_Y.detach())
+            loss_D_fake_Y =  self.criterion_GAN(pred_fake_Y, torch.zeros_like(pred_fake_Y)) 
             
-            D_Y_loss = self.hinge_d_loss(pred_real_Y, pred_fake_Y) * balancing_lambda2
+            D_Y_loss = (loss_D_real_Y + loss_D_fake_Y) * balancing_lambda2
             D_Y_loss.backward()
             self.optimizer_D.step()
-            D_Y_losses.append(D_Y_loss.item())   
-                
+            D_Y_losses.append(D_Y_loss.item())                 
             
 
         # plot and save losses
@@ -287,17 +274,15 @@ class CycleGAN:
         axs[2, 1].plot(cycle_loss_Y_all)
         axs[2, 1].set_title("cycle_loss_Y")
         
-        self.G_XtoY.eval()
-        self.G_YtoX.eval()
-        self.D_X.eval()
-        self.D_Y.eval()
         with torch.set_grad_enabled(False):
+            self.G_XtoY.eval()
+            self.G_YtoX.eval()
 
             save_dir = self.data_root+'/temp/'            
             # csv_pd = pd.read_csv(os.path.join(self.data_root , self.Y_csv))
             csv_pd = pd.read_csv(self.Y_csv, na_values=[''])
-            if not os.path.exists(save_dir):
-                os.makedirs(save_dir)
+            # if not os.path.exists(save_dir):
+            #     os.makedirs(save_dir)
 
 
             
@@ -314,26 +299,20 @@ class CycleGAN:
             box_dict = {}
             with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train.json', 'r') as f:
                 box_dict_train = json.load(f)
-            
-            with open('/nfs/hpc/share/sail_on3/final/test.json', 'r') as f:
-                box_dict_valid = json.load(f)
 
             for index, row in csv_pd.iterrows():
-                if not box_dict_valid.get(row['filename']):
-                    print(row['filename']," Not in Json")
+                if not box_dict_train.get(row['filename']):
                     csv_pd = csv_pd.drop(index)
-                else:
-                    box_dict[row['filename']] = box_dict_valid[row['filename']]
 
 
 
             while gen_count < self.num_of_new_generated_img:
                 # Generate fake images from test data
                 real_img_X, row = next(loader_X)
-                real_img_X = real_img_X.cuda(device=self.device)
+                real_img_X = real_img_X.to(self.device)
                 fake_Y, latent_codes, _ = self.G_XtoY(real_img_X)
                 real_img_Y, _ = next(loader_Y)
-                real_img_Y = real_img_Y.cuda(device=self.device)
+                real_img_Y = real_img_Y.to(self.device)
                 fake_X, latent_codes, _ = self.G_YtoX(real_img_Y)
 
                 reconstructed_img_X, latent_codes, _  = self.G_YtoX(fake_Y)
@@ -389,43 +368,10 @@ class CycleGAN:
                     csv_pd = csv_pd.append(row_dict, ignore_index=True)
              
             # csv_pd.to_csv(os.path.join(self.data_root, self.Y_csv), index=False)
-            # print(self.data_root, self.Y_csv)
             csv_pd.to_csv(self.Y_csv, index=False)
             with open(self.Y_csv[:-4]+'.json', 'w') as file:
                 # Write the dictionary to the file as json
                 json.dump(box_dict, file)
-            
-            
-            del self.G_XtoY
-            del self.G_YtoX
-            del self.D_X
-            del self.D_Y
-            del self.optimizer_G
-            del self.optimizer_D
-            del real_img_X
-            del real_img_Y
-            del fake_img_Y
-            del fake_img_X
-            del reconstructed_img_X
-            del reconstructed_img_Y
-            del pred_fake_X
-            del pred_fake_Y
-            del pred_real_X
-            del pred_real_Y
-            del D_X_loss
-            del D_Y_loss
-            del loss_G_X
-            del loss_G_Y
-            del cycle_loss_X
-            del cycle_loss_Y
-            del loss_G
-            torch.cuda.empty_cache() 
-
-            import gc   
-            gc.collect()
-
-
-
      
                 
 # cycleGAN = CycleGAN('./taming_transformers/logs/vqgan_imagenet_f16_1024/configs/model.yaml','./taming_transformers/logs/vqgan_imagenet_f16_1024/checkpoints/last.ckpt')

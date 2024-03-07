@@ -18,6 +18,9 @@ import torchvision.utils as vutils
 import itertools
 
 from torch.utils.data import Dataset, DataLoader
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.multiprocessing as mp
+import torch.distributed as dist
 from torchvision import transforms
 from PIL import Image
 import pandas as pd
@@ -46,7 +49,7 @@ class ImageDataset(Dataset):
         return image, row
 
 class CycleGAN:
-    def __init__(self, config_path, ckpt_path, num_of_new_generated_img = 10, G_lr=2e-5, D_lr=1e-4, beta1=0.9, beta2=0.999, lambda_cycle= 5, device='cuda:0'):
+    def __init__(self, config_path, ckpt_path, num_of_new_generated_img = 60, G_lr=2e-5, D_lr=1e-4, beta1=0.9, beta2=0.999, lambda_cycle= 1.0, device='cuda'):
         self.config_path = config_path
         self.ckpt_path = ckpt_path
         self.G_lr = G_lr
@@ -69,6 +72,8 @@ class CycleGAN:
         self.model_path = None
         self.num_of_new_generated_img = num_of_new_generated_img
 
+        self.local_rank = int(os.environ['LOCAL_RANK'])
+
     
     def load_config(self, config_path, display=False):
         config = OmegaConf.load(config_path)
@@ -88,17 +93,18 @@ class CycleGAN:
 
     def build_models(self):
         config = self.load_config(self.config_path, display=False)
-        vqgan = self.load_vqgan(config, ckpt_path=self.ckpt_path).cuda(device=self.device)
-        self.G_XtoY = vqgan.cuda(device=self.device)
-        self.G_YtoX = vqgan.cuda(device=self.device)
-        self.D_X = vqgan.loss.cuda(device=self.device)
-        self.D_Y = vqgan.loss.cuda(device=self.device)
+        vqgan = self.load_vqgan(config, ckpt_path=self.ckpt_path).to(self.device)
+        self.G_XtoY = vqgan.to(self.device)
+        self.G_YtoX = vqgan.to(self.device)
+        self.D_X = vqgan.loss.to(self.device)
+        self.D_Y = vqgan.loss.to(self.device)
+        self.G_XtoY =  DDP(self.G_XtoY, device_ids=[self.local_rank], broadcast_buffers=False)
+        self.G_YtoX =  DDP(self.G_YtoX, device_ids=[self.local_rank], broadcast_buffers=False)
+        self.D_X =  DDP(self.D_X , device_ids=[self.local_rank], broadcast_buffers=False)
+        self.D_Y =  DDP(self.D_Y, device_ids=[self.local_rank], broadcast_buffers=False)
     
     def delete_models(self):
-        del self.G_XtoY, self.G_YtoX, self.D_X, self.D_Y, self.optimizer_G, self.optimizer_D
-        # torch.cuda.empty_cache() 
-        # import gc
-        # gc.collect()
+        del self.G_XtoY, self.G_YtoX, self.D_X, self.D_Y   
 
     def build_optimizers(self):
         self.optimizer_G = optim.Adam(itertools.chain(filter(lambda p: p.requires_grad and p is not self.G_XtoY.loss.parameters(), self.G_XtoY.parameters()), 
@@ -148,8 +154,12 @@ class CycleGAN:
        
         X_dataset = ImageDataset(csv_file= X_csv, root_dir=data_root, transform=transform)
         Y_dataset = ImageDataset(csv_file= Y_csv, root_dir=data_root, transform=transform)
-        self.dataloader_X =  DataLoader(X_dataset, batch_size=batch_size, shuffle=True)
-        self.dataloader_Y =  DataLoader(Y_dataset, batch_size=batch_size, shuffle=False)
+
+        samplerX = torch.utils.data.distributed.DistributedSampler(X_dataset)
+        samplerY = torch.utils.data.distributed.DistributedSampler(Y_dataset)
+    
+        self.dataloader_X =  DataLoader(X_dataset, batch_size=batch_size, shuffle=False, sampler=samplerX)
+        self.dataloader_Y =  DataLoader(Y_dataset, batch_size=batch_size, shuffle=False, sampler=samplerY)
         self.batch_size = batch_size
         self.Y_csv = Y_csv
         self.X_csv = X_csv
@@ -218,10 +228,10 @@ class CycleGAN:
                 print("Done!")
                 break
             real_img_X, row = next(loader_X)
-            real_img_X = real_img_X.cuda(device=self.device)
+            real_img_X = real_img_X.to(self.device)
 
             real_img_Y, row = next(loader_Y)
-            real_img_Y = real_img_Y.cuda(device=self.device)
+            real_img_Y = real_img_Y.to(self.device)
 
             # generate fake images
             fake_img_Y, latent_codes, vq_loss_x  = self.G_XtoY(real_img_X)
@@ -287,17 +297,15 @@ class CycleGAN:
         axs[2, 1].plot(cycle_loss_Y_all)
         axs[2, 1].set_title("cycle_loss_Y")
         
-        self.G_XtoY.eval()
-        self.G_YtoX.eval()
-        self.D_X.eval()
-        self.D_Y.eval()
         with torch.set_grad_enabled(False):
+            self.G_XtoY.eval()
+            self.G_YtoX.eval()
 
             save_dir = self.data_root+'/temp/'            
             # csv_pd = pd.read_csv(os.path.join(self.data_root , self.Y_csv))
             csv_pd = pd.read_csv(self.Y_csv, na_values=[''])
-            if not os.path.exists(save_dir):
-                os.makedirs(save_dir)
+            # if not os.path.exists(save_dir):
+            #     os.makedirs(save_dir)
 
 
             
@@ -314,26 +322,20 @@ class CycleGAN:
             box_dict = {}
             with open('/nfs/hpc/share/sail_on3/final/osu_train_cal_val/train.json', 'r') as f:
                 box_dict_train = json.load(f)
-            
-            with open('/nfs/hpc/share/sail_on3/final/test.json', 'r') as f:
-                box_dict_valid = json.load(f)
 
             for index, row in csv_pd.iterrows():
-                if not box_dict_valid.get(row['filename']):
-                    print(row['filename']," Not in Json")
+                if not box_dict_train.get(row['filename']):
                     csv_pd = csv_pd.drop(index)
-                else:
-                    box_dict[row['filename']] = box_dict_valid[row['filename']]
 
 
 
             while gen_count < self.num_of_new_generated_img:
                 # Generate fake images from test data
                 real_img_X, row = next(loader_X)
-                real_img_X = real_img_X.cuda(device=self.device)
+                real_img_X = real_img_X.to(self.device)
                 fake_Y, latent_codes, _ = self.G_XtoY(real_img_X)
                 real_img_Y, _ = next(loader_Y)
-                real_img_Y = real_img_Y.cuda(device=self.device)
+                real_img_Y = real_img_Y.to(self.device)
                 fake_X, latent_codes, _ = self.G_YtoX(real_img_Y)
 
                 reconstructed_img_X, latent_codes, _  = self.G_YtoX(fake_Y)
@@ -389,43 +391,10 @@ class CycleGAN:
                     csv_pd = csv_pd.append(row_dict, ignore_index=True)
              
             # csv_pd.to_csv(os.path.join(self.data_root, self.Y_csv), index=False)
-            # print(self.data_root, self.Y_csv)
             csv_pd.to_csv(self.Y_csv, index=False)
             with open(self.Y_csv[:-4]+'.json', 'w') as file:
                 # Write the dictionary to the file as json
                 json.dump(box_dict, file)
-            
-            
-            del self.G_XtoY
-            del self.G_YtoX
-            del self.D_X
-            del self.D_Y
-            del self.optimizer_G
-            del self.optimizer_D
-            del real_img_X
-            del real_img_Y
-            del fake_img_Y
-            del fake_img_X
-            del reconstructed_img_X
-            del reconstructed_img_Y
-            del pred_fake_X
-            del pred_fake_Y
-            del pred_real_X
-            del pred_real_Y
-            del D_X_loss
-            del D_Y_loss
-            del loss_G_X
-            del loss_G_Y
-            del cycle_loss_X
-            del cycle_loss_Y
-            del loss_G
-            torch.cuda.empty_cache() 
-
-            import gc   
-            gc.collect()
-
-
-
      
                 
 # cycleGAN = CycleGAN('./taming_transformers/logs/vqgan_imagenet_f16_1024/configs/model.yaml','./taming_transformers/logs/vqgan_imagenet_f16_1024/checkpoints/last.ckpt')

@@ -4,14 +4,14 @@ import pathlib
 import os
 import pandas as pd
 from toplevel import TopLevelApp
-
+import csv
 
 class OSUInterface:
     def __init__(self, scg_ensemble, data_root, pretrained_models_dir, backbone_architecture,
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_batch_size, trial_size, disable_retraining,
             root_cache_dir, n_known_val, classifier_trainer, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_val_interval, retraining_patience,
-            retraining_min_epochs, retraining_max_epochs, retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, gan_augment):
+            retraining_min_epochs, retraining_max_epochs, retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, class_frequency_file, gan_augment, device, retrain_fn, val_reduce_fn, model_unwrap_fn, feedback_sampling_configuration, oracle_training, ewc_lambda):
 
         self.app = TopLevelApp( 
             data_root=data_root,
@@ -41,9 +41,20 @@ class OSUInterface:
             retraining_label_smoothing=retraining_label_smoothing,
             retraining_scheduler_type=retraining_scheduler_type,
             feedback_loss_weight=feedback_loss_weight,
-            gan_augment = gan_augment
+            retraining_loss_fn=retraining_loss_fn,
+            class_frequency_file=class_frequency_file,
+            gan_augment=gan_augment,
+            device=device,
+            retrain_fn=retrain_fn,
+            val_reduce_fn=val_reduce_fn,
+            model_unwrap_fn=model_unwrap_fn,
+            feedback_sampling_configuration=feedback_sampling_configuration,
+            oracle_training = oracle_training,
+            ewc_lambda = ewc_lambda
         )
-
+        self.num_queries = 0
+        self.num_of_queries = []
+        self.log_dir =log_dir
         self.temp_path = pathlib.Path('./session/temp/')
 
     def start_session(self, session_id, detection_feedback, given_detection):
@@ -61,6 +72,8 @@ class OSUInterface:
         :return: None
         """
         self.app.reset()
+        self.num_queries = 0
+
 
         print(f'==> OSU got start test {test_id}')
 
@@ -120,6 +133,17 @@ class OSUInterface:
 
         return (novelty_preds, predictions)
 
+    # def select_oracle(test_id, round_id, image_paths, feedback_max_ids):
+    #     api_test_folder = '/nfs/hpc/share/sail_on3/final/test_trials/api_tests/OND/image_classification/'
+    #     csv_path = api_test_folder +'/'+ test_id+'_single_df.csv'
+    #     with open(csv_path, "r") as f:
+    #         csv_reader = csv.reader(f, delimiter=",", quotechar='"', skipinitialspace=True)
+    #         rows = [x for x in csv_reader][round_id*10:round_id+10]
+    #     sort these rows according to novelty column
+    #     select top 5
+
+
+
     def choose_detection_feedback_ids(self, test_id, round_id, image_paths, feedback_max_ids):
         """
         :param test_id:
@@ -129,6 +153,7 @@ class OSUInterface:
         :return: list of selected image_paths
         """
         queries, bboxes = self.app.select_queries(feedback_max_ids)
+        # queries, bboxes = select_oracle(test_id, round_id, image_paths, feedback_max_ids)
         return queries, bboxes
     
     def characterize_round(self, red_light_dec):
@@ -144,18 +169,24 @@ class OSUInterface:
         print(f'  ==> OSU got detection feedback results for round {round_id}')
 
         feedback_uuid = uuid.uuid4()
+        
+        # Count the number of rows in feedback_csv_content
+        # Each line in CSV is separated by a newline character
+        num_rows = feedback_csv_content.count('\n')  # Counts the number of newlines
+        if round_id < 200:
+            self.num_queries += num_rows
+        print(test_id, self.num_queries)
         csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}_feedback_{feedback_uuid}.csv')
         with open(csv_path, 'w') as f:
             f.write(feedback_csv_content)
         json_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}_feedback_{feedback_uuid}.json')
         with open(json_path, 'w') as f:
             json.dump(bboxes, f)
-        
         self.app.feedback_callback(csv_path)
 
     def end_test(self, test_id):
         print(f'==> OSU got end test {test_id}')
-
+        self.num_of_queries.append([test_id, self.num_queries])
         returned_pni = self.app.test_completed_callback(test_id)
         # import numpy as np
         # np.savetxt(test_id+'.csv', returned_pni, delimiter=',', header='p_ni')
@@ -164,5 +195,13 @@ class OSUInterface:
         
 
     def end_session(self, session_id):
+        # Write to CSV
+
+        csv_pathh = self.log_dir+ '/' +session_id +'_Number_of_Feedback_Queries.csv'
+        with open(csv_pathh, 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['Test ID', 'Number of Queries'])  # Writing header
+            writer.writerows(self.num_of_queries)
+
         print(f'==> OSU got end session {session_id}')
 

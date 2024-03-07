@@ -467,8 +467,7 @@ class BBNSession:
                     'detection_file': open(detection_filename, "r"),
                     'classification_file': open(classification_filename, "r")
                 })
-                        
-            ## Handle classification feedback
+             ## Handle classification feedback
             if self.detection_fb:
                 ## Handle detection feedback
                 if (self.detection_fb or self.given_detection) and red_light_declared:
@@ -482,13 +481,13 @@ class BBNSession:
                     # GDD
                     # if self.given_detection:
                     #     print(f' **** About to call choose_detection_feedback_ids, round {round_id}')
-                    
+                
                     num_ids_to_request = len(filenames) if self.given_detection else feedback_max_ids
                     feedback_ids, feedback_bboxes = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
                                                                                 filenames, num_ids_to_request)
+
                     feedback_csv_content = self.request_feedback(session_id, test_id, round_id,
                                                                                 feedback_ids)
-
                     self.osu_stubs.record_detection_feedback(test_id, round_id, feedback_csv_content, feedback_bboxes)
 
                 ## LAR

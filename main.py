@@ -1,12 +1,17 @@
+import sys
+import os
 import torch
+import torch.distributed as dist
+from torch.utils.data.distributed import DistributedSampler
 from session.bbn_session import BBNSession
 from session.osu_interface import OSUInterface
 from argparse import ArgumentParser
 from pathlib import Path
 
 from backbone import Backbone
-from tupleprediction.training import Augmentation, SchedulerType
-from toplevel import TopLevelApp
+from tupleprediction.training import Augmentation, SchedulerType, LossFnEnum, DistributedRandomBoxImageBatchSampler, FeedbackSamplingConfigurationOption
+from toplevel import TopLevelApp, gen_retrain_fn
+import distributedutils
 
 if __name__ == "__main__":
     p = ArgumentParser()
@@ -14,7 +19,7 @@ if __name__ == "__main__":
     p.add_argument('--scg-ensemble', default='./ensemble/pretrained')
     p.add_argument('--pretrained-models-dir', default='./pretrained-models')
     p.add_argument('--backbone-architecture', type=Backbone.Architecture, choices=list(Backbone.Architecture), default=Backbone.Architecture.swin_t)
-    p.add_argument('--log', action='store_true')
+    p.add_argument('--should-log', action='store_true', dest='log')
     p.add_argument('--log-dir', default='./session/temp/logsDete10')
     p.add_argument('--ignore-verb-novelty', default=False, action='store_true')
     p.add_argument('--detection-feedback', action='store_true')
@@ -36,7 +41,7 @@ if __name__ == "__main__":
     p.add_argument('--hintB', default=False)
     p.add_argument('--root-cache-dir', type=str, default='/nfs/hpc/share/sail_on3/.data-cache')
     p.add_argument('--n-known-val', type=int, default=4068)
-    p.add_argument('--classifier-trainer', type=TopLevelApp.ClassifierTrainer, choices=list(TopLevelApp.ClassifierTrainer), default=TopLevelApp.ClassifierTrainer.logit_layer)
+    p.add_argument('--classifier-trainer', type=TopLevelApp.ClassifierTrainer, choices=list(TopLevelApp.ClassifierTrainer), default=TopLevelApp.ClassifierTrainer.end_to_end)
     p.add_argument('--precomputed-feature-dir', type=str, default='./.features/resizepad=224/none/normalized')
     p.add_argument('--retraining-augmentation', type=Augmentation, choices=list(Augmentation), default=Augmentation.none)
     p.add_argument('--retraining-lr', type=float, default=0.005)
@@ -47,11 +52,167 @@ if __name__ == "__main__":
     p.add_argument('--retraining-max-epochs', type=int, default=1000)
     p.add_argument('--retraining-label-smoothing', type=float, default=0.0)
     p.add_argument('--retraining-scheduler-type', type=SchedulerType, choices=list(SchedulerType), default=SchedulerType.none)
+    p.add_argument('--feedback-sampling-configuration', type=(lambda s : FeedbackSamplingConfigurationOption[s]), choices=list(FeedbackSamplingConfigurationOption), default=FeedbackSamplingConfigurationOption.none)
     p.add_argument('--feedback-loss-weight', type=float, default=0.5)
     p.add_argument('--detection-threshold', type=float, default=0.5)
-    p.add_argument('--gan_augment', default= False)
+    p.add_argument('--retraining-loss-fn', type=LossFnEnum, choices=list(LossFnEnum), default=LossFnEnum.cross_entropy)
+    p.add_argument('--class-frequency-file', type=str, default=None)
+    p.add_argument('--gan_augment', type=bool, default=False)
+    p.add_argument('--distributed', action='store_true')
+    p.add_argument('--device', type=str, default='cuda:0')
+    p.add_argument('--oracle-training', type=bool, default=False)
+    p.add_argument('--ewc-lambda', type=float, default=1000)
 
     args = p.parse_args()
+    # torch.autograd.set_detect_anomaly(True)
+    # assert ((not args.distributed) or (args.classifier_trainer == TopLevelApp.ClassifierTrainer.end_to_end)),\
+    #     'Only end-to-end training is supported in distributed mode'
+    assert ((not args.distributed) or 
+        (args.classifier_trainer in [TopLevelApp.ClassifierTrainer.end_to_end, \
+        TopLevelApp.ClassifierTrainer.logit_layer, \
+        TopLevelApp.ClassifierTrainer.ewc_logit_layer_train, \
+        TopLevelApp.ClassifierTrainer.ewc_train])),\
+        'Only end-to-end, logit_layer, ewc_logit_layer_train, and ewc_train training are supported in distributed mode'
+
+    from datetime import timedelta
+    DEFAULT_TIMEOUT = timedelta(seconds=1000000)
+    # torch.set_default_tensor_type(torch.DoubleTensor)
+
+    if args.distributed:
+
+        dist.init_process_group('nccl', timeout = DEFAULT_TIMEOUT)
+        rank = dist.get_rank()
+        local_rank = int(os.environ['LOCAL_RANK'])
+        # os.environ["CUDA_VISIBLE_DEVICES"] = str(local_rank)
+
+        world_size = dist.get_world_size()
+        device_id = local_rank
+        # device = f'cuda:{device_id}'
+        device = torch.device(f'cuda:{device_id}')
+
+
+        torch.cuda.set_device(local_rank)
+
+        def _model_unwrap_fn(backbone, classifier):
+            classifier.un_ddp
+            return backbone.module, classifier
+        model_unwrap_fn = _model_unwrap_fn
+
+        def train_sampler_fn(train_dataset):
+            return DistributedSampler(
+                train_dataset,
+                num_replicas=world_size,
+                rank=rank
+            )
+
+        def val_reduce_fn(count_tensor):
+            return dist.all_reduce(count_tensor, op=dist.ReduceOp.SUM)
+
+        def feedback_batch_sampler_fn(box_counts):
+            return DistributedRandomBoxImageBatchSampler(
+                box_counts,
+                args.retraining_batch_size,
+                world_size,
+                rank
+            )
+
+        allow_write = rank == 0
+        allow_print = local_rank == 0
+
+        if rank != 0:
+            terminate = False
+            # Prepare the retraining function that will be called with received
+            # (broadcasted-by-rank-0) arguments
+            retrain_fn = gen_retrain_fn(
+                device_id,
+                train_sampler_fn,
+                feedback_batch_sampler_fn,
+                allow_write,
+                allow_print,
+                distributed=True
+            )
+            # Run the retrain function in a loop until told to terminate
+            # (signified by a skip of the function call, in-turn signified by
+            # broadcasted Nonetype objects for the function's arguments)
+            while not terminate:
+                # Run the specified function
+                _, run = distributedutils.receive_call(
+                    retrain_fn,
+                    src=0,
+                    device=device
+                )
+
+                # If the retraining function was run successfully, then keep
+                # looping. Otherwise, terminate
+                terminate = not run
+
+            # Terminate the process (do not proceed to init the system---that
+            # is reserved for the rank 0 process)
+            sys.exit(0)
+        else:
+            # Generate the argument-broadcasting master retraining function
+            # to be used by the system in this (rank 0) master process. Each
+            # time this function is called with the retraining arguments, those
+            # arguments will be broadcasted to the slave processes so that they
+            # can run their respective retraining functions. Each process's
+            # retraining function is pre-conditioned on the process-specific
+            # retraining arguments (device, samplers, allow_write, allow_print)
+            # retrain_fn = distributedutils.gen_broadcast_call(
+            #     gen_retrain_fn(
+            #         device_id,
+            #         train_sampler_fn,
+            #         feedback_batch_sampler_fn,
+            #         allow_write,
+            #         allow_print,
+            #         distributed=True
+            #     ),
+            #     src=0,
+            #     device=device
+            # )
+            if world_size != 1:
+                retrain_fn = distributedutils.gen_broadcast_call(
+                    gen_retrain_fn(
+                        device_id,
+                        train_sampler_fn,
+                        feedback_batch_sampler_fn,
+                        allow_write,
+                        allow_print,
+                        distributed=True
+                    ),
+                    src=0,
+                    device=device
+                )
+            else:
+                retrain_fn = gen_retrain_fn(
+                    device_id,
+                    train_sampler_fn,
+                    feedback_batch_sampler_fn,
+                    allow_write,
+                    allow_print,
+                    distributed=True
+                )
+    else:
+        device = args.device
+        if device == 'cpu':
+            device_id = None
+        else:
+            device_id = device.split(':')[1]
+        train_sampler_fn = None
+        val_reduce_fn = None
+        feedback_batch_sampler_fn = None
+        allow_write = True
+        allow_print = True
+
+        retrain_fn = gen_retrain_fn(
+            device_id,
+            train_sampler_fn,
+            feedback_batch_sampler_fn,
+            allow_write,
+            allow_print,
+            distributed=False
+        )
+
+        model_unwrap_fn = None
 
     torch.backends.cudnn.benchmark = False
 
@@ -93,14 +254,28 @@ if __name__ == "__main__":
         retraining_label_smoothing=args.retraining_label_smoothing,
         retraining_scheduler_type=args.retraining_scheduler_type,
         feedback_loss_weight=args.feedback_loss_weight,
-        gan_augment= args.gan_augment
+        retraining_loss_fn=args.retraining_loss_fn,
+        class_frequency_file=args.class_frequency_file,
+        gan_augment=args.gan_augment,
+        device=device,
+        retrain_fn=retrain_fn,
+        val_reduce_fn=val_reduce_fn,
+        model_unwrap_fn=model_unwrap_fn,
+        feedback_sampling_configuration=args.feedback_sampling_configuration,
+        oracle_training = args.oracle_training,
+        ewc_lambda = args.ewc_lambda
     )
-    
+
     test_session = BBNSession('OND', args.domain, args.class_count, 
         args.detection_feedback,
         args.given_detection, args.data_root,
         args.sys_results_dir, args.url, args.batch_size,
         args.version, detection_threshold,
         None, osu_int, args.hintA, args.hintB)
-        
+
     test_session.run(args.detector_seed, args.test_ids)
+
+    # If distributed, tell the slave processes to skip their next call (which
+    # signifies that they should terminate)
+    if args.distributed:
+        distributedutils.broadcast_skip(src=0, device=device)

@@ -1,6 +1,7 @@
 Custom
 __pycache__/
 pocket/
+umd_test_score_copy/
 checkpoints/
 pretrained/
 Custom_v2
@@ -12,6 +13,8 @@ logs*
 .pth
 *FinalResults*
 *.jpg
+*.png
+read_pkl.py
 *Results_Phase3*
 runit*
 *Phase3_*
@@ -25,6 +28,10 @@ Last30*
 SVO_*
 .data-cache
 *.sh
-pretrained-models
-.log
-.checkpoint
+pretrained-models*
+.log*
+.checkpoint*
+roc_curve*
+.features*
+read_pkl*
+.temp*

@@ -20,7 +20,9 @@ from tupleprediction.training import\
     get_datasets,\
     TuplePredictorTrainer,\
     EndToEndClassifierTrainer,\
-    LogitLayerClassifierTrainer
+    LogitLayerClassifierTrainer,\
+    LossFnEnum,\
+    DistributedRandomBoxImageBatchSampler
 from backbone import Backbone
 from scoring import\
     ActivationStatisticalModel,\
@@ -79,6 +81,22 @@ parser.add_argument(
     type=float,
     default=0.05,
     help='Label smoothing for training backbone and classifiers'
+)
+
+parser.add_argument(
+    '--loss-fn',
+    type=LossFnEnum,
+    choices=list(LossFnEnum),
+    default=LossFnEnum.cross_entropy,
+    help='Loss function'
+)
+
+parser.add_argument(
+    '--class-frequency-file',
+    type=str,
+    default=None,
+    help=('Path to pth file containing class frequency tensor, used for class '
+          'balancing')
 )
 
 parser.add_argument(
@@ -152,20 +170,38 @@ parser.add_argument(
     default='./.features/resizepad=224/none/normalized'
 )
 
+parser.add_argument(
+    '--save-dir',
+    type=str,
+    default='./pretrained-models'
+)
+
+parser.add_argument(
+    '--no-memory-cache',
+    action='store_false',
+    dest='memory_cache'
+)
+
+parser.add_argument(
+    '--no-load-after-training',
+    action='store_false',
+    dest='load_best_after_training'
+)
+
+
 args = parser.parse_args()
 
+
+from datetime import timedelta
+DEFAULT_TIMEOUT = timedelta(seconds=1000000)
+
+# dist.init_process_group('nccl', timeout = DEFAULT_TIMEOUT)
 dist.init_process_group('nccl')
 rank = dist.get_rank()
+local_rank = int(os.environ['LOCAL_RANK'])
 world_size = dist.get_world_size()
-device_id = rank
+device_id = local_rank
 device = f'cuda:{device_id}'
-
-def train_sampler_fn(train_dataset):
-    return DistributedSampler(
-        train_dataset,
-        num_replicas=world_size,
-        rank=rank
-    )
 
 architecture = Backbone.Architecture.swin_t
 backbone = Backbone(architecture, pretrained=False).to(device)
@@ -227,27 +263,52 @@ train_dataset, val_known_dataset, val_dataset =\
         post_cache_train_transform,
         post_cache_val_transform,
         root_cache_dir=args.root_cache_dir,
-        allow_write=(rank==0),
         n_known_val=args.n_known_val
+    )
+
+class_frequencies = None
+if args.class_frequency_file is not None:
+    class_frequencies = torch.load(args.class_frequency_file)
+
+def train_sampler_fn(train_dataset):
+    return DistributedSampler(
+        train_dataset,
+        num_replicas=world_size,
+        rank=rank
+    )
+
+def val_reduce_fn(count_tensor):
+    return dist.all_reduce(count_tensor, op=dist.ReduceOp.SUM)
+
+def feedback_batch_sampler_fn(box_counts):
+    return DistributedRandomBoxImageBatchSampler(
+        box_counts,
+        args.batch_size,
+        world_size,
+        rank
     )
 
 if args.classifier_trainer == ClassifierTrainer.end_to_end:
     classifier_trainer = EndToEndClassifierTrainer(
-        backbone,
+        # backbone,
         args.lr,
         train_dataset,
         val_known_dataset,
         box_transform,
         post_cache_train_transform,
         retraining_batch_size=args.batch_size,
-        train_sampler_fn=train_sampler_fn,
         root_checkpoint_dir=args.root_checkpoint_dir,
         patience=None,
         min_epochs=0,
         max_epochs=args.max_epochs,
         label_smoothing=args.label_smoothing,
+        feedback_loss_weight=0.5,
         scheduler_type=args.scheduler_type,
-        allow_write=(rank==0)
+        loss_fn=args.loss_fn,
+        class_frequencies=class_frequencies,
+        memory_cache=args.memory_cache,
+        load_best_after_training=args.load_best_after_training,
+        val_reduce_fn=val_reduce_fn
     )
 else:
     train_feature_file = os.path.join(
@@ -265,11 +326,14 @@ else:
         val_feature_file,
         box_transform,
         post_cache_train_transform,
-        device=backbone.device,
+        feedback_batch_size=32,
         patience=None,
         min_epochs=0,
         max_epochs=args.max_epochs,
-        label_smoothing=args.label_smoothing
+        label_smoothing=args.label_smoothing,
+        feedback_loss_weight=0.5,
+        loss_fn=args.loss_fn,
+        class_frequencies=class_frequencies
     )
 
 trainer = TuplePredictorTrainer(
@@ -293,10 +357,17 @@ activity_calibrator = confidence_calibrator.activity_calibrator
 
 # Retrain the backbone and classifiers
 classifier_trainer.train(
+    backbone,
     species_classifier,
     activity_classifier,
     args.root_log_dir,
-    None
+    None,
+    device,
+    train_sampler_fn,
+    feedback_batch_sampler_fn,
+    allow_write = True,
+    allow_print = True
+    
 )
 
 if rank == 0:
@@ -308,7 +379,7 @@ if rank == 0:
         batch_size = 32,
         shuffle = False,
         collate_fn=gen_custom_collate(),
-        num_workers=2
+        num_workers=0
     )
     backbone.eval()
     all_features = []
@@ -325,21 +396,25 @@ if rank == 0:
 
     # Retrain the classifier's temperature scaling calibrators
     trainer.calibrate_temperature_scalers(
+        device,
         backbone.module,
         species_classifier,
         activity_classifier,
         species_calibrator,
-        activity_calibrator
+        activity_calibrator,
+        True
     )
 
     # Retrain the logistic regressions
     trainer.train_novelty_type_logistic_regressions(
+        device,
         backbone.module,
         species_classifier,
         activity_classifier,
         novelty_type_classifier,
         activation_statistical_model,
-        scorer
+        scorer,
+        True
     )
 
     end_time = time.time()
@@ -350,7 +425,7 @@ if rank == 0:
     tuple_prediction_state_dicts['activation_statistical_model'] = activation_statistical_model.state_dict()
 
     save_dir = os.path.join(
-        'pretrained-models',
+        args.save_dir,
         architecture.value['name']
     )
     if not os.path.exists(save_dir):
