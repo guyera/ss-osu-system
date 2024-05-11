@@ -4540,13 +4540,13 @@ class EWCClassifierTrainer(ClassifierTrainer):
                 class_frequencies
             )
 
-            print(f'Mean Train Loss: {mean_train_loss}, '
-                    f'Species Loss: {species_loss}, '
-                    f'Activity Loss: {activity_loss}, '
-                    f'EWC Penalty: {ewc_penalty}, '
-                    f'Mean Train Accuracy: {mean_train_accuracy}, '
-                    f'Mean Species Accuracy: {mean_species_accuracy}, '
-                    f'Mean Activity Accuracy: {mean_activity_accuracy}')
+            # print(f'Mean Train Loss: {mean_train_loss}, '
+            #         f'Species Loss: {species_loss}, '
+            #         f'Activity Loss: {activity_loss}, '
+            #         f'EWC Penalty: {ewc_penalty}, '
+            #         f'Mean Train Accuracy: {mean_train_accuracy}, '
+            #         f'Mean Species Accuracy: {mean_species_accuracy}, '
+            #         f'Mean Activity Accuracy: {mean_activity_accuracy}')
 
             if self._root_checkpoint_dir is not None and allow_write:
                 checkpoint_dir = get_checkpoint_dir()
