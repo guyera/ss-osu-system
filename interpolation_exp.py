@@ -76,7 +76,7 @@ def interpolate_values(arr1, arr2, start=500, end=2000, total_images=1500):
             lambda_i = 1  # Use full value from second array beyond the specified range
         interpolated[i] = arr1[i] * (1 - lambda_i) + arr2[i] * lambda_i
         # print(f'interpolated {interpolated[i]}  No Retraing Org {arr1[i]} No Retraing Updated {arr1[i] * (1 - lambda_i)} , EWC Updated {arr2[i] * lambda_i} EWC Ori {arr2[i]}')
-        print(f'{i} ) interpolated {interpolated[i]:.4f}  No Retraing Org {arr1[i]:.4f} No Retraing Updated {arr1[i] * (1 - lambda_i):.4f} , EWC Updated {arr2[i] * lambda_i:.4f} EWC Ori {arr2[i]:.4f}')
+        # print(f'{i} ) interpolated {interpolated[i]:.4f}  No Retraing Org {arr1[i]:.4f} No Retraing Updated {arr1[i] * (1 - lambda_i):.4f} , EWC Updated {arr2[i] * lambda_i:.4f} EWC Ori {arr2[i]:.4f}')
 
     return interpolated
 
@@ -123,15 +123,27 @@ def interpolate_and_save_pickle(file1_path, file2_path, output_path):
         pickle.dump(interpolated_data, f)
 
 
+# folder1 = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/NoRetraining/OND/image_classification/'
+# folder2 = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/EWC_logit_layer_only_100000_1e-4_forInterpolation/OND/image_classification/'
+# output_base_folder = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/Interpolation_NoRetraining_EWC_Only_logits/'
+# interpolate_folders(folder1, folder2, output_base_folder)
+
+
+# base_folder1 = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/NoRetraining/logs/'
+# base_folder2 = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/EWC_logit_layer_only_100000_1e-4_forInterpolation/logs/'
+# output_base_folder = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/Interpolation_NoRetraining_EWC_Only_logits/'
+
+
 folder1 = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/NoRetraining/OND/image_classification/'
-folder2 = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/EWC_logit_layer_only_100000_1e-4_forInterpolation/OND/image_classification/'
-output_base_folder = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/Interpolation_NoRetraining_EWC_Only_logits/'
+folder2 = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-Oracle_2_Combined_Feedback_retested_for_Interpolation/OND/image_classification/'
+output_base_folder = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/Interpolation_NoRetraining_End-to-End-Oracle_2_Combined_Feedback/'
 interpolate_folders(folder1, folder2, output_base_folder)
 
 
 base_folder1 = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/NoRetraining/logs/'
-base_folder2 = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/EWC_logit_layer_only_100000_1e-4_forInterpolation/logs/'
-output_base_folder = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/Interpolation_NoRetraining_EWC_Only_logits/'
+base_folder2 = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-Oracle_2_Combined_Feedback_retested_for_Interpolation/logs/'
+output_base_folder = '/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/Interpolation_NoRetraining_End-to-End-Oracle_2_Combined_Feedback/'
+
 
 for subfolder in os.listdir(base_folder1):
     if subfolder in os.listdir(base_folder2):

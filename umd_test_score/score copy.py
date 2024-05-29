@@ -1770,8 +1770,6 @@ def score_test_from_boxes(
         pre_red_spe_pred,
         labels=pre_red_unique_spe
     )
-    pre_red_species_cm_mcc = metrics.matthews_corrcoef(pre_red_spe_grd_trth, 
-        pre_red_spe_pred)
 
     post_red_grd_truth_spe_in_box = np.array(post_red_grd_truth_spe_in_box)
     post_red_pred_spe_in_box = np.array(post_red_pred_spe_in_box)
@@ -1784,12 +1782,9 @@ def score_test_from_boxes(
             post_red_spe_pred,
             labels=post_red_unique_spe
         )
-        post_red_species_cm_mcc = metrics.matthews_corrcoef(post_red_spe_grd_trth, 
-            post_red_spe_pred)
     else:
         post_red_species_cm = None
         post_red_unique_spe = None
-        post_red_species_cm_mcc = None
 
     test_post_red_grd_truth_spe_in_box = np.array(test_post_red_grd_truth_spe_in_box)
     test_post_red_pred_spe_in_box = np.array(test_post_red_pred_spe_in_box)
@@ -1802,28 +1797,22 @@ def score_test_from_boxes(
             test_post_red_spe_pred,
             labels=test_post_red_unique_spe
         )
-        test_post_red_species_cm_mcc = metrics.matthews_corrcoef(test_post_red_spe_grd_trth, 
-            test_post_red_spe_pred)
     else:
         test_post_red_species_cm = None
         test_post_red_unique_spe = None
-        test_post_red_species_cm_mcc = None
 
     species_cm = {
         'pre_red_btn': {
             'cm': pre_red_species_cm,
-            'species_ids': pre_red_unique_spe,
-            'mcc': pre_red_species_cm_mcc
+            'species_ids': pre_red_unique_spe
         },
         'post_red_btn': {
             'cm': post_red_species_cm,
-            'species_ids': post_red_unique_spe,
-            'mcc' : post_red_species_cm_mcc
+            'species_ids': post_red_unique_spe
         },
         'test_post_red_btn': {
             'cm': test_post_red_species_cm,
-            'species_ids': test_post_red_unique_spe,
-            'mcc' : test_post_red_species_cm_mcc
+            'species_ids': test_post_red_unique_spe
         }
     }
     all_performances['Confusion_matrices'][test_id] = {
@@ -2286,8 +2275,6 @@ def score_test_from_boxes(
         pre_red_act_pred,
         labels=pre_red_unique_act
     )
-    pre_red_activity_cm_mcc = metrics.matthews_corrcoef(pre_red_act_grd_trth, 
-        pre_red_act_pred)
 
     post_red_grd_truth_act_in_box = np.array(post_red_grd_truth_act_in_box)
     post_red_pred_act_in_box = np.array(post_red_pred_act_in_box)
@@ -2300,12 +2287,9 @@ def score_test_from_boxes(
             post_red_act_pred,
             labels=post_red_unique_act
         )
-        post_red_activity_cm_mcc = metrics.matthews_corrcoef(post_red_act_grd_trth, 
-            post_red_act_pred)
     else:
         post_red_unique_act = None
         post_red_activity_cm = None
-        post_red_activity_cm_mcc = None
 
     test_post_red_grd_truth_act_in_box = np.array(test_post_red_grd_truth_act_in_box)
     test_post_red_pred_act_in_box = np.array(test_post_red_pred_act_in_box)
@@ -2318,28 +2302,22 @@ def score_test_from_boxes(
             test_post_red_act_pred,
             labels=test_post_red_unique_act
         )
-        test_post_red_activity_cm_mcc = metrics.matthews_corrcoef(test_post_red_act_grd_trth, 
-            test_post_red_act_pred)
     else:
         test_post_red_unique_act = None
         test_post_red_activity_cm = None
-        test_post_red_activity_cm_mcc = None
     
     activity_cm = {
         'pre_red_btn': {
             'cm': pre_red_activity_cm,
-            'activity_ids': pre_red_unique_act,
-            'mcc': pre_red_activity_cm_mcc 
+            'activity_ids': pre_red_unique_act
         },
         'post_red_btn': {
             'cm': post_red_activity_cm,
-            'activity_ids': post_red_unique_act,
-            'mcc' : post_red_activity_cm_mcc
+            'activity_ids': post_red_unique_act
         },
         'test_post_red_btn': {
             'cm': test_post_red_activity_cm,
-            'activity_ids': test_post_red_unique_act,
-            'mcc' : test_post_red_activity_cm_mcc
+            'activity_ids': test_post_red_unique_act
         }
     }
 
@@ -2407,7 +2385,7 @@ def score_tests(
     for test_id in test_ids:
         # if 'OND' in test_id and '100.000' not in test_id:
         # if 'OND' in test_id and '100.000' not in test_id and '105.000' not in test_id:
-        if 'OND' in test_id: # and '100.000' in test_id:
+        if 'OND' in test_id and '100.000' in test_id:
             metadata = json.load(open(test_dir / f'{test_id}_metadata.json', 'r'))
             test_df = pd.read_csv(test_dir / f'{test_id}_single_df.csv')
 

@@ -324,7 +324,8 @@ class BBNSession:
             elif hint_typeA == 'type0':
                 hint_typeA_data = 0
             else: 
-                hint_typeA_data = None
+                # hint_typeA_data = None
+                hint_typeA_data = 0
         else:
             hint_typeA_data = None
         print('Hint A is : ',hint_typeA_data)
@@ -434,6 +435,8 @@ class BBNSession:
                                 # GDD
                                 # print(f' **** Turning on red_light_declared due to GD')
                     else:
+                        # if round_id == 50:
+                        #     red_light_declared = True
                         if float(red_light_str) > 0.5:
                             red_light_declared = True
                     

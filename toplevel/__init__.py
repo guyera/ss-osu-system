@@ -152,6 +152,8 @@ class TopLevelApp:
                                                         'agent3_id','agent3_count','activities','activities_id','environment',
                                                         'novelty_type','master_id','novel'
                                                     ])
+        
+        
         self.ewc_lambda = ewc_lambda
         self.test_id = ' '
         self.retrain_num = 1
@@ -183,6 +185,7 @@ class TopLevelApp:
         self.post_red_base = None
         self.batch_context = BatchContext()
         self.feedback_enabled = feedback_enabled
+  
         self.p_val_cuttoff =  0.00221498
         self.windows_size = 40
                 

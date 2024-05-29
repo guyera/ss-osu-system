@@ -5,41 +5,56 @@ from sklearn.metrics import roc_curve, auc
 from matplotlib.backends.backend_pdf import PdfPages
 
 # Paths for pkl and csv files
-EndtoEnd102Feedback_W_0 = [
-'/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-102-Feedback_W_0//logs/OND.102.000/OND.102.000.pkl',
-]
-EndtoEnd102Combined_Feedback_W_05 = [
-'/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-102-Combined_Feedback_W_0.5/logs/OND.102.000/OND.102.000.pkl',
+
+Feedback_W_0_5 = [
+'/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/EWC_100/logs/OND.100.000/OND.100.000.pkl',
+'/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-102-Feedback_W_0.5/logs/OND.102.000/OND.102.000.pkl',
+'/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-103-Feedback_W_0.5/logs/OND.103.000/OND.103.000.pkl',
+'/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-104-Feedback_W_0.5/logs/OND.104.000/OND.104.000.pkl',
+'/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-1061-Feedback_W_0.5/logs/OND.1061.000/OND.1061.000.pkl',
+'/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-1062-Feedback_W_0.5/logs/OND.1062.000/OND.1062.000.pkl',
+'/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-1063-Feedback_W_0.5/logs/OND.1063.000/OND.1063.000.pkl',
+'/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-1064-Amin-Feedback_W_0.5/logs/OND.1064.000/OND.1064.000.pkl',
+
 ]
 
-EndtoEnd102Oracle_2_Combined_Feedback_W_05 = [
-'/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/End-to-End-102-Oracle_2_Combined_Feedback_W_0.5/logs/OND.102.000/OND.102.000.pkl',
-]
 
 
 csv_paths = [
+'/nfs/hpc/share/sail_on3/final/test_trials/api_tests/OND/image_classification/OND.100.000_single_df.csv',
 '/nfs/hpc/share/sail_on3/final/test_trials/api_tests/OND/image_classification/OND.102.000_single_df.csv',
+'/nfs/hpc/share/sail_on3/final/test_trials/api_tests/OND/image_classification/OND.103.000_single_df.csv',
+'/nfs/hpc/share/sail_on3/final/test_trials/api_tests/OND/image_classification/OND.104.000_single_df.csv',
+'/nfs/hpc/share/sail_on3/final/test_trials/api_tests/OND/image_classification/OND.1061.000_single_df.csv',
+'/nfs/hpc/share/sail_on3/final/test_trials/api_tests/OND/image_classification/OND.1062.000_single_df.csv',
+'/nfs/hpc/share/sail_on3/final/test_trials/api_tests/OND/image_classification/OND.1063.000_single_df.csv',
+'/nfs/hpc/share/sail_on3/final/test_trials/api_tests/OND/image_classification/OND.1064.000_single_df.csv',
 ]
 
 captions = [
-    'OND.102.000'
+    'OND.100.000',
+    'OND.102.000',
+    'OND.103.000',
+    'OND.104.000',
+    'OND.1061.000',
+    'OND.1062.000',
+    'OND.1063.000',
+    'OND.1064.000',
 ]
 
-all_exp = [EndtoEnd102Feedback_W_0, EndtoEnd102Combined_Feedback_W_05, EndtoEnd102Oracle_2_Combined_Feedback_W_05]
-all_exp_names = ['End-to-End-102-Feedback_W_0', 'End-to-End-102-Combined_Feedback_W_0.5', 'End-to-End-102-Oracle_2_Combined_Feedback_W_0.5']
+all_exp = [Feedback_W_0_5]
+all_exp_names = ['Feedback_W_0_5']
 
 for exp, exp_name in zip(all_exp, all_exp_names):
     pkl_paths = exp
-    with PdfPages(f'/nfs/hpc/share/sail_on3/TestsForPaper/NewEvaluationCode/roc_curve_{exp_name}.pdf') as pdf:
+    with PdfPages(f'./ROC_curves/roc_curve_{exp_name}.pdf') as pdf:
         for pkl_path, csv_path, caption in zip(pkl_paths, csv_paths, captions):
             print(exp_name, '  ', caption)
-            print(f'\t {pkl_path[-27:], csv_path[-2:]}')
+            print(f'\t {pkl_path[-27:], csv_path[-27:]}')
             if caption not in pkl_path:
+                print(f'ROC Not calculated for : \t {pkl_path[-27:]}')
                 continue
-
-            
-
-            
+        
 
             with open(pkl_path, 'rb') as f:
                 log = pkl.load(f)
@@ -48,12 +63,14 @@ for exp, exp_name in zip(all_exp, all_exp_names):
                 continue
 
             test_data_csv_path = csv_path
-            novelty_check = pd.read_csv(test_data_csv_path)['novel'].tolist()[-len(log['queries']):]
+            # novelty_check = pd.read_csv(test_data_csv_path)['novel'].tolist()[-len(log['queries']):]
+            novelty_check = pd.read_csv(test_data_csv_path)['novel'].tolist()[-2500:]
             p_ni_raw = log['p_ni_raw'][3000-len(log['queries']):]
-
+            # import ipdb; ipdb.set_trace()
             # Data before and after training
             gt_queries_before_training = novelty_check[:-1000]
-            p_ni_raw_before_training  = log['p_ni_raw'][3000-len(log['queries']):-1000]
+            # p_ni_raw_before_training  = log['p_ni_raw'][3000-len(log['queries']):-1000]
+            p_ni_raw_before_training  = log['p_ni_raw'][3000-2500:-1000]
             gt_queries_After_training = novelty_check[-1000:]
             p_ni_raw_After_training  = log['p_ni_raw'][-1000:]
 

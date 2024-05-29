@@ -965,7 +965,7 @@ def print_confusion_matrices(results_dict, out_file):
             for i, phase in enumerate(phases):
                 species_cm = results_dict['Confusion_matrices'][test_id]['species'][phase]['cm']
                 species_ids = results_dict['Confusion_matrices'][test_id]['species'][phase]['species_ids']
-
+                species_mcc = results_dict['Confusion_matrices'][test_id]['species'][phase]['mcc']
                 if species_cm is None or species_ids is None:
                     continue
 
@@ -987,7 +987,7 @@ def print_confusion_matrices(results_dict, out_file):
                 ax.yaxis.set_ticklabels(species_names, fontsize=8,  rotation='horizontal')
                 ax.set_ylabel("True label")
                 ax.tick_params(axis='x', which='major', labelbottom=False, bottom=False, top=True, labeltop=True)
-                ax.set_title(f"{test_id}: {phases_abrv[i]} species CM")
+                ax.set_title(f"{test_id}: {phases_abrv[i]} species CM,   MCC: {species_mcc:.4f}")
                 fig.tight_layout()
                 pdf_pages.savefig()
                 plt.close()
@@ -1028,7 +1028,7 @@ def print_confusion_matrices(results_dict, out_file):
             for i, phase in enumerate(phases):
                 activity_cm = results_dict['Confusion_matrices'][test_id]['activity'][phase]['cm']
                 activity_ids = results_dict['Confusion_matrices'][test_id]['activity'][phase]['activity_ids']
-
+                activity_mcc = results_dict['Confusion_matrices'][test_id]['activity'][phase]['mcc']
                 if activity_cm is None or activity_ids is None:
                     continue
 
@@ -1055,7 +1055,7 @@ def print_confusion_matrices(results_dict, out_file):
                 ax.yaxis.set_ticklabels(activity_names, fontsize=8,  rotation='horizontal')
                 ax.set_ylabel("True label")
                 ax.tick_params(axis='x', which='major', labelbottom=False, bottom=False, top=True, labeltop=True)
-                ax.set_title(f"{test_id}: {phases_abrv[i]} activities CM")
+                ax.set_title(f"{test_id}: {phases_abrv[i]} activities CM,   MCC: {activity_mcc:.4f}")
                 fig.tight_layout()
                 pdf_pages.savefig()
                 plt.close()
