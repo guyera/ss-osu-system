@@ -1,3 +1,16 @@
+# Copyright 2023 University Of Maryland
+# Contact Abhinav Shrivastava (abhinav@cs.umd.edu)
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this code and associated documentation files (the "Code"), to deal
+# in the Code without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Code, and to permit persons to whom the Code is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Code.
+
 from collections import OrderedDict
 from typing import Optional, List, Tuple
 
