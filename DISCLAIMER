@@ -1,4 +1,4 @@
-Most of the code in this repo has been built upon following repos. The authors
+Much of the code in this repo has been built upon following repos. The authors
 do not claim ownership/authorship of any such code in this repo and the
 original license conditions of the following repos will take precedence over
 the LICENSE of this repo.
@@ -7,3 +7,11 @@ the LICENSE of this repo.
 2. https://github.com/tfzhou/C-HOI
 3. https://github.com/vt-vl-lab/DRG
 4. https://github.com/DirtyHarryLYL/HAKE-Action-Torch/tree/IDN-(Integrating-Decomposing-Network)
+
+Moreover, much of the code in this repo is the product of collaboration between
+multiple entities. The LICENSE at the top level of this repo only applies to
+source code files written by OSU affiliates. Some individual source code files
+in this repo not written by OSU affiliates nor derived from one of the above
+repos contain source code comments outlining copyright ownership and rights
+reserved. Those source code comments also take precedence over the LICENSE of
+this repo for those particular files.
