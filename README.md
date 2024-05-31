@@ -22,3 +22,6 @@ There are many other command line arguments in `main.py` as well. Some of them a
 
 ## Creating and benchmarking a new system
 To create a new system to benchmark against the SS trials, simply create your own class that replicates the interface of the OSU Interface module (found in `session/osu_interface.py`), pass an instance of your class to the `BBNSession` constructor as in `main.py`, and call the `run()` method on the `BBNSession` object.
+
+## License
+This repo is a product of collaboration between multiple entities, and different portions of the source code are licensed under different terms. For example, the code written by OSU is licensed under GPLv3, whereas the code written by BBN and UMD are subject to custom licenses explained in copyright notices written in comments in the respective source code. Please familiarize yourself with `DISCLAIMER`, `LICENSE`, and the copyright notices documented in the source code.
