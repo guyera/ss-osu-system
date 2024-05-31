@@ -6,6 +6,12 @@ from torchvision.models import\
     swin_b as swin_b_ctor,\
     resnet50 as resnet50_ctor
 
+# This software was created by Oregon State University under Army Research
+# Office (ARO) Award Number W911NF-22-2-0149. ARO, as the Federal awarding
+# agency, reserves a royalty-free, nonexclusive and irrevocable right to
+# reproduce, publish, or otherwise use this software for Federal purposes, and
+# to authorize others to do so in accordance with 2 CFR 200.315(b).
+
 def _swin_t_ctor(weights=None, num_classes=1000):
     if weights is None:
         return swin_t_ctor(num_classes=num_classes)

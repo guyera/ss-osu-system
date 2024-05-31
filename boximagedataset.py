@@ -15,6 +15,12 @@ import torchvision
 from torchvision.transforms.functional import to_pil_image, to_tensor
 from PIL import Image
 
+# This software was created by Oregon State University under Army Research
+# Office (ARO) Award Number W911NF-22-2-0149. ARO, as the Federal awarding
+# agency, reserves a royalty-free, nonexclusive and irrevocable right to
+# reproduce, publish, or otherwise use this software for Federal purposes, and
+# to authorize others to do so in accordance with 2 CFR 200.315(b).
+
 class BoxImageMemoryDataset(torch.utils.data.Dataset):
     def __init__(self, box_image_dataset):
         self._box_image_dataset = box_image_dataset
