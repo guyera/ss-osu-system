@@ -50,11 +50,28 @@ class SSNovelSystemInterface(ABC):
         :param image_paths: list of strings representing image paths for the
             current round
         :param bbox_dict: dictionary mapping image filenames to bounding boxes
-        :param hint_type_a_data: TODO
-        :param hint_type_b_data: TODO
+        :param hint_type_a_data: None, unless hint A is enabled in the current
+            trial, in which case this parameter is an Integer in
+            {0, 2, 3, 4, 5, 6} representing the novelty type of the trial.
+            Used primarily for oracle studies.
+            0 corresponds to a no-novelty trial.
+            2 corresponds to a trial with novel species classes.
+            3 corresponds to a trial with novel activity classes.
+            4 corresponds to a trial with novel combinations of known species.
+            5 corresponds to a trial with novel combinations of known
+                activities.
+            6 corresponds to a trial with novel environment conditions.
+        :param hint_type_b_data: None, unless hint B is enabled in the current
+            trial, in which case this parameter is a list of N booleans, where
+            N is the number of images in the current round, indicating whether
+            each image contains novelty (True to indicate that some form of
+            novelty is present, False otherwise). Used primarily for oracle
+            studies.
         :return: tuple of (novelty_preds, svo_preds).
             novelty_preds: TODO
             svo_preds: TODO
+        TODO should do characterize_round? Or is that even part of the
+        benchmark? I don't think so.
         """
         pass
 
@@ -78,8 +95,17 @@ class SSNovelSystemInterface(ABC):
         :param test_id: ID of the current test trial (likely unused by the
             system except for logging purposes)
         :param round_id: ID of the just-completed round within the trial
-        :param feedback_csv_content: TODO
-        :param bboxes: TODO
+        :param feedback_csv_content: A string containing the subset of the
+            ground truth data CSV file pertaining to the images queried for
+            feedback. This CSV content can be handled in the same way as the
+            CSV content for the rest of the trial data. For example, this string
+            can be dumped to a csv file, and that file's path can be passed to
+            the constructor of a BoxImageDataset.
+        :param bboxes: Dict mapping image paths to bounding box data for
+            the images queried for feedback. This dictionary can be dumped
+            to a json file with the same basename as a csv file containing the
+            feedback_csv_content and subsequently loaded by a BoxImageDataset
+            by passing the csv file path to the BoxImageDataset constructor.
         :return: None
         """
         pass
