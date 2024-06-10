@@ -63,11 +63,9 @@ class OSUInterface:
         self.log_dir =log_dir
         self.temp_path = pathlib.Path('./session/temp/')
 
-    def start_session(self, session_id, detection_feedback, given_detection):
+    def start_session(self, session_id):
         """
         :param session_id:
-        :param detection_feedback:  We assume this weill be True
-        :param given_detection: I haven't figure out yet how this will work
         :return: None
         """
         print(f'==> OSU got start session {session_id}')
@@ -161,9 +159,6 @@ class OSUInterface:
         queries, bboxes = self.app.select_queries(feedback_max_ids)
         # queries, bboxes = select_oracle(test_id, round_id, image_paths, feedback_max_ids)
         return queries, bboxes
-    
-    def characterize_round(self, red_light_dec):
-        self.app.characterize_round(red_light_dec)
 
     def record_detection_feedback(self, test_id, round_id, feedback_csv_content, bboxes):
         """

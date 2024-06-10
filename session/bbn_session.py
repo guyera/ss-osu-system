@@ -303,7 +303,7 @@ class BBNSession:
             # print(response.content.decode('utf-8'))
             session_id = ast.literal_eval(response.content.decode('utf-8'))['session_id']
         if self.osu_stubs:
-            self.osu_stubs.start_session(session_id, detection_feedback=True, given_detection=self.given_detection)
+            self.osu_stubs.start_session(session_id)
 
 
         print(f"=> initialized session: {session_id}")
@@ -431,8 +431,6 @@ class BBNSession:
                 # inform the OSU code of that, passing them the red light image path.
                 if self.given_detect_red_light_round == round_id:
                     self.osu_stubs.given_detect_red_light(red_light_image)
-                    # GDD
-                    # print(f' **** Called osu_stubs.given_detect_red_light during round {round_id}')
                 novelty_preds, predictions = self.osu_stubs.process_round(test_id, round_id, image_paths, bbox_dict, hint_typeA_data, hint_typeB_data)
                 novelty_lines = novelty_preds.splitlines()
 
@@ -449,11 +447,7 @@ class BBNSession:
                         if self.given_detect_red_light_round == round_id:
                             if novelty_image_path == red_light_image:
                                 red_light_declared = True
-                                # GDD
-                                # print(f' **** Turning on red_light_declared due to GD')
                     else:
-                        # if round_id == 50:
-                        #     red_light_declared = True
                         if float(red_light_str) > 0.5:
                             red_light_declared = True
                     
@@ -462,7 +456,6 @@ class BBNSession:
                     self.write_file_entries(novelty_image_path, detection_file, classification_file,
                                             species_counts, species_presence, activity_presence, float(red_light_str), float(per_image_nov_str),
                                             round_id, red_light_declared)
-                self.osu_stubs.characterize_round(red_light_declared)
             else:
                 pass
 

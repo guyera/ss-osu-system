@@ -186,6 +186,7 @@ class TopLevelApp:
         self.all_red_light_scores = np.array([])
         self.p_type_override = None
         self.p_type_override_mask = None
+        self.red_light_declared = False
 
         self.p_type_th = 0.75
         self.post_red_base = None
@@ -433,6 +434,7 @@ class TopLevelApp:
         self.all_p_type = torch.tensor([])
         self.p_type_override = None
         self.p_type_override_mask = None
+        self.red_light_declared = False
         self.post_red_base = None
         self.characterization_preds = []
         self.per_image_p_type = torch.tensor([])
@@ -585,12 +587,18 @@ class TopLevelApp:
         ret['p_ni'] = p_ni.tolist()
         ret['red_light_score'] = red_light_scores
         ret['predictions'] = predictions
-                                                                  
+
+        if not self.red_light_declared and np.any(red_light_scores > 0.5):
+            self.red_light_declared = True
+
+        self.characterize_round()
+
         return ret
         
     def red_light_hint_callback(self, path):
         self.red_light_img = path
         self.red_light_this_batch = True
+        self.red_light_declared = True
 
     def test_completed_callback(self, test_id):
         if not self.log:
@@ -796,8 +804,8 @@ class TopLevelApp:
         round_characterization_preds[0] = 1.0
         self.characterization_preds.append(round_characterization_preds)
 
-    def characterize_round(self, red_light_dec):
-        if red_light_dec:
+    def characterize_round(self):
+        if self.red_light_declared:
             self.characterize_round_zeros()
             return
 
