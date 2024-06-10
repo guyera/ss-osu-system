@@ -124,8 +124,7 @@ class OSUInterface:
         red_light_scores = ret['red_light_score']
         predictions = ret['predictions']
 
-        novelty_lines = [f'{img}, {rs:e}, {p:e}' for img, rs, p in zip(df['image_path'].to_list(), red_light_scores, p_ni)]
-        novelty_preds = '\n'.join(novelty_lines)
+        novelty_preds = [(float(rs), float(p)) for rs, p in zip(red_light_scores, p_ni)]
 
         if csv_path.exists():
             os.remove(csv_path)

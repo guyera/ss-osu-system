@@ -431,12 +431,12 @@ class BBNSession:
                 # inform the OSU code of that, passing them the red light image path.
                 if self.given_detect_red_light_round == round_id:
                     self.osu_stubs.given_detect_red_light(red_light_image)
-                novelty_preds, predictions = self.osu_stubs.process_round(test_id, round_id, image_paths, bbox_dict, hint_typeA_data, hint_typeB_data)
-                novelty_lines = novelty_preds.splitlines()
+                novelty_lines, predictions = self.osu_stubs.process_round(test_id, round_id, image_paths, bbox_dict, hint_typeA_data, hint_typeB_data)
 
                 filenames = []
-                for novelty_line, cur_preds in zip(novelty_lines, predictions):
-                    (novelty_image_path, red_light_str, per_image_nov_str) = novelty_line.split(',')
+                for novelty_image_idx, (novelty_line, cur_preds) in enumerate(zip(novelty_lines, predictions)):
+                    novelty_image_path = image_paths[novelty_image_idx]
+                    (red_light_str, per_image_nov_str) = novelty_line
                     filenames.append(novelty_image_path)
                     species_counts,\
                         species_presence,\

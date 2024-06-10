@@ -67,9 +67,38 @@ class SSNovelSystemInterface(ABC):
             each image contains novelty (True to indicate that some form of
             novelty is present, False otherwise). Used primarily for oracle
             studies.
-        :return: tuple of (novelty_preds, svo_preds).
-            novelty_preds: TODO
-            svo_preds: TODO
+        :return: tuple of the form (novelty_preds, svo_preds).
+            - novelty_preds: A list of N tuples of the form
+                (image_path, red_light_score, p_novel), where N is the number of
+                images in the round.
+                - red_light_score: Predicted probability that the trial's
+                    post-novelty phase has begun as of the ith image of the
+                    round
+                - p_novel: Predicted probability that the ith image of the
+                    round contains any sort of novelty
+            - svo_preds: A list of N tuples of the form (species_count,
+                species_presence, activity_count, activity_presence), where N
+                is th enumber of images in the round.
+                - species_count: Torch tensor of shape [S], where S is the
+                    maximum number of species classes (including all known
+                    classes and the maximum number of novel species classes),
+                    containing the predicted counts of each corresponding
+                    species in image i.
+                - species_presence: Torch tensor of shape [S], where S is the
+                    maximum number of species classes (including all known
+                    classes and the maximum number of novel species classes),
+                    containing the predicted probability of each corresponding
+                    species being present in image i.
+                - activity_count: Torch tensor of shape [S], where S is the
+                    maximum number of activity classes (including all known
+                    classes and the maximum number of novel activity classes),
+                    containing the predicted counts of each corresponding
+                    activity in image i.
+                - activity_presence: Torch tensor of shape [S], where S is the
+                    maximum number of activity classes (including all known
+                    classes and the maximum number of novel activity classes),
+                    containing the predicted probability of each corresponding
+                    activity being present in image i.
         TODO should do characterize_round? Or is that even part of the
         benchmark? I don't think so.
         """
