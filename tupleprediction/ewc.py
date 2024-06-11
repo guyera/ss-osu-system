@@ -4,6 +4,7 @@
 # reproduce, publish, or otherwise use this software for Federal purposes, and
 # to authorize others to do so in accordance with 2 CFR 200.315(b).
 
+from pathlib import Path
 from copy import deepcopy
 
 import torch
@@ -64,6 +65,9 @@ class EWC_All_Models(object):
             self._means[n+'activity'] = variable(p.data)
 
     def _save_precision_matrices(self):
+        path = Path(self.precision_matrices_path)
+        dir_path = path.parent
+        dir_path.mkdir(parents=True, exist_ok=True)
         torch.save(self._precision_matrices, self.precision_matrices_path)
 
     def _diag_fisher(self):
