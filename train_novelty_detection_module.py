@@ -50,28 +50,28 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
     '--data-root',
     type=str,
-    help='Data root directory',
+    help='Data root directory.',
     required=True
 )
 
 parser.add_argument(
     '--root-cache-dir',
     type=str,
-    help='Root cache directory',
+    help='Root cache directory.',
     required=True
 )
 
 parser.add_argument(
     '--train-csv-path',
     type=str,
-    help='Path to training CSV',
+    help='Path to training CSV.',
     required=True
 )
 
 parser.add_argument(
     '--cal-csv-path',
     type=str,
-    help='Path to calibration CSV',
+    help='Path to calibration CSV.',
     required=True
 )
 
@@ -79,14 +79,14 @@ parser.add_argument(
     '--lr',
     type=float,
     default=0.005,
-    help='Learning rate for backbone and classifiers'
+    help='Learning rate for backbone and classifiers.'
 )
 
 parser.add_argument(
     '--label-smoothing',
     type=float,
     default=0.05,
-    help='Label smoothing for training backbone and classifiers'
+    help='Label smoothing for training backbone and classifiers.'
 )
 
 parser.add_argument(
@@ -94,14 +94,14 @@ parser.add_argument(
     type=LossFnEnum,
     choices=list(LossFnEnum),
     default=LossFnEnum.cross_entropy,
-    help='Loss function'
+    help='Loss function.'
 )
 
 parser.add_argument(
     '--balance-class-frequencies',
     action='store_true',
     help=('Specify this argument to enable balancing of class frequencies in '
-        'training')
+        'training.')
 )
 
 parser.add_argument(
@@ -109,21 +109,21 @@ parser.add_argument(
     type=lambda augmentation: Augmentation[augmentation],
     choices=list(Augmentation),
     default=Augmentation.rand_augment,
-    help='Augmentation strategy'
+    help='Augmentation strategy.'
 )
 
 parser.add_argument(
     '--batch-size',
     type=int,
     default=64,
-    help='Batch size for training backbone and box classifiers'
+    help='Batch size for training backbone and box classifiers.'
 )
 
 parser.add_argument(
     '--n-known-val',
     type=int,
     default=4068,
-    help='Number of known validation instances to pull from the training CSV'
+    help='Number of known validation instances to pull from the training CSV.'
 )
 
 parser.add_argument(
@@ -131,28 +131,28 @@ parser.add_argument(
     type=lambda scheduler_type: SchedulerType[scheduler_type],
     choices=list(SchedulerType),
     default=SchedulerType.cosine,
-    help='Type of learning rate scheduler to use'
+    help='Type of learning rate scheduler to use.'
 )
 
 parser.add_argument(
     '--max-epochs',
     type=int,
     default=600,
-    help='Max number of epochs for training backbone and classifiers'
+    help='Max number of epochs for training backbone and classifiers.'
 )
 
 parser.add_argument(
     '--root-checkpoint-dir',
     type=str,
     default=None,
-    help='Checkpoint directory'
+    help='Checkpoint directory.'
 )
 
 parser.add_argument(
     '--root-log-dir',
     type=str,
     default=None,
-    help='Log directory'
+    help='Log directory.'
 )
 
 parser.add_argument(
@@ -160,37 +160,52 @@ parser.add_argument(
     type=ClassifierTrainer,
     choices=list(ClassifierTrainer),
     default=ClassifierTrainer.end_to_end,
-    help='Classifier trainer to use'
+    help='Classifier trainer to use.'
 )
 
 parser.add_argument(
     '--pretrained-backbone-path',
     type=str,
-    default=None
+    default=None,
+    help=('Path to existing pretrained backbone from which to initialize '
+        'the DCA system before continuing training.')
 )
 
 parser.add_argument(
     '--precomputed-feature-dir',
     type=str,
-    default='./.features/resizepad=224/none/normalized'
+    default='./.features/resizepad=224/none/normalized',
+    help=('Path to directory containing precomputed features as saved by '
+        'precompute_backbone_features.py. Only used when training just the '
+        'logit layer (i.e., when --classifier-trainer is set to logit-layer).')
 )
 
 parser.add_argument(
     '--save-dir',
     type=str,
-    default='./pretrained-models'
+    default='./pretrained-models',
+    help=('Path to directory in which to save pretrained models.')
 )
 
 parser.add_argument(
     '--no-memory-cache',
     action='store_false',
-    dest='memory_cache'
+    dest='memory_cache',
+    help=('Disables in-memory caching of training samples. This is important '
+        'on systems that don\'t have sufficient memory to cache all training '
+        'samples.')
 )
 
 parser.add_argument(
     '--no-load-after-training',
     action='store_false',
-    dest='load_best_after_training'
+    dest='load_best_after_training',
+    help=('Disables reloading the best model (in terms of validation '
+        'performance) after pretraining the backbone and classifiers but '
+        'before pretraining the calibrators and multinomial logistic '
+        'regression. Only used in niche scenarios, such as with `--max-epochs '
+        '0` to finetune the calibrators and multinomial logistic regression '
+        'without retraining the backbone and classifiers.')
 )
 
 
