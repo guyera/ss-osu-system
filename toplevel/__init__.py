@@ -128,7 +128,7 @@ class TopLevelApp:
                 retraining_scheduler_type, 
                 feedback_loss_weight, 
                 retraining_loss_fn, 
-                class_frequency_file, 
+                balance_class_frequencies, 
                 gan_augment, 
                 device, 
                 retrain_fn, 
@@ -241,8 +241,20 @@ class TopLevelApp:
         self.feedback_loss_weight = feedback_loss_weight
         self.retraining_loss_fn = retraining_loss_fn
         self.class_frequencies = None
-        if class_frequency_file is not None:
-            self.class_frequencies = torch.load(class_frequency_file)
+        if balance_class_frequencies:
+            species_frequencies = torch.tensor([
+                    7028, 50736, 8495, 2519, 10766, 53005, 1347, 56407, 1825,
+                    3030, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0
+                ],
+                dtype=torch.long
+            )
+            activity_frequencies = torch.tensor([
+                    85976, 109182, 0, 0, 0, 0, 0
+                ],
+                dtype=torch.long
+            )
+            self.class_frequencies = (species_frequencies, activity_frequencies)
 
         self.backbone = Backbone(
             backbone_architecture,

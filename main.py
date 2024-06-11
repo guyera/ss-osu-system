@@ -62,7 +62,7 @@ if __name__ == "__main__":
     p.add_argument('--feedback-loss-weight', type=float, default=0.5)
     p.add_argument('--detection-threshold', type=float, default=0.5)
     p.add_argument('--retraining-loss-fn', type=LossFnEnum, choices=list(LossFnEnum), default=LossFnEnum.cross_entropy)
-    p.add_argument('--class-frequency-file', type=str, default=None)
+    p.add_argument('--balance-class-frequencies', action='store_true')
     p.add_argument('--gan_augment', type=bool, default=False)
     p.add_argument('--distributed', action='store_true')
     p.add_argument('--device', type=str, default='cuda:0')
@@ -261,7 +261,7 @@ if __name__ == "__main__":
         retraining_scheduler_type=args.retraining_scheduler_type,
         feedback_loss_weight=args.feedback_loss_weight,
         retraining_loss_fn=args.retraining_loss_fn,
-        class_frequency_file=args.class_frequency_file,
+        balance_class_frequencies=args.balance_class_frequencies,
         gan_augment=args.gan_augment,
         device=device,
         retrain_fn=retrain_fn,
