@@ -17,7 +17,7 @@ class OSUInterface:
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_batch_size, trial_size, disable_retraining,
             root_cache_dir, n_known_val, classifier_trainer, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_val_interval, retraining_patience,
-            retraining_min_epochs, retraining_max_epochs, retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, class_frequency_file, gan_augment, device, retrain_fn, val_reduce_fn, model_unwrap_fn, feedback_sampling_configuration, oracle_training, ewc_lambda):
+            retraining_min_epochs, retraining_max_epochs, retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, balance_class_frequencies, gan_augment, device, retrain_fn, val_reduce_fn, model_unwrap_fn, feedback_sampling_configuration, oracle_training, ewc_lambda):
 
         self.app = TopLevelApp( 
             data_root=data_root,
@@ -48,7 +48,7 @@ class OSUInterface:
             retraining_scheduler_type=retraining_scheduler_type,
             feedback_loss_weight=feedback_loss_weight,
             retraining_loss_fn=retraining_loss_fn,
-            class_frequency_file=class_frequency_file,
+            balance_class_frequencies=balance_class_frequencies,
             gan_augment=gan_augment,
             device=device,
             retrain_fn=retrain_fn,
@@ -62,6 +62,7 @@ class OSUInterface:
         self.num_of_queries = []
         self.log_dir =log_dir
         self.temp_path = pathlib.Path('./session/temp/')
+        self.temp_path.mkdir(parents=True, exist_ok=True)
 
     def start_session(self, session_id):
         """
@@ -175,7 +176,6 @@ class OSUInterface:
         num_rows = feedback_csv_content.count('\n')  # Counts the number of newlines
         if round_id < 200:
             self.num_queries += num_rows
-        print(test_id, self.num_queries)
         csv_path = self.temp_path.joinpath(f'{os.getpid()}_batch_{round_id}_feedback_{feedback_uuid}.csv')
         with open(csv_path, 'w') as f:
             f.write(feedback_csv_content)
