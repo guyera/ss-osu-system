@@ -98,11 +98,10 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    '--class-frequency-file',
-    type=str,
-    default=None,
-    help=('Path to pth file containing class frequency tensor, used for class '
-          'balancing')
+    '--balance-class-frequencies',
+    action='store_true',
+    help=('Specify this argument to enable balancing of class frequencies in '
+        'training')
 )
 
 parser.add_argument(
@@ -273,8 +272,20 @@ train_dataset, val_known_dataset, val_dataset =\
     )
 
 class_frequencies = None
-if args.class_frequency_file is not None:
-    class_frequencies = torch.load(args.class_frequency_file)
+if args.balance_class_frequencies:
+    species_frequencies = torch.tensor([
+            7028, 50736, 8495, 2519, 10766, 53005, 1347, 56407, 1825,
+            3030, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0
+        ],
+        dtype=torch.long
+    )
+    activity_frequencies = torch.tensor([
+            85976, 109182, 0, 0, 0, 0, 0
+        ],
+        dtype=torch.long
+    )
+    class_frequencies = (species_frequencies, activity_frequencies)
 
 def train_sampler_fn(train_dataset):
     return DistributedSampler(
@@ -371,9 +382,10 @@ classifier_trainer.train(
     device,
     train_sampler_fn,
     feedback_batch_sampler_fn,
-    allow_write = True,
-    allow_print = True
-    
+    allow_write=True,
+    allow_print=True,
+    feedback_class_frequencies=None,
+    feedback_sampling_configuration=None
 )
 
 if rank == 0:
