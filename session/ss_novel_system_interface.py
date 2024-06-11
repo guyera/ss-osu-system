@@ -18,6 +18,7 @@ class SSNovelSystemInterface(ABC):
         """
         pass
 
+    @abstractmethod
     def start_test(self, test_id):
         """
         Called by bbn_session to signal to the system that a test trial has
@@ -28,6 +29,7 @@ class SSNovelSystemInterface(ABC):
         """
         pass
 
+    @abstractmethod
     def given_detect_red_light(self, red_light_image_path):
         """
         Called by bbn_session during given_detection trials at the beginning
@@ -42,6 +44,7 @@ class SSNovelSystemInterface(ABC):
         """
         pass
 
+    @abstractmethod
     def process_round(self, test_id, round_id, image_paths, bbox_dict, hint_type_a_data, hint_type_b_data):
         """
         :param test_id: ID of the current test trial (likely unused by the
@@ -105,6 +108,7 @@ class SSNovelSystemInterface(ABC):
         pass
 
 
+    @abstractmethod
     def choose_detection_feedback_ids(self, test_id, round_id, image_paths, feedback_max_ids):
         """
         Called by bbn_session to ask the system which images from the round
@@ -119,6 +123,7 @@ class SSNovelSystemInterface(ABC):
         pass
 
 
+    @abstractmethod
     def record_detection_feedback(self, test_id, round_id, feedback_csv_content, bboxes):
         """
         :param test_id: ID of the current test trial (likely unused by the
@@ -140,6 +145,7 @@ class SSNovelSystemInterface(ABC):
         pass
 
 
+    @abstractmethod
     def end_test(self, test_id):
         """
         Called by bbn_session to signal to the system that the current test
@@ -151,6 +157,7 @@ class SSNovelSystemInterface(ABC):
         pass
 
 
+    @abstractmethod
     def end_session(self, session_id):
         """
         Called by bbn_session to signal to the system that the current session
