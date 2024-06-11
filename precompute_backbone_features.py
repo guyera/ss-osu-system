@@ -96,8 +96,6 @@ args = parser.parse_args()
 
 device = 'cuda:0'
 
-
-import ipdb; ipdb.set_trace()
 architecture = Backbone.Architecture.swin_t
 backbone = Backbone(architecture, pretrained=False).to(device)
 backbone_state_dict = torch.load(
