@@ -12,7 +12,9 @@ import pandas as pd
 from toplevel import TopLevelApp
 import csv
 
-class OSUInterface:
+from session.ss_novel_system_interface import SSNovelSystemInterface
+
+class OSUInterface(SSNovelSystemInterface):
     def __init__(self, scg_ensemble, data_root, pretrained_models_dir, backbone_architecture,
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_batch_size, trial_size, disable_retraining,
