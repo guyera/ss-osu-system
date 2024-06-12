@@ -1,7 +1,0 @@
-#!/bin/bash
-
-# Start the server in the background
-sail_on_server_ss --url 127.0.0.1:8002 --data-directory '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/test_trials/api_tests/' --bboxes-json-file '/nfs/hpc/share/sail_on3/final/osu_train_cal_val/valid.json' --results-directory '/nfs/stak/users/ullaham/hpc-share/SailON/phase3/ss-api-gan/test/resultsNoGAN/'
-
-case 
-sail_on_server_ss --url 127.0.0.1:8002 --data-directory '/nfs/hpc/share/sail_on3/final/test_trials/api_tests/' --bboxes-json-file '/nfs/hpc/share/sail_on3/final/test.json' --results-directory '/nfs/hpc/share/sail_on3/TestsForPaper/TestSet/resultsNoRetraining/'
