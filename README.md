@@ -1,5 +1,11 @@
 This package is the DCA system described in the paper, "NOVEL-SS: A Dataset for Integrated Novelty-Aware Computer Vision Systems". This repo only contains the DCA system, the system interface, and the client code that connects to the SS API server to run a trial.
 
+## Installing dependencies
+
+It's recommended that dependencies be installed in a virtual environment. Moreover, this environment must be isolated from the environment used to install and run the SS API Server since the server and client rely on different versions of some of the same packages.
+
+Install the system's dependencies via `pip install -r requirements.txt`.
+
 ## Running the DCA System
 This section explains how to run the DCA system on one or more trials.
 
