@@ -64,7 +64,9 @@ The above command-line arguments are explained in the source code. Replace `--da
 ### `main.py`
 After training the DCA system (and optionally precomputing backbone features to speed up DCA trials involving retraining of just the logit layer during accommodation), `main.py` can be used to run the DCA system on one or more trials. The API server must be started and accessible by the DCA system at the address to be specified by the `--url` command line argument in `main.py`.
 
-This system-side codebase is organized into three main components: 1) the BBN Session, which communicates with the SS API server to request trial data and post predictions, 2) the DCA System, whose public-facing interface is primarily provided by the `toplevel/` package, and 3) the OSU Interface, which serves as a communication layer for trial data and predictions between the BBN Session and the DCA System. There are various command-line arguments in `main.py` that control various behaviors of these three components. They're explained in the source code.
+This system-side codebase is organized into three main components: 1) the BBN Session, which communicates with the SS API server to request trial data and post predictions, 2) the DCA System, whose public-facing interface is primarily provided by the `toplevel/` package, and 3) the OSU Interface, which serves as a communication layer for trial data and predictions between the BBN Session and the DCA System. There are various command-line arguments in `main.py` that control various behaviors of these three components. They're explained in the source code. The following sequence diagram provides an overview of the responsibilities of each component and the communication between them:
+
+![sequence-diagram](https://github.com/guyera/ss-osu-system/assets/35271415/caae3f9b-c7d7-4d5c-8609-058762cc6605)
 
 Before running the DCA system via `main.py`, ensure that the [SS API server](https://github.com/guyera/ss-api) is installed and running.
 
