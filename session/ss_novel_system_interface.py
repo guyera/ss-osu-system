@@ -71,14 +71,21 @@ class SSNovelSystemInterface(ABC):
             novelty is present, False otherwise). Used primarily for oracle
             studies.
         :return: tuple of the form (novelty_preds, svo_preds).
-            - novelty_preds: A list of N tuples of the form
-                (image_path, red_light_score, p_novel), where N is the number of
-                images in the round.
+            - novelty_preds: A list of N elements, where N is the number of
+                images in the round. Each element should either be an integer
+                representing the p_novel value (described below), or a tuple of
+                the form (red_light_score, p_novel) 
                 - red_light_score: Predicted probability that the trial's
                     post-novelty phase has begun as of the ith image of the
-                    round
+                    round. Used for certain internal evaluation procedures for
+                    the DCA system, but not for any of the actual SS-Novel
+                    evaluation metrics. If an element of the returned list
+                    is a number rather than a tuple, that number represents
+                    p_novel (see below), and red_light_score is replaced with
+                    0 for these internal evaluation procedures.
                 - p_novel: Predicted probability that the ith image of the
-                    round contains any sort of novelty
+                    round contains any sort of novelty. Used in evaluating
+                    novelty detection performance.
             - svo_preds: A list of N tuples of the form (species_count,
                 species_presence, activity_count, activity_presence), where N
                 is th enumber of images in the round.
@@ -102,8 +109,6 @@ class SSNovelSystemInterface(ABC):
                     classes and the maximum number of novel activity classes),
                     containing the predicted probability of each corresponding
                     activity being present in image i.
-        TODO should do characterize_round? Or is that even part of the
-        benchmark? I don't think so.
         """
         pass
 

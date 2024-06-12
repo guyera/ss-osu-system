@@ -436,7 +436,11 @@ class BBNSession:
                 filenames = []
                 for novelty_image_idx, (novelty_line, cur_preds) in enumerate(zip(novelty_lines, predictions)):
                     novelty_image_path = image_paths[novelty_image_idx]
-                    (red_light_str, per_image_nov_str) = novelty_line
+                    if isinstance(novelty_line, tuple):
+                        (red_light_score, per_image_nov) = novelty_line
+                    else:
+                        red_light_score = 0
+                        per_image_nov = novelty_line
                     filenames.append(novelty_image_path)
                     species_counts,\
                         species_presence,\
@@ -448,13 +452,13 @@ class BBNSession:
                             if novelty_image_path == red_light_image:
                                 red_light_declared = True
                     else:
-                        if float(red_light_str) > 0.5:
+                        if red_light_score > 0.5:
                             red_light_declared = True
                     
                     
                         
                     self.write_file_entries(novelty_image_path, detection_file, classification_file,
-                                            species_counts, species_presence, activity_presence, float(red_light_str), float(per_image_nov_str),
+                                            species_counts, species_presence, activity_presence, red_light_score, per_image_nov,
                                             round_id, red_light_declared)
             else:
                 pass
