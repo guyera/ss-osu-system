@@ -2413,8 +2413,6 @@ def score_tests(
         test_name = p.name.split('_')[0]
         test_ids.append(test_name)
     
-    # test_ids = ['OND.102.000']
-
     all_performances = {
         'Red_button':{},
         'Red_button_declared': {},
@@ -2442,16 +2440,27 @@ def score_tests(
         # if 'OND' in test_id and '100.000' not in test_id and '105.000' not in test_id:
         # if 'OND' in test_id and '100.000' not in test_id and '102.000' in test_id:
         # if 'OND' in test_id and '103.000' in test_id:
-        if 'OND' in test_id and '100.000' in test_id:
+        # if 'OND' in test_id and '100.000' in test_id:
+        if 'OND' in test_id:
+            pkl_fname = os.path.join(bboxes_dir, test_id+'/'+test_id+'.pkl')
+            if not os.path.exists(pkl_fname):
+                print(f'{pkl_fname} not found. Skipping...')
+                continue
 
+            detection_file = sys_output_dir / f'{session_id}.{test_id}_detection.csv'
+            if not detection_file.exists():
+                print(f'{detection_file} not found. Skipping...')
+                continue
+            
+            classification_file = sys_output_dir / f'{session_id}.{test_id}_classification.csv'
+            if not classification_file.exists():
+                print(f'{classification_file} not found. Skipping...')
+                continue
 
-        # if 'OND' in test_id:
             metadata = json.load(open(test_dir / f'{test_id}_metadata.json', 'r'))
             test_df = pd.read_csv(test_dir / f'{test_id}_single_df.csv')
 
-            pkl_fname = os.path.join(bboxes_dir, test_id+'/'+test_id+'.pkl')
-            print(pkl_fname)
-            assert os.path.exists(pkl_fname)
+
             with (open(pkl_fname, "rb")) as pkl_file:
                 boxes_pred_dict = pickle.load(pkl_file)
 
@@ -2470,15 +2479,11 @@ def score_tests(
             # detect_lines = np.concatenate(detect_lines)
 
             # class_lines = np.concatenate(class_lines)
-            if (sys_output_dir / f'{session_id}.{test_id}_detection.csv').exists():
-                detect_lines = open(sys_output_dir / f'{session_id}.{test_id}_detection.csv').read().splitlines()
-                class_lines = open(sys_output_dir / f'{session_id}.{test_id}_classification.csv').read().splitlines()
-                
-            else:
-                print(f'No results found for Test {session_id}.{test_id}_.')
-    
-           
-            with open(log_dir / f'{test_id}.log', 'w') as log:
+            
+            detect_lines = open(detection_file).read().splitlines()
+            class_lines = open(classification_file).read().splitlines()
+            log_file = log_dir / f'{test_id}.log'
+            with open(log_file, 'w') as log:
                 # score_test(
                 #     test_id, metadata, test_df, detect_lines, class_lines, class_file_reader,
                 #     log, all_performances, detection_threshold, spe_presence_threshold, 
