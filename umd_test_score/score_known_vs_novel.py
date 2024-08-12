@@ -2441,7 +2441,7 @@ def score_tests(
         # if 'OND' in test_id and '100.000' not in test_id and '102.000' in test_id:
         # if 'OND' in test_id and '103.000' in test_id:
         # if 'OND' in test_id and '100.000' in test_id:
-        if 'OND' in test_id:
+        if 'OND' in test_id and '100.000' not in test_id:
             pkl_fname = os.path.join(bboxes_dir, test_id+'/'+test_id+'.pkl')
             if not os.path.exists(pkl_fname):
                 print(f'{pkl_fname} not found. Skipping...')

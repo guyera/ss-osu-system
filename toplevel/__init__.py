@@ -96,6 +96,7 @@ class TopLevelApp:
         end_to_end = 'end-to-end'
         ewc_train = 'ewc-train'
         ewc_logit_layer_train = 'ewc-logit-layer-train'
+        episodic_memoery_train = 'episodic-memoery-train'
 
         def __str__(self):
             return self.value
@@ -306,7 +307,8 @@ class TopLevelApp:
                     root_cache_dir=self.root_cache_dir,
                     n_known_val=self.n_known_val
                 )
-
+            
+        
         train_feature_file = os.path.join(
             self.precomputed_feature_dir,
             'training.pth'
@@ -337,6 +339,7 @@ class TopLevelApp:
                 loss_fn=self.retraining_loss_fn,
                 class_frequencies=self.class_frequencies
             )
+            
         elif self.classifier_trainer_enum == self.ClassifierTrainer.ewc_logit_layer_train:
             if self.precomputed_feature_dir and not os.path.isfile(train_feature_file) and not os.path.isfile(val_feature_file):
                 assert not self.precomputed_feature_dir or os.path.isfile(train_feature_file) or os.path.isfile(val_feature_file), \
@@ -358,6 +361,29 @@ class TopLevelApp:
                 loss_fn=self.retraining_loss_fn,
                 class_frequencies=self.class_frequencies,
                 ewc_lambda= self.ewc_lambda
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.episodic_memoery_train:
+            if self.precomputed_feature_dir and not os.path.isfile(train_feature_file) and not os.path.isfile(val_feature_file):
+                assert not self.precomputed_feature_dir or os.path.isfile(train_feature_file) or os.path.isfile(val_feature_file), \
+                "Precomputed feature files must exist if precomputed_feature_dir is set. \
+                 precompute_backbone_features.py script can be used to compute featrues"
+
+            classifier_trainer = EM_ClassifierTrainer(
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                self.box_transform,
+                post_cache_train_transform,
+                retraining_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                memory_cache=True,
+                val_reduce_fn=self._val_reduce_fn
             )
         elif self.classifier_trainer_enum == self.ClassifierTrainer.side_tuning:
             self.backbone = SideTuningBackbone(self.backbone)
@@ -983,6 +1009,7 @@ class TopLevelApp:
                 loss_fn=self.retraining_loss_fn,
                 class_frequencies=self.class_frequencies
             )
+            
         elif self.classifier_trainer_enum == self.ClassifierTrainer.ewc_logit_layer_train:
             if self.precomputed_feature_dir and not os.path.isfile(train_feature_file) and not os.path.isfile(val_feature_file):
                 assert not self.precomputed_feature_dir or os.path.isfile(train_feature_file) or os.path.isfile(val_feature_file), \
@@ -1004,6 +1031,29 @@ class TopLevelApp:
                 loss_fn=self.retraining_loss_fn,
                 class_frequencies=self.class_frequencies,
                 ewc_lambda= self.ewc_lambda
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.episodic_memoery_train:
+            if self.precomputed_feature_dir and not os.path.isfile(train_feature_file) and not os.path.isfile(val_feature_file):
+                assert not self.precomputed_feature_dir or os.path.isfile(train_feature_file) or os.path.isfile(val_feature_file), \
+                "Precomputed feature files must exist if precomputed_feature_dir is set. \
+                 precompute_backbone_features.py script can be used to compute featrues"
+
+            classifier_trainer = EM_ClassifierTrainer(
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                self.box_transform,
+                post_cache_train_transform,
+                retraining_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                memory_cache=True,
+                val_reduce_fn=self._val_reduce_fn
             )
         elif self.classifier_trainer_enum == self.ClassifierTrainer.side_tuning:
             self.backbone = SideTuningBackbone(self.backbone)
