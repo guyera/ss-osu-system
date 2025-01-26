@@ -30,7 +30,7 @@ class BBNSession:
     def __init__(self, protocol, domain, class_count, detection_fb, given_detection,
                  image_directory, results_directory, api_url,
                  batch_size, version, detection_threshold,
-                 api_stubs, osu_interface, hintA, hintB):
+                 api_stubs, osu_interface, hintA, hintB, feedback_budget_override=None):
 
         # self.agent = Agent(config['detectormodelpath'],
         #                    config['classifiermodelpath'],
@@ -64,6 +64,7 @@ class BBNSession:
         self.n_activity_cls = 7 # TODO pass this in from main
         self.hintA = hintA
         self.hintB = hintB
+        self.feedback_budget_override = feedback_budget_override
 
         # Turn this to True to get readable (S,O,V) triples for our top-3 in classification output.
         # Default is to get the 945 floats that UMD is requesting. 
@@ -358,6 +359,10 @@ class BBNSession:
 
         round_size = metadata['round_size']
         feedback_max_ids = metadata['feedback_max_ids']
+        if self.feedback_budget_override is not None:
+            feedback_max_ids = self.feedback_budget_override
+        trial_feedback_budget = 0
+
         if self.given_detection:
             red_light_image = metadata['red_light']
         else:
@@ -499,7 +504,17 @@ class BBNSession:
                     # if self.given_detection:
                     #     print(f' **** About to call choose_detection_feedback_ids, round {round_id}')
                 
-                    num_ids_to_request = len(filenames) if self.given_detection else feedback_max_ids
+                    # New round of querying. Add feedback_max_ids to total allowable
+                    # queries, round down to compute the number to actually request,
+                    # then subtract the number requested from the total allowable
+                    # (supports alternating # of queries for fractional budgets)
+                    trial_feedback_budget += feedback_max_ids
+                    num_ids_to_request = int(trial_feedback_budget)
+                    trial_feedback_budget -= num_ids_to_request
+
+                    # Further override for given detection
+                    if self.given_detection:
+                        num_ids_to_request = len(filenames)
                     feedback_ids, feedback_bboxes = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
                                                                                 filenames, num_ids_to_request)
 

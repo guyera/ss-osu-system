@@ -69,6 +69,7 @@ if __name__ == "__main__":
     p.add_argument('--oracle-training', type=bool, default=False, help='Specifies whether oracle training should be enabled.')
     p.add_argument('--ewc-lambda', type=float, default=1000, help='EWC lambda hyperparameter for EWC accommodation.')
     p.add_argument('--p-ni-query-threshold', type=float, default=0.0, help='P(N_i) threshold at which to query for feedback on an image')
+    p.add_argument('--feedback-budget-override', type=float, default=None, help='Value that client should use for feedback budget, ignoring budget set by the API. Must be smaller than the budget set by the API, but can be fractional (e.g., 2.5 would alternate between querying 2 and 3 images each round)')
 
     args = p.parse_args()
     # torch.autograd.set_detect_anomaly(True)
@@ -279,7 +280,7 @@ if __name__ == "__main__":
         args.given_detection, args.data_root,
         args.sys_results_dir, args.url, args.batch_size,
         args.version, detection_threshold,
-        None, osu_int, args.hintA, args.hintB)
+        None, osu_int, args.hintA, args.hintB, args.feedback_budget_override)
 
     test_session.run(args.detector_seed, args.test_ids)
 
