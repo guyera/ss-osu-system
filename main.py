@@ -68,6 +68,7 @@ if __name__ == "__main__":
     p.add_argument('--device', type=str, default='cuda:0', help='Torch device to use when not running in distributed mode (in distributed mode, each process uses its local rank as a CUDA device ordinal).')
     p.add_argument('--oracle-training', type=bool, default=False, help='Specifies whether oracle training should be enabled.')
     p.add_argument('--ewc-lambda', type=float, default=1000, help='EWC lambda hyperparameter for EWC accommodation.')
+    p.add_argument('--p-ni-query-threshold', type=float, default=0.0, help='P(N_i) threshold at which to query for feedback on an image')
 
     args = p.parse_args()
     # torch.autograd.set_detect_anomaly(True)
@@ -269,7 +270,8 @@ if __name__ == "__main__":
         model_unwrap_fn=model_unwrap_fn,
         feedback_sampling_configuration=args.feedback_sampling_configuration,
         oracle_training = args.oracle_training,
-        ewc_lambda = args.ewc_lambda
+        ewc_lambda = args.ewc_lambda,
+        p_ni_query_threshold=args.p_ni_query_threshold
     )
 
     test_session = BBNSession('OND', args.domain, args.class_count, 

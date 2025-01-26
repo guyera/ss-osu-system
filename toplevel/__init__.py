@@ -20,7 +20,6 @@ import pandas as pd
 from tupleprediction import compute_probability_novelty
 from adaptation.query_formulation import select_queries
 import pickle
-from scipy.stats import ks_2samp
 from copy import deepcopy
 
 import os
@@ -136,7 +135,8 @@ class TopLevelApp:
                 model_unwrap_fn, 
                 feedback_sampling_configuration,
                 oracle_training,
-                ewc_lambda):
+                ewc_lambda,
+                p_ni_query_threshold):
 
         pretrained_backbone_path = os.path.join(
             pretrained_models_dir,
@@ -160,6 +160,7 @@ class TopLevelApp:
                                                     ])
         
         
+        self.p_ni_query_threshold = p_ni_query_threshold
         self.ewc_lambda = ewc_lambda
         self.test_id = ' '
         self.retrain_num = 1
@@ -657,11 +658,10 @@ class TopLevelApp:
                     query_indices.append(index)
                 except ValueError:
                     print(f"Path {path} not found in batch context image paths.")
-            selected_img_paths2 =\
-                [self.batch_context.image_paths[i] for i in query_indices]
         else:
             query_indices = select_queries(
                 feedback_max_ids,
+                self.p_ni_query_threshold,
                 self.batch_context.p_ni,
                 bbox_counts
             )
@@ -757,31 +757,14 @@ class TopLevelApp:
         return self.und_manager.predict(species_probs, activity_probs, batch_p_type)
 
     def _compute_red_light_scores(self, p_ni, N, img_paths):
-        red_light_scores = np.ones(N)
+        red_light_scores = np.zeros(N)
         all_p_ni = np.concatenate([self.all_p_ni.numpy(), p_ni.numpy()])
         
         if not self.post_red:
-            if all_p_ni.shape[0] >= 300:
-                start = all_p_ni.shape[0] - N
-                for i in range(max(start, 300 + self.windows_size), start + N):
-                    p_val = ks_2samp(all_p_ni[:300], all_p_ni[i - self.windows_size: i], alternative='greater', method='exact')[1]
-                    red_light_scores[i - start] = p_val
+            if not self.given_detection:
+                self.post_red = True
+                self.post_red_base = all_p_ni.shape[0] - p_ni.shape[0]
 
-                if not self.given_detection:
-                    EPS = 0
-
-                    p_gt_th = np.nonzero([p < self.p_val_cuttoff - EPS for p in red_light_scores])[0]
-                    self.post_red = p_gt_th.shape[0] > 0                                
-                    first_novelty_instance_idx = p_gt_th[0] if self.post_red else red_light_scores.shape[0]
-
-                    self.post_red_base = all_p_ni.shape[0] - p_ni.shape[0] + first_novelty_instance_idx if self.post_red else None
-        else:
-            start = all_p_ni.shape[0] - N
-            
-            for i in range(max(start, 300 + self.windows_size), start + N):
-                p_val = ks_2samp(all_p_ni[:300], all_p_ni[i - self.windows_size: i], alternative='greater')[1]
-                red_light_scores[i - start] = p_val
-            
         for i in range(len(red_light_scores)):
             if red_light_scores[i] >= self.p_val_cuttoff:
                 red_light_scores[i] = self.pre_red_transform[0] * red_light_scores[i] + self.pre_red_transform[1]
@@ -790,7 +773,7 @@ class TopLevelApp:
          
         if self.given_detection and not self.post_red and not self.red_light_this_batch:
             red_light_scores = np.zeros_like(red_light_scores)
-        
+
         if self.given_detection and self.red_light_this_batch:
             self.red_light_this_batch = False
             self.post_red = True

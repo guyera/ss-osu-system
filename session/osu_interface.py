@@ -19,7 +19,7 @@ class OSUInterface(SSNovelSystemInterface):
             feedback_enabled, given_detection, log, log_dir, ignore_verb_novelty, train_csv_path, val_csv_path,
             trial_batch_size, trial_size, disable_retraining,
             root_cache_dir, n_known_val, classifier_trainer, precomputed_feature_dir, retraining_augmentation, retraining_lr, retraining_batch_size, retraining_val_interval, retraining_patience,
-            retraining_min_epochs, retraining_max_epochs, retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, balance_class_frequencies, gan_augment, device, retrain_fn, val_reduce_fn, model_unwrap_fn, feedback_sampling_configuration, oracle_training, ewc_lambda):
+            retraining_min_epochs, retraining_max_epochs, retraining_label_smoothing, retraining_scheduler_type, feedback_loss_weight, retraining_loss_fn, balance_class_frequencies, gan_augment, device, retrain_fn, val_reduce_fn, model_unwrap_fn, feedback_sampling_configuration, oracle_training, ewc_lambda, p_ni_query_threshold):
 
         self.app = TopLevelApp( 
             data_root=data_root,
@@ -58,7 +58,8 @@ class OSUInterface(SSNovelSystemInterface):
             model_unwrap_fn=model_unwrap_fn,
             feedback_sampling_configuration=feedback_sampling_configuration,
             oracle_training = oracle_training,
-            ewc_lambda = ewc_lambda
+            ewc_lambda = ewc_lambda,
+            p_ni_query_threshold=p_ni_query_threshold
         )
         self.num_queries = 0
         self.num_of_queries = []

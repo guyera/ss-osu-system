@@ -24,7 +24,7 @@ def smallest_non_none(A):
     return smallest
 
 
-def select_queries(budget, P_N, bbox_counts):
+def select_queries(budget, p_ni_query_threshold, P_N, bbox_counts):
     ''' 
     Formulates a set of images for which we'll be asking
     for oracle feedback.
@@ -39,8 +39,9 @@ def select_queries(budget, P_N, bbox_counts):
     non_empty_mask = bbox_counts > 0
     sorted_non_empty_mask = non_empty_mask[sorted_indices]
     sorted_non_empty_indices = sorted_indices[sorted_non_empty_mask]
-    selection = sorted_non_empty_indices[:budget]
-    # selection = sorted_indices[:budget]
+    budgeted_selection = sorted_non_empty_indices[:budget]
+    budgeted_p_ni_values = P_N[budgeted_selection]
+    selection = budgeted_selection[budgeted_p_ni_values > p_ni_query_threshold]
     return selection.tolist()
 
 if __name__ == "__main__":
