@@ -95,6 +95,7 @@ class TopLevelApp:
         side_tuning = 'side-tuning'
         end_to_end = 'end-to-end'
         ewc_train = 'ewc-train'
+        slca_train = 'slca-train'
         ewc_logit_layer_train = 'ewc-logit-layer-train'
 
         def __str__(self):
@@ -416,6 +417,25 @@ class TopLevelApp:
                 memory_cache=False,
                 val_reduce_fn=self._val_reduce_fn
             )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.slca_train:
+            classifier_trainer = SLCAClassifierTrainer(
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                self.box_transform,
+                post_cache_train_transform,
+                retraining_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                memory_cache=False,
+                val_reduce_fn=self._val_reduce_fn
+            )
+
 
         self.novelty_trainer = TuplePredictorTrainer(
             train_dataset,
@@ -472,7 +492,9 @@ class TopLevelApp:
 
 
         path_to_all_data = f'/nfs/hpc/share/sail_on3/final/test_trials/api_tests/OND/image_classification/{test_id}_single_df.csv'
+        # path_to_all_data = f'/nfs/hpc/share/sail_on3/final/osu_train_cal_val/ks_tuning_trials/api_tests/OND/image_classification/{test_id}_single_df.csv'
         csv_pd = pd.read_csv(path_to_all_data).iloc[round_id*10:round_id*10+10]
+
 
         # Check if 'novel' column exists and is numeric
         if 'novel' in csv_pd.columns and pd.api.types.is_numeric_dtype(csv_pd['novel']):
@@ -592,6 +614,7 @@ class TopLevelApp:
 
         if not self.post_red or not self.feedback_enabled:
             self._accumulate(predictions, p_ni, p_ni.numpy(), batch_p_type.cpu())
+        
 
         self.all_red_light_scores = np.concatenate([self.all_red_light_scores, red_light_scores])
         
@@ -1046,6 +1069,24 @@ class TopLevelApp:
             )
         elif self.classifier_trainer_enum == self.ClassifierTrainer.ewc_train:
             classifier_trainer = EWCClassifierTrainer(
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                self.box_transform,
+                post_cache_train_transform,
+                retraining_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                memory_cache=False,
+                val_reduce_fn=self._val_reduce_fn
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.slca_train:
+            classifier_trainer = SLCAClassifierTrainer(
                 self.retraining_lr,
                 train_dataset,
                 val_known_dataset,

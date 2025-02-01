@@ -77,6 +77,7 @@ if __name__ == "__main__":
         (args.classifier_trainer in [TopLevelApp.ClassifierTrainer.end_to_end, \
         TopLevelApp.ClassifierTrainer.logit_layer, \
         TopLevelApp.ClassifierTrainer.ewc_logit_layer_train, \
+        TopLevelApp.ClassifierTrainer.slca_train, \
         TopLevelApp.ClassifierTrainer.ewc_train])),\
         'Only end-to-end, logit_layer, ewc_logit_layer_train, and ewc_train training are supported in distributed mode'
 

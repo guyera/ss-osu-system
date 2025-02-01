@@ -39,9 +39,12 @@ def permutation_trial(n_itr, prefix_size, window_size, p_ni_vals):
     return np.array(min_pvals)
 
 # with open('/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Code/Validation/logs/OND.100.000/OND.100.000.pkl', 'rb') as f:
-with open('/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/Validation_1000/logs/OND.100.000/OND.100.000.pkl', 'rb') as f:
+# with open('/nfs/hpc/share/sail_on3/TestsForPaper/Jan2024_Corrected_Normalization/Validation_1000/logs/OND.100.000/OND.100.000.pkl', 'rb') as f:
+with open('/nfs/hpc/share/sail_on3/TestsForPaper/Nov2024_Corrected_Normalization/Train_Val_KS1/logs/ks_train_validation//ks_train_validation.pkl', 'rb') as f:
+# with open('/nfs/hpc/share/sail_on3/TestsForPaper/Nov2024_Corrected_Normalization/SLCA1e-3/logs/OND.102.000/OND.102.000.pkl', 'rb') as f:
     log = pkl.load(f)
 p_ni_vals = log['p_ni_raw']
+import ipdb; ipdb.set_trace()
 
 
 prefix_size = 60
