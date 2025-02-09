@@ -36,12 +36,14 @@ def select_queries(budget, p_ni_query_threshold, P_N, bbox_counts):
     if P_N.shape[0] == 0:
         raise ValueError("Must pass in a nonzero number of queries")
     sorted_indices = torch.argsort(P_N, descending=True)
+    # line 40 is Just for Exp 2 and Exp 5 where sorting is not required
+    # sorted_indices = torch.randperm(len(P_N), device=P_N.device)
     non_empty_mask = bbox_counts > 0
     sorted_non_empty_mask = non_empty_mask[sorted_indices]
     sorted_non_empty_indices = sorted_indices[sorted_non_empty_mask]
     budgeted_selection = sorted_non_empty_indices[:budget]
     budgeted_p_ni_values = P_N[budgeted_selection]
-    selection = budgeted_selection[budgeted_p_ni_values > p_ni_query_threshold]
+    selection = budgeted_selection[budgeted_p_ni_values >= p_ni_query_threshold]
     return selection.tolist()
 
 if __name__ == "__main__":

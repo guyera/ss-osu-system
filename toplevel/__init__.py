@@ -94,6 +94,7 @@ class TopLevelApp:
         side_tuning = 'side-tuning'
         end_to_end = 'end-to-end'
         ewc_train = 'ewc-train'
+        slca_train = 'slca-train'
         ewc_logit_layer_train = 'ewc-logit-layer-train'
 
         def __str__(self):
@@ -415,7 +416,27 @@ class TopLevelApp:
                 loss_fn=self.retraining_loss_fn,
                 class_frequencies=self.class_frequencies,
                 memory_cache=False,
-                val_reduce_fn=self._val_reduce_fn
+                val_reduce_fn=self._val_reduce_fn,
+                ewc_lambda= self.ewc_lambda
+            )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.slca_train:
+            classifier_trainer = SLCAClassifierTrainer(
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                self.box_transform,
+                post_cache_train_transform,
+                retraining_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                memory_cache=False,
+                val_reduce_fn=self._val_reduce_fn,
+                ewc_lambda= self.ewc_lambda
             )
 
         self.novelty_trainer = TuplePredictorTrainer(
@@ -693,7 +714,10 @@ class TopLevelApp:
 
         df = pd.read_csv(feedback_csv_path)
         nov_types = df['novelty_type'].to_numpy()
-        
+        # if no novelty is detected in the whole batch then retrun otherwise it give error
+        if len(self.batch_context.query_indices) == 0:
+            return
+            
         for idx, nov_type in enumerate(nov_types):
             batch_idx = self.batch_context.query_indices[idx]
 
@@ -746,7 +770,7 @@ class TopLevelApp:
         self._accumulate(self.batch_context.predictions, self.batch_context.p_ni, p_ni_raw,
             self.batch_context.p_type)
 
-        self.retraining_buffer = pd.concat([self.retraining_buffer, df[df['novel'] == 1]])
+        # self.retraining_buffer = pd.concat([self.retraining_buffer, df[df['novel'] == 1]])
         
         self.novelty_trainer.add_feedback_data(self.data_root, feedback_csv_path)
 
@@ -1043,8 +1067,29 @@ class TopLevelApp:
                 loss_fn=self.retraining_loss_fn,
                 class_frequencies=self.class_frequencies,
                 memory_cache=False,
-                val_reduce_fn=self._val_reduce_fn
+                val_reduce_fn=self._val_reduce_fn,
+                ewc_lambda= self.ewc_lambda
             )
+        elif self.classifier_trainer_enum == self.ClassifierTrainer.slca_train:
+            classifier_trainer = SLCAClassifierTrainer(
+                self.retraining_lr,
+                train_dataset,
+                val_known_dataset,
+                self.box_transform,
+                post_cache_train_transform,
+                retraining_batch_size=self.retraining_batch_size,
+                patience=self.retraining_patience,
+                min_epochs=self.retraining_min_epochs,
+                max_epochs=self.retraining_max_epochs,
+                label_smoothing=self.retraining_label_smoothing,
+                feedback_loss_weight=self.feedback_loss_weight,
+                loss_fn=self.retraining_loss_fn,
+                class_frequencies=self.class_frequencies,
+                memory_cache=False,
+                val_reduce_fn=self._val_reduce_fn,
+                ewc_lambda= self.ewc_lambda
+            )
+
         self.novelty_trainer = TuplePredictorTrainer(
             train_dataset,
             val_known_dataset,
@@ -1060,7 +1105,7 @@ class TopLevelApp:
     def _retrain_supervised_detectors(self, feedback_csv_path):
         # retrain_cond_1 = self.num_retrains_so_far == 0 and self.novelty_trainer.n_feedback_examples() >= 15
         # retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) and (self.novelty_trainer.n_feedback_examples() > 0)
-        retrain_cond_1 = self.num_retrains_so_far == 0 and len(self.retraining_buffer) >= 15
+        # retrain_cond_1 = self.num_retrains_so_far == 0 and len(self.retraining_buffer) >= 15
         retrain_cond_2 = (self.batch_num == self.second_retrain_batch_num) 
         # if retrain_cond_1 or retrain_cond_2:
         if retrain_cond_2:                          

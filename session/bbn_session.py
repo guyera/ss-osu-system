@@ -518,8 +518,12 @@ class BBNSession:
                     feedback_ids, feedback_bboxes = self.osu_stubs.choose_detection_feedback_ids(test_id, round_id,
                                                                                 filenames, num_ids_to_request)
 
-                    feedback_csv_content = self.request_feedback(session_id, test_id, round_id,
+                    if len(feedback_ids) > 0:
+                        feedback_csv_content = self.request_feedback(session_id, test_id, round_id,
                                                                                 feedback_ids)
+
+                    else:
+                        feedback_csv_content = 'image_path,filename,width,height,agent1_name,agent1_id,agent1_count,agent2_name,agent2_id,agent2_count,agent3_name,agent3_id,agent3_count,activities,activities_id,environment,novelty_type,master_id\n'
                     self.osu_stubs.record_detection_feedback(test_id, round_id, feedback_csv_content, feedback_bboxes)
 
                 ## LAR
